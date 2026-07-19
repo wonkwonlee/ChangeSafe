@@ -102,3 +102,37 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
   - Verified manually in the browser (Playwright-driven): scenario A full
     approve → simulate → receipt; scenario B blocked → blocked receipt; no
     horizontal overflow at 390 px; zero console errors.
+- **M5 — E2E and quality gate** (commit `dd82b64`):
+  - Playwright critical paths (replay, keyless): safe flow to a
+    content-verified downloaded receipt; blocked flow with disabled approval
+    and blocked receipt; reset/scenario-switch cleanliness.
+  - Client-bundle grep proves `OPENAI_API_KEY` and server prompt strings are
+    absent from `.next/static`.
+  - Full gate green: `lint`, `typecheck`, `test` (128 passing, live smoke
+    skipped by default), `build`, `test:e2e` (3 passing).
+- **M6 — Build Week handoff** (commit hash recorded below after commit):
+  - `README.md` (judge-runnable quickstart, replay/live instructions,
+    runtime GPT-5.6 role, human decisions, limitations, Vercel steps),
+    `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, `docs/DEMO_SCRIPT.md`
+    (≤2:30, unsafe-first, mentions Codex and GPT-5.6).
+  - Review sweeps: no TODO-driven behavior, no execution libraries, no
+    console noise in product code, documentation-range addresses only.
+  - Clean-install verification: `npm ci` → lint, typecheck, test, build,
+    e2e all green from scratch.
+
+## Submission checklist (owner)
+
+- [ ] Record the demo video from `docs/DEMO_SCRIPT.md` (≤3:00).
+- [ ] Fill in the Codex usage paragraph in `README.md` and this file, and
+      replace `TODO-OWNER-INSERT` above with the primary Codex `/feedback`
+      session ID (run `/feedback` in your Codex session and copy the ID —
+      never guess it).
+- [ ] Optional: with an `OPENAI_API_KEY`, run
+      `CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test`,
+      review `scenarios/scenario-a-failover/replay-fixture.captured.json`,
+      and promote it to `replay-fixture.json` for genuine
+      `captured_gpt_5_6` provenance in the safe scenario.
+- [ ] Deploy to Vercel (`vercel --prod`; replay mode needs no env vars) and
+      verify both scenarios on the public URL.
+- [ ] Push the repository to a public remote and attach the URL + deployment
+      link to the submission before July 21, 5:00 PM PDT.
