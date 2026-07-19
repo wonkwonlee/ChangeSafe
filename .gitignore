@@ -49,3 +49,6 @@ next-env.d.ts
 # local tooling state (not part of the product)
 .omc/
 .claude/settings.local.json
+
+# playwright-mcp browser session artifacts
+/.playwright-mcp/
