@@ -34,8 +34,7 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
 
 ### 2026-07-19
 
-- **M0 — Repository and contracts** (this entry is updated with the commit hash
-  after each milestone commit):
+- **M0 — Repository and contracts** (commit `9caf818`):
   - Initialized git repository and Next.js 16 + TypeScript strict + Tailwind v4
     scaffold with normalized scripts (`dev`, `lint`, `typecheck`, `test`,
     `build`, `test:e2e`).
