@@ -47,3 +47,17 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
     no partial proposal).
   - Unit smoke tests for schema acceptance/rejection and every legal/illegal
     transition family.
+- **M1 — Deterministic safety core** (commit `41b9db0`):
+  - Transactional patch engine over a four-family path allowlist
+    (`interface enabled`, `route add/remove`, `route metric`,
+    `routing preference`) with typed failures, structured diffs, and
+    executable-string screening.
+  - Canonical serializer (sorted keys, locale-independent) + SHA-256 helpers.
+  - Inverse-operation derivation and rollback verification by canonical
+    equality on sandboxed copies.
+  - All seven frozen policies implemented as pure, independently fail-closed
+    functions; deterministic risk derivation (BLOCK→CRITICAL, 2×WARN→HIGH,
+    1×WARN→MEDIUM, else LOW); no policy consults the model.
+  - Sandboxed simulation engine re-evaluating declared safety properties.
+  - Receipt builder: incident/proposal hashes plus a self-hash computed over
+    the canonical receipt excluding the hash field. 98 unit tests green.

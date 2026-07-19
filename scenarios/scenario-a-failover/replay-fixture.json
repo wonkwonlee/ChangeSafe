@@ -1,0 +1,70 @@
+{
+  "fixtureId": "fix-a-failover-authored",
+  "scenarioId": "scenario-a-failover",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Authored deterministic fixture representing the expected shape of a schema-valid analysis for the safe failover scenario. This is not model output. Replace with a captured GPT-5.6 response via scripts/capture-fixture.ts when an API key is available.",
+  "proposal": {
+    "proposalId": "prop-prefer-backup-uplink",
+    "summary": "Shift default egress to the healthy backup uplink by lowering the floating backup route metric below the primary, and record the uplink preference change. The degraded primary route stays in the table for automatic fail-back after repair.",
+    "diagnosis": {
+      "likelyCause": "Physical-layer degradation on wan-primary (rising CRC error rate with correlated end-to-end packet loss) is corrupting frames on the primary uplink, while the backup uplink remains healthy and nearly idle.",
+      "confidence": 0.84,
+      "evidenceIds": ["ev-alert-crc", "ev-alert-loss", "ev-alert-backup-ok", "ev-note-oncall"],
+      "assumptions": [
+        "wan-backup has sufficient capacity for current WAN load (3% utilization observed)",
+        "The degradation is physical on the primary path and will not follow traffic to the backup path"
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routes/rt-default-backup/metric",
+        "value": 50,
+        "reason": "Lower the floating backup default route metric below the primary (100) so egress prefers the healthy backup uplink",
+        "evidenceIds": ["ev-alert-crc", "ev-alert-backup-ok"]
+      },
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routing/preferences/active-uplink",
+        "value": "wan-backup",
+        "reason": "Record the operational uplink preference so monitoring and fail-back procedures track the backup as active",
+        "evidenceIds": ["ev-alert-backup-ok"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routing/preferences/active-uplink",
+        "value": "wan-primary",
+        "reason": "Restore the recorded uplink preference to the primary",
+        "evidenceIds": ["ev-alert-backup-ok"]
+      },
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routes/rt-default-backup/metric",
+        "value": 200,
+        "reason": "Restore the original floating metric so the primary uplink is preferred again",
+        "evidenceIds": ["ev-alert-crc"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm wan-backup is up with error rate below 1% and utilization headroom before shifting traffic",
+        "evidenceIds": ["ev-alert-backup-ok"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm default egress uses wan-backup and end-to-end probe packet loss returns to baseline (<0.5%)",
+        "evidenceIds": ["ev-alert-loss"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm management reachability to edge-rtr-01 and core-sw-01 is unaffected",
+        "evidenceIds": []
+      }
+    ]
+  }
+}

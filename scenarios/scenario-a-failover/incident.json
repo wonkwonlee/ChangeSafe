@@ -1,0 +1,181 @@
+{
+  "incidentId": "inc-uplink-degraded-4821",
+  "title": "Degraded primary uplink on edge-rtr-01",
+  "summary": "The primary WAN uplink on edge-rtr-01 is showing a rising CRC error rate and intermittent packet loss. The backup uplink is healthy and idle. Users report intermittent loss reaching external services. All data in this incident is synthetic.",
+  "alerts": [
+    {
+      "evidenceId": "ev-alert-crc",
+      "timestamp": "2026-07-18T09:05:12Z",
+      "severity": "critical",
+      "sourceNodeId": "edge-rtr-01",
+      "message": "Interface wan-primary CRC error rate exceeded threshold (12.5% over 5m window)",
+      "metric": { "name": "errorRatePct", "value": 12.5, "unit": "percent" }
+    },
+    {
+      "evidenceId": "ev-alert-loss",
+      "timestamp": "2026-07-18T09:07:44Z",
+      "severity": "warning",
+      "sourceNodeId": "edge-rtr-01",
+      "message": "End-to-end probe packet loss at 8% via primary uplink path",
+      "metric": { "name": "packetLossPct", "value": 8, "unit": "percent" }
+    },
+    {
+      "evidenceId": "ev-alert-backup-ok",
+      "timestamp": "2026-07-18T09:08:02Z",
+      "severity": "info",
+      "sourceNodeId": "edge-rtr-01",
+      "message": "Interface wan-backup is up with 0.1% error rate and 3% utilization",
+      "metric": { "name": "utilizationPct", "value": 3, "unit": "percent" }
+    }
+  ],
+  "operatorNotes": [
+    {
+      "evidenceId": "ev-note-oncall",
+      "author": "on-call network engineer",
+      "timestamp": "2026-07-18T09:12:30Z",
+      "content": "Users report intermittent packet loss toward external services since 09:05 UTC. Primary uplink suspected due to CRC counters. The backup path was validated during last month's failover test and has capacity headroom."
+    }
+  ],
+  "topology": {
+    "nodes": [
+      { "id": "mgmt-01", "name": "Management Station", "role": "mgmt-station", "mgmtIp": "192.0.2.10" },
+      { "id": "edge-rtr-01", "name": "Edge Router 01", "role": "edge-router", "mgmtIp": "192.0.2.1" },
+      { "id": "core-sw-01", "name": "Core Switch 01", "role": "distribution-switch", "mgmtIp": "192.0.2.5" }
+    ],
+    "links": [
+      {
+        "id": "link-mgmt-edge",
+        "a": { "nodeId": "mgmt-01", "interfaceId": "eth0" },
+        "b": { "nodeId": "edge-rtr-01", "interfaceId": "mgmt0" },
+        "status": "up"
+      },
+      {
+        "id": "link-edge-coresw",
+        "a": { "nodeId": "edge-rtr-01", "interfaceId": "lan0" },
+        "b": { "nodeId": "core-sw-01", "interfaceId": "uplink0" },
+        "status": "up"
+      }
+    ]
+  },
+  "currentState": {
+    "devices": {
+      "mgmt-01": {
+        "id": "mgmt-01",
+        "name": "Management Station",
+        "role": "mgmt-station",
+        "protected": true,
+        "interfaces": {
+          "eth0": { "id": "eth0", "name": "eth0", "enabled": true, "status": "up" }
+        },
+        "routes": {},
+        "routing": { "preferences": {} }
+      },
+      "edge-rtr-01": {
+        "id": "edge-rtr-01",
+        "name": "Edge Router 01",
+        "role": "edge-router",
+        "protected": false,
+        "interfaces": {
+          "mgmt0": {
+            "id": "mgmt0",
+            "name": "mgmt0",
+            "enabled": true,
+            "status": "up",
+            "description": "Management interface on 192.0.2.0/24"
+          },
+          "lan0": {
+            "id": "lan0",
+            "name": "lan0",
+            "enabled": true,
+            "status": "up",
+            "description": "LAN toward core-sw-01"
+          },
+          "wan-primary": {
+            "id": "wan-primary",
+            "name": "wan-primary",
+            "enabled": true,
+            "status": "degraded",
+            "description": "Primary WAN uplink",
+            "metrics": { "errorRatePct": 12.5, "utilizationPct": 41, "crcErrors": 4211 }
+          },
+          "wan-backup": {
+            "id": "wan-backup",
+            "name": "wan-backup",
+            "enabled": true,
+            "status": "up",
+            "description": "Backup WAN uplink",
+            "metrics": { "errorRatePct": 0.1, "utilizationPct": 3, "crcErrors": 0 }
+          }
+        },
+        "routes": {
+          "rt-default-primary": {
+            "id": "rt-default-primary",
+            "destination": "0.0.0.0/0",
+            "nextHop": "203.0.113.1",
+            "metric": 100,
+            "kind": "static",
+            "protected": false,
+            "description": "Default route via primary uplink"
+          },
+          "rt-default-backup": {
+            "id": "rt-default-backup",
+            "destination": "0.0.0.0/0",
+            "nextHop": "198.51.100.1",
+            "metric": 200,
+            "kind": "static",
+            "protected": false,
+            "description": "Floating default route via backup uplink"
+          },
+          "rt-mgmt": {
+            "id": "rt-mgmt",
+            "destination": "192.0.2.0/24",
+            "nextHop": "direct",
+            "metric": 0,
+            "kind": "connected",
+            "protected": true,
+            "description": "Connected management subnet"
+          }
+        },
+        "routing": { "preferences": { "active-uplink": "wan-primary" } }
+      },
+      "core-sw-01": {
+        "id": "core-sw-01",
+        "name": "Core Switch 01",
+        "role": "distribution-switch",
+        "protected": true,
+        "interfaces": {
+          "uplink0": {
+            "id": "uplink0",
+            "name": "uplink0",
+            "enabled": true,
+            "status": "up",
+            "description": "Uplink toward edge-rtr-01"
+          }
+        },
+        "routes": {},
+        "routing": { "preferences": {} }
+      }
+    },
+    "management": {
+      "originNodeId": "mgmt-01",
+      "protectedTargetNodeIds": ["edge-rtr-01", "core-sw-01"]
+    }
+  },
+  "expectedSafetyProperties": [
+    {
+      "id": "sp-a-mgmt-reach",
+      "description": "The management station keeps reachability to every protected device",
+      "check": { "type": "mgmt-reachability" }
+    },
+    {
+      "id": "sp-a-mgmt-route",
+      "description": "The connected management route on edge-rtr-01 remains present",
+      "check": { "type": "route-exists", "nodeId": "edge-rtr-01", "routeId": "rt-mgmt" }
+    },
+    {
+      "id": "sp-a-primary-retained",
+      "description": "The primary default route remains in the table for fail-back",
+      "check": { "type": "route-exists", "nodeId": "edge-rtr-01", "routeId": "rt-default-primary" }
+    }
+  ]
+}
