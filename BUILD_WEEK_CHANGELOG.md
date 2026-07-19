@@ -61,3 +61,16 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
   - Sandboxed simulation engine re-evaluating declared safety properties.
   - Receipt builder: incident/proposal hashes plus a self-hash computed over
     the canonical receipt excluding the hash field. 98 unit tests green.
+- **M2 — Scenarios, replay fixtures, contract tests** (commit `f9ad5cd`):
+  - Scenario A "INC-4821 — Degraded primary uplink" (safe failover) and
+    Scenario B "INC-4977 — Suspected route leak" (red-team, with a prompt
+    injection embedded in an operator note). Fully synthetic data using
+    documentation address ranges only.
+  - Replay fixtures with honest provenance (`authored_synthetic` /
+    `authored_red_team`, `model: null`) validated by production schemas at
+    module load.
+  - Evidence-id cross-validation (`EVIDENCE_UNKNOWN`) rejects invented
+    citations before any policy or patch processing.
+  - Contract tests: A approvable → simulatable → verified receipt; B always
+    produces the required BLOCKs and WARN, derives CRITICAL, and can never be
+    approved or simulated at the domain layer. 110 tests green.
