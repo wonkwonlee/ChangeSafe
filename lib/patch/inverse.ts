@@ -32,6 +32,15 @@ export function deriveInverseOperations(
 
     switch (operation.op) {
       case "add":
+        // The allowlist permits `remove` only for routes. An added routing
+        // preference therefore has no expressible inverse; surfacing that
+        // here keeps ROLLBACK_COMPLETE's fail-closed behavior honest.
+        if (parsed.family !== "route") {
+          throw new DomainError(
+            "ROLLBACK_MISMATCH",
+            `Adding ${parsed.family} "${operation.path}" has no allowlisted inverse operation`,
+          );
+        }
         inverses.push({ op: "remove", path: operation.path, value: null, reason, evidenceIds });
         break;
       case "replace":

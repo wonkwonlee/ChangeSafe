@@ -38,6 +38,37 @@ describe("deriveInverseOperations", () => {
   });
 });
 
+describe("routing-preference add has no expressible inverse (fail-safe)", () => {
+  const addPreference = buildOperation({
+    op: "add",
+    path: "/devices/edge-rtr-01/routing/preferences/maintenance-window",
+    value: "sunday-0200",
+  });
+
+  it("deriveInverseOperations refuses instead of emitting a forbidden remove", () => {
+    expect(() => deriveInverseOperations(state(), [addPreference])).toThrow(
+      /no allowlisted inverse/,
+    );
+  });
+
+  it("ROLLBACK_COMPLETE blocks such proposals no matter the offered rollback", () => {
+    // A replace-based "rollback" cannot delete the added key, so canonical
+    // equality with the original state is impossible.
+    const verdict = verifyRollback(
+      state(),
+      [addPreference],
+      [
+        buildOperation({
+          op: "replace",
+          path: "/devices/edge-rtr-01/routing/preferences/maintenance-window",
+          value: "none",
+        }),
+      ],
+    );
+    expect(verdict.ok).toBe(false);
+  });
+});
+
 describe("verifyRollback", () => {
   it("accepts the proposal's own correct rollback", () => {
     const bundle = buildIncidentBundle();

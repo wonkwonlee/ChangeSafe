@@ -30,10 +30,10 @@ export function RiskBadge({ level }: { level: RiskLevel }) {
   );
 }
 
-/** Monospace identifier chip (evidence ids, resource refs, paths). */
+/** Monospace identifier chip (evidence ids, resource refs, paths, hashes). */
 export function IdChip({ value }: { value: string }) {
   return (
-    <code className="rounded border border-edge bg-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink-dim">
+    <code className="break-all rounded border border-edge bg-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink-dim">
       {value}
     </code>
   );

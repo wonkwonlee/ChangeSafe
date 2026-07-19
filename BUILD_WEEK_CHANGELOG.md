@@ -110,7 +110,7 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
     absent from `.next/static`.
   - Full gate green: `lint`, `typecheck`, `test` (128 passing, live smoke
     skipped by default), `build`, `test:e2e` (3 passing).
-- **M6 — Build Week handoff** (commit hash recorded below after commit):
+- **M6 — Build Week handoff** (commit `b0844f2`):
   - `README.md` (judge-runnable quickstart, replay/live instructions,
     runtime GPT-5.6 role, human decisions, limitations, Vercel steps),
     `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, `docs/DEMO_SCRIPT.md`
@@ -119,6 +119,16 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
     console noise in product code, documentation-range addresses only.
   - Clean-install verification: `npm ci` → lint, typecheck, test, build,
     e2e all green from scratch.
+  - Independent safety review (separate reviewer agent) verified ten
+    invariant claims against the code — blocked-never-approvable, pure
+    policies, server-only key, transactional patches, dual model-output
+    validation, honest provenance, findings-only risk, self-excluding
+    receipt hash, no execution surface, deterministic-core correctness —
+    all held. Its one MINOR finding (a latent invalid inverse for
+    routing-preference `add` in the unused `deriveInverseOperations`
+    branch) was fixed fail-closed with two pinning tests (130 tests).
+  - Screenshots added to README; receipt view verified overflow-free at
+    390 px.
 
 ## Submission checklist (owner)
 

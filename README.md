@@ -22,6 +22,14 @@ decision, with every outcome preserved as a hashed receipt.
 The product proves one thing visibly: **a plausible, confidently worded AI
 proposal cannot get approved unless deterministic safety checks pass.**
 
+![The red-team scenario blocked by the deterministic safety gate](docs/screenshots/scenario-b-blocked.png)
+
+*The red-team scenario: a 91%-confident proposal (echoing an instruction
+injected into an operator note) is blocked by two deterministic policies;
+approval is impossible and the refusal becomes a hashed receipt.*
+
+![The safe scenario analyzed, with diagnosis, operations and diff](docs/screenshots/scenario-a-analyzed.png)
+
 ## Quickstart (no API key needed)
 
 ```bash
