@@ -90,3 +90,15 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
   - Opt-in `CHANGESAFE_LIVE_SMOKE=1` smoke test; `CHANGESAFE_CAPTURE_FIXTURE=1`
     writes a provenance-stamped captured fixture for owner review. 128 tests
     green (live smoke skipped by default).
+- **M4 — Complete one-page UI** (commit `ae9245e`):
+  - Dark operations console: incident evidence column (alert timeline,
+    topology SVG, current-state tree, operator notes visibly labeled
+    "untrusted input") beside a numbered airlock rail of five stages.
+  - Authority color-coding: violet = AI proposal, steel frame = deterministic
+    safety gate, blue = human activity, green/amber/red = verdicts. Model
+    confidence rendered as advisory-only.
+  - Blocked proposals disable approval with an explanation of the domain-level
+    enforcement; every outcome ends in a hashed, downloadable receipt.
+  - Verified manually in the browser (Playwright-driven): scenario A full
+    approve → simulate → receipt; scenario B blocked → blocked receipt; no
+    horizontal overflow at 390 px; zero console errors.
