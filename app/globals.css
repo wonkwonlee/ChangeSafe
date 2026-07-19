@@ -1,26 +1,76 @@
 @import "tailwindcss";
 
+/*
+ * ChangeSafe operations-console tokens. The app is deliberately dark-only:
+ * a review console for urgent changes, always rendered the same way.
+ * Authority colors are semantic and fixed:
+ *   violet  = AI-authored content (proposal provenance)
+ *   blue    = active/selected human workflow
+ *   green   = PASS   amber = WARN   red = BLOCK  (deterministic gate verdicts)
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #101418;
+  --surface: #171c22;
+  --raised: #1d242c;
+  --sunken: #0c0f13;
+  --edge: #2a333d;
+  --edge-strong: #3b4754;
+  --ink: #e6ebf0;
+  --ink-dim: #94a1ae;
+  --ink-faint: #5c6975;
+  --active: #4d9fff;
+  --pass: #3fb950;
+  --warn: #d29922;
+  --block: #f85149;
+  --ai: #a78bfa;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
+  --color-active: var(--active);
+  --color-pass: var(--pass);
+  --color-warn: var(--warn);
+  --color-block: var(--block);
+  --color-ai: var(--ai);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Keyboard focus is always visible; color signals the active workflow. */
+:focus-visible {
+  outline: 2px solid var(--active);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Uppercase eyebrow labels — the console's structural voice. */
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

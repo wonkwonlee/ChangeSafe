@@ -74,3 +74,19 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
   - Contract tests: A approvable → simulatable → verified receipt; B always
     produces the required BLOCKs and WARN, derives CRITICAL, and can never be
     approved or simulated at the domain layer. 110 tests green.
+- **M3 — GPT-5.6 server-only integration** (commit `6f4f2af`):
+  - Hardened instructions + `<untrusted_incident_data>` delimiters; the model
+    is told incident content is data, must cite real evidence ids, must
+    provide rollback + verification, and may never claim safety/approval.
+  - Live adapter: OpenAI Responses API with Structured Outputs
+    (`zodTextFormat` over `ChangeProposalSchema`, `reasoning.effort: low`).
+    Local re-validation rejects schema mismatches, invented evidence ids, and
+    unknown device references; upstream failures map to typed errors carrying
+    status codes only (no secrets).
+  - `POST /api/analyze` (replay fully functional without a key; live returns
+    safe 502/503s offering an explicit replay switch) and `GET /api/status`
+    (`liveAvailable` boolean only). Request bodies strictly validated with a
+    size cap.
+  - Opt-in `CHANGESAFE_LIVE_SMOKE=1` smoke test; `CHANGESAFE_CAPTURE_FIXTURE=1`
+    writes a provenance-stamped captured fixture for owner review. 128 tests
+    green (live smoke skipped by default).

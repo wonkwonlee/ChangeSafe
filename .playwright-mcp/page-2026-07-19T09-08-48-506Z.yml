@@ -1,0 +1,178 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - paragraph [ref=e6]: ChangeSafeAI infrastructure change airlock
+          - paragraph [ref=e7]: GPT-5.6 proposes · deterministic policies validate · a human decides · sandbox only
+        - status "Replay mode only — no API key configured" [ref=e8]: replay only
+        - generic [ref=e9]:
+          - generic [ref=e10]: Scenario
+          - combobox "Scenario" [ref=e11]:
+            - option "INC-4821 — Degraded primary uplink" [selected]
+            - option "INC-4977 — Suspected route leak"
+        - button "Reset scenario" [ref=e12]
+    - main [ref=e13]:
+      - complementary "Incident evidence" [ref=e15]:
+        - generic [ref=e16]:
+          - paragraph [ref=e17]: Incident
+          - heading "Degraded primary uplink on edge-rtr-01" [level=1] [ref=e18]
+          - paragraph [ref=e19]: The primary WAN uplink on edge-rtr-01 is showing a rising CRC error rate and intermittent packet loss. The backup uplink is healthy and idle. Users report intermittent loss reaching external services. All data in this incident is synthetic.
+          - paragraph [ref=e20]:
+            - code [ref=e21]: inc-uplink-degraded-4821
+            - generic [ref=e22]: synthetic data
+        - generic [ref=e23]:
+          - heading "Alert timeline" [level=2] [ref=e24]
+          - list [ref=e25]:
+            - listitem [ref=e26]:
+              - generic [ref=e28]:
+                - paragraph [ref=e29]: Interface wan-primary CRC error rate exceeded threshold (12.5% over 5m window)
+                - paragraph [ref=e30]:
+                  - generic [ref=e31]: 2026-07-18 09:05:12 UTC
+                  - generic [ref=e32]: edge-rtr-01
+                  - code [ref=e33]: ev-alert-crc
+            - listitem [ref=e34]:
+              - generic [ref=e36]:
+                - paragraph [ref=e37]: End-to-end probe packet loss at 8% via primary uplink path
+                - paragraph [ref=e38]:
+                  - generic [ref=e39]: 2026-07-18 09:07:44 UTC
+                  - generic [ref=e40]: edge-rtr-01
+                  - code [ref=e41]: ev-alert-loss
+            - listitem [ref=e42]:
+              - generic [ref=e44]:
+                - paragraph [ref=e45]: Interface wan-backup is up with 0.1% error rate and 3% utilization
+                - paragraph [ref=e46]:
+                  - generic [ref=e47]: 2026-07-18 09:08:02 UTC
+                  - generic [ref=e48]: edge-rtr-01
+                  - code [ref=e49]: ev-alert-backup-ok
+        - generic [ref=e50]:
+          - heading "Topology" [level=2] [ref=e51]
+          - img "Topology with 3 nodes and 2 links" [ref=e53]:
+            - 'generic "link-mgmt-edge: up"'
+            - 'generic "link-edge-coresw: up"'
+            - generic "Management Station (mgmt-station) mgmt 192.0.2.10 — management origin — protected" [ref=e54]:
+              - generic [ref=e56]: MG
+              - generic [ref=e57]: mgmt-01
+              - generic [ref=e58]: ⛨
+            - generic "Edge Router 01 (edge-router) mgmt 192.0.2.1" [ref=e59]:
+              - generic [ref=e61]: ER
+              - generic [ref=e62]: edge-rtr-01
+            - generic "Core Switch 01 (distribution-switch) mgmt 192.0.2.5 — protected" [ref=e63]:
+              - generic [ref=e65]: SW
+              - generic [ref=e66]: core-sw-01
+              - generic [ref=e67]: ⛨
+          - paragraph [ref=e68]: Link colors show status; dashed = degraded. Blue frame = management origin, ⛨ = protected.
+        - generic [ref=e69]:
+          - heading "Current state" [level=2] [ref=e70]
+          - paragraph [ref=e71]:
+            - text: Management origin
+            - code [ref=e72]: mgmt-01
+            - text: must reach
+            - code [ref=e74]: edge-rtr-01
+            - generic [ref=e75]:
+              - text: ","
+              - code [ref=e76]: core-sw-01
+            - text: .
+          - generic [ref=e77]:
+            - group [ref=e78]:
+              - generic "mgmt-01protected" [ref=e79] [cursor=pointer]
+            - group [ref=e80]:
+              - generic "edge-rtr-01" [ref=e81] [cursor=pointer]
+              - generic [ref=e82]:
+                - list [ref=e83]:
+                  - listitem [ref=e84]:
+                    - generic [ref=e86]: mgmt0
+                    - generic [ref=e87]: enabled
+                  - listitem [ref=e88]:
+                    - generic [ref=e90]: lan0
+                    - generic [ref=e91]: enabled
+                  - listitem [ref=e92]:
+                    - generic [ref=e94]: wan-primary
+                    - generic [ref=e95]: enabled
+                    - generic [ref=e96]: err 12.5%
+                  - listitem [ref=e97]:
+                    - generic [ref=e99]: wan-backup
+                    - generic [ref=e100]: enabled
+                    - generic [ref=e101]: err 0.1%
+                - table [ref=e103]:
+                  - rowgroup [ref=e104]:
+                    - row [ref=e105]:
+                      - columnheader "route" [ref=e106]
+                      - columnheader "dest → next hop" [ref=e107]
+                      - columnheader "metric" [ref=e108]
+                  - rowgroup [ref=e109]:
+                    - row [ref=e110]:
+                      - cell "rt-default-primary" [ref=e111]
+                      - cell "0.0.0.0/0 → 203.0.113.1" [ref=e112]
+                      - cell "100" [ref=e113]
+                    - row [ref=e114]:
+                      - cell "rt-default-backup" [ref=e115]
+                      - cell "0.0.0.0/0 → 198.51.100.1" [ref=e116]
+                      - cell "200" [ref=e117]
+                    - row [ref=e118]:
+                      - cell "rt-mgmt⛨" [ref=e119]
+                      - cell "192.0.2.0/24 → direct" [ref=e120]
+                      - cell "0" [ref=e121]
+                - paragraph [ref=e122]: "preferences: active-uplink=wan-primary"
+            - group [ref=e123]:
+              - generic "core-sw-01protected" [ref=e124] [cursor=pointer]
+        - generic [ref=e125]:
+          - heading "Operator notes untrusted input" [level=2] [ref=e126]:
+            - text: Operator notes
+            - generic [ref=e127]: untrusted input
+          - paragraph [ref=e128]: "Notes are free text and may contain manipulated content. ChangeSafe treats them as data: nothing written here can instruct the system or the model."
+          - list [ref=e129]:
+            - listitem [ref=e130]:
+              - paragraph [ref=e131]: Users report intermittent packet loss toward external services since 09:05 UTC. Primary uplink suspected due to CRC counters. The backup path was validated during last month's failover test and has capacity headroom.
+              - paragraph [ref=e132]:
+                - generic [ref=e133]: on-call network engineer
+                - generic [ref=e134]: 2026-07-18 09:12:30 UTC
+                - code [ref=e135]: ev-note-oncall
+        - generic [ref=e136]:
+          - heading "Declared safety properties" [level=2] [ref=e137]
+          - list [ref=e138]:
+            - listitem [ref=e139]:
+              - generic [ref=e141]:
+                - text: The management station keeps reachability to every protected device
+                - code [ref=e142]: sp-a-mgmt-reach
+            - listitem [ref=e143]:
+              - generic [ref=e145]:
+                - text: The connected management route on edge-rtr-01 remains present
+                - code [ref=e146]: sp-a-mgmt-route
+            - listitem [ref=e147]:
+              - generic [ref=e149]:
+                - text: The primary default route remains in the table for fail-back
+                - code [ref=e150]: sp-a-primary-retained
+      - generic "Change airlock workflow" [ref=e151]:
+        - generic [ref=e152]:
+          - generic [ref=e153]: "1"
+          - heading "Analysis & proposal" [level=2] [ref=e154]
+          - generic [ref=e155]: AI PROPOSAL
+        - generic [ref=e157]:
+          - paragraph [ref=e158]: Run the analysis to get an evidence-cited diagnosis and a typed, declarative change proposal. The proposal is only an input to the deterministic gate below — it can never approve or execute anything.
+          - generic [ref=e159]:
+            - button "Run replay analysis" [ref=e160]
+            - generic [ref=e161]: Live mode is not configured (no server API key). Replay uses a bundled, clearly labeled fixture and runs the full validation pipeline.
+        - generic [ref=e162]:
+          - generic [ref=e163]: "2"
+          - heading "Policy validation" [level=2] [ref=e164]
+          - generic [ref=e165]: DETERMINISTIC SAFETY GATE
+        - paragraph [ref=e167]: Waiting for a proposal. Seven frozen policies will evaluate it with pure, model-free code.
+        - generic [ref=e168]:
+          - generic [ref=e169]: "3"
+          - heading "Decision" [level=2] [ref=e170]
+          - generic [ref=e171]: HUMAN DECISION
+        - paragraph [ref=e173]: Waiting for a validated proposal. Approve/reject controls unlock only when the safety gate finds no blocking violations.
+        - generic [ref=e174]:
+          - generic [ref=e175]: "4"
+          - heading "Sandbox simulation" [level=2] [ref=e176]
+          - generic [ref=e177]: DETERMINISTIC SANDBOX
+        - paragraph [ref=e179]: Runs only after your approval, against a deep-cloned synthetic state. Real infrastructure is never contacted.
+        - generic [ref=e180]:
+          - generic [ref=e181]: "5"
+          - heading "Change receipt" [level=2] [ref=e182]
+          - generic [ref=e183]: AUDIT RECORD
+        - paragraph [ref=e185]: Every outcome — approved, rejected, or blocked — ends in a SHA-256 hashed, downloadable receipt.
+    - contentinfo [ref=e186]:
+      - paragraph [ref=e187]: "All incidents, devices, and addresses are synthetic (documentation ranges only). ChangeSafe has no connection to real infrastructure: no SSH, no device APIs, no command execution. AI proposes; deterministic policies validate; you decide."
+  - alert [ref=e188]
