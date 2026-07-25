@@ -35,8 +35,6 @@ deterministic local code does that, and a human makes the decision.
      you used for this project, run /feedback and copy the session ID it
      prints. Do not guess or invent the ID. -->
 
-Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
-
 ## Dated milestones
 
 ### 2026-07-19
@@ -140,10 +138,6 @@ Primary Codex `/feedback` session ID: `TODO-OWNER-INSERT`
 ## Submission checklist (owner)
 
 - [ ] Record the demo video from `docs/DEMO_SCRIPT.md` (≤3:00).
-- [ ] Fill in the Codex usage paragraph in `README.md` and this file, and
-      replace `TODO-OWNER-INSERT` above with the primary Codex `/feedback`
-      session ID (run `/feedback` in your Codex session and copy the ID —
-      never guess it).
 - [ ] Optional: with an `OPENAI_API_KEY`, run
       `CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test`,
       review `scenarios/scenario-a-failover/replay-fixture.captured.json`,
