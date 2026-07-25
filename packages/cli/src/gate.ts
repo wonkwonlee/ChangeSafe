@@ -12,7 +12,7 @@ import {
 } from "@changesafe/core";
 
 import { resolveDomain } from "./domains";
-import { UsageError, parseOrThrow, readJsonFile } from "./io";
+import { UsageError, parseOrThrow, readJsonFile, readTextFile } from "./io";
 import {
   EXIT_BLOCKED,
   EXIT_OK,
@@ -30,8 +30,26 @@ export interface GateOptions {
   receipt?: string;
   format: "pretty" | "json";
   sourceId?: string;
+  /** Untrusted free text that travelled with the change (a PR body). */
+  context?: string;
   /** Injectable so tests get deterministic receipts. */
   now?: string;
+}
+
+/**
+ * Derive a schema-valid source id from a file path. Plan files are commonly
+ * named `tfplan.json` or `prod.plan.tfplan.json`, none of which are valid
+ * identifiers, so this normalizes rather than failing the run over a name.
+ */
+function sourceIdFromPath(filePath: string): string {
+  const slug = path
+    .basename(filePath)
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^[^a-z]+/, "")
+    .replace(/-+$/g, "");
+  return slug.length >= 2 ? slug.slice(0, 64) : "cli-gate";
 }
 
 /**
@@ -56,17 +74,37 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
 
   if (!inputPath) {
     throw new UsageError(
-      `--input is required (${domain.inputDescription}), or use --scenario <dir>`,
+      `--input is required (${domain.inputDescription})` +
+        (domain.derivesProposalFromInput ? "" : ", or use --scenario <dir>"),
     );
   }
-  if (!proposalPath) {
+  if (!proposalPath && !domain.derivesProposalFromInput) {
     throw new UsageError("--proposal is required, or use --scenario <dir>");
   }
 
-  const { input, inputId } = domain.parseInput(readJsonFile(inputPath, "incident bundle"));
-  const { proposal, provenance, fixtureId } = domain.parseProposal(
-    readJsonFile(proposalPath, "proposal"),
+  // Text that arrived with the change — a PR body, a commit message — is
+  // untrusted data the gate scans, never instructions it follows.
+  const context = options.context
+    ? [{ kind: "context", text: readTextFile(options.context, "context") }]
+    : [];
+
+  const { input, inputId } = domain.parseInput(
+    readJsonFile(inputPath, domain.derivesProposalFromInput ? "plan" : "incident bundle"),
+    context,
   );
+
+  const { proposal, provenance, fixtureId } =
+    proposalPath !== undefined
+      ? domain.parseProposal(readJsonFile(proposalPath, "proposal"))
+      : {
+          proposal: domain.deriveProposal?.(input),
+          provenance: null,
+          fixtureId: null,
+        };
+
+  if (!proposal) {
+    throw new UsageError(`the ${domain.id} domain could not derive a proposal from the input`);
+  }
 
   const policyPack = options.policyPack
     ? parseOrThrow(PolicyPackSchema, readJsonFile(options.policyPack, "policy pack"), "policy pack")
@@ -91,7 +129,7 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
 
   if (options.receipt) {
     const receipt = await createReceipt({
-      sourceId: sourceId ?? path.basename(path.resolve(inputPath)).replace(/\.json$/, ""),
+      sourceId: sourceId ?? sourceIdFromPath(inputPath),
       inputId,
       input,
       proposal: proposal as ChangeProposal,

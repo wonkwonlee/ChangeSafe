@@ -1,0 +1,137 @@
+name: "ChangeSafe gate"
+description: >-
+  Gate an AI-proposed infrastructure change with deterministic safety policies.
+  Reads a Terraform plan (or an incident bundle); never runs Terraform and
+  never touches infrastructure.
+author: "ChangeSafe"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  plan:
+    description: "Path to `terraform show -json` output to gate."
+    required: false
+  input:
+    description: "Path to the analyzed input for a non-Terraform domain."
+    required: false
+  proposal:
+    description: "Path to a proposal file, when the domain does not derive one."
+    required: false
+  domain:
+    description: "Domain to gate against: terraform or network."
+    required: false
+    default: "terraform"
+  context:
+    description: >-
+      Path to untrusted text that travelled with the change (usually the pull
+      request body). Scanned for injected instructions; never obeyed.
+    required: false
+  policy-pack:
+    description: "Path to a JSON policy pack of typed threshold overrides."
+    required: false
+  receipt:
+    description: "Where to write the hashed receipt."
+    required: false
+    default: "changesafe-receipt.json"
+  comment:
+    description: "Post the findings as a pull request comment."
+    required: false
+    default: "true"
+  fail-on-block:
+    description: >-
+      Fail the step when the gate blocks. Turn this off only to observe the
+      gate before enforcing it.
+    required: false
+    default: "true"
+
+outputs:
+  blocked:
+    description: "true when the gate found a blocking policy violation."
+    value: ${{ steps.gate.outputs.blocked }}
+  risk:
+    description: "Derived risk level: LOW, MEDIUM, HIGH, or CRITICAL."
+    value: ${{ steps.gate.outputs.risk }}
+  receipt:
+    description: "Path to the written receipt."
+    value: ${{ steps.gate.outputs.receipt }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Build the gate
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --ignore-scripts --no-audit --no-fund
+        npm run build:cli
+
+    - name: Run the gate
+      id: gate
+      shell: bash
+      run: |
+        set +e
+        ARGS=(gate --domain "${{ inputs.domain }}" --format json --receipt "${{ inputs.receipt }}")
+        if [ -n "${{ inputs.plan }}" ]; then ARGS+=(--input "${{ inputs.plan }}"); fi
+        if [ -n "${{ inputs.input }}" ]; then ARGS+=(--input "${{ inputs.input }}"); fi
+        if [ -n "${{ inputs.proposal }}" ]; then ARGS+=(--proposal "${{ inputs.proposal }}"); fi
+        if [ -n "${{ inputs.context }}" ]; then ARGS+=(--context "${{ inputs.context }}"); fi
+        if [ -n "${{ inputs.policy-pack }}" ]; then ARGS+=(--policy-pack "${{ inputs.policy-pack }}"); fi
+
+        node "${{ github.action_path }}/packages/cli/dist/changesafe.js" "${ARGS[@]}" > changesafe-result.json
+        CODE=$?
+        set -e
+
+        # Exit 2 means the gate could not evaluate at all. That is never an
+        # approval, so it fails the step regardless of fail-on-block.
+        if [ "$CODE" -eq 2 ]; then
+          echo "::error::ChangeSafe could not evaluate this change."
+          cat changesafe-result.json || true
+          exit 2
+        fi
+
+        BLOCKED=$(node -e "process.stdout.write(String(require('./changesafe-result.json').blocked))")
+        RISK=$(node -e "process.stdout.write(require('./changesafe-result.json').riskLevel)")
+        echo "blocked=$BLOCKED" >> "$GITHUB_OUTPUT"
+        echo "risk=$RISK" >> "$GITHUB_OUTPUT"
+        echo "receipt=${{ inputs.receipt }}" >> "$GITHUB_OUTPUT"
+
+        node "${{ github.action_path }}/scripts/format-summary.mjs" changesafe-result.json > changesafe-summary.md
+        cat changesafe-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$BLOCKED" = "true" ] && [ "${{ inputs.fail-on-block }}" = "true" ]; then
+          echo "::error::ChangeSafe blocked this change (risk $RISK)."
+          exit 1
+        fi
+
+    - name: Comment on the pull request
+      if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' && always() }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require("node:fs");
+          if (!fs.existsSync("changesafe-summary.md")) return;
+          const body = fs.readFileSync("changesafe-summary.md", "utf8");
+          const marker = "<!-- changesafe-gate -->";
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const existing = await github.rest.issues.listComments({ owner, repo, issue_number });
+          const previous = existing.data.find((comment) => comment.body?.includes(marker));
+          if (previous) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - name: Upload the receipt
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: changesafe-receipt
+        path: ${{ inputs.receipt }}
+        if-no-files-found: warn

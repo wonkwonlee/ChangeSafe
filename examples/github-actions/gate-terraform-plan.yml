@@ -1,0 +1,61 @@
+# Gate an AI-generated Terraform pull request.
+#
+# Copy this into .github/workflows/ in your infrastructure repository.
+# ChangeSafe reads the plan JSON your pipeline already produces. It never
+# runs Terraform, never holds credentials for your infrastructure, and never
+# applies anything.
+#
+# What it does: fails the check when the plan destroys stateful or protected
+# resources, and posts the findings as a pull request comment. A clean run is
+# not an approval — your review is.
+
+name: Infrastructure change gate
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+
+# The plan step needs read access to your cloud; the gate step needs none.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      # Produce the artifact ChangeSafe reads. Use a read-only role here:
+      # a plan needs to read state, nothing more.
+      - name: Terraform plan
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
+
+      # The pull request body travels with the change and is attacker-
+      # influenceable, so it is passed as untrusted text: the gate scans it
+      # for injected instructions and never obeys it.
+      - name: Capture the pull request body
+        run: |
+          cat <<'CHANGESAFE_PR_BODY' > pr-body.txt
+          ${{ github.event.pull_request.body }}
+          CHANGESAFE_PR_BODY
+
+      - name: ChangeSafe gate
+        uses: wonkwonlee/ChangeSafe@main
+        with:
+          plan: tfplan.json
+          context: pr-body.txt
+          # Optional: tighten or loosen thresholds for your estate.
+          # policy-pack: .changesafe/policy-pack.json
+          #
+          # Set fail-on-block: false for a soak period if you want to observe
+          # the gate's verdicts before enforcing them.

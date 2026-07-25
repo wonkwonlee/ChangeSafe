@@ -38,23 +38,43 @@ export const DiagnosisSchema = z.strictObject({
  * operation-value schema. Core exports permissive defaults; a domain passes
  * its own union to get strict, model-bindable schemas.
  */
-export function makeProposalSchemas<TValue extends z.ZodTypeAny>(valueSchema: TValue) {
+export interface ProposalLimits {
+  /** Upper bound on operations. Small for model-authored proposals; a
+   *  machine-derived plan legitimately carries hundreds. */
+  maxOperations?: number;
+  maxEvidenceIdsPerClaim?: number;
+}
+
+export function makeProposalSchemas<TValue extends z.ZodTypeAny>(
+  valueSchema: TValue,
+  limits: ProposalLimits = {},
+) {
+  const maxOperations = limits.maxOperations ?? 10;
+  const maxEvidence = limits.maxEvidenceIdsPerClaim ?? 20;
   const operation = z.strictObject({
     op: ChangeOpKindSchema,
     path: StatePathSchema,
     /** Required for add/replace; null for remove (enforced by the domain engine). */
     value: valueSchema,
     reason: z.string().min(1).max(500),
-    evidenceIds: z.array(EvidenceIdSchema).min(1).max(10),
+    evidenceIds: z.array(EvidenceIdSchema).min(1).max(maxEvidence),
+  });
+
+  const diagnosis = z.strictObject({
+    likelyCause: z.string().min(1).max(2000),
+    /** Advisory only. Nothing in the gate may read this. */
+    confidence: z.number().min(0).max(1),
+    evidenceIds: z.array(EvidenceIdSchema).min(1).max(maxEvidence),
+    assumptions: z.array(z.string().min(1).max(400)).max(10),
   });
 
   const proposal = z.strictObject({
     proposalId: IdSchema,
     summary: z.string().min(1).max(1000),
-    diagnosis: DiagnosisSchema,
-    operations: z.array(operation).min(1).max(10),
+    diagnosis,
+    operations: z.array(operation).min(1).max(maxOperations),
     /** Empty rollback is schema-valid so a policy can block it deterministically. */
-    rollbackOperations: z.array(operation).max(10),
+    rollbackOperations: z.array(operation).max(maxOperations),
     /** Empty steps are schema-valid so a policy can warn deterministically. */
     verificationSteps: z.array(VerificationStepSchema).max(10),
   });

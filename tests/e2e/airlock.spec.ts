@@ -60,7 +60,7 @@ test("unsafe scenario: blocked by the gate, approval impossible, blocked receipt
   await expect(page.getByText("Change severs management reachability")).toBeVisible();
   await expect(page.getByText("Change removes or disables a protected resource")).toBeVisible();
   await expect(
-    page.getByText("Incident content contains instruction-like language"),
+    page.getByText("Input content contains instruction-like language"),
   ).toBeVisible();
 
   // Approval is visibly impossible.

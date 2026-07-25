@@ -44,8 +44,13 @@ export function evaluatePolicies<TInput, TState>(
     input,
     proposal,
     adapter,
-    pack: resolvePolicyPack(options.policyPack),
+    // Core defaults, then the domain's sane baseline, then the user's pack.
+    pack: resolvePolicyPack(adapter.defaultPolicyPack, options.policyPack),
   };
+
+  const skipped = new Set(
+    (adapter.skippedUniversalPolicies ?? []).map((skip) => skip.policyId),
+  );
 
   const domainFindings = adapter.policies.map((policy) => {
     const finding = policy.evaluate(context);
@@ -59,13 +64,26 @@ export function evaluatePolicies<TInput, TState>(
     return finding;
   });
 
+  const universal: [string, () => PolicyFinding][] = [
+    ["PATCH_SCHEMA", () => evaluatePatchSchema(context)],
+    ["BLAST_RADIUS", () => evaluateBlastRadius(context)],
+    ["ROLLBACK_COMPLETE", () => evaluateRollbackComplete(context)],
+    ["VERIFICATION_REQUIRED", () => evaluateVerificationRequired(context)],
+    ["UNTRUSTED_INSTRUCTION", () => evaluateUntrustedInstruction(context)],
+  ];
+  const run = (id: string): PolicyFinding[] => {
+    if (skipped.has(id)) return [];
+    const entry = universal.find(([candidate]) => candidate === id);
+    return entry ? [entry[1]()] : [];
+  };
+
   const findings: PolicyFinding[] = [
-    evaluatePatchSchema(context),
+    ...run("PATCH_SCHEMA"),
     ...domainFindings,
-    evaluateBlastRadius(context),
-    evaluateRollbackComplete(context),
-    evaluateVerificationRequired(context),
-    evaluateUntrustedInstruction(context),
+    ...run("BLAST_RADIUS"),
+    ...run("ROLLBACK_COMPLETE"),
+    ...run("VERIFICATION_REQUIRED"),
+    ...run("UNTRUSTED_INSTRUCTION"),
   ];
 
   return { findings, riskLevel: deriveRiskLevel(findings) };
@@ -75,6 +93,9 @@ export function evaluatePolicies<TInput, TState>(
 export function policyOrder<TInput, TState>(
   adapter: DomainAdapter<TInput, TState>,
 ): string[] {
+  const skipped = new Set(
+    (adapter.skippedUniversalPolicies ?? []).map((skip) => skip.policyId),
+  );
   return [
     "PATCH_SCHEMA",
     ...adapter.policies.map((policy) => policy.id),
@@ -82,5 +103,5 @@ export function policyOrder<TInput, TState>(
     "ROLLBACK_COMPLETE",
     "VERIFICATION_REQUIRED",
     "UNTRUSTED_INSTRUCTION",
-  ];
+  ].filter((policyId) => !skipped.has(policyId));
 }

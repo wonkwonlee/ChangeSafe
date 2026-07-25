@@ -16,10 +16,14 @@ USAGE
   changesafe scenario  init <name>      scaffold a new scenario
 
 GATE OPTIONS
-  --input <file>        the analyzed input (an incident bundle)
+  --input <file>        the analyzed input: an incident bundle, or
+                        \`terraform show -json\` output for --domain terraform
   --proposal <file>     a proposal, or a replay fixture containing one
+                        (the terraform domain derives this from the plan)
   --scenario <dir>      shorthand for --input <dir>/incident.json
                         and --proposal <dir>/replay-fixture.json
+  --context <file>      untrusted text that came with the change (a PR body),
+                        scanned for injected instructions
   --domain <id>         domain to gate against (default: network; available: ${DOMAIN_IDS.join(", ")})
   --policy-pack <file>  typed threshold overrides
   --receipt <file>      write a hashed receipt of this evaluation
@@ -45,6 +49,7 @@ const OPTION_SPEC = {
   "policy-pack": { type: "string" },
   receipt: { type: "string" },
   "source-id": { type: "string" },
+  context: { type: "string" },
   format: { type: "string", default: "pretty" },
   dir: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
@@ -91,6 +96,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           policyPack: values["policy-pack"],
           receipt: values.receipt,
           sourceId: values["source-id"],
+          context: values.context,
           format,
         },
         console,

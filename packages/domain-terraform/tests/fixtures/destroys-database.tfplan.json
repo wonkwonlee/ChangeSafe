@@ -1,0 +1,42 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.data.aws_db_instance.primary",
+      "module_address": "module.data",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "primary",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "identifier": "orders-primary",
+          "engine": "postgres",
+          "allocated_storage": 200,
+          "tags": { "service": "orders", "tier": "production" }
+        },
+        "after": null
+      }
+    },
+    {
+      "address": "module.data.aws_db_instance.replacement",
+      "module_address": "module.data",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "replacement",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "identifier": "orders-primary-v2",
+          "engine": "postgres",
+          "allocated_storage": 200,
+          "tags": { "service": "orders", "tier": "production" }
+        }
+      }
+    }
+  ]
+}

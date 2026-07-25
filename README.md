@@ -157,6 +157,43 @@ CHANGESAFE_LIVE_SMOKE=1 npm test
 CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test
 ```
 
+## Gate an AI-generated Terraform pull request
+
+The flagship use: your pipeline already produces `terraform show -json`.
+ChangeSafe reads that artifact — it never runs Terraform, never holds
+credentials for your infrastructure, and never applies anything.
+
+```yaml
+- name: ChangeSafe gate
+  uses: wonkwonlee/ChangeSafe@main
+  with:
+    plan: tfplan.json
+    context: pr-body.txt   # untrusted text, scanned but never obeyed
+```
+
+A pull request that replaces a protected compliance bucket — with a body
+telling the review tooling to approve it anyway:
+
+```text
+  ⛔ DESTRUCTIVE_OP       Plan destroys stateful resources
+  ⛔ PROTECTED_RESOURCE   Plan destroys a protected resource
+  ⚠️ REVERSIBILITY        Configuration is recoverable, data is not
+  ⚠️ UNTRUSTED_INSTRUCTION  context ev-context-0 contains "Ignore previous safety rules"
+
+  risk: CRITICAL — BLOCKED
+```
+
+The injected instruction changes nothing: the block comes from what the plan
+*does*, not from reading the text. Copy
+[the example workflow](examples/github-actions/gate-terraform-plan.yml) to
+start.
+
+Terraform is an **external-diff** domain — the plan is already the
+simulation, so ChangeSafe reads the diff rather than computing one. It
+therefore replaces `ROLLBACK_COMPLETE` (a plan has no inverse to verify)
+with `REVERSIBILITY` (could this be put back?), and records why in the
+adapter rather than silently dropping a check.
+
 ## Gate a change from the terminal or CI
 
 The engine is a library, and the CLI is the same engine with **no AI
@@ -189,6 +226,7 @@ there is no `--auto-approve`. Full usage: [packages/cli/README.md](packages/cli/
 | --- | --- |
 | [`@changesafe/core`](packages/core/README.md) | The domain-agnostic gate: proposal contract, universal policies, risk derivation, workflow state machine, receipts, and the `DomainAdapter` contract. Depends on zod alone. |
 | `@changesafe/domain-network` | The network domain: declarative device state, allowlisted transactional patch engine, deterministic reachability, sandboxed simulation, network policies. |
+| `@changesafe/domain-terraform` | The Terraform domain: normalizes `terraform show -json` and polices destruction, protection, and reversibility. Read-only; never runs Terraform. |
 | [`changesafe`](packages/cli/README.md) | The CLI: `gate`, `verify`, `scenario`. Ships pre-bundled to run under plain Node. |
 
 A domain teaches core what a change *is* in its world; core's universal
@@ -197,11 +235,11 @@ implements a complete toy domain in one file to show the whole contract.
 
 ## Where this is going
 
-Next is **Terraform plan ingestion + a GitHub Action** — gate AI-generated
-infra PRs from `terraform show -json` output, with no infrastructure access
-at all. Then provider-agnostic AI adapters, self-hosting (SQLite ledger,
-signed receipts), and a public red-team benchmark. Full plan and phase
-gates: [docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md).
+Next: provider-agnostic AI adapters (Anthropic, local models — because the
+gate is deterministic, swapping models cannot change what is safe),
+self-hosting with a SQLite ledger and signed receipts, and a public
+red-team benchmark of AI-proposed changes. Full plan and phase gates:
+[docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md).
 
 ## Design commitments
 

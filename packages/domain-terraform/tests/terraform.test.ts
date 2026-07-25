@@ -1,0 +1,232 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+import {
+  DomainError,
+  evaluatePolicies,
+  policyOrder,
+  validateProposalEvidence,
+  type PolicyFinding,
+} from "@changesafe/core";
+
+import { createTerraformDomain, terraformDomain } from "../src/adapter";
+import { deriveProposal, normalizePlan } from "../src/normalize";
+
+const FIXTURES = path.join(import.meta.dirname, "fixtures");
+
+function loadPlan(name: string): unknown {
+  return JSON.parse(readFileSync(path.join(FIXTURES, `${name}.tfplan.json`), "utf8"));
+}
+
+function gate(
+  name: string,
+  options: { context?: { kind: string; text: string }[]; pack?: Parameters<typeof createTerraformDomain>[0] } = {},
+) {
+  const domain = options.pack ? createTerraformDomain(options.pack) : terraformDomain;
+  const input = normalizePlan(loadPlan(name), { context: options.context });
+  const proposal = deriveProposal(input);
+  validateProposalEvidence(domain, input, proposal);
+  return { ...evaluatePolicies(domain, input, proposal), input, proposal, domain };
+}
+
+function statusOf(findings: PolicyFinding[], policyId: string): string | undefined {
+  return findings.find((finding) => finding.policyId === policyId)?.status;
+}
+
+describe("plan normalization", () => {
+  it("keeps only changes that actually change something", () => {
+    const input = normalizePlan(loadPlan("safe-scale-up"));
+    // The fixture includes a no-op; counting it would inflate blast radius.
+    expect(input.changes).toHaveLength(3);
+    expect(input.changes.map((change) => change.action).sort()).toEqual([
+      "create",
+      "update",
+      "update",
+    ]);
+    expect(input.terraformVersion).toBe("1.9.5");
+  });
+
+  it("reads a two-element action array as a replace", () => {
+    const input = normalizePlan(loadPlan("protected-and-injected"));
+    const bucket = input.changes.find((change) => change.resourceType === "aws_s3_bucket");
+    expect(bucket?.action).toBe("replace");
+  });
+
+  it("derives evidence from the plan's own entries", () => {
+    const input = normalizePlan(loadPlan("destroys-database"));
+    expect(input.changes.map((change) => change.evidenceId)).toEqual(["ev-plan-0", "ev-plan-1"]);
+    const proposal = deriveProposal(input);
+    // Every operation cites the plan entry that justifies it.
+    expect(proposal.operations.every((operation) => operation.evidenceIds.length === 1)).toBe(true);
+    expect(() => validateProposalEvidence(terraformDomain, input, proposal)).not.toThrow();
+  });
+
+  it("collects tags from before and after state", () => {
+    const input = normalizePlan(loadPlan("protected-and-injected"));
+    const bucket = input.changes.find((change) => change.resourceType === "aws_s3_bucket");
+    expect(bucket?.tags.changesafe_protected).toBe("true");
+  });
+
+  it("maps plan actions onto the gate's operation kinds", () => {
+    const proposal = deriveProposal(normalizePlan(loadPlan("destroys-database")));
+    const ops = new Map(proposal.operations.map((operation) => [operation.path, operation.op]));
+    expect(ops.get("/resources/module-data-aws-db-instance-primary")).toBe("remove");
+    expect(ops.get("/resources/module-data-aws-db-instance-replacement")).toBe("add");
+  });
+
+  it("rejects a file that is not plan JSON", () => {
+    expect(() => normalizePlan({ hello: "world", resource_changes: "nope" })).toThrow(DomainError);
+    expect(() => normalizePlan("not even an object")).toThrow(/terraform show -json/);
+  });
+
+  it("refuses to gate a plan with nothing to do", () => {
+    expect(() => deriveProposal(normalizePlan({ resource_changes: [] }))).toThrow(
+      /nothing to gate/,
+    );
+  });
+
+  it("tolerates unknown fields Terraform adds across versions", () => {
+    const plan = loadPlan("safe-scale-up") as Record<string, unknown>;
+    plan.checks = [{ some: "future field" }];
+    (plan.resource_changes as Record<string, unknown>[])[0]!.importing = { id: "abc" };
+    expect(() => normalizePlan(plan)).not.toThrow();
+  });
+});
+
+describe("the terraform gate", () => {
+  it("runs a domain-appropriate policy set", () => {
+    // ROLLBACK_COMPLETE and VERIFICATION_REQUIRED do not apply to a plan;
+    // the domain replaces the first and documents both.
+    expect(policyOrder(terraformDomain)).toEqual([
+      "PATCH_SCHEMA",
+      "DESTRUCTIVE_OP",
+      "PROTECTED_RESOURCE",
+      "REVERSIBILITY",
+      "BLAST_RADIUS",
+      "UNTRUSTED_INSTRUCTION",
+    ]);
+    for (const skip of terraformDomain.skippedUniversalPolicies ?? []) {
+      expect(skip.because.length).toBeGreaterThan(20);
+      expect(skip.replacedBy.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("passes an ordinary scale-up", () => {
+    const { findings, riskLevel } = gate("safe-scale-up");
+    expect(findings.every((finding) => finding.status === "PASS")).toBe(true);
+    expect(riskLevel).toBe("LOW");
+  });
+
+  it("blocks a plan that destroys a database", () => {
+    const { findings, riskLevel } = gate("destroys-database");
+    expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("BLOCK");
+    expect(statusOf(findings, "REVERSIBILITY")).toBe("WARN");
+    expect(riskLevel).toBe("CRITICAL");
+    const destructive = findings.find((finding) => finding.policyId === "DESTRUCTIVE_OP");
+    expect(destructive?.affectedResources).toEqual([
+      "resource:module.data.aws_db_instance.primary",
+    ]);
+  });
+
+  it("accepts a declared backup as a documented exception, still visibly", () => {
+    const plan = loadPlan("destroys-database") as {
+      resource_changes: { change: { before: Record<string, unknown> } }[];
+    };
+    (plan.resource_changes[0]!.change.before.tags as Record<string, string>).changesafe_backup =
+      "true";
+    const input = normalizePlan(plan);
+    const proposal = deriveProposal(input);
+    const { findings, riskLevel } = evaluatePolicies(terraformDomain, input, proposal);
+    // Downgraded, never silenced: the exception is in the receipt.
+    expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("WARN");
+    expect(statusOf(findings, "REVERSIBILITY")).toBe("PASS");
+    expect(riskLevel).toBe("MEDIUM");
+  });
+
+  it("blocks destroying a protected resource and flags the injected PR text", () => {
+    const context = [
+      {
+        kind: "pull request body",
+        text: readFileSync(path.join(FIXTURES, "injected-pr-body.txt"), "utf8"),
+      },
+    ];
+    const { findings, riskLevel } = gate("protected-and-injected", { context });
+
+    expect(statusOf(findings, "PROTECTED_RESOURCE")).toBe("BLOCK");
+    expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("BLOCK");
+    expect(statusOf(findings, "UNTRUSTED_INSTRUCTION")).toBe("WARN");
+    expect(riskLevel).toBe("CRITICAL");
+
+    const injection = findings.find((finding) => finding.policyId === "UNTRUSTED_INSTRUCTION");
+    expect(injection?.affectedResources).toEqual(["evidence:ev-context-0"]);
+    // The injection asked for approval; the gate blocked anyway, because the
+    // block comes from the plan's contents, not from reading the text.
+    expect(injection?.status).not.toBe("BLOCK");
+  });
+
+  it("blocks a destroy whose prior state was never recorded", () => {
+    const input = normalizePlan({
+      resource_changes: [
+        {
+          address: "aws_instance.orphan",
+          type: "aws_instance",
+          change: { actions: ["delete"], before: null, after: null },
+        },
+      ],
+    });
+    const proposal = deriveProposal(input);
+    const { findings } = evaluatePolicies(terraformDomain, input, proposal);
+    expect(statusOf(findings, "REVERSIBILITY")).toBe("BLOCK");
+  });
+
+  it("uses thresholds suited to cloud plans, not to routers", () => {
+    // Three changed resources would breach the network domain's default of
+    // two; for a plan it is unremarkable.
+    const { findings } = gate("safe-scale-up");
+    expect(statusOf(findings, "BLAST_RADIUS")).toBe("PASS");
+    expect(terraformDomain.defaultPolicyPack?.blastRadius?.warnAt).toBe(15);
+  });
+
+  it("lets a pack protect addresses by pattern", () => {
+    const { findings } = gate("safe-scale-up", {
+      pack: { protectedAddressPatterns: ["module.web.aws_autoscaling_group.*"] },
+    });
+    // The pattern matches, but the plan only updates it — protection is about
+    // destruction, not change.
+    expect(statusOf(findings, "PROTECTED_RESOURCE")).toBe("PASS");
+
+    const destroyed = gate("destroys-database", {
+      pack: { protectedAddressPatterns: ["module.data.*"] },
+    });
+    expect(statusOf(destroyed.findings, "PROTECTED_RESOURCE")).toBe("BLOCK");
+  });
+
+  it("lets a pack decide what counts as stateful", () => {
+    const { findings } = gate("safe-scale-up", {
+      pack: { statefulResourcePatterns: ["autoscaling"] },
+    });
+    // Nothing is destroyed here, so widening statefulness changes nothing.
+    expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("PASS");
+
+    const narrowed = gate("destroys-database", { pack: { statefulResourcePatterns: ["_nothing_"] } });
+    // With databases no longer classed as stateful, destruction warns.
+    expect(statusOf(narrowed.findings, "DESTRUCTIVE_OP")).toBe("WARN");
+  });
+
+  it("blocks an operation that misrepresents what the plan does", () => {
+    const input = normalizePlan(loadPlan("destroys-database"));
+    const proposal = deriveProposal(input);
+    // Claim the database delete is a harmless update.
+    const tampered = {
+      ...proposal,
+      operations: proposal.operations.map((operation) =>
+        operation.path === "/resources/module-data-aws-db-instance-primary"
+          ? { ...operation, op: "replace" as const }
+          : operation,
+      ),
+    };
+    const { findings } = evaluatePolicies(terraformDomain, input, tampered);
+    expect(statusOf(findings, "PATCH_SCHEMA")).toBe("BLOCK");
+  });
+});

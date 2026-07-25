@@ -18,7 +18,8 @@
   "dependencies": {
     "@changesafe/core": "0.1.0",
     "@changesafe/domain-network": "0.1.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@changesafe/domain-terraform": "0.1.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

@@ -57,6 +57,43 @@ jobs:
             test-results/
           retention-days: 7
 
+  action-selftest:
+    name: The Action's gate path works end to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:cli
+      # Exercise exactly what action.yml runs: gate a plan, render the
+      # comment, and assert the exit code and verdict.
+      - name: Gate a destructive plan
+        run: |
+          set +e
+          node packages/cli/dist/changesafe.js gate \
+            --domain terraform \
+            --input packages/domain-terraform/tests/fixtures/protected-and-injected.tfplan.json \
+            --context packages/domain-terraform/tests/fixtures/injected-pr-body.txt \
+            --format json --receipt receipt.json > result.json
+          CODE=$?
+          set -e
+          test "$CODE" -eq 1 || { echo "expected exit 1 (blocked), got $CODE"; exit 1; }
+          test "$(node -e "process.stdout.write(String(require('./result.json').blocked))")" = "true"
+          node scripts/format-summary.mjs result.json | tee summary.md
+          grep -q "ChangeSafe blocked this change" summary.md
+      - name: Verify the receipt it wrote
+        run: node packages/cli/dist/changesafe.js verify receipt.json --format json
+      - name: Gate a benign plan
+        run: |
+          node packages/cli/dist/changesafe.js gate \
+            --domain terraform \
+            --input packages/domain-terraform/tests/fixtures/safe-scale-up.tfplan.json \
+            --format json > benign.json
+          test "$(node -e "process.stdout.write(String(require('./benign.json').blocked))")" = "false"
+
   no-secret-leak:
     name: Secrets never reach the client bundle
     runs-on: ubuntu-latest

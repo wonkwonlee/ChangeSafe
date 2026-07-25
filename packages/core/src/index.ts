@@ -38,6 +38,7 @@ export {
   makeProposalSchemas,
 } from "./proposal";
 export type {
+  ProposalLimits,
   ChangeOpKind,
   ChangeOperation,
   ChangeProposal,
@@ -80,7 +81,13 @@ export { initialState, transition } from "./state-machine";
 export type { WorkflowEvent, WorkflowPhase, WorkflowState } from "./state-machine";
 
 // Domain contract and the gate
-export type { DomainAdapter, DomainPolicy, PolicyContext, PolicyEvaluator } from "./domain";
+export type {
+  DomainAdapter,
+  DomainPolicy,
+  PolicyContext,
+  PolicyEvaluator,
+  SkippedUniversalPolicy,
+} from "./domain";
 export {
   evaluateBlastRadius,
   evaluatePatchSchema,

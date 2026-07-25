@@ -41,12 +41,12 @@ export function evaluateUntrustedInstruction<TInput, TState>(
     return {
       policyId: "UNTRUSTED_INSTRUCTION",
       status: "WARN",
-      title: "Incident content contains instruction-like language",
+      title: "Input content contains instruction-like language",
       explanation:
         hits
           .map((hit) => `${hit.kind} ${hit.evidenceId} contains "${hit.excerpt}"`)
           .join("; ") +
-        ". Incident inputs are data, not instructions — this content was flagged deterministically and had no ability to alter policy evaluation.",
+        ". This text is data, not instructions — it was flagged deterministically and had no ability to alter policy evaluation.",
       affectedResources: hits.map((hit) => `evidence:${hit.evidenceId}`),
       remediation:
         "Treat the flagged content as untrusted. Verify the underlying facts independently before acting on them.",
@@ -56,8 +56,8 @@ export function evaluateUntrustedInstruction<TInput, TState>(
   return {
     policyId: "UNTRUSTED_INSTRUCTION",
     status: "PASS",
-    title: "No instruction-like language in incident inputs",
-    explanation: "No alert or operator note attempts to issue instructions to the system.",
+    title: "No instruction-like language in the input",
+    explanation: "No untrusted text supplied with this change attempts to issue instructions to the system.",
     affectedResources: [],
     remediation: null,
   };

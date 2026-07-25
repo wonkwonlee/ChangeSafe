@@ -5,6 +5,11 @@ import {
   NetworkReplayFixtureSchema,
   networkDomain,
 } from "@changesafe/domain-network";
+import {
+  deriveProposal,
+  normalizePlan,
+  terraformDomain,
+} from "@changesafe/domain-terraform";
 import { z } from "zod";
 
 import { UsageError, parseOrThrow } from "./io";
@@ -17,7 +22,17 @@ export interface CliDomain {
   readonly id: string;
   readonly adapter: DomainAdapter<never, never>;
   /** Parse and validate the analyzed input (a bundle, a plan, a snapshot). */
-  parseInput(raw: unknown): { input: unknown; inputId: string };
+  parseInput(raw: unknown, context?: { kind: string; text: string }[]): {
+    input: unknown;
+    inputId: string;
+  };
+
+  /**
+   * External-diff domains derive the proposal from the input itself — the
+   * plan already says what will change — so `--proposal` is not required.
+   */
+  readonly derivesProposalFromInput?: boolean;
+  deriveProposal?(input: unknown): unknown;
   /** Parse a proposal file, accepting either a bare proposal or a fixture. */
   parseProposal(raw: unknown): {
     proposal: unknown;
@@ -58,7 +73,31 @@ const network: CliDomain = {
   },
 };
 
-const DOMAINS: Record<string, CliDomain> = { network };
+const terraform: CliDomain = {
+  id: "terraform",
+  adapter: terraformDomain as unknown as DomainAdapter<never, never>,
+  inputDescription: "terraform show -json output",
+  derivesProposalFromInput: true,
+
+  parseInput(raw, context) {
+    const input = normalizePlan(raw, { context });
+    return { input, inputId: input.planId };
+  },
+
+  deriveProposal(input) {
+    return deriveProposal(input as Parameters<typeof deriveProposal>[0]);
+  },
+
+  parseProposal(raw) {
+    // Accepted for completeness, but a plan-derived proposal is the norm.
+    throw new UsageError(
+      "the terraform domain derives its proposal from the plan; pass only --input",
+    );
+    void raw;
+  },
+};
+
+const DOMAINS: Record<string, CliDomain> = { network, terraform };
 
 export const DOMAIN_IDS = Object.keys(DOMAINS);
 

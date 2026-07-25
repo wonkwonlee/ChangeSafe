@@ -52,9 +52,21 @@ export const DEFAULT_POLICY_PACK: ResolvedPolicyPack = {
   verification: { requirePrecondition: true, requirePostcheck: true },
 };
 
-export function resolvePolicyPack(pack?: PolicyPack | null): ResolvedPolicyPack {
-  return {
-    blastRadius: { ...DEFAULT_POLICY_PACK.blastRadius, ...pack?.blastRadius },
-    verification: { ...DEFAULT_POLICY_PACK.verification, ...pack?.verification },
-  };
+/**
+ * Layer packs: ChangeSafe's defaults, then the domain's baseline (a cloud
+ * plan touching twelve resources is ordinary; twelve routers is not), then
+ * whatever the operator supplied.
+ */
+export function resolvePolicyPack(
+  ...packs: (PolicyPack | null | undefined)[]
+): ResolvedPolicyPack {
+  let resolved = DEFAULT_POLICY_PACK;
+  for (const pack of packs) {
+    if (!pack) continue;
+    resolved = {
+      blastRadius: { ...resolved.blastRadius, ...pack.blastRadius },
+      verification: { ...resolved.verification, ...pack.verification },
+    };
+  }
+  return resolved;
 }

@@ -69,6 +69,11 @@ packages/core/            @changesafe/core — proposal contract, findings and
 packages/domain-network/  @changesafe/domain-network — incident/topology
                           model, path allowlist, transactional patch engine,
                           reachability, simulator, network policies
+packages/domain-terraform/ @changesafe/domain-terraform — external-diff
+                          domain over `terraform show -json`; never runs
+                          Terraform
+packages/cli/             changesafe — gate, verify, scenario; no AI
+                          dependency; ships pre-bundled
 app/                      Next.js showcase console (api/analyze, api/status)
 components/               console UI + client workflow hook
 lib/ai/                   provider adapters (server-only), hardened prompt
@@ -85,6 +90,12 @@ depend on domain schemas; receipts consume validated outputs, never raw
 model text. Scenario fixtures must pass the production schemas.
 `packages/core/src/state-machine.ts` is the single workflow authority; UI
 must dispatch through it.
+
+Two domain shapes exist: **simulated-state** (network — hold a declarative
+model and apply operations to a clone) and **external-diff** (terraform —
+the diff arrives precomputed, so nothing simulates). An external-diff domain
+may skip a universal policy only by declaring the reason and the domain
+policy that replaces it.
 
 Domains reach core through the `DomainAdapter` contract
 (`packages/core/src/domain.ts`): state extraction, transactional

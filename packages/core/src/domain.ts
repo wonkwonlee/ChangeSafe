@@ -1,5 +1,5 @@
 import type { PolicyFinding } from "./findings";
-import type { ResolvedPolicyPack } from "./policy-pack";
+import type { PolicyPack, ResolvedPolicyPack } from "./policy-pack";
 import type { ChangeOperation, ChangeProposal } from "./proposal";
 import type { DiffEntry } from "./simulation";
 
@@ -60,6 +60,32 @@ export interface DomainAdapter<TInput = unknown, TState = unknown> {
    * without calling anything.
    */
   readonly policies: readonly DomainPolicy<TInput, TState>[];
+
+  /**
+   * Thresholds this domain considers sane before any user pack applies.
+   * A plan touching twelve cloud resources is ordinary; twelve network
+   * devices during an incident is not.
+   */
+  readonly defaultPolicyPack?: PolicyPack;
+
+  /**
+   * Universal policies this domain does not run, each with the reason and
+   * the domain policy that answers the same question instead.
+   *
+   * This is deliberately verbose: silently dropping a safety check is how
+   * gates rot. A skip appears in `policyOrder`, in receipts (by absence),
+   * and must name its replacement.
+   */
+  readonly skippedUniversalPolicies?: readonly SkippedUniversalPolicy[];
+}
+
+export interface SkippedUniversalPolicy {
+  /** The universal policy that does not apply here. */
+  readonly policyId: string;
+  /** Why it cannot be evaluated in this domain. */
+  readonly because: string;
+  /** The domain policy that covers the same concern. */
+  readonly replacedBy: string;
 }
 
 export interface DomainPolicy<TInput = unknown, TState = unknown> {

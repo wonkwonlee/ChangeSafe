@@ -200,39 +200,54 @@ Exit gate: **met** — `changesafe gate --scenario scenarios/scenario-a-failover
 reproduces the console's findings byte-for-byte, and the CLI has its own
 suite.
 
-### P4 — Terraform plan ingestion + GitHub Action (M/L) ★ flagship
+### P4 — Terraform plan ingestion + GitHub Action (M/L) ★ flagship — **done**
 
 Goal: real-world utility with zero infrastructure access — gate
 AI-generated Terraform changes in CI.
 
-- `packages/domain-terraform`:
-  - Input: `terraform show -json <plan>` output. Zod schema for the subset
-    we police (`resource_changes[].address/type/change.actions/
-    change.before/after`, module paths), tolerant of unknown extra fields
-    at the plan envelope, strict in our normalized model.
-  - Normalize to an **external-diff proposal**: `{action:
-    create|update|delete|replace, address, resourceType, before, after}` —
-    Terraform already computed the diff, so this domain does not simulate;
-    the plan *is* the simulation (see §5, domain shape B).
-  - Terraform policy pack (defaults, all pack-tunable):
-    - `DESTRUCTIVE_OP` — delete/replace of stateful resource classes
-      (databases, volumes, buckets…) BLOCK by default; stateless WARN.
-    - `PROTECTED_RESOURCE` — address/tag patterns from the pack
-      (e.g. `aws_db_instance.*`, `tags.changesafe=protected`).
-    - `BLAST_RADIUS` — changed-resource / touched-module counts.
-    - `REVERSIBILITY` (rollback analog) — deletes/replaces without
-      `prevent_destroy` or declared backup evidence.
-    - `UNTRUSTED_INSTRUCTION` — deterministic scan of `--context`
-      (PR body / incident text accompanying an AI-generated change).
-  - Receipts identical in structure; `inputSha256` = canonical plan subset.
-- `changesafe-action` (GitHub Action): wraps the CLI; posts a findings
-  table + risk as a PR comment; fails the check on BLOCK; uploads the
-  receipt as an artifact.
-- Example repo/workflow: "AI opens a Terraform PR → ChangeSafe gates it."
+- [x] `packages/domain-terraform`, the first **external-diff** domain
+      (Shape B from §5): Terraform already computed the diff, so nothing
+      simulates. `applyOperations` validates instead of mutating, which
+      keeps `PATCH_SCHEMA` meaningful — it now asks whether every operation
+      corresponds to a change the plan actually contains, and blocks a
+      proposal that misrepresents a delete as an update.
+- [x] Plan parsing tolerant at the envelope, strict in the normalized model:
+      unknown Terraform fields pass through, `["delete","create"]` reads as
+      a replace, no-op and read entries are dropped so they cannot inflate
+      blast radius, and each change carries an `ev-plan-N` evidence id — the
+      evidence for "this deletes the database" is the plan entry itself.
+- [x] Terraform policies: `DESTRUCTIVE_OP` (what class of thing is being
+      destroyed — stateful blocks, stateless warns, a declared backup tag
+      downgrades to a visible warning rather than silence),
+      `PROTECTED_RESOURCE` (address globs and a protected tag), and
+      `REVERSIBILITY` (could it be put back — blocks when prior state was
+      never recorded, warns when configuration is recoverable but data is
+      not).
+- [x] Core learned two things this required: domains may declare their own
+      default thresholds (a plan touching a dozen cloud resources is
+      ordinary; a dozen routers is not), and may skip a universal policy
+      **only** with a recorded reason and a named replacement. Terraform
+      skips `ROLLBACK_COMPLETE` (no inverse exists to verify; `REVERSIBILITY`
+      answers it) and `VERIFICATION_REQUIRED` (plan JSON contains no
+      verification plan; the pull request review is that step).
+- [x] `--context` carries the pull request body as untrusted text. The
+      flagship fixture pairs a protected-bucket replacement with a PR body
+      instructing review tooling to approve it: the gate blocks on the
+      plan's contents and flags the injection as data.
+- [x] `action.yml` (composite Action) + `scripts/format-summary.mjs`: runs
+      the CLI, renders a findings table as a pull request comment and job
+      summary, uploads the receipt, and fails the check on a block. Exit
+      code 2 fails the step regardless of `fail-on-block`, because a missing
+      verdict is not an approval.
+- [x] `examples/github-actions/gate-terraform-plan.yml` to copy, and a CI
+      job that runs the Action's exact gate path against the fixtures.
+- [x] Fixture corpus with tests: benign scale-up, database destruction,
+      protected replacement with injected PR text, plus pack-tuning and
+      unrecorded-prior-state cases.
 
-Exit gate: a real `terraform show -json` fixture corpus (hand-authored +
-captured from public examples) with expectations; the Action demo works on
-a sample PR end to end.
+Exit gate: **met** — the CLI gates real `terraform show -json` output,
+blocks the destructive case with explanations, writes a verifiable receipt,
+and CI exercises the Action's path end to end.
 
 ### Soft launch after P4 (Show HN + blog post: "Your AI SRE agent will
 eventually obey a prompt injection — design so it doesn't matter"): this is

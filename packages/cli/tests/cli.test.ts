@@ -206,6 +206,109 @@ describe("changesafe gate", () => {
   });
 });
 
+describe("changesafe gate --domain terraform", () => {
+  const PLANS = path.join(REPO_ROOT, "packages/domain-terraform/tests/fixtures");
+
+  it("gates a plan without needing a separate proposal", async () => {
+    const capture = createCapture();
+    const code = await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        path.join(PLANS, "safe-scale-up.tfplan.json"),
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+    expect(code).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.domain).toBe("terraform");
+    // ROLLBACK_COMPLETE and VERIFICATION_REQUIRED do not apply to a plan.
+    expect(payload.findings.map((f: { policyId: string }) => f.policyId)).toEqual([
+      "PATCH_SCHEMA",
+      "DESTRUCTIVE_OP",
+      "PROTECTED_RESOURCE",
+      "REVERSIBILITY",
+      "BLAST_RADIUS",
+      "UNTRUSTED_INSTRUCTION",
+    ]);
+  });
+
+  it("blocks a destructive plan and flags injected pull request text", async () => {
+    const capture = createCapture();
+    const code = await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        path.join(PLANS, "protected-and-injected.tfplan.json"),
+        "--context",
+        path.join(PLANS, "injected-pr-body.txt"),
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+    expect(code).toBe(1);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.blocked).toBe(true);
+    const byId = new Map(
+      payload.findings.map((f: { policyId: string; status: string }) => [f.policyId, f.status]),
+    );
+    expect(byId.get("PROTECTED_RESOURCE")).toBe("BLOCK");
+    expect(byId.get("UNTRUSTED_INSTRUCTION")).toBe("WARN");
+  });
+
+  it("writes a receipt whose source id survives an awkward file name", async () => {
+    // Plan files are usually called things like prod.plan.tfplan.json, which
+    // is not a valid identifier; the gate must normalize rather than fail.
+    const dir = temporaryDir();
+    const awkward = path.join(dir, "Prod.Plan v2.tfplan.json");
+    writeFileSync(awkward, readFileSync(path.join(PLANS, "safe-scale-up.tfplan.json"), "utf8"));
+    const receiptPath = path.join(dir, "receipt.json");
+
+    const code = await main(
+      ["gate", "--domain", "terraform", "--input", awkward, "--receipt", receiptPath],
+      createCapture(),
+    );
+    expect(code).toBe(0);
+    const receipt = ChangeReceiptSchema.parse(JSON.parse(readFileSync(receiptPath, "utf8")));
+    expect(receipt.sourceId).toBe("prod-plan-v2-tfplan");
+    expect(receipt.decision).toBe("gate_only");
+  });
+
+  it("explains that the plan is the proposal", async () => {
+    const capture = createCapture();
+    await expect(
+      main(
+        [
+          "gate",
+          "--domain",
+          "terraform",
+          "--input",
+          path.join(PLANS, "safe-scale-up.tfplan.json"),
+          "--proposal",
+          path.join(PLANS, "safe-scale-up.tfplan.json"),
+        ],
+        capture,
+      ),
+    ).rejects.toThrow(/derives its proposal from the plan/);
+  });
+
+  it("rejects a file that is not plan JSON", async () => {
+    const dir = temporaryDir();
+    const notAPlan = path.join(dir, "notes.json");
+    writeFileSync(notAPlan, JSON.stringify({ resource_changes: "definitely not an array" }));
+    await expect(
+      main(["gate", "--domain", "terraform", "--input", notAPlan], createCapture()),
+    ).rejects.toThrow(/terraform show -json/);
+  });
+});
+
 describe("changesafe verify", () => {
   it("confirms a receipt it just produced, including its input and proposal", async () => {
     const dir = temporaryDir();

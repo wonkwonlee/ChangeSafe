@@ -24,6 +24,15 @@ export function readJsonFile(filePath: string, label: string): unknown {
   }
 }
 
+/** Read untrusted free text (a PR body) that travelled with a change. */
+export function readTextFile(filePath: string, label: string): string {
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch {
+    throw new UsageError(`cannot read ${label}: ${path.resolve(filePath)}`);
+  }
+}
+
 /** Parse with a schema, turning validation failure into a readable usage error. */
 export function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
   const result = schema.safeParse(value);

@@ -26,6 +26,24 @@ node packages/cli/dist/changesafe.js gate --scenario scenarios/scenario-b-route-
   BLOCKED — this change cannot be approved.
 ```
 
+## Terraform plans
+
+```bash
+terraform show -json tfplan > tfplan.json
+changesafe gate --domain terraform --input tfplan.json --context pr-body.txt
+```
+
+The Terraform domain derives the proposal from the plan itself — the plan
+already states what will change — so `--proposal` is neither needed nor
+accepted. `--context` carries text that travelled with the change (a pull
+request body); it is scanned for injected instructions and never obeyed.
+
+Its policy set differs from the network domain's, and says why:
+`ROLLBACK_COMPLETE` is replaced by `REVERSIBILITY` because a plan has no
+inverse operations to verify, and `VERIFICATION_REQUIRED` is skipped because
+plan JSON contains no verification plan — in this workflow the pull request
+review is that step.
+
 ## It gates; it never approves
 
 There is no `--auto-approve`, and there never will be. A clean run means
