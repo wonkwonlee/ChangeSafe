@@ -1,0 +1,26 @@
+{
+  "name": "@changesafe/ledger",
+  "version": "0.1.0",
+  "description": "Append-only SQLite receipt ledger with a hash chain, so deleting or reordering a decision is detectable rather than silent.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@changesafe/core": "0.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -657,6 +658,111 @@ describe("signed receipts", () => {
     const key = await keys(dir);
     // A signing key other local accounts can read is not a signing key.
     expect(statSync(key.privatePath).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe("changesafe ledger", () => {
+  async function ledgerWith(dir: string, scenarios: string[]) {
+    const db = path.join(dir, "ledger.db");
+    for (const [index, scenario] of scenarios.entries()) {
+      const receiptPath = path.join(dir, `r${index}.json`);
+      await main(["gate", "--scenario", scenario, "--receipt", receiptPath], createCapture());
+      await main(["ledger", "append", receiptPath, "--db", db], createCapture());
+    }
+    return db;
+  }
+
+  it("records decisions and lists them newest first", async () => {
+    const dir = temporaryDir();
+    const db = await ledgerWith(dir, [SAFE, BLOCKED]);
+
+    const capture = createCapture();
+    const code = await main(["ledger", "list", "--db", db, "--format", "json"], capture);
+    expect(code).toBe(0);
+    const entries = JSON.parse(capture.stdout);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].seq).toBe(2);
+    expect(entries[0].decision).toBe("blocked");
+    expect(entries[1].decision).toBe("gate_only");
+  });
+
+  it("verifies an intact chain and reports a head to witness", async () => {
+    const dir = temporaryDir();
+    const db = await ledgerWith(dir, [SAFE, BLOCKED, SAFE]);
+
+    const capture = createCapture();
+    const code = await main(["ledger", "verify", "--db", db, "--format", "json"], capture);
+    expect(code).toBe(0);
+    const verdict = JSON.parse(capture.stdout);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.entries).toBe(3);
+    expect(verdict.headChainSha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("exits 1 when a decision was removed from the file", async () => {
+    const dir = temporaryDir();
+    const db = await ledgerWith(dir, [SAFE, BLOCKED, SAFE]);
+
+    // The scenario the ledger exists for: someone with file access deletes
+    // the inconvenient BLOCKED decision. The remaining rows still look
+    // perfect, and listing them shows nothing wrong.
+    const raw = new DatabaseSync(db);
+    raw.exec("DROP TRIGGER receipts_no_delete");
+    raw.exec("DELETE FROM receipts WHERE decision = 'blocked'");
+    raw.close();
+
+    const listing = createCapture();
+    await main(["ledger", "list", "--db", db, "--format", "json"], listing);
+    expect(JSON.parse(listing.stdout)).toHaveLength(2);
+
+    const capture = createCapture();
+    const code = await main(["ledger", "verify", "--db", db, "--format", "json"], capture);
+    expect(code).toBe(1);
+    expect(JSON.parse(capture.stdout).ok).toBe(false);
+  });
+
+  it("records which key signed a receipt, and that it was unsigned otherwise", async () => {
+    const dir = temporaryDir();
+    const db = path.join(dir, "ledger.db");
+    const keyOut = path.join(dir, "key");
+    const keygen = createCapture();
+    await main(["keygen", "--out", keyOut, "--format", "json"], keygen);
+    const publicKeyId = JSON.parse(keygen.stdout).publicKeyId;
+
+    const signedReceipt = path.join(dir, "signed.json");
+    await main(
+      ["gate", "--scenario", SAFE, "--receipt", signedReceipt, "--sign-key", `${keyOut}.pem`],
+      createCapture(),
+    );
+    const plainReceipt = path.join(dir, "plain.json");
+    await main(["gate", "--scenario", BLOCKED, "--receipt", plainReceipt], createCapture());
+
+    await main(["ledger", "append", signedReceipt, "--db", db], createCapture());
+    await main(["ledger", "append", plainReceipt, "--db", db], createCapture());
+
+    const capture = createCapture();
+    await main(["ledger", "list", "--db", db, "--format", "json"], capture);
+    const entries = JSON.parse(capture.stdout);
+    expect(entries.find((e: { seq: number }) => e.seq === 1).signatureKeyId).toBe(publicKeyId);
+    expect(entries.find((e: { seq: number }) => e.seq === 2).signatureKeyId).toBeNull();
+  });
+
+  it("refuses to record the same receipt twice", async () => {
+    const dir = temporaryDir();
+    const db = path.join(dir, "ledger.db");
+    const receiptPath = path.join(dir, "r.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", receiptPath], createCapture());
+    await main(["ledger", "append", receiptPath, "--db", db], createCapture());
+
+    await expect(
+      main(["ledger", "append", receiptPath, "--db", db], createCapture()),
+    ).rejects.toThrow(/already in the ledger/);
+  });
+
+  it("rejects an unknown ledger subcommand", async () => {
+    await expect(main(["ledger", "purge"], createCapture())).rejects.toThrow(
+      /unknown ledger subcommand/,
+    );
   });
 });
 

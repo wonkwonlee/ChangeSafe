@@ -9,6 +9,7 @@ import { runEval } from "./eval";
 import { runGate } from "./gate";
 import { UsageError } from "./io";
 import { runKeygen } from "./keygen";
+import { runLedgerAppend, runLedgerList, runLedgerVerify } from "./ledger";
 import { runScenarioCheck, runScenarioInit } from "./scenario";
 import { runVerify } from "./verify";
 import { EXIT_USAGE, createConsole, paint, type Console } from "./output";
@@ -21,6 +22,7 @@ USAGE
   changesafe eval      [options]        measure a model against the scenario suite
   changesafe verify    <receipt.json>   recompute a receipt's hashes and signature
   changesafe keygen    [--out <path>]   generate an Ed25519 receipt signing key
+  changesafe ledger    append|list|verify   append-only decision ledger
   changesafe scenario  check [dir]      check scenarios against their expectations
   changesafe scenario  init <name>      scaffold a new scenario
 
@@ -55,6 +57,16 @@ EVAL OPTIONS
   --dir <dir>           scenario suite (default: scenarios)
   --runs <n>            attempts per scenario (default: 1, max 20)
   --format pretty|json
+
+LEDGER OPTIONS
+  --db <file>           ledger database (default: changesafe-ledger.db)
+  --source-id <id>      list: only this source
+  --decision <kind>     list: only approved|rejected|blocked|gate_only
+  --limit <n>           list: how many entries (default 50)
+
+\`ledger verify\` recomputes the hash chain and exits 1 on any break: an entry
+that was altered, removed, or reordered. Append-only is enforced by database
+triggers; the chain is what catches someone who owns the file.
 
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
@@ -92,6 +104,9 @@ const OPTION_SPEC = {
   "public-key": { type: "string" },
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
+  db: { type: "string" },
+  decision: { type: "string" },
+  limit: { type: "string" },
   format: { type: "string", default: "pretty" },
   dir: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
@@ -206,6 +221,27 @@ export async function main(argv: string[], console: Console): Promise<number> {
         { out: values.out ?? "changesafe-signing-key", force: values.force, format },
         console,
       );
+
+    case "ledger": {
+      const sub = positionals[1];
+      const db = values.db ?? "changesafe-ledger.db";
+      const limit = values.limit === undefined ? undefined : Number(values.limit);
+      if (limit !== undefined && !Number.isFinite(limit)) {
+        throw new UsageError(`--limit must be a number, got "${values.limit}"`);
+      }
+      const ledgerOptions = {
+        db,
+        receipt: positionals[2] ?? values.receipt,
+        sourceId: values["source-id"],
+        decision: values.decision,
+        limit,
+        format,
+      };
+      if (sub === "append") return runLedgerAppend(ledgerOptions, console);
+      if (sub === "list") return runLedgerList(ledgerOptions, console);
+      if (sub === "verify") return runLedgerVerify(ledgerOptions, console);
+      throw new UsageError(`unknown ledger subcommand "${sub ?? ""}". Use append, list, or verify.`);
+    }
 
     case "scenario": {
       const sub = positionals[1];

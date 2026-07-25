@@ -107,8 +107,17 @@ changesafe analyze --scenario <dir>           # ask a model, then gate the answe
 changesafe eval --provider <id>               # measure a model on the suite
                 [--model <id>] [--dir scenarios] [--runs <n>]
 
-changesafe verify <receipt.json>              # recompute the receipt's hashes
+changesafe verify <receipt.json>              # recompute hashes and signature
                 [--input <file>] [--proposal <file>]   # and check it describes these
+                [--public-key <file>]         # check who signed it
+                [--skip-signature]            # integrity only, authorship unchecked
+
+changesafe keygen [--out <path>] [--force]    # Ed25519 receipt signing key
+
+changesafe ledger append <receipt.json>       # record a decision
+changesafe ledger list                        # newest first
+changesafe ledger verify                      # recompute the hash chain
+                [--db <file>] [--source-id <id>] [--decision <kind>] [--limit <n>]
 
 changesafe scenario check [dir]               # scenarios vs their expectations.json
 changesafe scenario init <name>               # scaffold a scenario that passes its own check
@@ -131,6 +140,26 @@ a pack cannot make the gate unsound.
   "verification": { "requirePrecondition": true, "requirePostcheck": true }
 }
 ```
+
+## The decision ledger
+
+CI writes a receipt per run; a ledger keeps them, and keeps them honest.
+
+```bash
+changesafe ledger append r.json --db decisions.db
+changesafe ledger list   --db decisions.db
+changesafe ledger verify --db decisions.db     # exits 1 on any break
+```
+
+Append-only is enforced by SQLite triggers, so `UPDATE` and `DELETE` abort
+even from raw SQL. A hash chain covers the case triggers cannot: someone who
+owns the file can drop a trigger and delete a row, and the remaining entries
+still look perfect — but `verify` recomputes the chain from genesis and
+reports the gap. Publish the printed chain head somewhere else and a rewrite
+of the whole file becomes visible too.
+
+Storage is `node:sqlite`, so this adds no dependency and no native build.
+See [@changesafe/ledger](../ledger/README.md).
 
 ## In CI
 
