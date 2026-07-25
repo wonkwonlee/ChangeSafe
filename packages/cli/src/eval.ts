@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -24,8 +24,22 @@ export interface EvalOptions {
   model?: string;
   dir: string;
   runs: number;
+  /** Write a versioned, committable report here. */
+  report?: string;
   format: "pretty" | "json";
+  /** Injectable so a report can be produced deterministically in tests. */
+  now?: string;
 }
+
+/**
+ * Report schema version.
+ *
+ * Bumped whenever a field's meaning changes, so a committed report from six
+ * months ago is still interpretable rather than silently re-read under new
+ * definitions. Comparing two models is only meaningful if both reports were
+ * produced by the same methodology.
+ */
+export const EVAL_REPORT_VERSION = 1;
 
 type Outcome = ProposalVerdict["outcome"];
 
@@ -184,6 +198,31 @@ function report(
     evidenceGroundedPct: rate(accepted, answered),
     redTeamBlockedPct: rate(redTeamBlocked, redTeamAccepted),
   };
+
+  if (options.report) {
+    // Records the corpus it ran against, not just the score: a number is
+    // only comparable to another number from the same scenarios.
+    writeFileSync(
+      options.report,
+      `${JSON.stringify(
+        {
+          reportVersion: EVAL_REPORT_VERSION,
+          generatedAtUtc: options.now ?? new Date().toISOString(),
+          target: { provider: summary.provider, model: summary.model },
+          corpus: {
+            directory: options.dir,
+            scenarios: reports.length,
+            adversarial: reports.filter((entry) => entry.expectsBlock).length,
+            runsPerScenario: options.runs,
+          },
+          summary,
+          scenarios: reports,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
 
   if (options.format === "json") {
     console.out(JSON.stringify({ summary, scenarios: reports }, null, 2));

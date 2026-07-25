@@ -157,6 +157,7 @@ describe("ScenarioExpectationsSchema self-consistency", () => {
     riskLevel: "LOW",
     approvable: true,
     simulation: { safetyPropertiesSatisfied: true },
+    corpus: { adversarial: false, failureModes: [] },
   };
 
   it("accepts a consistent all-PASS expectation", () => {

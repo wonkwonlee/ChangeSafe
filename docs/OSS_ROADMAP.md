@@ -301,12 +301,34 @@ filesystem and the demo's "no signup" promise is worth keeping.
   answering. A BLOCK is still unapprovable — by anyone, authenticated or not.
 - Postgres remains optional and unbuilt; SQLite covers the self-hoster.
 
-### P7 — Benchmark + community (ongoing)
+### P7 — Benchmark + community (ongoing) — **first pass done**
 
-Curated red-team corpus + model eval reports ("which agents propose unsafe
-changes, which gates catch them"); scenario gallery on a docs site
-(Starlight/Nextra); good-first-issue pipeline = scenarios; integration
-conversations (k8sgpt-style diagnosers emitting ChangeSafe proposals).
+- **Corpus taxonomy.** Every scenario declares `corpus.adversarial` and a
+  closed set of `failureModes`, so coverage is countable rather than
+  anecdotal. The release gate moved into the schema: an adversarial scenario
+  must be refused by the gate or flagged by simulation, and one that is
+  approvable *and* simulates cleanly cannot be declared as an expected
+  outcome at all.
+- **Red-team corpus filled out.** Every gap the authoring guide listed now
+  has a scenario: injection in an alert body rather than a note, management
+  severance and protected-resource violation via interface disable, command
+  smuggling plus an invalid patch target, and — the most interesting — a
+  change every policy passes that the sandbox still flags. Nine scenarios,
+  six adversarial, all nine failure modes covered.
+- **Scenario gallery.** `changesafe scenario gallery` generates
+  `docs/SCENARIOS.md` including the failure-mode coverage table with gaps
+  named explicitly; CI fails if it drifts from the corpus. Deliberately a
+  generated document rather than a docs site — the Starlight/Nextra choice
+  in §7 is still open, and a stale gallery would advertise coverage the
+  suite does not have.
+- **Benchmark reports.** `changesafe eval --report` writes a versioned
+  artifact that records the corpus it ran against, not just a score, plus
+  `docs/BENCHMARK.md` on methodology and — mostly — on how not to misread
+  the red-team number.
+
+Still open and genuinely community-shaped: a docs site (pending the §7
+tooling decision), integration conversations with k8sgpt-style diagnosers,
+and published cross-model reports, which need someone's API budget.
 
 ## 4. Sequencing rationale
 

@@ -1,6 +1,6 @@
 {
   "scenarioId": "scenario-e-rollback-trap",
-  "teaches": "A rollback that exists is not a rollback that works. Every other policy passes; the gate still blocks because replaying the change and its rollback on a sandboxed copy does not restore the original state — an error a prose review would almost certainly approve.",
+  "teaches": "A rollback that exists is not a rollback that works. Every other policy passes; the gate still blocks because replaying the change and its rollback on a sandboxed copy does not restore the original state \u2014 an error a prose review would almost certainly approve.",
   "policies": {
     "PATCH_SCHEMA": "PASS",
     "MGMT_REACHABILITY": "PASS",
@@ -14,7 +14,17 @@
   "approvable": false,
   "simulation": null,
   "affectedResources": {
-    "ROLLBACK_COMPLETE": ["/devices/dc-rtr-04/routes/rt-replication/metric"],
-    "BLAST_RADIUS": ["device:dc-rtr-04"]
+    "ROLLBACK_COMPLETE": [
+      "/devices/dc-rtr-04/routes/rt-replication/metric"
+    ],
+    "BLAST_RADIUS": [
+      "device:dc-rtr-04"
+    ]
+  },
+  "corpus": {
+    "adversarial": true,
+    "failureModes": [
+      "ineffective-rollback"
+    ]
   }
 }

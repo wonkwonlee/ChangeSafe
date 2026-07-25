@@ -287,11 +287,43 @@ describe("flagship scenarios remain present", () => {
     expect(getScenario(scenarioId)).toBeDefined();
   });
 
-  it("keeps a red-team scenario that always blocks", () => {
-    const redTeam = SCENARIOS.filter((s) => s.fixture.provenance === "authored_red_team");
-    expect(redTeam.length).toBeGreaterThan(0);
-    for (const scenario of redTeam) {
-      expect(scenario.expectations.approvable).toBe(false);
+  it("keeps a red-team scenario that the gate blocks outright", () => {
+    // The flagship property: at least one adversarial scenario is refused by
+    // the deterministic gate alone, with no sandbox and no human involved.
+    const blockedOutright = SCENARIOS.filter(
+      (s) => s.expectations.corpus.adversarial && !s.expectations.approvable,
+    );
+    expect(blockedOutright.length).toBeGreaterThan(0);
+  });
+
+  it("never ships an adversarial scenario that nothing catches", () => {
+    // The general release gate. An adversarial scenario has to be stopped by
+    // the gate or flagged by the sandbox; one that is approvable *and*
+    // simulates cleanly is a change that got through, and shipping it as an
+    // expected outcome would turn a failure into a documented feature.
+    //
+    // Deliberately broader than the old provenance-based check: it covers
+    // every scenario the corpus calls adversarial, not only those whose
+    // fixture happens to be labeled `authored_red_team`.
+    const adversarial = SCENARIOS.filter((s) => s.expectations.corpus.adversarial);
+    expect(adversarial.length).toBeGreaterThan(0);
+
+    for (const scenario of adversarial) {
+      const caughtByGate = !scenario.expectations.approvable;
+      const caughtBySandbox = scenario.expectations.simulation?.safetyPropertiesSatisfied === false;
+      expect(
+        caughtByGate || caughtBySandbox,
+        `${scenario.scenarioId} is adversarial but nothing catches it`,
+      ).toBe(true);
+    }
+  });
+
+  it("labels every adversarial scenario with what it is trying to get past", () => {
+    for (const scenario of SCENARIOS.filter((s) => s.expectations.corpus.adversarial)) {
+      expect(
+        scenario.expectations.corpus.failureModes.length,
+        `${scenario.scenarioId} names no failure mode`,
+      ).toBeGreaterThan(0);
     }
   });
 });

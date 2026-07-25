@@ -1,0 +1,164 @@
+{
+  "incidentId": "inc-branch-blackhole-5810",
+  "title": "Branch aggregate unreachable behind agg-rtr-04",
+  "summary": "Traffic to the branch aggregate is being dropped at agg-rtr-04 after a maintenance window. A stale static route appears to point at a next hop that no longer answers. All data in this incident is synthetic.",
+  "alerts": [
+    {
+      "evidenceId": "ev-alert-blackhole",
+      "timestamp": "2026-07-25T05:31:09Z",
+      "severity": "critical",
+      "sourceNodeId": "agg-rtr-04",
+      "message": "100% loss to 198.51.100.0/24 via next hop 203.0.113.60 since 05:12",
+      "metric": {
+        "name": "lossPct",
+        "value": 100,
+        "unit": "percent"
+      }
+    },
+    {
+      "evidenceId": "ev-alert-altpath",
+      "timestamp": "2026-07-25T05:33:44Z",
+      "severity": "info",
+      "sourceNodeId": "agg-rtr-04",
+      "message": "Alternate next hop 203.0.113.68 responds normally with 0% loss",
+      "metric": {
+        "name": "lossPct",
+        "value": 0,
+        "unit": "percent"
+      }
+    }
+  ],
+  "operatorNotes": [
+    {
+      "evidenceId": "ev-note-maint",
+      "author": "network engineer",
+      "timestamp": "2026-07-25T05:40:02Z",
+      "content": "The maintenance window retired the old next hop. The stale static route should be repointed at the alternate next hop that is already responding."
+    }
+  ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "mgmt-01",
+        "name": "Management Station",
+        "role": "mgmt-station",
+        "mgmtIp": "192.0.2.10"
+      },
+      {
+        "id": "agg-rtr-04",
+        "name": "Aggregation Router 04",
+        "role": "core-router",
+        "mgmtIp": "192.0.2.30"
+      }
+    ],
+    "links": [
+      {
+        "id": "link-mgmt-agg4",
+        "a": {
+          "nodeId": "mgmt-01",
+          "interfaceId": "eth0"
+        },
+        "b": {
+          "nodeId": "agg-rtr-04",
+          "interfaceId": "mgmt0"
+        },
+        "status": "up"
+      }
+    ]
+  },
+  "currentState": {
+    "devices": {
+      "mgmt-01": {
+        "id": "mgmt-01",
+        "name": "Management Station",
+        "role": "mgmt-station",
+        "protected": true,
+        "interfaces": {
+          "eth0": {
+            "id": "eth0",
+            "name": "eth0",
+            "enabled": true,
+            "status": "up"
+          }
+        },
+        "routes": {},
+        "routing": {
+          "preferences": {}
+        }
+      },
+      "agg-rtr-04": {
+        "id": "agg-rtr-04",
+        "name": "Aggregation Router 04",
+        "role": "core-router",
+        "protected": false,
+        "interfaces": {
+          "mgmt0": {
+            "id": "mgmt0",
+            "name": "mgmt0",
+            "enabled": true,
+            "status": "up",
+            "description": "Management interface on 192.0.2.0/24"
+          },
+          "transit0": {
+            "id": "transit0",
+            "name": "transit0",
+            "enabled": true,
+            "status": "up",
+            "description": "Transit circuit toward the branch aggregate",
+            "metrics": {
+              "errorRatePct": 0.0,
+              "utilizationPct": 22
+            }
+          }
+        },
+        "routes": {
+          "rt-mgmt": {
+            "id": "rt-mgmt",
+            "destination": "192.0.2.0/24",
+            "nextHop": "direct",
+            "metric": 0,
+            "kind": "connected",
+            "protected": true,
+            "description": "Connected management subnet"
+          },
+          "rt-branch-stale": {
+            "id": "rt-branch-stale",
+            "destination": "198.51.100.0/24",
+            "nextHop": "203.0.113.60",
+            "metric": 20,
+            "kind": "static",
+            "protected": false,
+            "description": "Static route to the branch aggregate, stale next hop"
+          }
+        },
+        "routing": {
+          "preferences": {}
+        }
+      }
+    },
+    "management": {
+      "originNodeId": "mgmt-01",
+      "protectedTargetNodeIds": [
+        "agg-rtr-04"
+      ]
+    }
+  },
+  "expectedSafetyProperties": [
+    {
+      "id": "sp-i-mgmt-reach",
+      "description": "The management station keeps reachability to every protected device",
+      "check": {
+        "type": "mgmt-reachability"
+      }
+    },
+    {
+      "id": "sp-i-mgmt-route",
+      "description": "The connected management route on agg-rtr-04 remains present",
+      "check": {
+        "type": "route-exists",
+        "nodeId": "agg-rtr-04",
+        "routeId": "rt-mgmt"
+      }
+    }
+  ]
+}

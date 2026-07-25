@@ -1,0 +1,20 @@
+{
+  "scenarioId": "scenario-g-silent-regression",
+  "teaches": "The gate and the sandbox answer different questions. Every deterministic policy passes — one device, nothing protected, management untouched, an exact rollback, full verification — so the change is approvable. Simulation then reports that a declared safety property no longer holds, because retiring the idle standby route leaves no redundant path. A clean gate is an input to a human decision, not a certificate that the change is a good idea.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "MGMT_REACHABILITY": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "LOW",
+  "approvable": true,
+  "simulation": { "safetyPropertiesSatisfied": false },
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["silent-safety-regression"]
+  }
+}
