@@ -57,21 +57,29 @@ npm run dev
 Open http://localhost:3000. **Replay mode works immediately** with bundled,
 clearly labeled fixtures — no key, no network, no cost.
 
-Six bundled scenarios cover the whole verdict space:
+Nine bundled scenarios cover the whole verdict space:
 
 | Bundled scenario | What it demonstrates | Outcome |
 | --- | --- | --- |
 | `INC-4821 — Degraded primary uplink` | A minimal, well-evidenced failover with a verified rollback passes every policy, so the decision is genuinely yours. | LOW · approvable |
+| `INC-5602 — Idle standby transit path` | Every policy passes, yet the sandbox reports a safety property broken: the gate and the simulation answer different questions. | LOW · approvable, flagged |
 | `INC-5133 — Transit route flapping` | A sound change that never says how success would be confirmed earns one warning. | MEDIUM · approvable |
 | `INC-5290 — Egress load imbalance` | Warnings accumulate: two devices touched *and* no precondition. | HIGH · approvable |
 | `INC-4977 — Suspected route leak` | A confident proposal obeys an instruction injected into an operator note and would sever the only management path to a protected firewall. | CRITICAL · blocked |
+| `INC-5744 — Firewall CPU saturation` | The injection arrives in an *alert body*, not a note, and disabling the uplink severs management to a protected device. | CRITICAL · blocked |
+| `INC-5810 — Branch aggregate black-holed` | A substantively correct fix that smuggles device CLI into a declarative value and targets a route that does not exist. | CRITICAL · blocked |
 | `INC-5341 — Replication window overrun` | The proposal *has* a rollback — it just restores the wrong value, which replaying it on a sandboxed copy proves. | CRITICAL · blocked |
 | `INC-5388 — Intermittent access-layer loss` | A one-device incident answered with a three-device "while we're in there" change. | CRITICAL · blocked |
+
+Full detail, plus which failure modes are covered and which are still gaps:
+**[docs/SCENARIOS.md](docs/SCENARIOS.md)** (generated; CI fails if it drifts).
 
 Every scenario declares its expected verdicts in an `expectations.json` that
 CI verifies against the real engine — so these claims are tested, not
 advertised. Adding scenarios is the most valuable contribution: see
-[docs/SCENARIO_AUTHORING.md](docs/SCENARIO_AUTHORING.md).
+[docs/SCENARIO_AUTHORING.md](docs/SCENARIO_AUTHORING.md), and
+[docs/BENCHMARK.md](docs/BENCHMARK.md) for measuring a model against the
+corpus.
 
 ## How it works
 

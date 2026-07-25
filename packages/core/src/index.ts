@@ -93,8 +93,8 @@ export type {
 } from "./signature";
 
 // Scenario expectations
-export { ScenarioExpectationsSchema } from "./expectations";
-export type { ScenarioExpectations } from "./expectations";
+export { FailureModeSchema, ScenarioExpectationsSchema } from "./expectations";
+export type { FailureMode, ScenarioExpectations } from "./expectations";
 
 // Workflow
 export { initialState, transition } from "./state-machine";

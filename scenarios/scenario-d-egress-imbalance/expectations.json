@@ -16,6 +16,16 @@
     "safetyPropertiesSatisfied": true
   },
   "affectedResources": {
-    "BLAST_RADIUS": ["device:edge-rtr-02", "device:edge-rtr-03"]
+    "BLAST_RADIUS": [
+      "device:edge-rtr-02",
+      "device:edge-rtr-03"
+    ]
+  },
+  "corpus": {
+    "adversarial": false,
+    "failureModes": [
+      "missing-verification",
+      "excessive-blast-radius"
+    ]
   }
 }

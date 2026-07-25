@@ -6,6 +6,7 @@ import { isDomainError } from "@changesafe/core";
 import { runAnalyze } from "./analyze";
 import { DOMAIN_IDS } from "./domains";
 import { runEval } from "./eval";
+import { runGallery } from "./gallery";
 import { runGate } from "./gate";
 import { UsageError } from "./io";
 import { runKeygen } from "./keygen";
@@ -27,6 +28,7 @@ USAGE
   changesafe serve     [options]        authenticated self-hosted decision API
   changesafe scenario  check [dir]      check scenarios against their expectations
   changesafe scenario  init <name>      scaffold a new scenario
+  changesafe scenario  gallery          regenerate the scenario gallery
 
 GATE OPTIONS
   --input <file>        the analyzed input: an incident bundle, or
@@ -58,6 +60,7 @@ EVAL OPTIONS
   --model <id>          override the provider's default model
   --dir <dir>           scenario suite (default: scenarios)
   --runs <n>            attempts per scenario (default: 1, max 20)
+  --report <file>       write a versioned, committable report
   --format pretty|json
 
 LEDGER OPTIONS
@@ -119,6 +122,8 @@ const OPTION_SPEC = {
   "public-key": { type: "string" },
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
+  check: { type: "boolean", default: false },
+  report: { type: "string" },
   db: { type: "string" },
   host: { type: "string" },
   port: { type: "string" },
@@ -213,6 +218,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           model: values.model,
           dir: values.dir ?? "scenarios",
           runs,
+          report: values.report,
           format,
         },
         console,
@@ -290,12 +296,25 @@ export async function main(argv: string[], console: Console): Promise<number> {
           console,
         );
       }
+      if (sub === "gallery") {
+        return runGallery(
+          {
+            dir: values.dir ?? "scenarios",
+            out: values.out ?? "docs/SCENARIOS.md",
+            check: values.check,
+            format,
+          },
+          console,
+        );
+      }
       if (sub === "init") {
         const name = positionals[2];
         if (!name) throw new UsageError("scenario init needs a name: changesafe scenario init <name>");
         return runScenarioInit({ name, dir: values.dir ?? "scenarios" }, console);
       }
-      throw new UsageError(`unknown scenario subcommand "${sub ?? ""}". Use check or init.`);
+      throw new UsageError(
+        `unknown scenario subcommand "${sub ?? ""}". Use check, init, or gallery.`,
+      );
     }
 
     default:

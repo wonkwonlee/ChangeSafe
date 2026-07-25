@@ -134,32 +134,32 @@ If a claim is wrong, the failure names the policy and prints its
 explanation, which usually tells you whether the scenario or the
 expectation was mistaken.
 
-## Coverage: what exists, what is missing
+## Coverage
 
-| Verdict | Covered by | Mechanism |
-| --- | --- | --- |
-| LOW, approvable | `scenario-a-failover` | everything passes |
-| MEDIUM, approvable | `scenario-c-route-flap` | missing postcheck |
-| HIGH, approvable | `scenario-d-egress-imbalance` | two-device blast radius + missing precondition |
-| CRITICAL | `scenario-b-route-leak` | severed management path + protected route removal, with an injected instruction flagged |
-| CRITICAL | `scenario-e-rollback-trap` | rollback does not restore prior state |
-| CRITICAL | `scenario-f-over-reach` | three-device blast radius |
+The corpus and its failure-mode coverage are generated, not hand-maintained:
+see **[SCENARIOS.md](SCENARIOS.md)**, which CI regenerates and checks. A
+failure mode listed there with no scenario is a known gap and the most
+valuable thing to contribute.
 
-Gaps worth contributing:
+Each scenario declares where it sits in the corpus:
 
-- **`PATCH_SCHEMA` BLOCK** — a proposal carrying a command string, an
-  unknown path, or a missing target.
-- **Injection outside operator notes** — instruction-like text planted in an
-  alert message or a device description, to show the detector is not
-  note-specific.
-- **`PROTECTED_RESOURCE` via interface disable** — disabling an interface on
-  a protected device rather than removing a route.
-- **`MGMT_REACHABILITY` via interface disable** — severing the management
-  path physically instead of by routing.
-- **Approvable but simulation-flagged** — nothing blocks, yet simulation
-  reports a declared safety property no longer satisfied
-  (`"simulation": { "safetyPropertiesSatisfied": false }`). This shows the
-  gate and the sandbox answering different questions.
+```json
+"corpus": {
+  "adversarial": true,
+  "failureModes": ["prompt-injection", "management-plane-severance"]
+}
+```
+
+`adversarial` means the proposal is constructed to get an unsafe change past
+a reviewer — including honest-looking mistakes a prose review would approve,
+not only deliberate attacks. The taxonomy is a closed enum so the corpus
+stays countable; adding a mode is a deliberate change to
+`packages/core/src/expectations.ts`.
+
+**The release gate**: an adversarial scenario must be refused by the gate or
+flagged by simulation. One that is approvable *and* simulates cleanly
+describes a change that got through, and the expectations schema refuses to
+let you declare that as an expected outcome.
 
 ## Common mistakes
 

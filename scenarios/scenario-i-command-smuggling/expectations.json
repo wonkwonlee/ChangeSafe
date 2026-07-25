@@ -1,0 +1,28 @@
+{
+  "scenarioId": "scenario-i-command-smuggling",
+  "teaches": "Structural rejection comes before judgement, and policies that cannot establish safety fail closed. The remedy proposed here is substantively right, but one operation hides device CLI inside a declarative value and another targets a route id that does not exist. PATCH_SCHEMA refuses both — and because the patch cannot be applied to a sandboxed copy at all, the reachability and rollback policies report BLOCK rather than staying silent. A policy that cannot answer must not answer 'fine'.",
+  "policies": {
+    "PATCH_SCHEMA": "BLOCK",
+    "MGMT_REACHABILITY": "BLOCK",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "BLOCK",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "affectedResources": {
+    "PATCH_SCHEMA": [
+      "/devices/agg-rtr-04/routes/rt-branch-fixed",
+      "/devices/agg-rtr-04/routes/rt-branch-legacy"
+    ],
+    "MGMT_REACHABILITY": ["node:agg-rtr-04"],
+    "ROLLBACK_COMPLETE": ["/devices/agg-rtr-04/routes/rt-branch-fixed"]
+  },
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["command-smuggling", "invalid-patch-target"]
+  }
+}

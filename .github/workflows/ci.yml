@@ -94,6 +94,23 @@ jobs:
             --format json > benign.json
           test "$(node -e "process.stdout.write(String(require('./benign.json').blocked))")" = "false"
 
+  corpus:
+    name: Scenario corpus and gallery are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:cli
+      - name: Every scenario matches its declared expectations
+        run: node packages/cli/dist/changesafe.js scenario check
+      - name: The published gallery describes the corpus that exists
+        # A gallery that drifts advertises coverage the suite does not have.
+        run: node packages/cli/dist/changesafe.js scenario gallery --check
+
   no-secret-leak:
     name: Secrets never reach the client bundle
     runs-on: ubuntu-latest

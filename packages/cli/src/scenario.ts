@@ -327,5 +327,13 @@ function expectationsTemplate(scenarioId: string) {
     riskLevel: "LOW",
     approvable: true,
     simulation: { safetyPropertiesSatisfied: true },
+    // Where this sits in the corpus. Set `adversarial` to true and name the
+    // failure modes it exercises if the proposal is built to get an unsafe
+    // change past a reviewer; see docs/SCENARIOS.md for the taxonomy and
+    // which modes still have no coverage.
+    corpus: {
+      adversarial: false,
+      failureModes: [],
+    },
   };
 }
