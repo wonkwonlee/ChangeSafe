@@ -29,6 +29,18 @@ approval.
 **Embed the engine.** `@changesafe/core` is the domain-agnostic gate;
 a `DomainAdapter` teaches it what a change means in your world.
 
+**Use live models without changing the safety boundary.** OpenAI, Anthropic,
+and local Ollama adapters can propose changes through `changesafe analyze`.
+`changesafe eval` measures schema validity, evidence grounding, and red-team
+outcomes against the versioned scenario corpus. The deterministic gate remains
+provider-independent.
+
+**Sign and attribute decisions.** Receipts can be signed with Ed25519 using
+`changesafe keygen`, `--sign-key`, and `verify --public-key`. For teams,
+`changesafe serve` provides an optional OIDC-authenticated decision path that
+recomputes findings server-side, records the approver, signs the receipt, and
+appends it to a hash-chained SQLite ledger.
+
 ## What is in the box
 
 | Package | Purpose |
@@ -37,10 +49,13 @@ a `DomainAdapter` teaches it what a change means in your world.
 | `@changesafe/domain-network` | Declarative device state, allowlisted transactional patch engine, reachability, sandboxed simulation. |
 | `@changesafe/domain-terraform` | Normalizes plan JSON; polices destruction, protection, and reversibility. |
 | `changesafe` | The CLI, pre-bundled to run under plain Node. |
+| `@changesafe/ai` | Provider-neutral proposal layer for OpenAI, Anthropic, and Ollama. |
+| `@changesafe/ledger` | Append-only SQLite decision ledger with tamper-evident hash chaining. |
+| `@changesafe/server` | OIDC-authenticated server-side decision path that recomputes the gate. |
 
-Plus a one-page console with six bundled scenarios covering the whole
-verdict space, from a clean approval to three different ways a plausible
-change gets blocked.
+Plus a one-page console with nine bundled network scenarios: six adversarial,
+all nine currently defined failure modes covered, and one approvable scenario
+that is still flagged by sandbox simulation.
 
 ## The commitments
 
@@ -60,21 +75,25 @@ These do not change:
 ## Known limits
 
 - Two domains: network and Terraform.
-- Receipts prove integrity, not authorship — they are unsigned in v0.1.
-- The synthetic network model is deliberately simple; it demonstrates
-  deterministic validation, not production routing semantics.
-- The console's decision path runs client-side; moving it behind an
-  authenticated server boundary is planned.
-- Bundled AI fixtures are authored and labeled as such, not captured model
-  output.
+- Receipt signing is optional. An unsigned receipt proves integrity, not
+  authorship; signature verification requires the expected public key.
+- The synthetic network model is deliberately simple and demonstrates
+  deterministic validation rather than production routing semantics.
+- The public console keeps its keyless decision path client-side. Teams that
+  need authenticated attribution must deploy the separate self-hosted server.
+- The benchmark corpus is small and synthetic: nine network scenarios, six
+  adversarial. It is a coverage instrument, not a statistical safety score.
+- One bundled fixture is captured GPT-5.6 output; the other eight are authored.
+  All fixtures explicitly declare and validate their provenance.
+- ChangeSafe gates and records changes but never executes them.
 
 ## Contributing
 
 Scenarios are the easiest and most valuable way in. Each one declares its
 expected verdicts in a file CI checks against the real engine, so a scenario
-cannot claim something the gate does not do. See
-[docs/SCENARIO_AUTHORING.md](../docs/SCENARIO_AUTHORING.md), which lists the
-coverage gaps worth filling.
+cannot claim something the gate does not do. See [docs/SCENARIO_AUTHORING.md](../docs/SCENARIO_AUTHORING.md) for the
+authoring contract and [docs/SCENARIOS.md](../docs/SCENARIOS.md) for the
+generated, CI-checked coverage table.
 
 ## History
 
