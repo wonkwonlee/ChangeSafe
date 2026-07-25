@@ -8,6 +8,7 @@ import { DOMAIN_IDS } from "./domains";
 import { runEval } from "./eval";
 import { runGate } from "./gate";
 import { UsageError } from "./io";
+import { runKeygen } from "./keygen";
 import { runScenarioCheck, runScenarioInit } from "./scenario";
 import { runVerify } from "./verify";
 import { EXIT_USAGE, createConsole, paint, type Console } from "./output";
@@ -18,7 +19,8 @@ USAGE
   changesafe gate      [options]        evaluate a proposal against the safety gate
   changesafe analyze   [options]        ask a model for a proposal, then gate it
   changesafe eval      [options]        measure a model against the scenario suite
-  changesafe verify    <receipt.json>   recompute a receipt's hashes
+  changesafe verify    <receipt.json>   recompute a receipt's hashes and signature
+  changesafe keygen    [--out <path>]   generate an Ed25519 receipt signing key
   changesafe scenario  check [dir]      check scenarios against their expectations
   changesafe scenario  init <name>      scaffold a new scenario
 
@@ -34,6 +36,7 @@ GATE OPTIONS
   --domain <id>         domain to gate against (default: network; available: ${DOMAIN_IDS.join(", ")})
   --policy-pack <file>  typed threshold overrides
   --receipt <file>      write a hashed receipt of this evaluation
+  --sign-key <file>     private-key PEM; signs the receipt it writes
   --source-id <id>      what to record as the input's origin
   --format pretty|json  output format (default: pretty)
 
@@ -56,7 +59,13 @@ EVAL OPTIONS
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
   --proposal <file>     also check the receipt describes this proposal
+  --public-key <file>   trusted key, obtained out of band, to check a signature
+  --skip-signature      report integrity only, leaving authorship unchecked
   --format pretty|json
+
+Hashes prove a receipt was not altered. Only a signature proves who issued it,
+and only against a key you already trust — so verifying a signed receipt
+without --public-key exits 2 rather than pretending to have checked it.
 
 EXIT CODES
   0  evaluated, nothing blocking      1  evaluated, blocked      2  could not evaluate
@@ -79,6 +88,10 @@ const OPTION_SPEC = {
   out: { type: "string" },
   capture: { type: "string" },
   runs: { type: "string", default: "1" },
+  "sign-key": { type: "string" },
+  "public-key": { type: "string" },
+  "skip-signature": { type: "boolean", default: false },
+  force: { type: "boolean", default: false },
   format: { type: "string", default: "pretty" },
   dir: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
@@ -124,6 +137,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           scenario: values.scenario,
           policyPack: values["policy-pack"],
           receipt: values.receipt,
+          signKey: values["sign-key"],
           sourceId: values["source-id"],
           context: values.context,
           format,
@@ -143,6 +157,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           capture: values.capture,
           policyPack: values["policy-pack"],
           receipt: values.receipt,
+          signKey: values["sign-key"],
           sourceId: values["source-id"],
           format,
         },
@@ -177,12 +192,20 @@ export async function main(argv: string[], console: Console): Promise<number> {
           receipt,
           input: values.input,
           proposal: values.proposal,
+          publicKey: values["public-key"],
+          skipSignature: values["skip-signature"],
           domain: values.domain,
           format,
         },
         console,
       );
     }
+
+    case "keygen":
+      return runKeygen(
+        { out: values.out ?? "changesafe-signing-key", force: values.force, format },
+        console,
+      );
 
     case "scenario": {
       const sub = positionals[1];

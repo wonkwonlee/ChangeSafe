@@ -119,6 +119,11 @@ advertised. Adding scenarios is the most valuable contribution: see
   serialization, SHA-256 input/proposal hashes, and a self-hash over
   everything except the hash field.
 
+Receipts can be **signed** (Ed25519, no dependency): `changesafe keygen`,
+then `--sign-key` when gating and `--public-key` when verifying. Hashing
+proves a receipt was not altered; only a signature proves who issued it, and
+`verify` exits 2 rather than 0 if it was given no key to check one with.
+
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
 

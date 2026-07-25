@@ -26,25 +26,29 @@ incident content and the deterministic decision path.
 
 | Threat | Mitigation | Where enforced / tested |
 | --- | --- | --- |
-| Prompt injection in incident content steers the model into unsafe proposals | Trusted instructions separated from `<untrusted_incident_data>`; but crucially **no safety property depends on the model resisting** — the deterministic gate evaluates whatever comes back | `lib/ai/prompt.ts`; scenario B contract tests prove the injected proposal is blocked |
-| Injected content tries to instruct ChangeSafe itself | Content is never interpreted as instructions anywhere; `UNTRUSTED_INSTRUCTION` lexically flags it (WARN) as visible evidence | `lib/policies/untrusted-instruction.ts` + unit tests |
-| Model invents evidence, devices, or paths | Hard rejection before any policy/patch processing: unknown evidence ids (`EVIDENCE_UNKNOWN`) and unknown device references (`AI_INVALID_OUTPUT`); malformed paths surface as `PATCH_SCHEMA` BLOCK findings | `lib/ai/validate-model-output.ts`, `lib/domain/validate.ts` + tests |
-| Model output malformed or truncated | Structured Outputs enforcement at the API + local strict Zod parse; failure yields a typed, recoverable error and no partial proposal | `lib/ai/live.ts` + injected-parser tests |
-| Command smuggling (CLI strings as operations or values) | Operations are declarative only; four-family path allowlist; executable-character/verb screening on string values and route descriptions | `lib/patch/paths.ts`, `lib/patch/apply.ts`, `PATCH_SCHEMA` + tests |
-| Unsafe change approved by UI manipulation | Blocked approval is impossible at the domain layer: `transition()` throws on BLOCKED→APPROVE/SIMULATE; `APPROVE` re-checks findings; contract tests attempt it directly | `lib/domain/state-machine.ts` + tests |
+| Prompt injection in incident content steers the model into unsafe proposals | Trusted instructions separated from `<untrusted_incident_data>`; but crucially **no safety property depends on the model resisting** — the deterministic gate evaluates whatever comes back | `packages/ai/src/prompts/network.ts`; scenario B contract tests prove the injected proposal is blocked |
+| Injected content tries to instruct ChangeSafe itself | Content is never interpreted as instructions anywhere; `UNTRUSTED_INSTRUCTION` lexically flags it (WARN) as visible evidence | `packages/core/src/policies/untrusted-instruction.ts` + unit tests |
+| Model invents evidence, devices, or paths | Hard rejection before any policy/patch processing: unknown evidence ids (`EVIDENCE_UNKNOWN`) and unknown device references (`AI_INVALID_OUTPUT`); malformed paths surface as `PATCH_SCHEMA` BLOCK findings | `packages/ai/src/prompt.ts`, `packages/core/src/validate.ts` + tests |
+| Model output malformed or truncated | Structured Outputs enforcement at the API + local strict Zod parse; failure yields a typed, recoverable error and no partial proposal | `packages/ai/src/analyze.ts` + injected-transport tests |
+| Command smuggling (CLI strings as operations or values) | Operations are declarative only; four-family path allowlist; executable-character/verb screening on string values and route descriptions | `packages/domain-network/src/paths.ts`, `.../apply.ts`, `PATCH_SCHEMA` + tests |
+| Unsafe change approved by UI manipulation | Blocked approval is impossible at the domain layer: `transition()` throws on BLOCKED→APPROVE/SIMULATE; `APPROVE` re-checks findings; contract tests attempt it directly | `packages/core/src/state-machine.ts` + tests |
 | Unsafe change approved by API manipulation | There is no approve/simulate/receipt API — the only server surface is analysis (replay/live) and a status boolean | `app/api/` |
 | Provider credential leakage | Credentials read only by `packages/ai` adapters behind `lib/ai/live.ts` (server-only guard); the status endpoint returns a boolean plus a provider/model name, never key material; upstream errors are collapsed to a status code because provider error bodies can echo the request; CI builds with a canary value per provider and greps `.next/static`, and additionally fails if any provider endpoint string reaches a client chunk | adapter code + `analyze-api.test.ts` + `providers.test.ts` + CI `no-secret-leak` |
+| Receipt forged by someone with the codebase | Hashes prove integrity only, so receipts may be signed (Ed25519, `changesafe keygen` / `--sign-key`); the signature covers the canonical receipt including its hash, so re-hashing a tampered receipt still fails; the envelope ships only a key fingerprint, so verification requires a key obtained out of band; an unchecked signature exits 2 rather than 0 | `signature.test.ts` + `cli.test.ts` signed-receipt suite |
 | Replay passed off as live model output | Provenance is a schema-enforced enum; authored fixtures must declare `model: null` (schema rejects a model claim); `captured` requires model + capture timestamp metadata, so a fixture can never claim a model without naming it; UI labels replay explicitly; live-call failure offers replay, never silently switches | `ReplayFixtureSchema` superRefine + contract/E2E tests |
-| Receipt tampering | `receiptSha256` over canonical content excluding itself; `verifyReceiptHash` recomputes; hashes are stable across key order | `lib/receipt/` + tests |
+| Receipt tampering | `receiptSha256` over canonical content excluding itself; `verifyReceiptHash` recomputes; hashes are stable across key order | `packages/core/src/receipt.ts`, `create-receipt.ts` + tests |
 | Oversized / malformed API requests | 4 KB body cap, strict request schema, typed error responses without stack traces | `app/api/analyze/route.ts` + tests |
 | Real infrastructure execution | No SSH/NETCONF/RESTCONF/SNMP/vendor/exec code exists anywhere; simulation mutates a deep clone only; dependencies include no device-automation libraries | repository-wide; simulate tests assert input state is untouched |
 
 ## Known limitations (accepted for v0.1)
 
-- Receipts prove integrity, not authorship: SHA-256 without signatures. A
-  motivated party could regenerate a consistent receipt for different content;
-  v0.1's receipt defends against accidental corruption and silent edits, not
-  against a forger with the codebase.
+- An **unsigned** receipt proves integrity, not authorship: a motivated party
+  can regenerate a consistent receipt for different content. Signing closes
+  that gap where it is used (`--sign-key` / `--public-key`), but it is opt-in,
+  so any receipt without a signature carries exactly the older, weaker claim.
+  Key custody is the operator's: a leaked private key forges receipts, and
+  there is no revocation list in this version — rotating a key means
+  redistributing the public key and re-signing nothing.
 - `UNTRUSTED_INSTRUCTION` is a curated lexical pattern list — evidence for the
   demo's trust story, not a general injection detector. The system's safety
   does not depend on it (the gate blocks unsafe effects regardless).

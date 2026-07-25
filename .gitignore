@@ -22,6 +22,11 @@ node_modules/
 
 # misc
 .DS_Store
+
+# Key material. Covers receipt signing keys from `changesafe keygen`: a
+# committed private key silently invalidates every signature it ever made.
+# Public keys are ignored too, deliberately — distributing one is a decision,
+# so add it explicitly with `git add -f key.pub.pem` if you mean to.
 *.pem
 
 # debug

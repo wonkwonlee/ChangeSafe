@@ -146,12 +146,41 @@ a pack cannot make the gate unsound.
 A blocking finding fails the step. The receipt is the durable evidence of
 what the gate saw, verifiable later with `changesafe verify`.
 
-## Verification is integrity, not authorship
+## Integrity, and then authorship
 
 `verify` recomputes hashes from canonical serializations and reports whether
-a receipt still describes what it claims. Receipts are unsigned in this
-version, so this detects alteration and mismatch — not forgery by someone
-with the codebase. Signing is on the roadmap.
+a receipt still describes what it claims. That is **integrity**: it detects
+alteration. It says nothing about who produced the receipt, because anyone
+with the codebase can build an internally consistent one.
+
+**Signing** closes that gap:
+
+```bash
+changesafe keygen --out ci-signing-key          # writes .pem (0600) and .pub.pem
+changesafe gate --scenario ./change --receipt r.json --sign-key ci-signing-key.pem
+changesafe verify r.json --public-key ci-signing-key.pub.pem
+```
+
+An Ed25519 signature covers the canonical receipt, hash included. The value
+over hashing alone: someone who edits a receipt can simply recompute
+`receiptSha256`, and the hash check will pass — the signature will not,
+because they cannot produce one without the private key.
+
+Three rules make the result mean something:
+
+- **The envelope carries no public key.** Only a key fingerprint travels with
+  the receipt. A verifier must obtain the real key out of band, so a receipt
+  can never vouch for itself.
+- **An unchecked signature is not a pass.** Verifying a signed receipt
+  without `--public-key` exits `2` — a missing verdict about authorship, not
+  a clean one. Pass `--skip-signature` to check integrity alone and have the
+  signature reported as unverified.
+- **Someone else's valid signature fails.** A receipt signed by a different
+  key reports `key_mismatch`, never a near-miss.
+
+The private key never leaves the machine that signs; `keygen` writes it mode
+`0600` and refuses to overwrite an existing key without `--force`, because
+replacing a key invalidates every receipt already signed with it.
 
 ## License
 

@@ -4,6 +4,8 @@ import path from "node:path";
 import {
   PolicyPackSchema,
   createReceipt,
+  importSigningKeyPair,
+  signReceipt,
   evaluatePolicies,
   hasBlockingFinding,
   validateProposalEvidence,
@@ -33,6 +35,8 @@ export interface GateOptions {
   sourceId?: string;
   /** Untrusted free text that travelled with the change (a PR body). */
   context?: string;
+  /** Private-key PEM; when set, the written receipt is signed. */
+  signKey?: string;
   /** Injectable so tests get deterministic receipts. */
   now?: string;
 }
@@ -118,6 +122,7 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
       sourceId: sourceId ?? sourceIdFromPath(inputPath),
       policyPack: options.policyPack,
       receipt: options.receipt,
+      signKey: options.signKey,
       format: options.format,
       // The proposal was handed to us; this run produced nothing and attests
       // nothing about how it was written.
@@ -139,6 +144,7 @@ export interface GateExecution {
   sourceId: string;
   policyPack?: string;
   receipt?: string;
+  signKey?: string;
   format: "pretty" | "json";
   /** How this run obtained the proposal. Recorded in the receipt. */
   mode: AnalysisMode;
@@ -181,7 +187,7 @@ export async function gateParsedProposal(
   const blocked = hasBlockingFinding(findings);
 
   if (options.receipt) {
-    const receipt = await createReceipt({
+    const unsigned = await createReceipt({
       sourceId: options.sourceId,
       inputId,
       input,
@@ -199,7 +205,17 @@ export async function gateParsedProposal(
       simulation: null,
       createdAtUtc: options.now,
     });
-    writeFileSync(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
+
+    // A signed receipt is an envelope around the identical receipt, so
+    // signing never changes what was recorded — only who can prove it.
+    const record = options.signKey
+      ? await signReceipt(
+          unsigned,
+          await importSigningKeyPair(readTextFile(options.signKey, "signing key")),
+          { signedAtUtc: options.now },
+        )
+      : unsigned;
+    writeFileSync(options.receipt, `${JSON.stringify(record, null, 2)}\n`);
   }
 
   if (options.format === "json") {

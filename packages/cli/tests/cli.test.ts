@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -487,6 +487,176 @@ describe("analyze — the only command that calls a model", () => {
   it("makes eval demand an explicit provider because it spends credit", async () => {
     const capture = createCapture();
     await expect(main(["eval"], capture)).rejects.toThrow(/spends API credit/);
+  });
+});
+
+describe("signed receipts", () => {
+  /** Generate a key pair in a temp dir and return its paths. */
+  async function keys(dir: string, name = "key") {
+    const capture = createCapture();
+    const out = path.join(dir, name);
+    const code = await main(["keygen", "--out", out, "--format", "json"], capture);
+    expect(code).toBe(0);
+    return {
+      privatePath: `${out}.pem`,
+      publicPath: `${out}.pub.pem`,
+      publicKeyId: JSON.parse(capture.stdout).publicKeyId as string,
+    };
+  }
+
+  async function signedReceipt(dir: string, keyPath: string, file = "receipt.json") {
+    const receiptPath = path.join(dir, file);
+    await main(
+      ["gate", "--scenario", SAFE, "--receipt", receiptPath, "--sign-key", keyPath],
+      createCapture(),
+    );
+    return receiptPath;
+  }
+
+  it("writes an envelope whose receipt is unchanged by signing", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+
+    const plainPath = path.join(dir, "plain.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", plainPath], createCapture());
+    const signedPath = await signedReceipt(dir, key.privatePath);
+
+    const plain = JSON.parse(readFileSync(plainPath, "utf8"));
+    const signed = JSON.parse(readFileSync(signedPath, "utf8"));
+
+    expect(Object.keys(signed).sort()).toEqual(["receipt", "signature"]);
+    expect(signed.signature.publicKeyId).toBe(key.publicKeyId);
+    // Signing is additive: everything except the run-specific id and
+    // timestamp is identical to the unsigned receipt.
+    const strip = (r: Record<string, unknown>) => ({ ...r, receiptId: "", createdAtUtc: "", receiptSha256: "" });
+    expect(strip(signed.receipt)).toEqual(strip(plain));
+  });
+
+  it("verifies against the matching public key", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const receiptPath = await signedReceipt(dir, key.privatePath);
+
+    const capture = createCapture();
+    const code = await main(
+      ["verify", receiptPath, "--public-key", key.publicPath, "--format", "json"],
+      capture,
+    );
+    expect(code).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.signature.verdict).toBe("valid");
+  });
+
+  it("catches tampering that was re-hashed to look intact", async () => {
+    // The point of signing. An attacker who edits a receipt can recompute
+    // receiptSha256 — the hash check then passes and only the signature,
+    // which they cannot forge without the private key, still fails.
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const receiptPath = await signedReceipt(dir, key.privatePath);
+
+    const envelope = JSON.parse(readFileSync(receiptPath, "utf8"));
+    envelope.receipt.riskLevel = "CRITICAL";
+    // Recompute the self-hash the way the real code does: over the receipt
+    // content with the hash field removed.
+    const rest = { ...envelope.receipt };
+    delete rest.receiptSha256;
+    envelope.receipt.receiptSha256 = await hashCanonical(rest);
+    writeFileSync(receiptPath, JSON.stringify(envelope));
+
+    const capture = createCapture();
+    const code = await main(
+      ["verify", receiptPath, "--public-key", key.publicPath, "--format", "json"],
+      capture,
+    );
+    const payload = JSON.parse(capture.stdout);
+
+    expect(payload.checks.find((c: { name: string }) => c.name === "receipt hash").ok).toBe(true);
+    expect(payload.signature.verdict).toBe("invalid");
+    expect(payload.ok).toBe(false);
+    expect(code).toBe(1);
+  });
+
+  it("reports another party's valid signature as a key mismatch", async () => {
+    const dir = temporaryDir();
+    const mine = await keys(dir, "mine");
+    const theirs = await keys(dir, "theirs");
+    const receiptPath = await signedReceipt(dir, theirs.privatePath);
+
+    const capture = createCapture();
+    const code = await main(
+      ["verify", receiptPath, "--public-key", mine.publicPath, "--format", "json"],
+      capture,
+    );
+    expect(code).toBe(1);
+    expect(JSON.parse(capture.stdout).signature.verdict).toBe("key_mismatch");
+  });
+
+  it("refuses to pass a signed receipt it was given no key to check", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const receiptPath = await signedReceipt(dir, key.privatePath);
+
+    // Exit 2, not 0: an unchecked signature is a missing verdict about
+    // authorship, and must never read as a clean verification.
+    await expect(main(["verify", receiptPath], createCapture())).rejects.toThrow(
+      /no key was supplied to check it/,
+    );
+  });
+
+  it("reports an explicitly skipped signature as unknown, never as passing", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const receiptPath = await signedReceipt(dir, key.privatePath);
+
+    const capture = createCapture();
+    const code = await main(
+      ["verify", receiptPath, "--skip-signature", "--format", "json"],
+      capture,
+    );
+    expect(code).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.signature.verdict).toBe("unverified");
+    // The check itself is not marked ok — the run passes on integrity alone.
+    expect(payload.checks.find((c: { name: string }) => c.name === "signature").ok).toBe(false);
+  });
+
+  it("rejects a key supplied for a receipt that carries no signature", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const plainPath = path.join(dir, "plain.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", plainPath], createCapture());
+
+    await expect(
+      main(["verify", plainPath, "--public-key", key.publicPath], createCapture()),
+    ).rejects.toThrow(/carries no signature/);
+  });
+
+  it("still verifies unsigned receipts exactly as before", async () => {
+    const dir = temporaryDir();
+    const plainPath = path.join(dir, "plain.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", plainPath], createCapture());
+
+    const capture = createCapture();
+    const code = await main(["verify", plainPath, "--format", "json"], capture);
+    expect(code).toBe(0);
+    expect(JSON.parse(capture.stdout).signature).toBeNull();
+  });
+
+  it("will not silently replace a key that existing receipts depend on", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    await expect(
+      main(["keygen", "--out", key.privatePath.replace(/\.pem$/, "")], createCapture()),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  it("writes the private key owner-readable only", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    // A signing key other local accounts can read is not a signing key.
+    expect(statSync(key.privatePath).mode & 0o777).toBe(0o600);
   });
 });
 

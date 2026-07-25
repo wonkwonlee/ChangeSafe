@@ -72,6 +72,26 @@ export type { ReceiptInput } from "./create-receipt";
 export { canonicalize, canonicallyEqual } from "./canonical";
 export { hashCanonical, sha256Hex } from "./hash";
 
+// Receipt signing — integrity is not authorship; a signature is.
+export {
+  SIGNATURE_ALGORITHM,
+  ReceiptSignatureSchema,
+  SignedReceiptSchema,
+  computePublicKeyId,
+  generateSigningKeyPair,
+  importSigningKeyPair,
+  importVerifyingKey,
+  signReceipt,
+  verifyReceiptSignature,
+} from "./signature";
+export type {
+  ReceiptSignature,
+  SignReceiptOptions,
+  SignatureVerdict,
+  SignedReceipt,
+  SigningKeyPairPem,
+} from "./signature";
+
 // Scenario expectations
 export { ScenarioExpectationsSchema } from "./expectations";
 export type { ScenarioExpectations } from "./expectations";
