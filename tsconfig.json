@@ -23,6 +23,7 @@
     ],
     "paths": {
       "@/*": ["./*"],
+      "@changesafe/ai": ["./packages/ai/src/index.ts"],
       "@changesafe/core": ["./packages/core/src/index.ts"],
       "@changesafe/domain-network": ["./packages/domain-network/src/index.ts"],
       "@changesafe/domain-terraform": ["./packages/domain-terraform/src/index.ts"],

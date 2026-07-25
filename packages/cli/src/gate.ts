@@ -7,11 +7,12 @@ import {
   evaluatePolicies,
   hasBlockingFinding,
   validateProposalEvidence,
+  type AnalysisMode,
   type ChangeProposal,
   type FixtureProvenance,
 } from "@changesafe/core";
 
-import { resolveDomain } from "./domains";
+import { resolveDomain, type CliDomain } from "./domains";
 import { UsageError, parseOrThrow, readJsonFile, readTextFile } from "./io";
 import {
   EXIT_BLOCKED,
@@ -106,22 +107,74 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
     throw new UsageError(`the ${domain.id} domain could not derive a proposal from the input`);
   }
 
+  return gateParsedProposal(
+    {
+      domain,
+      input,
+      inputId,
+      proposal: proposal as ChangeProposal,
+      provenance: (provenance as FixtureProvenance | null) ?? null,
+      fixtureId,
+      sourceId: sourceId ?? sourceIdFromPath(inputPath),
+      policyPack: options.policyPack,
+      receipt: options.receipt,
+      format: options.format,
+      // The proposal was handed to us; this run produced nothing and attests
+      // nothing about how it was written.
+      mode: "offline",
+      model: null,
+      now: options.now,
+    },
+    console,
+  );
+}
+
+export interface GateExecution {
+  domain: CliDomain;
+  input: unknown;
+  inputId: string;
+  proposal: ChangeProposal;
+  provenance: FixtureProvenance | null;
+  fixtureId: string | null;
+  sourceId: string;
+  policyPack?: string;
+  receipt?: string;
+  format: "pretty" | "json";
+  /** How this run obtained the proposal. Recorded in the receipt. */
+  mode: AnalysisMode;
+  /** The model that produced it, when this run called one. */
+  model: string | null;
+  /** Extra dim line under the header (e.g. which provider proposed). */
+  note?: string;
+  now?: string;
+}
+
+/**
+ * Run the deterministic gate over an already-parsed proposal and report it.
+ *
+ * Both `gate` and `analyze` funnel through here, which is the point: a
+ * proposal that a model just produced is judged by exactly the same code, in
+ * the same order, as one read from a file. There is no path where analysing
+ * and gating in one command applies a different standard.
+ */
+export async function gateParsedProposal(
+  options: GateExecution,
+  console: Console,
+): Promise<number> {
+  const { domain, input, inputId, proposal } = options;
+
   const policyPack = options.policyPack
     ? parseOrThrow(PolicyPackSchema, readJsonFile(options.policyPack, "policy pack"), "policy pack")
     : null;
 
   // Invented evidence is a validation failure, not a verdict: the gate
   // cannot evaluate a proposal that cites things the input does not contain.
-  validateProposalEvidence(
-    domain.adapter,
-    input as never,
-    proposal as ChangeProposal,
-  );
+  validateProposalEvidence(domain.adapter, input as never, proposal);
 
   const { findings, riskLevel } = evaluatePolicies(
     domain.adapter,
     input as never,
-    proposal as ChangeProposal,
+    proposal,
     { policyPack },
   );
 
@@ -129,20 +182,19 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
 
   if (options.receipt) {
     const receipt = await createReceipt({
-      sourceId: sourceId ?? sourceIdFromPath(inputPath),
+      sourceId: options.sourceId,
       inputId,
       input,
-      proposal: proposal as ChangeProposal,
+      proposal,
       appVersion: `changesafe-cli-0.1.0`,
       // The adapter already composes core's version with its own.
       policyVersion: domain.adapter.policyVersion,
-      // The proposal was handed to us; this run produced nothing and
-      // attests nothing about how it was written.
-      mode: "offline",
-      model: null,
-      fixtureProvenance: (provenance as FixtureProvenance | null) ?? null,
+      mode: options.mode,
+      model: options.model,
+      fixtureProvenance: options.provenance,
       findings,
       riskLevel,
+      // Never "approved": the CLI gates, and a human decides elsewhere.
       decision: blocked ? "blocked" : "gate_only",
       simulation: null,
       createdAtUtc: options.now,
@@ -156,9 +208,11 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
         {
           domain: domain.id,
           inputId,
-          proposalId: (proposal as ChangeProposal).proposalId,
-          fixtureId,
-          provenance,
+          proposalId: proposal.proposalId,
+          fixtureId: options.fixtureId,
+          provenance: options.provenance,
+          mode: options.mode,
+          model: options.model,
           findings,
           riskLevel,
           blocked,
@@ -179,8 +233,11 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
       `· domain ${domain.id} · input ${inputId}`,
     )}`,
   );
-  if (provenance) {
-    console.out(`  ${paint(console.color, "dim", `proposal provenance: ${provenance}`)}`);
+  if (options.note) {
+    console.out(`  ${paint(console.color, "dim", options.note)}`);
+  }
+  if (options.provenance) {
+    console.out(`  ${paint(console.color, "dim", `proposal provenance: ${options.provenance}`)}`);
   }
   console.out("");
   for (const line of formatFindings(console, findings, riskLevel)) {

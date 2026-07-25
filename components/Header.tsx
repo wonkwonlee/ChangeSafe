@@ -1,10 +1,13 @@
 "use client";
 
-import type { WorkflowController } from "./useWorkflow";
+import { providerLabel, type WorkflowController } from "./useWorkflow";
 
 export function Header({ controller }: { controller: WorkflowController }) {
-  const { state, scenarios, liveAvailable, selectScenario, reset } = controller;
+  const { state, scenarios, liveAvailable, liveProvider, selectScenario, reset } = controller;
   const busy = state.phase === "ANALYZING";
+  const configured = liveProvider
+    ? `${providerLabel(liveProvider.provider)} ${liveProvider.model}`
+    : "a model";
 
   return (
     <header className="border-b border-edge bg-surface">
@@ -17,7 +20,7 @@ export function Header({ controller }: { controller: WorkflowController }) {
             </span>
           </p>
           <p className="mt-0.5 text-xs text-ink-faint">
-            GPT-5.6 proposes · deterministic policies validate · a human decides · sandbox only
+            AI proposes · deterministic policies validate · a human decides · sandbox only
           </p>
         </div>
 
@@ -34,9 +37,10 @@ export function Header({ controller }: { controller: WorkflowController }) {
             liveAvailable === null
               ? "Checking live mode availability"
               : liveAvailable
-                ? "Live GPT-5.6 mode available"
-                : "Replay mode only — no API key configured"
+                ? `Live mode available via ${configured}`
+                : "Replay mode only — no model provider configured"
           }
+          title={liveAvailable ? `Configured provider: ${configured}` : undefined}
         >
           {liveAvailable === null ? "checking…" : liveAvailable ? "live available" : "replay only"}
         </span>

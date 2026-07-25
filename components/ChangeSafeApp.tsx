@@ -8,7 +8,7 @@ import { PolicyGate } from "./PolicyGate";
 import { ProposalPanel } from "./ProposalPanel";
 import { ReceiptPanel } from "./ReceiptPanel";
 import { SimulationPanel } from "./SimulationPanel";
-import { useWorkflow } from "./useWorkflow";
+import { providerLabel, useWorkflow } from "./useWorkflow";
 
 function WaitingNote({ children }: { children: React.ReactNode }) {
   return (
@@ -20,7 +20,10 @@ function WaitingNote({ children }: { children: React.ReactNode }) {
 
 export function ChangeSafeApp() {
   const controller = useWorkflow();
-  const { state, liveAvailable, analysisMeta, replayOffer, analyze } = controller;
+  const { state, liveAvailable, liveProvider, analysisMeta, replayOffer, analyze } = controller;
+  const liveLabel = liveProvider
+    ? `${providerLabel(liveProvider.provider)} ${liveProvider.model}`
+    : "the configured model";
 
   const hasProposal =
     state.phase === "PROPOSED" ||
@@ -98,7 +101,7 @@ export function ChangeSafeApp() {
                       onClick={() => void analyze("live")}
                       className="rounded border border-ai bg-ai/15 px-4 py-2 text-[13px] font-medium text-ai hover:bg-ai/25"
                     >
-                      Analyze with GPT-5.6
+                      Analyze with {liveLabel}
                     </button>
                   ) : null}
                   <button
@@ -114,8 +117,9 @@ export function ChangeSafeApp() {
                   </button>
                   {liveAvailable === false ? (
                     <span className="text-[11px] text-ink-faint">
-                      Live mode is not configured (no server API key). Replay uses a bundled,
-                      clearly labeled fixture and runs the full validation pipeline.
+                      Live mode is not configured (no model provider set on the server). Replay
+                      uses a bundled, clearly labeled fixture and runs the full validation
+                      pipeline.
                     </span>
                   ) : null}
                 </div>
@@ -126,7 +130,7 @@ export function ChangeSafeApp() {
               <div className="rounded-lg border border-edge bg-surface p-4" role="status" aria-live="polite">
                 <p className="text-[13px] text-ink-dim">
                   {state.mode === "live"
-                    ? "GPT-5.6 is analyzing the incident…"
+                    ? `${liveLabel} is analyzing the incident…`
                     : "Loading replay fixture and validating…"}
                 </p>
                 <div className="mt-3 h-1 w-full overflow-hidden rounded bg-sunken" aria-hidden>

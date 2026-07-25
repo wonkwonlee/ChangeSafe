@@ -14,13 +14,14 @@ entire post-analysis workflow runs in shared pure domain code.
 │    (pure lib code bundled client-side; synthetic data only)  │
 └───────────────┬──────────────────────────────────────────────┘
                 │ POST /api/analyze { scenarioId, mode }
-                │ GET  /api/status → { liveAvailable }
+                │ GET  /api/status → { liveAvailable, provider, model }
 ┌───────────────▼───────────────── Server ─────────────────────┐
 │  app/api/analyze/route.ts                                    │
 │    ├─ lib/ai/replay.ts  (fixture, provenance-labeled)        │
-│    └─ lib/ai/live.ts    (OpenAI Responses API, gpt-5.6,      │
-│         server-only; OPENAI_API_KEY read here and nowhere    │
-│         else; Structured Outputs + local re-validation)      │
+│    └─ lib/ai/live.ts    (server-only binding)                │
+│         └─ packages/ai  (OpenAI | Anthropic | Ollama)        │
+│              provider credentials read here and nowhere      │
+│              else; structured output + local re-validation   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -28,31 +29,45 @@ Why this split: the deterministic core (patch, policies, receipts, state
 machine) is pure and operates on fully synthetic data, so running it in the
 browser costs nothing in safety and removes any need for server session state
 (serverless-safe, works identically on Vercel). The model call — the only
-secret-bearing, non-deterministic step — is isolated behind one POST route.
+secret-bearing, non-deterministic step — is isolated behind one POST route,
+whichever provider serves it.
 
 ## Module map and dependency direction
 
 ```text
-lib/domain/    schemas (Zod-first), state-machine, validate (evidence ids),
-               api (wire contracts), errors, version
-lib/patch/     paths (allowlist), apply (transactional), inverse,
-               rollback-verify, reachability, simulate
-lib/policies/  seven frozen policies + risk + engine (index)
-lib/receipt/   canonical, hash (SHA-256), receipt
-lib/ai/        prompt, live (server-only), replay, validate-model-output
-scenarios/     two incident bundles + replay fixtures (schema-validated at load)
-app/           page + two API routes
-components/    presentational + useWorkflow orchestration hook
+packages/core/              proposal contract, five universal policies,
+                            deterministic risk, state machine, canonical
+                            serialization + SHA-256 receipts, DomainAdapter.
+                            Depends on zod alone.
+packages/domain-network/    device/topology model, allowlisted transactional
+                            patch engine, reachability, sandboxed simulation,
+                            MGMT_REACHABILITY + PROTECTED_RESOURCE
+packages/domain-terraform/  plan normalization, plan-derived proposals,
+                            DESTRUCTIVE_OP + PROTECTED_RESOURCE + REVERSIBILITY
+packages/ai/                provider adapters (OpenAI / Anthropic / Ollama),
+                            portable JSON Schema derivation, prompts,
+                            local validation, capture
+packages/cli/               the changesafe binary (esbuild-bundled)
+lib/domain/                 app wire contracts + version
+lib/ai/                     app-side binding: server-only live, replay
+scenarios/                  incident bundles + replay fixtures + expectations
+app/, components/           page, two API routes, UI + useWorkflow
 ```
 
 Allowed dependencies (violations are review failures):
 
-- UI → domain types, wire contracts, pure engines. UI never imports `lib/ai`.
-- `lib/ai` → domain schemas + patch path parser (for reference checks).
-- `lib/policies` and `lib/patch` → domain only. **Never** UI or AI modules —
-  the gate cannot consult the model by construction.
-- `lib/receipt` → validated domain outputs only, never raw model text.
+- UI → domain types, wire contracts, pure engines. UI never imports
+  `packages/ai` or `lib/ai` — provider adapters are server-side.
+- `packages/ai` → core + domain schemas and the patch path parser (for
+  reference checks). Nothing in core or the domains imports it.
+- Policy and patch engines → domain types only. **Never** UI or AI modules —
+  the gate cannot consult a model by construction, and no policy function
+  receives model confidence.
+- Receipts → validated domain outputs only, never raw model text.
 - `scenarios` fixtures parse through the production schemas at module load.
+
+The AI package sits outside the trust chain entirely: it can propose, and
+that is all. Deleting it would remove live analysis and change no verdict.
 
 ## Trust boundaries
 
@@ -61,10 +76,18 @@ Allowed dependencies (violations are review failures):
    delimiters and instructs the model to treat embedded directives as
    observations. This is defense-in-depth only — no safety property depends
    on the model behaving.
-2. **Model → deterministic core.** Model output is untrusted until (a)
-   Structured Outputs schema enforcement, (b) local Zod strict parse, (c)
-   evidence-id existence check, (d) device-reference check. Anything else is
-   a typed error; no partial proposal survives.
+2. **Model → deterministic core.** Model output is untrusted until (a) the
+   provider's own structured-output enforcement, (b) local Zod strict parse,
+   (c) evidence-id existence check, (d) device-reference check. Anything else
+   is a typed error; no partial proposal survives.
+
+   Step (a) varies by provider — OpenAI constrains generation to a strict
+   `json_schema`, Anthropic to a forced strict tool call, Ollama to a
+   `format` schema with looser keyword support — so it is treated as a
+   quality measure, not a control. Steps (b) through (d) are identical for
+   every provider and are what actually decides acceptance. The portable wire
+   schema deliberately drops the length, range, and pattern keywords
+   providers disagree about; Zod re-imposes all of them locally.
 3. **Deterministic core → human.** Policies are pure functions; risk derives
    only from verdicts. Any BLOCK forces the `BLOCKED` state, from which
    `APPROVE` and `SIMULATION_COMPLETED` transitions throw — enforced in

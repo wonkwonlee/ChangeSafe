@@ -103,6 +103,9 @@ jobs:
       # matters. (Checking for the variable NAME would only find harmless
       # mentions, such as the setup instructions in a scenario fixture note.)
       OPENAI_API_KEY: sk-canary-must-never-reach-the-client-9f3a1c
+      # Every provider credential gets its own canary: a leak through one
+      # adapter must not be masked by another adapter being unconfigured.
+      ANTHROPIC_API_KEY: sk-ant-canary-must-never-reach-the-client-4b7e02
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -113,12 +116,22 @@ jobs:
       - run: npm run build
       - name: Assert no secret material in client chunks
         run: |
-          if grep -rIqF "$OPENAI_API_KEY" .next/static; then
-            echo "::error::The API key value reached the client bundle"
-            exit 1
-          fi
+          for canary in "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY"; do
+            if grep -rIqF "$canary" .next/static; then
+              echo "::error::A provider credential value reached the client bundle"
+              exit 1
+            fi
+          done
           if grep -rIq "untrusted_incident_data" .next/static; then
             echo "::error::Server prompt content appears in the client bundle"
+            exit 1
+          fi
+          # Provider adapters are server-only. Their endpoints appearing in a
+          # client chunk means something imported @changesafe/ai from the
+          # browser, which would put a credential one refactor away from the
+          # wire.
+          if grep -rIqE "api\.openai\.com|api\.anthropic\.com|11434" .next/static; then
+            echo "::error::A provider adapter reached the client bundle"
             exit 1
           fi
           echo "No secret material in client chunks."

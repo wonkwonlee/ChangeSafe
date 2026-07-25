@@ -23,14 +23,38 @@ import {
   POLICY_VERSION,
   type IncidentBundle,
 } from "@changesafe/domain-network";
-import { APP_VERSION, RUNTIME_MODEL } from "@/lib/domain/version";
+import { APP_VERSION } from "@/lib/domain/version";
 import { SCENARIOS, getScenario } from "@/scenarios";
 
 /** Fixture metadata shown alongside a replay analysis; null in live mode. */
 export interface AnalysisMeta {
+  /** The model that actually answered; null for authored replay fixtures. */
   model: string | null;
+  provider: string | null;
   fixtureId: string | null;
   fixtureNotes: string | null;
+}
+
+/** Which provider live mode would call, as reported by /api/status. */
+export interface LiveProviderInfo {
+  provider: string;
+  model: string;
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  ollama: "Ollama",
+};
+
+/**
+ * Display name for a provider id. Deliberately defined here rather than
+ * imported from @changesafe/ai: the provider adapters are server-side code
+ * and must not be pulled into the browser bundle for a label.
+ */
+export function providerLabel(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return PROVIDER_LABELS[id] ?? id;
 }
 
 const FIRST_SCENARIO = (() => {
@@ -56,6 +80,7 @@ export function useWorkflow() {
     initialState(FIRST_SCENARIO.scenarioId, FIRST_SCENARIO.bundle),
   );
   const [liveAvailable, setLiveAvailable] = useState<boolean | null>(null);
+  const [liveProvider, setLiveProvider] = useState<LiveProviderInfo | null>(null);
   const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
   const [replayOffer, setReplayOffer] = useState(false);
 
@@ -64,7 +89,13 @@ export function useWorkflow() {
     fetch("/api/status")
       .then(async (response) => StatusResponseSchema.parse(await response.json()))
       .then((status) => {
-        if (!cancelled) setLiveAvailable(status.liveAvailable);
+        if (cancelled) return;
+        setLiveAvailable(status.liveAvailable);
+        setLiveProvider(
+          status.provider && status.model
+            ? { provider: status.provider, model: status.model }
+            : null,
+        );
       })
       .catch(() => {
         if (!cancelled) setLiveAvailable(false);
@@ -116,6 +147,7 @@ export function useWorkflow() {
         const success = AnalyzeSuccessSchema.parse(payload);
         setAnalysisMeta({
           model: success.model,
+          provider: success.provider,
           fixtureId: success.fixtureId,
           fixtureNotes: success.fixtureNotes,
         });
@@ -155,7 +187,7 @@ export function useWorkflow() {
         policyVersion: POLICY_VERSION,
         proposal: state.proposal,
         mode: state.mode,
-        model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),
+        model: analysisMeta?.model ?? null,
         fixtureProvenance: state.provenance,
         findings: state.findings,
         riskLevel: state.riskLevel,
@@ -182,7 +214,7 @@ export function useWorkflow() {
       policyVersion: POLICY_VERSION,
       proposal: state.proposal,
       mode: state.mode,
-      model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),
+      model: analysisMeta?.model ?? null,
       fixtureProvenance: state.provenance,
       findings: state.findings,
       riskLevel: state.riskLevel,
@@ -202,7 +234,7 @@ export function useWorkflow() {
       policyVersion: POLICY_VERSION,
       proposal: state.proposal,
       mode: state.mode,
-      model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),
+      model: analysisMeta?.model ?? null,
       fixtureProvenance: state.provenance,
       findings: state.findings,
       riskLevel: state.riskLevel,
@@ -216,6 +248,7 @@ export function useWorkflow() {
     state,
     scenarios: SCENARIOS,
     liveAvailable,
+    liveProvider,
     analysisMeta,
     replayOffer,
     selectScenario,

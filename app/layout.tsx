@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ChangeSafe — AI infrastructure change airlock",
   description:
-    "GPT-5.6 diagnoses and proposes. Deterministic policies validate. A human decides. Simulation never touches real infrastructure.",
+    "An AI model diagnoses and proposes. Deterministic policies validate. A human decides. Simulation never touches real infrastructure.",
 };
 
 export default function RootLayout({

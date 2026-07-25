@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/analyze/route";
 import { GET } from "@/app/api/status/route";
 import { AnalyzeErrorSchema, AnalyzeSuccessSchema, StatusResponseSchema } from "@/lib/domain/api";
-import { RUNTIME_MODEL } from "@/lib/domain/version";
+import { getScenario } from "@/scenarios";
+
+const capturedScenarioA = getScenario("scenario-a-failover");
+if (!capturedScenarioA) throw new Error("scenario-a-failover missing");
 
 function analyzeRequest(body: unknown): Request {
   return new Request("http://localhost/api/analyze", {
@@ -26,8 +29,12 @@ describe("POST /api/analyze in replay mode (no API key required)", () => {
     expect(response.status).toBe(200);
     const payload = AnalyzeSuccessSchema.parse(await response.json());
     expect(payload.mode).toBe("replay");
-    expect(payload.provenance).toBe("authored_synthetic");
-    expect(payload.model).toBeNull();
+    // Scenario A's fixture is a real captured model response (promoted from
+    // the opt-in live smoke test), so it must be labeled as such, not as
+    // authored, and must carry the model that actually produced it.
+    expect(payload.provenance).toBe("captured");
+    expect(payload.model).toBe(capturedScenarioA.fixture.model);
+    expect(payload.model).not.toBeNull();
     expect(payload.proposal.operations.length).toBeGreaterThan(0);
   });
 
@@ -94,11 +101,16 @@ describe("POST /api/analyze request validation", () => {
 });
 
 describe("GET /api/status", () => {
-  it("reports live unavailable without a key", async () => {
+  it("reports live unavailable, and names no provider, without a key", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("CHANGESAFE_PROVIDER", "");
     const payload = StatusResponseSchema.parse(await (await GET()).json());
     expect(payload.liveAvailable).toBe(false);
-    expect(payload.model).toBe(RUNTIME_MODEL);
+    // Advertising a model while unconfigured would imply a call that cannot
+    // be made; the honest answer is "none".
+    expect(payload.provider).toBeNull();
+    expect(payload.model).toBeNull();
   });
 
   it("reports availability as a boolean only and never echoes the key", async () => {

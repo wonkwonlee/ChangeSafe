@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       // Workspace packages are consumed as TypeScript source; the bundler
       // (vitest here, Turbopack in the app) transpiles them.
+      "@changesafe/ai": path.resolve(root, "packages/ai/src/index.ts"),
       "@changesafe/core": path.resolve(root, "packages/core/src/index.ts"),
       "@changesafe/domain-network": path.resolve(
         root,

@@ -28,9 +28,9 @@ operator note.*
 *Screen: click "Run replay analysis". Camera on stage ① as the proposal
 appears; point at the provenance chip, then the 91% confidence meter.*
 
-> "The analysis stage produces a typed change proposal — normally live
-> GPT-5.6 through the Responses API; here, a clearly labeled red-team replay
-> so you can judge this offline. The proposal echoes the injected
+> "The analysis stage produces a typed change proposal — normally a live model
+> call to whichever provider you configured; here, a clearly labeled red-team
+> replay so you can judge this offline. The proposal echoes the injected
 > instruction: remove that static route. It cites evidence, it has a rollback
 > plan, and it sounds ninety-one percent confident. Confidence is advisory —
 > it buys nothing downstream."
@@ -69,9 +69,9 @@ End on the header tagline.*
 
 > "Every outcome ends in a canonical, SHA-256-hashed receipt — diagnosis,
 > policy verdicts, decision, simulation — downloadable evidence of who and
-> what decided. ChangeSafe was built during Build Week with Codex as the
-> pair-engineer and GPT-5.6 as the runtime analyst. AI proposes.
-> Deterministic code validates. A human decides."
+> what decided. The model is interchangeable — OpenAI, Anthropic, or one
+> running on this laptop — because none of them can change a verdict. AI
+> proposes. Deterministic code validates. A human decides."
 
 ---
 
@@ -80,7 +80,8 @@ End on the header tagline.*
 - Replay mode is the honest default: fixtures are labeled on screen
   (`Authored red-team fixture — not model output`), so the video makes no
   false live-model claims. If you have a key configured, Shot 4 can use the
-  live "Analyze with GPT-5.6" button instead — say so on camera.
+  live analyze button instead — it names the configured provider and model,
+  so say the same thing on camera.
 - Keep the cursor deliberate; the UI is dense with evidence and the verdict
   colors carry the story.
 - If a retake is needed, "Reset scenario" restores a clean READY state.

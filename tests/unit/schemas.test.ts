@@ -131,7 +131,7 @@ describe("ReplayFixtureSchema provenance honesty", () => {
   it("rejects a captured fixture without capture metadata", () => {
     const fixture = {
       ...base,
-      provenance: "captured_gpt_5_6",
+      provenance: "captured",
       model: null,
       capturedAtUtc: null,
     };

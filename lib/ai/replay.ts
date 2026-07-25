@@ -1,7 +1,7 @@
+import { networkAnalysisPrompt, validateModelProposal } from "@changesafe/ai";
 import { DomainError } from "@changesafe/core";
 import type { ChangeProposal, FixtureProvenance } from "@changesafe/core";
 import { getScenario } from "@/scenarios";
-import { validateModelProposal } from "./validate-model-output";
 
 export interface ReplayAnalysis {
   proposal: ChangeProposal;
@@ -24,7 +24,7 @@ export function analyzeReplay(scenarioId: string): ReplayAnalysis {
   }
 
   const { fixture } = scenario;
-  const proposal = validateModelProposal(scenario.bundle, fixture.proposal);
+  const proposal = validateModelProposal(networkAnalysisPrompt, scenario.bundle, fixture.proposal);
 
   return {
     proposal,

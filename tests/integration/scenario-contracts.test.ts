@@ -67,7 +67,7 @@ describe("scenario integrity (all scenarios)", () => {
     "%s declares honest fixture provenance",
     (_id, scenario) => {
       const { provenance, model, capturedAtUtc } = scenario.fixture;
-      if (provenance === "captured_gpt_5_6") {
+      if (provenance === "captured") {
         expect(model).not.toBeNull();
         expect(capturedAtUtc).not.toBeNull();
       } else {

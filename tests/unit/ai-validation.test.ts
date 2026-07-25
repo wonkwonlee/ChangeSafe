@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { analyzeLive, type ResponsesParser } from "@/lib/ai/live";
-import { buildAnalysisInput, SYSTEM_INSTRUCTIONS } from "@/lib/ai/prompt";
-import { validateModelProposal } from "@/lib/ai/validate-model-output";
+import { analyzeLive } from "@/lib/ai/live";
+import {
+  buildAnalysisInput,
+  networkAnalysisPrompt,
+  openaiProvider,
+  validateModelProposal,
+  SYSTEM_INSTRUCTIONS,
+} from "@changesafe/ai";
 import { DomainError } from "@changesafe/core";
-import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { buildIncidentBundle, buildOperation, buildProposal } from "@/tests/helpers/fixtures";
 
 const bundle = buildIncidentBundle();
+
+function validate(data: unknown) {
+  return validateModelProposal(networkAnalysisPrompt, bundle, data);
+}
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -19,32 +27,48 @@ function codeOf(fn: () => unknown): string {
   throw new Error("expected a DomainError");
 }
 
+/** An OpenAI Responses envelope carrying `data` as the structured answer. */
+function responsesReply(data: unknown, extra: Record<string, unknown> = {}): Response {
+  return Response.json({
+    model: "gpt-5.6",
+    status: "completed",
+    output: [
+      { type: "reasoning", summary: [] },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(data) }] },
+    ],
+    ...extra,
+  });
+}
+
+function stubFetch(handler: (url: string, init: RequestInit) => Response): typeof globalThis.fetch {
+  return (async (url: string | URL | Request, init?: RequestInit) =>
+    handler(String(url), init ?? {})) as typeof globalThis.fetch;
+}
+
 describe("validateModelProposal", () => {
   it("accepts a schema-valid proposal citing real evidence", () => {
-    expect(validateModelProposal(bundle, buildProposal())).toBeTruthy();
+    expect(validate(buildProposal())).toBeTruthy();
   });
 
   it("rejects structurally invalid output", () => {
-    expect(codeOf(() => validateModelProposal(bundle, { hello: "world" }))).toBe(
-      "AI_INVALID_OUTPUT",
-    );
-    expect(codeOf(() => validateModelProposal(bundle, null))).toBe("AI_INVALID_OUTPUT");
-    expect(codeOf(() => validateModelProposal(bundle, "a CLI command"))).toBe(
-      "AI_INVALID_OUTPUT",
-    );
+    expect(codeOf(() => validate({ hello: "world" }))).toBe("AI_INVALID_OUTPUT");
+    expect(codeOf(() => validate(null))).toBe("AI_INVALID_OUTPUT");
+    expect(codeOf(() => validate("a CLI command"))).toBe("AI_INVALID_OUTPUT");
   });
 
   it("rejects invented evidence ids", () => {
     const proposal = buildProposal();
     proposal.diagnosis.evidenceIds = ["ev-fabricated-001"];
-    expect(codeOf(() => validateModelProposal(bundle, proposal))).toBe("EVIDENCE_UNKNOWN");
+    expect(codeOf(() => validate(proposal))).toBe("EVIDENCE_UNKNOWN");
   });
 
   it("rejects operations that target devices missing from the state", () => {
     const proposal = buildProposal({
-      operations: [buildOperation({ path: "/devices/ghost-rtr-77/interfaces/eth0/enabled", value: false })],
+      operations: [
+        buildOperation({ path: "/devices/ghost-rtr-77/interfaces/eth0/enabled", value: false }),
+      ],
     });
-    expect(codeOf(() => validateModelProposal(bundle, proposal))).toBe("AI_INVALID_OUTPUT");
+    expect(codeOf(() => validate(proposal))).toBe("AI_INVALID_OUTPUT");
   });
 });
 
@@ -59,43 +83,55 @@ describe("prompt construction", () => {
   });
 });
 
-describe("analyzeLive with an injected parser", () => {
-  it("returns a validated proposal for well-formed model output", async () => {
-    const parser: ResponsesParser = {
-      parse: async () => ({ output_parsed: buildProposal(), status: "completed" }),
-    };
-    const result = await analyzeLive(bundle, parser);
-    expect(result.model).toBe(RUNTIME_MODEL);
+describe("analyzeLive over an injected transport", () => {
+  it("returns a validated proposal and reports the answering model", async () => {
+    const result = await analyzeLive(bundle, {
+      provider: openaiProvider,
+      fetch: stubFetch(() => responsesReply(buildProposal())),
+    });
+    expect(result.provider).toBe("openai");
+    // Reported by the provider, not read back from configuration.
+    expect(result.model).toBe("gpt-5.6");
     expect(result.proposal.proposalId).toBe("prop-test-001");
   });
 
-  it("rejects incomplete responses", async () => {
-    const parser: ResponsesParser = {
-      parse: async () => ({ output_parsed: null, status: "incomplete" }),
-    };
-    await expect(analyzeLive(bundle, parser)).rejects.toMatchObject({
-      code: "AI_INVALID_OUTPUT",
-    });
+  it("rejects truncated responses", async () => {
+    await expect(
+      analyzeLive(bundle, {
+        provider: openaiProvider,
+        fetch: stubFetch(() =>
+          Response.json({
+            status: "incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+            output: [],
+          }),
+        ),
+      }),
+    ).rejects.toMatchObject({ code: "AI_INVALID_OUTPUT" });
   });
 
-  it("rejects schema-invalid parsed output", async () => {
-    const parser: ResponsesParser = {
-      parse: async () => ({ output_parsed: { not: "a proposal" } }),
-    };
-    await expect(analyzeLive(bundle, parser)).rejects.toMatchObject({
-      code: "AI_INVALID_OUTPUT",
-    });
+  it("rejects schema-invalid structured output", async () => {
+    await expect(
+      analyzeLive(bundle, {
+        provider: openaiProvider,
+        fetch: stubFetch(() => responsesReply({ not: "a proposal" })),
+      }),
+    ).rejects.toMatchObject({ code: "AI_INVALID_OUTPUT" });
   });
 
-  it("maps upstream failures to a safe error without leaking details", async () => {
-    const secretish = "Authorization: Bearer sk-test-do-not-leak";
-    const parser: ResponsesParser = {
-      parse: async () => {
-        throw Object.assign(new Error(secretish), { status: 401 });
-      },
-    };
+  it("maps upstream failures to a safe error without leaking credentials", async () => {
     try {
-      await analyzeLive(bundle, parser);
+      await analyzeLive(bundle, {
+        provider: openaiProvider,
+        fetch: stubFetch(() =>
+          // A real provider error body can echo the request, including its
+          // Authorization header — nothing from it may reach the user.
+          Response.json(
+            { error: { message: "Incorrect API key provided: sk-test-do-not-leak" } },
+            { status: 401 },
+          ),
+        ),
+      });
       expect.fail("expected AI_CALL_FAILED");
     } catch (error) {
       expect(error).toBeInstanceOf(DomainError);
@@ -104,6 +140,24 @@ describe("analyzeLive with an injected parser", () => {
       expect(domainError.userMessage).toContain("upstream status 401");
       expect(domainError.userMessage).not.toContain("sk-test");
       expect(domainError.userMessage).not.toContain("Bearer");
+    }
+  });
+
+  it("refuses to call anything when no provider is configured", async () => {
+    // Explicit rather than ambient: the assertion must hold on a developer
+    // machine that happens to export a key.
+    const saved = {
+      CHANGESAFE_PROVIDER: process.env.CHANGESAFE_PROVIDER,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    };
+    for (const key of Object.keys(saved)) delete process.env[key];
+    try {
+      await expect(analyzeLive(bundle)).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value !== undefined) process.env[key] = value;
+      }
     }
   });
 });

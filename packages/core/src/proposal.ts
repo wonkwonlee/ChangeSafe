@@ -91,7 +91,7 @@ export function makeProposalSchemas<TValue extends z.ZodTypeAny>(
       proposal,
     })
     .superRefine((fixture, ctx) => {
-      if (fixture.provenance === "captured_gpt_5_6") {
+      if (fixture.provenance === "captured") {
         if (!fixture.model || !fixture.capturedAtUtc) {
           ctx.addIssue({
             code: "custom",

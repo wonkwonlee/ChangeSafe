@@ -19,8 +19,10 @@ export const AnalyzeRequestSchema = z.strictObject({
 
 export const AnalyzeSuccessSchema = z.strictObject({
   mode: AnalysisModeSchema,
-  /** Runtime model for live analyses; null for authored replay fixtures. */
+  /** The model that answered a live call; null for authored replay fixtures. */
   model: z.string().max(64).nullable(),
+  /** Which provider answered a live call; null in replay. */
+  provider: z.string().max(32).nullable(),
   provenance: FixtureProvenanceSchema.nullable(),
   fixtureId: IdSchema.nullable(),
   /** Honest user-facing description of what a replay fixture is. */
@@ -49,7 +51,10 @@ export const AnalyzeErrorSchema = z.strictObject({
 
 export const StatusResponseSchema = z.strictObject({
   liveAvailable: z.boolean(),
-  model: z.string().max(64),
+  /** Configured provider and model, or null when live mode is unconfigured.
+   *  Never a credential, and never a promise that a call will succeed. */
+  provider: z.string().max(32).nullable(),
+  model: z.string().max(64).nullable(),
   appVersion: z.string().max(32),
 });
 

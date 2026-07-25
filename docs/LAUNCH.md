@@ -159,6 +159,7 @@ properties are enforced by tests you can read and run.
 - Issues labeled `good first issue` are the scenario templates; point people
   at `docs/SCENARIO_AUTHORING.md`, which lists the coverage gaps worth
   filling.
-- If traffic arrives, the highest-value next step is P5 (provider-agnostic
-  model adapters) so people can run the live path against whatever model
-  they already pay for.
+- P5 landed: the live path runs against OpenAI, Anthropic, or a local Ollama
+  model, so people can try it with whatever they already pay for — or with
+  nothing at all. The next roadmap step is P6 (self-host hardening: signed
+  receipts, server-side decisions).

@@ -6,7 +6,8 @@ incident content and the deterministic decision path.
 
 ## Assets
 
-- The `OPENAI_API_KEY` (the only real secret; optional).
+- Provider credentials — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (the only real
+  secrets; all optional, and none needed for replay mode or for the gate).
 - The integrity of the decision path: a BLOCKed change must never become
   approved or simulated.
 - The honesty of provenance labels (live vs replay; authored vs captured).
@@ -32,8 +33,8 @@ incident content and the deterministic decision path.
 | Command smuggling (CLI strings as operations or values) | Operations are declarative only; four-family path allowlist; executable-character/verb screening on string values and route descriptions | `lib/patch/paths.ts`, `lib/patch/apply.ts`, `PATCH_SCHEMA` + tests |
 | Unsafe change approved by UI manipulation | Blocked approval is impossible at the domain layer: `transition()` throws on BLOCKED→APPROVE/SIMULATE; `APPROVE` re-checks findings; contract tests attempt it directly | `lib/domain/state-machine.ts` + tests |
 | Unsafe change approved by API manipulation | There is no approve/simulate/receipt API — the only server surface is analysis (replay/live) and a status boolean | `app/api/` |
-| `OPENAI_API_KEY` leakage | Key read only inside `lib/ai/live.ts` (server-only guard); status endpoint returns a boolean; upstream errors are collapsed to status codes; client-bundle grep in the M5 gate confirms the identifier is absent from `.next/static`; API tests assert no key material in error bodies | route/adapter code + `analyze-api.test.ts` |
-| Replay passed off as live model output | Provenance is a schema-enforced enum; authored fixtures must declare `model: null` (schema rejects a model claim); `captured_gpt_5_6` requires model + capture timestamp metadata; UI labels replay explicitly; live-call failure offers replay, never silently switches | `ReplayFixtureSchema` superRefine + contract/E2E tests |
+| Provider credential leakage | Credentials read only by `packages/ai` adapters behind `lib/ai/live.ts` (server-only guard); the status endpoint returns a boolean plus a provider/model name, never key material; upstream errors are collapsed to a status code because provider error bodies can echo the request; CI builds with a canary value per provider and greps `.next/static`, and additionally fails if any provider endpoint string reaches a client chunk | adapter code + `analyze-api.test.ts` + `providers.test.ts` + CI `no-secret-leak` |
+| Replay passed off as live model output | Provenance is a schema-enforced enum; authored fixtures must declare `model: null` (schema rejects a model claim); `captured` requires model + capture timestamp metadata, so a fixture can never claim a model without naming it; UI labels replay explicitly; live-call failure offers replay, never silently switches | `ReplayFixtureSchema` superRefine + contract/E2E tests |
 | Receipt tampering | `receiptSha256` over canonical content excluding itself; `verifyReceiptHash` recomputes; hashes are stable across key order | `lib/receipt/` + tests |
 | Oversized / malformed API requests | 4 KB body cap, strict request schema, typed error responses without stack traces | `app/api/analyze/route.ts` + tests |
 | Real infrastructure execution | No SSH/NETCONF/RESTCONF/SNMP/vendor/exec code exists anywhere; simulation mutates a deep clone only; dependencies include no device-automation libraries | repository-wide; simulate tests assert input state is untouched |

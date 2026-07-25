@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ChangeReceiptSchema,
@@ -427,13 +427,66 @@ describe("changesafe usage", () => {
     const capture = createCapture();
     expect(await main([], capture)).toBe(2);
     expect(capture.stdout).toContain("changesafe gate");
-    expect(capture.stdout).toContain("never approves a change");
+    expect(capture.stdout).toContain("No command approves a change");
   });
 
   it("rejects unknown commands and formats", async () => {
     const capture = createCapture();
     await expect(main(["frobnicate"], capture)).rejects.toThrow(/unknown command/);
     await expect(main(["gate", "--format", "yaml"], capture)).rejects.toThrow(/--format/);
+  });
+});
+
+describe("analyze — the only command that calls a model", () => {
+  const savedEnv = {
+    CHANGESAFE_PROVIDER: process.env.CHANGESAFE_PROVIDER,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  };
+
+  beforeEach(() => {
+    for (const key of Object.keys(savedEnv)) delete process.env[key];
+  });
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("stops with a usage error rather than guessing a provider", async () => {
+    const capture = createCapture();
+    // Silently picking a different model than the operator expected would be
+    // worse than refusing to run.
+    await expect(main(["analyze", "--scenario", SAFE], capture)).rejects.toThrow(
+      /no model provider is configured/,
+    );
+  });
+
+  it("refuses a provider whose credential is missing, naming the variable", async () => {
+    const capture = createCapture();
+    await expect(
+      main(["analyze", "--scenario", SAFE, "--provider", "anthropic"], capture),
+    ).rejects.toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it("rejects an unknown provider", async () => {
+    const capture = createCapture();
+    await expect(
+      main(["analyze", "--scenario", SAFE, "--provider", "gpt4all"], capture),
+    ).rejects.toThrow(/Unknown provider/);
+  });
+
+  it("explains why the terraform domain has nothing for a model to propose", async () => {
+    const capture = createCapture();
+    await expect(
+      main(["analyze", "--domain", "terraform", "--input", "plan.json"], capture),
+    ).rejects.toThrow(/derives its proposal from the plan/);
+  });
+
+  it("makes eval demand an explicit provider because it spends credit", async () => {
+    const capture = createCapture();
+    await expect(main(["eval"], capture)).rejects.toThrow(/spends API credit/);
   });
 });
 

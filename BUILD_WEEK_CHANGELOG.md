@@ -138,11 +138,15 @@ deterministic local code does that, and a human makes the decision.
 ## Submission checklist (owner)
 
 - [ ] Record the demo video from `docs/DEMO_SCRIPT.md` (≤3:00).
-- [ ] Optional: with an `OPENAI_API_KEY`, run
-      `CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test`,
-      review `scenarios/scenario-a-failover/replay-fixture.captured.json`,
-      and promote it to `replay-fixture.json` for genuine
-      `captured_gpt_5_6` provenance in the safe scenario.
+- [x] Capture a genuine model response for the safe scenario. Done on
+      2026-07-25 via `CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1
+      npm test` against `gpt-5.6-terra`, reviewed, and promoted to
+      `scenarios/scenario-a-failover/replay-fixture.json`. It is the only
+      bundled fixture with `captured` provenance; the other five remain
+      authored and say so. (The provenance label was later renamed from
+      `captured_gpt_5_6` to `captured` when provider-agnostic adapters
+      landed — the capture itself is unchanged and still records
+      `model: "gpt-5.6-terra"`.)
 - [ ] Deploy to Vercel (`vercel --prod`; replay mode needs no env vars) and
       verify both scenarios on the public URL.
 - [ ] Push the repository to a public remote and attach the URL + deployment

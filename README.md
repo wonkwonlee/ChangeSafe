@@ -125,28 +125,52 @@ Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 ## Live model mode (optional)
 
 ```bash
-cp .env.example .env.local     # add OPENAI_API_KEY=...
+cp .env.example .env.local     # add a key for one provider
 npm run dev
 ```
 
-The header badge switches from `replay only` to `live available` and an
-analyze-with-model button appears. Model calls run **only** server-side; the
-key never reaches the browser, and a failed live call offers an explicit
-switch to replay — never a silent substitution.
+Three providers are supported and none is privileged:
 
-Today the adapter targets the OpenAI Responses API with Structured Outputs.
-Provider-agnostic adapters (Anthropic, local models) are roadmap P5 — because
-the gate is deterministic, swapping models cannot change what is safe.
+| Provider | Configure with | Structured output via |
+| --- | --- | --- |
+| OpenAI | `OPENAI_API_KEY` | Responses API, strict `json_schema` |
+| Anthropic | `ANTHROPIC_API_KEY` | Messages API, forced strict tool call |
+| Ollama (local) | nothing — just run it | `format` JSON Schema |
+
+Set `CHANGESAFE_PROVIDER` to choose explicitly, or leave it unset to use
+whichever hosted key is present. The header badge switches from `replay only`
+to `live available` and names the configured model. Model calls run **only**
+server-side; the key never reaches the browser, and a failed live call offers
+an explicit switch to replay — never a silent substitution.
+
+All three adapters are plain `fetch` — no vendor SDKs, so the CLI stays
+dependency-free and every adapter is testable without a network or a
+credential. One Zod schema derives all three wire schemas, and every
+provider's output faces the identical local validation. Because the gate is
+deterministic, swapping models changes what gets *proposed* and never what is
+*safe*: a weaker model produces more rejections and more blocks, never a
+weaker verdict.
+
+```bash
+# Ask a model for a change, then gate it — same engine as `changesafe gate`
+changesafe analyze --scenario scenarios/scenario-a-failover --provider ollama
+
+# Measure a model against the whole scenario suite (spends API credit)
+changesafe eval --provider anthropic --runs 3
+```
 
 ### Replay vs live, honestly
 
 Replay skips **only** the network call. Fixtures carry explicit provenance
-(`authored_synthetic`, `authored_red_team`, or `captured_gpt_5_6` with
-capture metadata), are validated by the same schemas as live output, and run
-the identical validation → policy → decision → simulation → receipt
-pipeline. The UI labels replay output as fixture content and never presents
-it as a live model call. Both bundled fixtures today are **authored**, and
-say so on screen.
+(`authored_synthetic`, `authored_red_team`, or `captured` with the model and
+capture time), are validated by the same schemas as live output, and run the
+identical validation → policy → decision → simulation → receipt pipeline. The
+UI labels replay output as fixture content and never presents it as a live
+model call. `scenario-a-failover`'s fixture is a real captured GPT-5.6
+response, promoted from the opt-in live smoke test; the other five bundled
+fixtures are authored — and every fixture says so on screen. The schema
+enforces the distinction in both directions: a `captured` claim without model
+and timestamp is rejected, and an authored fixture may not name a model.
 
 ## Commands
 

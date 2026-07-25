@@ -5,7 +5,7 @@ import { IdChip } from "./atoms";
 import type { AnalysisMeta } from "./useWorkflow";
 
 const PROVENANCE_LABEL: Record<FixtureProvenance, string> = {
-  captured_gpt_5_6: "Captured GPT-5.6 replay",
+  captured: "Captured model replay",
   authored_red_team: "Authored red-team fixture — not model output",
   authored_synthetic: "Authored replay fixture — not model output",
 };

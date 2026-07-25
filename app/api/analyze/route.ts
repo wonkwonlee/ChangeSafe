@@ -56,11 +56,12 @@ export async function POST(request: Request): Promise<Response> {
           "Live mode is not configured on this server. Switch to replay mode.",
         );
       }
-      const { proposal, model } = await analyzeLive(scenario.bundle);
+      const { proposal, model, provider } = await analyzeLive(scenario.bundle);
       return Response.json(
         AnalyzeSuccessSchema.parse({
           mode: "live",
           model,
+          provider,
           provenance: null,
           fixtureId: null,
           fixtureNotes: null,
@@ -74,6 +75,7 @@ export async function POST(request: Request): Promise<Response> {
       AnalyzeSuccessSchema.parse({
         mode: "replay",
         model: replay.model,
+        provider: null,
         provenance: replay.provenance,
         fixtureId: replay.fixtureId,
         fixtureNotes: replay.fixtureNotes,

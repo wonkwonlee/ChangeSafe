@@ -253,18 +253,30 @@ and CI exercises the Action's path end to end.
 eventually obey a prompt injection — design so it doesn't matter"): this is
 the earliest point where the project is useful to a stranger in 10 minutes.
 
-### P5 — Provider-agnostic AI + `changesafe analyze` + eval harness (M)
+### P5 — Provider-agnostic AI + `changesafe analyze` + eval harness (M) — **done**
 
-- `packages/ai` adapter interface (OpenAI / Anthropic / Ollama-local);
-  structured output where supported, JSON-schema prompting + strict Zod
-  elsewhere; the existing dual-validation and evidence/device cross-checks
-  apply to every provider identically.
-- `changesafe analyze --provider …` produces a proposal from an incident
-  bundle, then gates it (full airlock in one command).
-- Capture pipeline → provenance-stamped fixtures for any provider; eval
-  harness: % schema-valid, % evidence-grounded, % red-team-set blocked,
-  per model — publishable results, feeds the P7 benchmark.
-- App copy generalizes from "GPT-5.6" to configured-provider naming.
+- `packages/ai` supplies the adapter interface and three implementations
+  (OpenAI Responses / Anthropic Messages / local Ollama), all on plain
+  `fetch` — no vendor SDKs, so the bundled CLI gained the feature without
+  gaining a third-party dependency, and every adapter is testable with an
+  injected transport instead of a mock.
+- One Zod schema derives all three wire schemas via `toPortableJsonSchema`,
+  reduced to the keyword subset every provider honors. Dropped constraints
+  are restated as `description` guidance and re-imposed locally by Zod, so
+  the wire schema shapes output while Zod decides acceptance. The
+  dual-validation and evidence/device cross-checks run identically for every
+  provider — proven by a test asserting all three produce byte-identical
+  accepted output from equivalent responses.
+- `changesafe analyze --provider …` proposes then gates through the same
+  `gateParsedProposal` the `gate` command uses; a failed model call exits 2,
+  never 0. `--capture` writes provenance-stamped fixtures for any provider.
+- `changesafe eval` reports % schema-valid, % evidence-grounded, and
+  red-team block rate per model, separating call failures from model
+  failures so a network problem never reads as a model score.
+- `FixtureProvenance` generalized `captured_gpt_5_6` → `captured`; the
+  fixture's `model` field already records the vendor precisely.
+- App copy now names the configured provider and model, and receipts record
+  the model that actually answered rather than the one configured.
 
 ### P6 — Self-host hardening (L)
 

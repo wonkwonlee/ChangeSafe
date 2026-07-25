@@ -2,9 +2,13 @@
 
 Gate AI-proposed infrastructure changes from a terminal or a CI job.
 
-The CLI runs the same deterministic engine as the ChangeSafe console, with
-**no AI dependency** — nothing here calls a model, so the gate costs nothing
-and cannot be influenced by one.
+The CLI runs the same deterministic engine as the ChangeSafe console.
+
+**The gate has no AI dependency.** `gate`, `verify`, and `scenario` never call
+a model, so gating costs nothing, needs no credential, works offline, and
+cannot be influenced by a model. Two commands do call one — `analyze` (ask a
+model for a proposal, then gate it) and `eval` (measure a model) — and both
+require you to say so explicitly. Neither can change a verdict.
 
 ```bash
 npm run build:cli                                   # build the bundled binary
@@ -44,6 +48,28 @@ inverse operations to verify, and `VERIFICATION_REQUIRED` is skipped because
 plan JSON contains no verification plan — in this workflow the pull request
 review is that step.
 
+## Analysing and gating in one step
+
+`analyze` asks a provider for a proposal and hands it straight to the same
+`gate` code path — same policies, same order, same exit codes. A model
+proposal gets no shortcut for having been produced locally.
+
+```bash
+export ANTHROPIC_API_KEY=...
+changesafe analyze --scenario scenarios/scenario-b-route-leak --provider anthropic
+```
+
+A failed or unusable model call exits `2`, never `0`: an analysis that did not
+happen is a missing verdict, not a clean one. `--capture` writes a replay
+fixture stamped with the model that produced it and when — the schema refuses
+a `captured` claim without both, and refuses to let an authored fixture name
+a model at all.
+
+`eval` runs the whole scenario suite against a model and reports what fraction
+of its answers were schema-valid, evidence-grounded, and blocked by the gate.
+It requires an explicit `--provider` because it spends real credit, and
+nothing in CI runs it.
+
 ## It gates; it never approves
 
 There is no `--auto-approve`, and there never will be. A clean run means
@@ -70,6 +96,16 @@ changesafe gate --scenario <dir>              # or: --input <file> --proposal <f
                 [--policy-pack <file>]        # typed threshold overrides
                 [--receipt <out.json>]        # write a hashed record
                 [--format pretty|json]
+
+changesafe analyze --scenario <dir>           # ask a model, then gate the answer
+                [--provider openai|anthropic|ollama]
+                [--model <id>]
+                [--out <proposal.json>]       # the accepted proposal
+                [--capture <fixture.json>]    # a provenance-stamped fixture
+                [... every gate option above]
+
+changesafe eval --provider <id>               # measure a model on the suite
+                [--model <id>] [--dir scenarios] [--runs <n>]
 
 changesafe verify <receipt.json>              # recompute the receipt's hashes
                 [--input <file>] [--proposal <file>]   # and check it describes these

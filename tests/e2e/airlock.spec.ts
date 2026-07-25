@@ -16,8 +16,11 @@ test("safe scenario: analyze, approve, simulate, and download a verified receipt
   await expect(page.getByRole("button", { name: "Run replay analysis" })).toBeVisible();
   await page.getByRole("button", { name: "Run replay analysis" }).click();
 
-  // Honest provenance label and full-PASS gate.
-  await expect(page.getByText("Authored replay fixture — not model output")).toBeVisible();
+  // Honest provenance label and full-PASS gate. Scenario A's fixture is a
+  // real captured model response, so it must be labeled as a capture — the
+  // authored label would understate what it is, just as claiming a capture
+  // for authored content would overstate it.
+  await expect(page.getByText("Captured model replay")).toBeVisible();
   await expect(page.getByText("7 PASS")).toBeVisible();
   await expect(page.getByText("risk: LOW")).toBeVisible();
 
@@ -38,8 +41,10 @@ test("safe scenario: analyze, approve, simulate, and download a verified receipt
   const receipt = JSON.parse(readFileSync(downloadPath, "utf8")) as Record<string, unknown>;
   expect(receipt.decision).toBe("approved");
   expect(receipt.mode).toBe("replay");
-  expect(receipt.fixtureProvenance).toBe("authored_synthetic");
-  expect(receipt.model).toBeNull();
+  expect(receipt.fixtureProvenance).toBe("captured");
+  // Replaying a captured fixture records the model that actually produced the
+  // proposal, so the receipt attributes it correctly rather than anonymously.
+  expect(receipt.model).toBe("gpt-5.6-terra");
   expect(String(receipt.receiptSha256)).toMatch(/^[a-f0-9]{64}$/);
   expect(receipt.simulation).not.toBeNull();
   expect(JSON.stringify(receipt)).not.toContain("OPENAI_API_KEY");

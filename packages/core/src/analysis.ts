@@ -11,12 +11,19 @@ import { z } from "zod";
 export const AnalysisModeSchema = z.enum(["live", "replay", "offline"]);
 
 /**
- * Honest provenance labels. A captured label may only be used when fixture
- * metadata evidences a real capture (model + capture time); authored content
- * must never be attributed to a model.
+ * Honest provenance labels.
+ *
+ * `captured` may only be used when fixture metadata evidences a real capture
+ * (which model, and when) — the schema rejects the claim otherwise. Authored
+ * content must never be attributed to a model, and must declare `model: null`.
+ *
+ * The label names no vendor on purpose: a fixture captured from any provider
+ * is equally a capture, and the model field already records which one. A
+ * provider-shaped label would either exclude honest captures or invite
+ * mislabeling them.
  */
 export const FixtureProvenanceSchema = z.enum([
-  "captured_gpt_5_6",
+  "captured",
   "authored_red_team",
   "authored_synthetic",
 ]);

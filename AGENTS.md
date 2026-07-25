@@ -120,8 +120,9 @@ and never alter the risk formula. Any policy behavior change bumps
 
 Strict TypeScript, Zod-first (schemas before derived types), Next.js App
 Router for the showcase app, npm (workspaces once extracted), Vitest,
-Playwright. AI: provider-agnostic adapters (OpenAI today; Anthropic and
-local/Ollama planned per roadmap P5) — all server/CLI-side only. Do not add
+Playwright. AI: provider-agnostic adapters (OpenAI, Anthropic, and
+local/Ollama) in `packages/ai`, plain `fetch` with no vendor SDKs — all
+server/CLI-side only, and never depended on by the gate. Do not add
 major infrastructure (databases, queues, workers) ahead of the roadmap
 phase that calls for it.
 

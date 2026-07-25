@@ -63,8 +63,8 @@ wrote it.
 
 - `provenance` — `authored_synthetic` (a plausible, usually safe proposal
   you wrote), `authored_red_team` (deliberately unsafe), or
-  `captured_gpt_5_6` (a real captured response; requires `model` and
-  `capturedAtUtc`). **Authored fixtures must set `model: null`** — the
+  `captured` (a real captured response from any provider;
+  requires `model` and `capturedAtUtc`). **Authored fixtures must set `model: null`** — the
   schema rejects attributing your writing to a model.
 - `notes` — shown in the UI. Say plainly what the fixture is and, for
   red-team fixtures, what failure mode it demonstrates.

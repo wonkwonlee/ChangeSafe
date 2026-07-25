@@ -1,6 +1,11 @@
 import { parseArgs } from "node:util";
 
+import { PROVIDER_IDS } from "@changesafe/ai";
+import { isDomainError } from "@changesafe/core";
+
+import { runAnalyze } from "./analyze";
 import { DOMAIN_IDS } from "./domains";
+import { runEval } from "./eval";
 import { runGate } from "./gate";
 import { UsageError } from "./io";
 import { runScenarioCheck, runScenarioInit } from "./scenario";
@@ -11,6 +16,8 @@ const HELP = `changesafe — a deterministic airlock for AI-proposed infrastruct
 
 USAGE
   changesafe gate      [options]        evaluate a proposal against the safety gate
+  changesafe analyze   [options]        ask a model for a proposal, then gate it
+  changesafe eval      [options]        measure a model against the scenario suite
   changesafe verify    <receipt.json>   recompute a receipt's hashes
   changesafe scenario  check [dir]      check scenarios against their expectations
   changesafe scenario  init <name>      scaffold a new scenario
@@ -30,6 +37,22 @@ GATE OPTIONS
   --source-id <id>      what to record as the input's origin
   --format pretty|json  output format (default: pretty)
 
+ANALYZE OPTIONS
+  --input <file>        the incident bundle to analyze
+  --scenario <dir>      shorthand for --input <dir>/incident.json
+  --provider <id>       ${PROVIDER_IDS.join(" | ")} (default: the configured one)
+  --model <id>          override the provider's default model
+  --out <file>          write the accepted proposal
+  --capture <file>      write a provenance-stamped replay fixture
+  plus every GATE OPTION above, applied to the resulting proposal
+
+EVAL OPTIONS
+  --provider <id>       required; spends API credit
+  --model <id>          override the provider's default model
+  --dir <dir>           scenario suite (default: scenarios)
+  --runs <n>            attempts per scenario (default: 1, max 20)
+  --format pretty|json
+
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
   --proposal <file>     also check the receipt describes this proposal
@@ -38,8 +61,9 @@ VERIFY OPTIONS
 EXIT CODES
   0  evaluated, nothing blocking      1  evaluated, blocked      2  could not evaluate
 
-This command never approves a change. A clean gate is an input to a human
-decision, not a substitute for one.`;
+No command approves a change, and there is no --auto-approve. A clean gate is
+an input to a human decision, not a substitute for one. Only \`analyze\` and
+\`eval\` call a model; the gate itself never does.`;
 
 const OPTION_SPEC = {
   input: { type: "string" },
@@ -50,6 +74,11 @@ const OPTION_SPEC = {
   receipt: { type: "string" },
   "source-id": { type: "string" },
   context: { type: "string" },
+  provider: { type: "string" },
+  model: { type: "string" },
+  out: { type: "string" },
+  capture: { type: "string" },
+  runs: { type: "string", default: "1" },
   format: { type: "string", default: "pretty" },
   dir: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
@@ -102,6 +131,44 @@ export async function main(argv: string[], console: Console): Promise<number> {
         console,
       );
 
+    case "analyze":
+      return runAnalyze(
+        {
+          domain: values.domain,
+          input: values.input,
+          scenario: values.scenario,
+          provider: values.provider,
+          model: values.model,
+          out: values.out,
+          capture: values.capture,
+          policyPack: values["policy-pack"],
+          receipt: values.receipt,
+          sourceId: values["source-id"],
+          format,
+        },
+        console,
+      );
+
+    case "eval": {
+      if (!values.provider) {
+        throw new UsageError(
+          `eval needs an explicit --provider (${PROVIDER_IDS.join(", ")}) because it spends API credit`,
+        );
+      }
+      const runs = Number(values.runs);
+      if (!Number.isFinite(runs)) throw new UsageError(`--runs must be a number, got "${values.runs}"`);
+      return runEval(
+        {
+          provider: values.provider,
+          model: values.model,
+          dir: values.dir ?? "scenarios",
+          runs,
+          format,
+        },
+        console,
+      );
+    }
+
     case "verify": {
       const receipt = positionals[1] ?? values.receipt;
       if (!receipt) throw new UsageError("verify needs a receipt file: changesafe verify <receipt.json>");
@@ -144,8 +211,13 @@ export async function run(argv: string[]): Promise<number> {
   try {
     return await main(argv, console);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "the gate failed for an unknown reason";
+    // Typed domain errors carry a message written for a person; the raw
+    // `message` prefixes it with an internal code.
+    const message = isDomainError(error)
+      ? error.userMessage
+      : error instanceof Error
+        ? error.message
+        : "the gate failed for an unknown reason";
     console.err("");
     console.err(`  ${paint(console.color, "red", "error")} ${message}`);
     console.err("");

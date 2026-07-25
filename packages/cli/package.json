@@ -1,7 +1,7 @@
 {
   "name": "changesafe",
   "version": "0.1.0",
-  "description": "Gate AI-proposed infrastructure changes from the terminal or CI: deterministic policies, honest exit codes, hashed receipts. No AI dependency.",
+  "description": "Gate AI-proposed infrastructure changes from the terminal or CI: deterministic policies, honest exit codes, hashed receipts. The gate itself never calls a model.",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@changesafe/ai": "0.1.0",
     "@changesafe/core": "0.1.0",
     "@changesafe/domain-network": "0.1.0",
     "zod": "^4.4.3",

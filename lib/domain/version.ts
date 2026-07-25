@@ -4,5 +4,7 @@ export const APP_VERSION = "0.1.0";
 /** Bumped whenever any frozen policy's behavior changes; embedded in receipts. */
 export const POLICY_VERSION = "policies-v0.1.0";
 
-/** The only runtime model ChangeSafe calls, via the server-side Responses API. */
-export const RUNTIME_MODEL = "gpt-5.6-terra";
+// There is deliberately no runtime model constant here. Which model answers
+// is a deployment setting resolved server-side from the configured provider,
+// and what a receipt records is the model that actually answered — never the
+// one we hoped for. See @changesafe/ai and /api/status.
