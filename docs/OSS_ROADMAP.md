@@ -2,8 +2,8 @@
 
 Status: adopted 2026-07-25. Supersedes the YC/Build Week framing of
 `docs/V2_PLAN.md` (kept for reference; its technical findings remain valid).
-This is the implementation plan — no code in the phases below has been
-written yet unless a phase is explicitly marked done.
+This is the implementation plan. Phases P0–P3 are complete; P4 (Terraform
+plan ingestion) is next.
 
 ## 1. Vision
 
@@ -45,7 +45,7 @@ Effort scale: S ≈ days, M ≈ 1–2 weeks, L ≈ 3–6 weeks (one engineer + A
 pair). Every phase keeps the replay demo green (`npm test`, `npm run
 test:e2e`) — that is a standing exit criterion.
 
-### P0 — Reposition the repository (S) ← current phase
+### P0 — Reposition the repository (S) — **done**
 
 Goal: the repo reads as an OSS project, and nothing in the instructions
 fights the new direction.
@@ -57,21 +57,20 @@ fights the new direction.
       rules. The two files stay identical mirrors.
 - [x] `BUILD_WEEK_CHANGELOG.md`: closing note — built during the window,
       not submitted, pivoted to OSS; file becomes historical record.
-- [ ] README hero rewrite for OSS (drop "Built for OpenAI Build Week" as the
-      identity; keep an honest history line), add roadmap link.
-- [ ] GitHub Actions CI: lint + typecheck + test + build + e2e on PRs,
-      Node LTS matrix; badge in README.
-- [ ] Repo hygiene: `CONTRIBUTING.md` (scenario contributions first-class),
-      `SECURITY.md`, issue/PR templates, `engines` + `.nvmrc`,
-      fix the dead `scripts/capture-fixture.ts` reference in scenario A's
-      fixture note, soften "enterprise operations console" copy.
+- [x] README rewritten for OSS with an honest history line and a roadmap
+      link.
+- [x] GitHub Actions CI: lint, typecheck, test, build, e2e, and a
+      client-bundle secret check on Node 22/24.
+- [x] Repo hygiene: `CONTRIBUTING.md` (scenario contributions first-class),
+      `SECURITY.md`, issue/PR templates, `engines` + `.nvmrc`, dead
+      fixture-note reference fixed, overclaiming copy softened.
 - [x] Public repository: `github.com/wonkwonlee/ChangeSafe`.
 
 Exit gate: a newcomer reading README + CONTRIBUTING + this roadmap
 understands what the project is, where it is going, and how to contribute;
 CI runs the full gate on every PR.
 
-### P1 — Scenario expectations harness + verdict-space scenarios (S/M)
+### P1 — Scenario expectations harness + verdict-space scenarios (S/M) — **done**
 
 Goal: scenarios become data-driven, CI-verified, contributable content —
 and the demo shows more than LOW/CRITICAL.
@@ -108,7 +107,7 @@ Exit gate: **met** — harness runs all six scenarios from disk; four new
 scenarios green; authoring guide published; falsified expectations fail
 loudly (verified).
 
-### P2 — Extract `@changesafe/core` (M)
+### P2 — Extract `@changesafe/core` (M) — **done**
 
 Goal: the pure engine becomes an embeddable, dependency-light package;
 the app becomes its first consumer.
@@ -162,35 +161,44 @@ Exit gate: **met** — `npm i` links the workspaces, the app runs on the
 extracted packages, core imports nothing from the app or AI layer, and
 lint, typecheck, 184 tests, production build, and e2e are green.
 
-### P3 — `changesafe` CLI (M)
+### P3 — `changesafe` CLI (M) — **done**
 
 Goal: the gate runs anywhere — terminal and CI — with **no AI dependency**
 (gate/verify are fully deterministic).
 
-- `packages/cli` (published as `changesafe`), commands:
+- [x] `packages/cli` (bin `changesafe`), commands:
 
   ```text
-  changesafe gate    --domain <network|terraform> --input <file>
-                     [--proposal <file>] [--policy-pack <file>]
-                     [--context <untrusted-text-file>]
-                     [--format pretty|json] [--receipt <out.json>]
-  changesafe verify  <receipt.json>          # recompute + check hashes
-  changesafe scenario check [dir]            # run expectations harness
-  changesafe scenario init <name>            # scaffold a scenario
+  changesafe gate     --scenario <dir> | --input <file> --proposal <file>
+                      [--domain network] [--policy-pack <file>]
+                      [--receipt <out.json>] [--format pretty|json]
+  changesafe verify   <receipt.json> [--input <file>] [--proposal <file>]
+  changesafe scenario check [dir]
+  changesafe scenario init <name>
   ```
 
-- Exit codes: `0` no BLOCK (approvable), `1` BLOCK, `2` usage/validation
-  error — CI-composable by design.
-- The CLI issues receipts with `decision: "blocked"` or a new
-  `gate-only` mode note; **the CLI never auto-approves** — in CI the human
-  decision is the PR review itself, and the receipt records the gate
-  verdict, not an approval.
-- Policy-pack config (typed, Zod-validated parameters over compiled
-  predicates — thresholds, protected patterns; explicitly **not** a DSL).
+- [x] Exit codes `0` (nothing blocking), `1` (blocked), `2` (could not
+      evaluate). The 1/2 split is deliberate: a 2 is a *missing* verdict and
+      must never read as approval.
+- [x] The CLI gates and never approves. Receipts record `gate_only` or
+      `blocked`; there is no `--auto-approve` flag. Two new core concepts
+      support this honestly: the `gate_only` receipt decision and the
+      `offline` analysis mode ("the proposal was handed to us; this run
+      produced nothing and attests nothing about its origin").
+- [x] Policy packs: typed, Zod-validated thresholds
+      (`blastRadius.warnAt/blockAbove`, `verification.require*`) resolved
+      over compiled predicates — explicitly not a DSL, and unable to make
+      the gate unsound. Defaults reproduce current behavior exactly.
+- [x] Ships pre-bundled (esbuild) so it runs under plain Node with no
+      bundler and no workspace resolution; a test executes the built binary
+      from a temp directory to prove it.
+- [x] 21 CLI tests, including the exit-gate proof that CLI findings equal
+      the app's for the same scenario, with identical canonical hashes.
+- [x] `packages/cli/README.md`.
 
-Exit gate: `npx changesafe gate --domain network --input <scenario bundle>
---proposal <fixture>` reproduces the app's findings byte-for-byte
-(same canonical hashes); CLI has its own test suite.
+Exit gate: **met** — `changesafe gate --scenario scenarios/scenario-a-failover`
+reproduces the console's findings byte-for-byte, and the CLI has its own
+suite.
 
 ### P4 — Terraform plan ingestion + GitHub Action (M/L) ★ flagship
 
@@ -226,7 +234,7 @@ Exit gate: a real `terraform show -json` fixture corpus (hand-authored +
 captured from public examples) with expectations; the Action demo works on
 a sample PR end to end.
 
-**Soft launch after P4** (Show HN + blog post: "Your AI SRE agent will
+### Soft launch after P4 (Show HN + blog post: "Your AI SRE agent will
 eventually obey a prompt injection — design so it doesn't matter"): this is
 the earliest point where the project is useful to a stranger in 10 minutes.
 

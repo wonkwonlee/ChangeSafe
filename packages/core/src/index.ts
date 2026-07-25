@@ -91,7 +91,11 @@ export {
   policyOrder,
   verifyRollback,
 } from "./policies";
-export type { PolicyEvaluation, RollbackVerdict } from "./policies";
+export type { EvaluateOptions, PolicyEvaluation, RollbackVerdict } from "./policies";
+
+// Policy packs
+export { DEFAULT_POLICY_PACK, PolicyPackSchema, resolvePolicyPack } from "./policy-pack";
+export type { PolicyPack, ResolvedPolicyPack } from "./policy-pack";
 
 // Validation
 export { validateProposalEvidence } from "./validate";

@@ -52,3 +52,6 @@ next-env.d.ts
 
 # playwright-mcp browser session artifacts
 /.playwright-mcp/
+
+# built packages
+packages/*/dist/

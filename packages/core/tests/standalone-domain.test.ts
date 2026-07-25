@@ -170,7 +170,7 @@ describe("core with a foreign domain", () => {
     const { findings, riskLevel } = evaluatePolicies(counterDomain, buildInput(), proposal);
     const blast = findings.find((finding) => finding.policyId === "BLAST_RADIUS");
     expect(blast?.status).toBe("WARN");
-    expect(blast?.explanation).toContain("two counters");
+    expect(blast?.explanation).toContain("2 counters");
     expect(blast?.affectedResources).toEqual(["counter:alpha", "counter:beta"]);
     expect(riskLevel).toBe("MEDIUM");
   });

@@ -1,4 +1,5 @@
 import type { PolicyFinding } from "./findings";
+import type { ResolvedPolicyPack } from "./policy-pack";
 import type { ChangeOperation, ChangeProposal } from "./proposal";
 import type { DiffEntry } from "./simulation";
 
@@ -71,6 +72,8 @@ export interface PolicyContext<TInput = unknown, TState = unknown> {
   input: TInput;
   proposal: ChangeProposal;
   adapter: DomainAdapter<TInput, TState>;
+  /** Resolved thresholds; defaults when the caller supplies no pack. */
+  pack: ResolvedPolicyPack;
 }
 
 export type PolicyEvaluator<TInput = unknown, TState = unknown> = (

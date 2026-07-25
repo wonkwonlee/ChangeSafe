@@ -1,0 +1,27 @@
+{
+  "name": "changesafe",
+  "version": "0.1.0",
+  "description": "Gate AI-proposed infrastructure changes from the terminal or CI: deterministic policies, honest exit codes, hashed receipts. No AI dependency.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "changesafe": "./dist/changesafe.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@changesafe/core": "0.1.0",
+    "@changesafe/domain-network": "0.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5"
+  }
+}

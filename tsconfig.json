@@ -24,7 +24,8 @@
     "paths": {
       "@/*": ["./*"],
       "@changesafe/core": ["./packages/core/src/index.ts"],
-      "@changesafe/domain-network": ["./packages/domain-network/src/index.ts"]
+      "@changesafe/domain-network": ["./packages/domain-network/src/index.ts"],
+      "changesafe": ["./packages/cli/src/main.ts"]
     }
   },
   "include": [

@@ -87,22 +87,24 @@ advertised. Adding scenarios is the most valuable contribution: see
               └─────────────────────────────┘
 ```
 
-- **Schemas first** (`lib/domain/schemas.ts`) — Zod is the single source of
+- **Schemas first** (`packages/core/src/`) — Zod is the single source of
   truth; fixtures, model output, findings, and receipts all parse through
   the same schemas.
-- **Explicit state machine** (`lib/domain/state-machine.ts`) — every
+- **Explicit state machine** (`packages/core/src/state-machine.ts`) — every
   workflow arrow is a case; `BLOCKED → APPROVED` and `BLOCKED → SIMULATED`
   throw, no matter who calls.
-- **Patch engine** (`lib/patch/`) — allowlisted path families,
-  transactional apply on a `structuredClone`, structured diff, inverse
-  derivation, rollback verified by canonical equality.
-- **Policies** (`lib/policies/`) — `PATCH_SCHEMA`, `MGMT_REACHABILITY`,
-  `PROTECTED_RESOURCE`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`,
-  `VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION`: pure functions, each
-  fail-closed, none may import AI code.
-- **Receipts** (`lib/receipt/`) — canonical sorted-key serialization,
-  SHA-256 input/proposal hashes, and a self-hash over everything except the
-  hash field.
+- **Patch engine** (`packages/domain-network/src/`) — allowlisted path
+  families, transactional apply on a `structuredClone`, structured diff,
+  inverse derivation, rollback verified by canonical equality.
+- **Policies** — universal ones in `packages/core/src/policies/`
+  (`PATCH_SCHEMA`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`,
+  `VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION`) and network ones in
+  `packages/domain-network/src/policies/` (`MGMT_REACHABILITY`,
+  `PROTECTED_RESOURCE`): pure functions, each fail-closed, none may import
+  AI code.
+- **Receipts** (`packages/core/src/receipt.ts`) — canonical sorted-key
+  serialization, SHA-256 input/proposal hashes, and a self-hash over
+  everything except the hash field.
 
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
@@ -141,6 +143,7 @@ npm run lint       # eslint
 npm run typecheck  # tsc --noEmit (strict)
 npm test           # vitest unit + integration (no network, no API credit)
 npm run build      # production build
+npm run build:cli  # bundle the changesafe CLI
 npm run test:e2e   # Playwright critical paths (replay mode, keyless)
 ```
 
@@ -154,22 +157,51 @@ CHANGESAFE_LIVE_SMOKE=1 npm test
 CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test
 ```
 
+## Gate a change from the terminal or CI
+
+The engine is a library, and the CLI is the same engine with **no AI
+dependency** — nothing in the gate calls a model.
+
+```bash
+npm run build:cli
+node packages/cli/dist/changesafe.js gate --scenario scenarios/scenario-b-route-leak
+```
+
+```text
+  PASS   PATCH_SCHEMA           All operations are valid declarative patches
+  BLOCK  MGMT_REACHABILITY      Change severs management reachability
+  BLOCK  PROTECTED_RESOURCE     Change removes or disables a protected resource
+  WARN   UNTRUSTED_INSTRUCTION  Incident content contains instruction-like language
+  …
+  4 PASS · 1 WARN · 2 BLOCK   risk: CRITICAL
+
+  BLOCKED — this change cannot be approved.
+```
+
+Exit `0` means nothing blocked, `1` means blocked, `2` means the gate could
+not evaluate at all — so a missing verdict never reads as approval. The CLI
+gates and never approves: its receipts record `gate_only` or `blocked`, and
+there is no `--auto-approve`. Full usage: [packages/cli/README.md](packages/cli/README.md).
+
+## Packages
+
+| Package | What it is |
+| --- | --- |
+| [`@changesafe/core`](packages/core/README.md) | The domain-agnostic gate: proposal contract, universal policies, risk derivation, workflow state machine, receipts, and the `DomainAdapter` contract. Depends on zod alone. |
+| `@changesafe/domain-network` | The network domain: declarative device state, allowlisted transactional patch engine, deterministic reachability, sandboxed simulation, network policies. |
+| [`changesafe`](packages/cli/README.md) | The CLI: `gate`, `verify`, `scenario`. Ships pre-bundled to run under plain Node. |
+
+A domain teaches core what a change *is* in its world; core's universal
+policies then work unchanged. `packages/core/tests/standalone-domain.test.ts`
+implements a complete toy domain in one file to show the whole contract.
+
 ## Where this is going
 
-The console you can run today is the showcase. The roadmap is
-**library- and CLI-first**:
-
-1. `@changesafe/core` — the schemas, state machine, policies, patch engine,
-   and receipts as an embeddable package.
-2. `changesafe` CLI — `gate`, `verify`, `scenario` commands with CI-friendly
-   exit codes and **no AI dependency** (the gate is fully deterministic).
-3. **Terraform plan ingestion + a GitHub Action** — gate AI-generated infra
-   PRs from `terraform show -json` output, with no infrastructure access at
-   all. This is the flagship real-world domain.
-
-Then: provider-agnostic AI adapters, self-hosting (SQLite ledger, signed
-receipts), and a public red-team benchmark. Full plan and phase gates:
-[docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md).
+Next is **Terraform plan ingestion + a GitHub Action** — gate AI-generated
+infra PRs from `terraform show -json` output, with no infrastructure access
+at all. Then provider-agnostic AI adapters, self-hosting (SQLite ledger,
+signed receipts), and a public red-team benchmark. Full plan and phase
+gates: [docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md).
 
 ## Design commitments
 

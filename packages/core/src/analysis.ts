@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-export const AnalysisModeSchema = z.enum(["live", "replay"]);
+/**
+ * How the proposal under evaluation was produced.
+ *
+ * - `live`    — this run called a model.
+ * - `replay`  — this run loaded a labeled fixture.
+ * - `offline` — the proposal was handed to the gate (a file, a CI artifact);
+ *   this run produced nothing and attests nothing about its origin.
+ */
+export const AnalysisModeSchema = z.enum(["live", "replay", "offline"]);
 
 /**
  * Honest provenance labels. A captured label may only be used when fixture

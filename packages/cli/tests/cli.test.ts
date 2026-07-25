@@ -1,0 +1,351 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  ChangeReceiptSchema,
+  evaluatePolicies,
+  hashCanonical,
+} from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
+import { getScenario } from "@/scenarios";
+
+import { main } from "../src/main";
+import type { Console } from "../src/output";
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
+const SCENARIOS = path.join(REPO_ROOT, "scenarios");
+const SAFE = path.join(SCENARIOS, "scenario-a-failover");
+const BLOCKED = path.join(SCENARIOS, "scenario-b-route-leak");
+
+/** Captures output so assertions read the CLI exactly as a user would. */
+function createCapture(): Console & { stdout: string; stderr: string } {
+  const lines: string[] = [];
+  const errors: string[] = [];
+  return {
+    out: (line) => lines.push(line),
+    err: (line) => errors.push(line),
+    color: false,
+    get stdout() {
+      return lines.join("\n");
+    },
+    get stderr() {
+      return errors.join("\n");
+    },
+  };
+}
+
+const temporaryDirectories: string[] = [];
+function temporaryDir(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "changesafe-cli-"));
+  temporaryDirectories.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (temporaryDirectories.length > 0) {
+    const dir = temporaryDirectories.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe("changesafe gate", () => {
+  it("exits 0 for a scenario with no blocking findings", async () => {
+    const capture = createCapture();
+    const code = await main(["gate", "--scenario", SAFE], capture);
+    expect(code).toBe(0);
+    expect(capture.stdout).toContain("7 PASS");
+    expect(capture.stdout).toContain("risk: LOW");
+    expect(capture.stdout).toContain("a human decision is still required");
+    // A clean gate must never present itself as an approval.
+    expect(capture.stdout).not.toMatch(/\bapproved\b/i);
+  });
+
+  it("exits 1 and explains why for a blocked scenario", async () => {
+    const capture = createCapture();
+    const code = await main(["gate", "--scenario", BLOCKED], capture);
+    expect(code).toBe(1);
+    expect(capture.stdout).toContain("MGMT_REACHABILITY");
+    expect(capture.stdout).toContain("PROTECTED_RESOURCE");
+    expect(capture.stdout).toContain("risk: CRITICAL");
+    expect(capture.stdout).toContain("BLOCKED");
+  });
+
+  it("emits machine-readable findings with --format json", async () => {
+    const capture = createCapture();
+    const code = await main(["gate", "--scenario", BLOCKED, "--format", "json"], capture);
+    expect(code).toBe(1);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.blocked).toBe(true);
+    expect(payload.decision).toBe("blocked");
+    expect(payload.riskLevel).toBe("CRITICAL");
+    expect(payload.provenance).toBe("authored_red_team");
+    expect(payload.findings).toHaveLength(7);
+  });
+
+  it("reproduces the app's findings exactly", async () => {
+    // The exit-gate promise of the CLI: same engine, same verdicts, same
+    // canonical hashes as the console — not a second implementation.
+    const scenario = getScenario("scenario-b-route-leak");
+    if (!scenario) throw new Error("scenario missing");
+    const expected = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
+
+    const capture = createCapture();
+    await main(["gate", "--scenario", BLOCKED, "--format", "json"], capture);
+    const payload = JSON.parse(capture.stdout);
+
+    expect(payload.findings).toEqual(expected.findings);
+    expect(payload.riskLevel).toBe(expected.riskLevel);
+    expect(await hashCanonical(payload.findings)).toBe(await hashCanonical(expected.findings));
+  });
+
+  it("accepts explicit --input and --proposal paths", async () => {
+    const capture = createCapture();
+    const code = await main(
+      [
+        "gate",
+        "--input",
+        path.join(SAFE, "incident.json"),
+        "--proposal",
+        path.join(SAFE, "replay-fixture.json"),
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(capture.stdout).blocked).toBe(false);
+  });
+
+  it("applies a policy pack's thresholds", async () => {
+    // Scenario A touches one device and passes by default; a pack that warns
+    // at one device must turn that same change into a warning.
+    const dir = temporaryDir();
+    const packPath = path.join(dir, "pack.json");
+    writeFileSync(
+      packPath,
+      JSON.stringify({ name: "strict", blastRadius: { warnAt: 1, blockAbove: 2 } }),
+    );
+
+    const capture = createCapture();
+    const code = await main(
+      ["gate", "--scenario", SAFE, "--policy-pack", packPath, "--format", "json"],
+      capture,
+    );
+    const payload = JSON.parse(capture.stdout);
+    const blast = payload.findings.find((f: { policyId: string }) => f.policyId === "BLAST_RADIUS");
+    expect(blast.status).toBe("WARN");
+    expect(payload.riskLevel).toBe("MEDIUM");
+    expect(code).toBe(0); // a warning is still not a block
+  });
+
+  it("rejects a policy pack that cannot make sense", async () => {
+    const dir = temporaryDir();
+    const packPath = path.join(dir, "pack.json");
+    writeFileSync(packPath, JSON.stringify({ blastRadius: { warnAt: 9, blockAbove: 2 } }));
+    const capture = createCapture();
+    await expect(
+      main(["gate", "--scenario", SAFE, "--policy-pack", packPath], capture),
+    ).rejects.toThrow(/warnAt must not exceed blockAbove/);
+  });
+
+  it("writes a receipt that records a gate run, never an approval", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "receipt.json");
+
+    const capture = createCapture();
+    const code = await main(["gate", "--scenario", SAFE, "--receipt", receiptPath], capture);
+    expect(code).toBe(0);
+
+    const receipt = ChangeReceiptSchema.parse(JSON.parse(readFileSync(receiptPath, "utf8")));
+    expect(receipt.decision).toBe("gate_only");
+    expect(receipt.simulation).toBeNull();
+    expect(receipt.mode).toBe("offline");
+    expect(receipt.riskLevel).toBe("LOW");
+  });
+
+  it("records a blocked decision when the gate blocks", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "receipt.json");
+    const capture = createCapture();
+    const code = await main(["gate", "--scenario", BLOCKED, "--receipt", receiptPath], capture);
+    expect(code).toBe(1);
+    const receipt = ChangeReceiptSchema.parse(JSON.parse(readFileSync(receiptPath, "utf8")));
+    expect(receipt.decision).toBe("blocked");
+  });
+
+  it("refuses a proposal citing evidence the input does not contain", async () => {
+    const dir = temporaryDir();
+    const fixture = JSON.parse(readFileSync(path.join(SAFE, "replay-fixture.json"), "utf8"));
+    fixture.proposal.diagnosis.evidenceIds.push("ev-invented-001");
+    const proposalPath = path.join(dir, "proposal.json");
+    writeFileSync(proposalPath, JSON.stringify(fixture));
+
+    const capture = createCapture();
+    await expect(
+      main(
+        ["gate", "--input", path.join(SAFE, "incident.json"), "--proposal", proposalPath],
+        capture,
+      ),
+    ).rejects.toThrow(/ev-invented-001/);
+  });
+
+  it("reports unusable inputs rather than guessing", async () => {
+    const capture = createCapture();
+    await expect(main(["gate", "--scenario", "/nope/not/here"], capture)).rejects.toThrow(
+      /cannot read/,
+    );
+    await expect(main(["gate", "--domain", "kubernetes"], capture)).rejects.toThrow(
+      /unknown domain/,
+    );
+    await expect(main(["gate", "--input", path.join(SAFE, "incident.json")], capture)).rejects.toThrow(
+      /--proposal is required/,
+    );
+  });
+});
+
+describe("changesafe verify", () => {
+  it("confirms a receipt it just produced, including its input and proposal", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "receipt.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", receiptPath], createCapture());
+
+    const capture = createCapture();
+    const code = await main(
+      [
+        "verify",
+        receiptPath,
+        "--input",
+        path.join(SAFE, "incident.json"),
+        "--proposal",
+        path.join(SAFE, "replay-fixture.json"),
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+    expect(code).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.checks).toHaveLength(3);
+  });
+
+  it("detects an altered receipt", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "receipt.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", receiptPath], createCapture());
+
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    receipt.riskLevel = "CRITICAL";
+    writeFileSync(receiptPath, JSON.stringify(receipt));
+
+    const capture = createCapture();
+    const code = await main(["verify", receiptPath, "--format", "json"], capture);
+    expect(code).toBe(1);
+    expect(JSON.parse(capture.stdout).ok).toBe(false);
+  });
+
+  it("detects a receipt that does not describe the supplied input", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "receipt.json");
+    await main(["gate", "--scenario", SAFE, "--receipt", receiptPath], createCapture());
+
+    const capture = createCapture();
+    const code = await main(
+      ["verify", receiptPath, "--input", path.join(BLOCKED, "incident.json"), "--format", "json"],
+      capture,
+    );
+    expect(code).toBe(1);
+    const inputCheck = JSON.parse(capture.stdout).checks.find(
+      (check: { name: string }) => check.name === "input hash",
+    );
+    expect(inputCheck.ok).toBe(false);
+  });
+});
+
+describe("changesafe scenario", () => {
+  it("checks the bundled scenarios against their expectations", async () => {
+    const capture = createCapture();
+    const code = await main(["scenario", "check", SCENARIOS, "--format", "json"], capture);
+    expect(code).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.scenarios.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("fails a scenario whose expectations are wrong", async () => {
+    const dir = temporaryDir();
+    const scenarioDir = path.join(dir, "scenario-wrong");
+    await main(["scenario", "init", "scenario-wrong", "--dir", dir], createCapture());
+
+    const expectationsPath = path.join(scenarioDir, "expectations.json");
+    const expectations = JSON.parse(readFileSync(expectationsPath, "utf8"));
+    expectations.policies.MGMT_REACHABILITY = "BLOCK";
+    expectations.riskLevel = "CRITICAL";
+    expectations.approvable = false;
+    expectations.simulation = null;
+    writeFileSync(expectationsPath, JSON.stringify(expectations));
+
+    const capture = createCapture();
+    const code = await main(["scenario", "check", dir, "--format", "json"], capture);
+    expect(code).toBe(1);
+    const [result] = JSON.parse(capture.stdout).scenarios;
+    expect(result.ok).toBe(false);
+    expect(result.problems.join(" ")).toContain("MGMT_REACHABILITY");
+  });
+
+  it("scaffolds a scenario that passes its own check", async () => {
+    const dir = temporaryDir();
+    const capture = createCapture();
+    const code = await main(["scenario", "init", "scenario-fresh", "--dir", dir], capture);
+    expect(code).toBe(0);
+    for (const file of ["incident.json", "replay-fixture.json", "expectations.json"]) {
+      expect(existsSync(path.join(dir, "scenario-fresh", file))).toBe(true);
+    }
+
+    // The template must be honest out of the box: what it claims is what the
+    // gate produces, or contributors start from a lie.
+    const check = createCapture();
+    expect(await main(["scenario", "check", dir, "--format", "json"], check)).toBe(0);
+  });
+
+  it("refuses a name that is not a valid scenario id", async () => {
+    const dir = temporaryDir();
+    await expect(
+      main(["scenario", "init", "Not Valid", "--dir", dir], createCapture()),
+    ).rejects.toThrow(/kebab-case/);
+  });
+});
+
+describe("changesafe usage", () => {
+  it("prints help and exits 2 when given no command", async () => {
+    const capture = createCapture();
+    expect(await main([], capture)).toBe(2);
+    expect(capture.stdout).toContain("changesafe gate");
+    expect(capture.stdout).toContain("never approves a change");
+  });
+
+  it("rejects unknown commands and formats", async () => {
+    const capture = createCapture();
+    await expect(main(["frobnicate"], capture)).rejects.toThrow(/unknown command/);
+    await expect(main(["gate", "--format", "yaml"], capture)).rejects.toThrow(/--format/);
+  });
+});
+
+describe("the built binary", () => {
+  const built = path.join(REPO_ROOT, "packages/cli/dist/changesafe.js");
+
+  it.runIf(existsSync(built))("runs under plain node with no bundler", () => {
+    // Proves the shipped artifact works outside the workspace: no aliases,
+    // no transpiler, no node_modules resolution of workspace packages.
+    const stdout = execFileSync(process.execPath, [built, "gate", "--scenario", SAFE, "--format", "json"], {
+      encoding: "utf8",
+      cwd: tmpdir(),
+    });
+    const payload = JSON.parse(stdout);
+    expect(payload.blocked).toBe(false);
+    expect(payload.findings).toHaveLength(7);
+  });
+});

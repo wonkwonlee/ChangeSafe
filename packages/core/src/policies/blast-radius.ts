@@ -3,14 +3,16 @@ import type { PolicyFinding } from "../findings";
 
 /**
  * BLAST_RADIUS: deterministic count of the units a change touches, where the
- * domain decides what a unit is (a device, a resource, a module).
- * One unit PASS, two WARN, more than two BLOCK. Zero assessable units fails
- * closed — nothing to bound means nothing can be bounded.
+ * domain decides what a unit is (a device, a resource, a module) and the
+ * policy pack decides the thresholds (default: warn at 2, block above 2).
+ * Zero assessable units fails closed — nothing to bound means nothing can be
+ * bounded.
  */
 export function evaluateBlastRadius<TInput, TState>(
   context: PolicyContext<TInput, TState>,
 ): PolicyFinding {
-  const { adapter, proposal } = context;
+  const { adapter, proposal, pack } = context;
+  const { warnAt, blockAbove } = pack.blastRadius;
 
   const units = new Map<string, string>();
   let unitKind: string | null = null;
@@ -37,23 +39,23 @@ export function evaluateBlastRadius<TInput, TState>(
     };
   }
 
-  if (ids.length === 1) {
+  if (ids.length > blockAbove) {
     return {
       policyId: "BLAST_RADIUS",
-      status: "PASS",
-      title: `Blast radius limited to one ${kind}`,
-      explanation: `All operations touch a single ${kind} (${ids[0]}).`,
+      status: "BLOCK",
+      title: "Blast radius too large",
+      explanation: `Operations modify ${ids.length} ${plural} (${ids.join(", ")}), exceeding the limit of ${blockAbove} ${blockAbove === 1 ? kind : plural} for an emergency change.`,
       affectedResources: resources,
-      remediation: null,
+      remediation: `Reduce the change to at most ${blockAbove} ${blockAbove === 1 ? kind : plural} per proposal.`,
     };
   }
 
-  if (ids.length === 2) {
+  if (ids.length >= warnAt) {
     return {
       policyId: "BLAST_RADIUS",
       status: "WARN",
-      title: `Blast radius spans two ${plural}`,
-      explanation: `Operations modify two ${plural} (${ids.join(", ")}). Review whether a single-${kind} change would suffice.`,
+      title: `Blast radius spans ${ids.length} ${plural}`,
+      explanation: `Operations modify ${ids.length} ${plural} (${ids.join(", ")}). Review whether a narrower change would suffice.`,
       affectedResources: resources,
       remediation: `Consider splitting the change into single-${kind} steps.`,
     };
@@ -61,10 +63,16 @@ export function evaluateBlastRadius<TInput, TState>(
 
   return {
     policyId: "BLAST_RADIUS",
-    status: "BLOCK",
-    title: "Blast radius too large",
-    explanation: `Operations modify ${ids.length} ${plural} (${ids.join(", ")}), exceeding the two-${kind} limit for an emergency change.`,
+    status: "PASS",
+    title:
+      ids.length === 1
+        ? `Blast radius limited to one ${kind}`
+        : `Blast radius within limits (${ids.length} ${plural})`,
+    explanation:
+      ids.length === 1
+        ? `All operations touch a single ${kind} (${ids[0]}).`
+        : `Operations touch ${ids.length} ${plural} (${ids.join(", ")}), within the warning threshold of ${warnAt}.`,
     affectedResources: resources,
-    remediation: `Reduce the change to at most two ${plural} per proposal.`,
+    remediation: null,
   };
 }

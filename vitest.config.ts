@@ -13,6 +13,7 @@ export default defineConfig({
         root,
         "packages/domain-network/src/index.ts",
       ),
+      changesafe: path.resolve(root, "packages/cli/src/main.ts"),
       "@": root,
     },
   },

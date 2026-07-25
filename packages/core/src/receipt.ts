@@ -4,7 +4,17 @@ import { PolicyFindingSchema, RiskLevelSchema } from "./findings";
 import { IdSchema, Sha256HexSchema, TimestampSchema } from "./primitives";
 import { SimulationResultSchema } from "./simulation";
 
-export const ReceiptDecisionSchema = z.enum(["approved", "rejected", "blocked"]);
+/**
+ * `gate_only` records an automated evaluation with no human decision — what
+ * the CLI produces in CI. It is never an approval: nothing may act on a
+ * gate-only receipt as if a person had accepted the change.
+ */
+export const ReceiptDecisionSchema = z.enum([
+  "approved",
+  "rejected",
+  "blocked",
+  "gate_only",
+]);
 
 /**
  * The durable record of one airlock decision.
@@ -44,6 +54,8 @@ export const ChangeReceiptSchema = z
         message: "live receipts must not carry fixture provenance",
       });
     }
+    // Offline runs may carry provenance if the supplied file declared it,
+    // and may equally carry none — the gate attests only what it was given.
     if (receipt.mode === "replay" && receipt.fixtureProvenance === null) {
       ctx.addIssue({
         code: "custom",

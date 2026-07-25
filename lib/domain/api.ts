@@ -13,7 +13,8 @@ import { NetworkChangeProposalSchema } from "@changesafe/domain-network";
 
 export const AnalyzeRequestSchema = z.strictObject({
   scenarioId: IdSchema,
-  mode: AnalysisModeSchema,
+  // The route produces analyses; it never accepts an offline proposal.
+  mode: z.enum(["live", "replay"]),
 });
 
 export const AnalyzeSuccessSchema = z.strictObject({

@@ -10,10 +10,18 @@ Read `docs/OSS_ROADMAP.md` for where the project is going, and `CLAUDE.md`
 for the invariants every change must respect.
 
 The engine lives in workspace packages: `@changesafe/core` is the
-domain-agnostic gate (see `packages/core/README.md`) and
+domain-agnostic gate (see `packages/core/README.md`),
 `@changesafe/domain-network` teaches it about networks through the
-`DomainAdapter` contract. The Next.js console at the repository root is a
-consumer, not the product.
+`DomainAdapter` contract, and `changesafe` (see `packages/cli/README.md`) is
+the CLI. The Next.js console at the repository root is a consumer, not the
+product.
+
+Fastest loop while working on scenarios or policies:
+
+```bash
+npm run build:cli
+node packages/cli/dist/changesafe.js scenario check
+```
 
 ## Setup
 

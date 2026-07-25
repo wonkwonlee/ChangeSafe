@@ -10,10 +10,14 @@ export function evaluateVerificationRequired<TInput, TState>(
   context: PolicyContext<TInput, TState>,
 ): PolicyFinding {
   const steps = context.proposal.verificationSteps;
+  const { requirePrecondition, requirePostcheck } = context.pack.verification;
   const preconditions = steps.filter((step) => step.kind === "precondition").length;
   const postchecks = steps.filter((step) => step.kind === "postcheck").length;
 
-  if (preconditions >= 1 && postchecks >= 1) {
+  const missingPrecondition = requirePrecondition && preconditions === 0;
+  const missingPostcheck = requirePostcheck && postchecks === 0;
+
+  if (!missingPrecondition && !missingPostcheck) {
     return {
       policyId: "VERIFICATION_REQUIRED",
       status: "PASS",
@@ -25,8 +29,8 @@ export function evaluateVerificationRequired<TInput, TState>(
   }
 
   const missing = [
-    ...(preconditions === 0 ? ["a precondition check"] : []),
-    ...(postchecks === 0 ? ["a post-change verification step"] : []),
+    ...(missingPrecondition ? ["a precondition check"] : []),
+    ...(missingPostcheck ? ["a post-change verification step"] : []),
   ];
 
   return {

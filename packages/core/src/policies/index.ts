@@ -1,6 +1,7 @@
 import type { DomainAdapter, PolicyContext } from "../domain";
 import { deriveRiskLevel, type PolicyFinding, type RiskLevel } from "../findings";
 import type { ChangeProposal } from "../proposal";
+import { resolvePolicyPack, type PolicyPack } from "../policy-pack";
 import { evaluateBlastRadius } from "./blast-radius";
 import { evaluatePatchSchema } from "./patch-schema";
 import { evaluateRollbackComplete } from "./rollback-complete";
@@ -19,6 +20,11 @@ export interface PolicyEvaluation {
   riskLevel: RiskLevel;
 }
 
+export interface EvaluateOptions {
+  /** Typed threshold overrides; omitted means ChangeSafe's defaults. */
+  policyPack?: PolicyPack | null;
+}
+
 /**
  * The deterministic safety gate.
  *
@@ -32,8 +38,14 @@ export function evaluatePolicies<TInput, TState>(
   adapter: DomainAdapter<TInput, TState>,
   input: TInput,
   proposal: ChangeProposal,
+  options: EvaluateOptions = {},
 ): PolicyEvaluation {
-  const context: PolicyContext<TInput, TState> = { input, proposal, adapter };
+  const context: PolicyContext<TInput, TState> = {
+    input,
+    proposal,
+    adapter,
+    pack: resolvePolicyPack(options.policyPack),
+  };
 
   const domainFindings = adapter.policies.map((policy) => {
     const finding = policy.evaluate(context);
