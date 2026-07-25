@@ -1,5 +1,12 @@
 # ChangeSafe — Build Week Changelog
 
+> **Historical record (closed 2026-07-25).** ChangeSafe v0.1 was built
+> during the OpenAI Build Week 2026 window but was ultimately **not
+> submitted** due to time constraints. The project has pivoted to an
+> independent open-source effort — see `docs/OSS_ROADMAP.md` for the
+> current direction. The submission checklist below is retained as-is for
+> historical accuracy and is no longer actionable.
+
 Submission window: July 13 – July 21, 2026 (5:00 PM PDT). Track: Developer Tools.
 
 ## Prior work vs. Build Week implementation

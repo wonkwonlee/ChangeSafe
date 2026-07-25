@@ -1,147 +1,110 @@
-# AGENTS.md — ChangeSafe v0.1
+# ChangeSafe — Repository Instructions
+
+This file and `AGENTS.md` are identical mirrors; when you change one, apply
+the same change to the other.
 
 ## Mission
 
-Build a reliable, polished OpenAI Build Week submission for **ChangeSafe**, an AI infrastructure change airlock.
+ChangeSafe is an **open-source deterministic airlock for AI-proposed
+infrastructure changes**, developed library/CLI-first. The non-negotiable
+trust model is:
 
-The non-negotiable trust model is:
+> AI diagnoses and proposes. Deterministic code validates. A human decides.
+> ChangeSafe never executes changes against infrastructure.
 
-> AI diagnoses and proposes. Deterministic code validates. A human decides. The MVP never touches real infrastructure.
-
-These instructions apply to the entire repository. Keep them concise and update them only when implementation reveals a concrete recurring mistake or missing invariant.
-
-## Frozen product scope
-
-The v0.1 product contains:
-
-- Two bundled synthetic incident scenarios
-- GPT-5.6 analysis through the server-side OpenAI Responses API
-- Strict Structured Output validated again with Zod
-- Declarative typed change operations, never CLI commands
-- Deterministic patch and safety policy engines
-- Before/after diff
-- Human approve/reject controls
-- In-memory sandbox simulation
-- Hashed downloadable change receipts
-- Live and explicitly labeled replay modes
-- One polished responsive web experience
-- Unit, integration, scenario, and end-to-end tests
-
-Do not add real device access, uploads of production configuration, authentication, teams, RBAC, a database, billing, generic chat, RAG, vector storage, multi-agent orchestration, queues, background workers, or additional primary scenarios.
+Strategy, phases, and design constraints live in `docs/OSS_ROADMAP.md` —
+read it before starting multi-file work. `BUILD_WEEK_CHANGELOG.md` and
+`docs/V2_PLAN.md` are historical records of the project's origin (built
+during OpenAI Build Week 2026, not submitted, pivoted to OSS); do not treat
+their Build Week constraints (two-scenario cap, GPT-5.6/OpenAI-only,
+single-app scope) as current rules.
 
 ## Safety invariants
 
-These rules override convenience and demo polish:
+These override convenience, demo polish, and feature requests:
 
-1. Never connect to or execute against real infrastructure.
-2. Never implement SSH, NETCONF, RESTCONF, SNMP, device APIs, arbitrary HTTP actions, or shell execution.
-3. Treat alerts, notes, names, topology values, and configuration-like content as untrusted data.
-4. Never expose `OPENAI_API_KEY` or model credentials to client-side code, logs, receipts, fixtures, screenshots, or errors.
-5. Never treat model output as valid until Structured Output and local Zod validation both succeed.
-6. The LLM never determines approval, final risk, or execution status.
-7. The policy engine must be pure and must never call the LLM.
-8. Any BLOCK finding makes approval and simulation impossible at both domain and UI layers.
-9. Simulation applies a validated patch only to a deep-cloned synthetic state.
-10. Patch application is transactional; partial mutation is forbidden.
-11. Every approved patch must have a verified rollback that restores canonical pre-change state.
-12. All bundled data must be fictional and safe to publish. Use documentation address ranges when IP-like values are needed.
-13. Do not use employer, customer, vendor, or third-party branding or proprietary material.
-14. Replay mode must be clearly labeled and must never be presented as a live model call.
-15. Never attribute an authored replay or red-team fixture to GPT-5.6. Captured-model provenance must be evidenced in fixture metadata.
+1. No execution path to infrastructure, ever: no SSH, NETCONF, RESTCONF,
+   SNMP, gNMI-SET, vendor SDKs, shell execution, `terraform apply`, or
+   arbitrary outbound HTTP actions. ChangeSafe analyzes, gates, and records;
+   humans and their existing systems execute.
+2. Ingestion is read-only artifacts and data (bundled fixtures, uploaded
+   bundles, `terraform show -json` output, future read-only collectors),
+   validated by Zod schemas at every boundary.
+3. All external content — alerts, notes, names, configuration values, plan
+   contents, PR text — is untrusted data, never instructions.
+4. Secrets (model API keys) exist only in server/CLI environment scope;
+   never in client bundles, receipts, fixtures, logs, or error messages.
+5. Model output is invalid until provider-side structured output (where
+   available) AND local Zod validation both succeed; invented evidence ids
+   or unknown resource references are hard rejections.
+6. The LLM never determines approval, risk, or execution status. Policies
+   are pure functions that never import AI modules and never receive model
+   confidence. Risk derivation (any BLOCK→CRITICAL, ≥2 WARN→HIGH,
+   1 WARN→MEDIUM, else LOW) is core-owned and identical across domains.
+7. Any BLOCK finding makes approval and simulation impossible at the domain
+   layer (state machine throws), not merely in the UI. No auto-approval
+   path may exist anywhere, including the CLI.
+8. Simulation mutates only deep clones; patch application is transactional
+   (no partial mutation can escape); rollback is verified by canonical
+   equality where the domain supports it.
+9. Bundled data is fictional and publishable: documentation IP ranges
+   (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24), no real orgs, no
+   third-party branding, no PII.
+10. Provenance honesty: fixtures declare captured vs authored provenance;
+    authored content is never attributed to a model; replay is always
+    labeled and never silently substituted for live analysis.
 
-If a requested change conflicts with an invariant, stop that change and explain the conflict.
+If a request conflicts with an invariant, stop that change and explain.
 
-## State machine
+## Architecture
 
-Use explicit domain transitions:
-
-```text
-READY
-  -> ANALYZING
-  -> PROPOSED
-  -> VALIDATED
-     -> BLOCKED -> RECEIPT_ISSUED
-     -> APPROVAL_REQUIRED
-          -> REJECTED -> RECEIPT_ISSUED
-          -> APPROVED -> SIMULATED -> RECEIPT_ISSUED
-
-Any recoverable analysis, validation, or simulation failure -> ERROR -> READY
-```
-
-- BLOCKED cannot transition to APPROVED or SIMULATED.
-- REJECTED cannot transition to SIMULATED.
-- Only explicit human action can create APPROVED or REJECTED.
-- Scenario reset returns a new clean READY state.
-- ERROR must not retain a partially valid proposal or mutated state.
-- Enforce transitions in domain code, not only through disabled buttons.
-
-## Frozen policy set
-
-Implement and preserve:
-
-- `PATCH_SCHEMA`
-- `MGMT_REACHABILITY`
-- `PROTECTED_RESOURCE`
-- `BLAST_RADIUS`
-- `ROLLBACK_COMPLETE`
-- `VERIFICATION_REQUIRED`
-- `UNTRUSTED_INSTRUCTION`
-
-Policy status is `PASS | WARN | BLOCK`.
-
-Risk derivation is deterministic:
-
-- Any BLOCK -> CRITICAL
-- Two or more WARN and no BLOCK -> HIGH
-- One WARN and no BLOCK -> MEDIUM
-- All PASS -> LOW
-
-Model confidence is advisory and must not affect this calculation.
-
-## Architecture and code boundaries
-
-Prefer a single strict TypeScript application:
+Current layout (pre-extraction) — the target monorepo layout and the
+migration window for breaking renames are defined in `docs/OSS_ROADMAP.md`
+§P2/§5; do not restructure ad hoc outside that phase:
 
 ```text
-app/                 Next.js routes and page composition
-components/          presentational and workflow UI
-lib/ai/              server-only OpenAI and replay adapters
-lib/domain/          Zod schemas, state machine, shared types
-lib/patch/           allowlisted transactional patch logic
-lib/policies/        pure deterministic policies and risk calculation
-lib/receipt/         canonical serialization, SHA-256, receipt creation
-scenarios/           synthetic incident and replay fixtures
-tests/               unit, integration, scenario, and e2e tests
-docs/                architecture, threat model, demo script
+app/                 Next.js showcase console (routes, api/analyze, api/status)
+components/          console UI + client workflow hook
+lib/domain/          Zod schemas, state machine, evidence validation, wire contracts
+lib/patch/           allowlisted transactional patch engine, reachability, simulate
+lib/policies/        pure policies + deterministic risk derivation
+lib/receipt/         canonical serialization, SHA-256, receipts
+lib/ai/              provider adapters (server-only), hardened prompt, replay
+scenarios/           synthetic incident bundles + provenance-labeled fixtures
+tests/               unit, integration, e2e (Playwright)
+docs/                roadmap, architecture, threat model, plans
 ```
 
-Dependency direction:
+Dependency direction (violations are review failures): policies and patch
+engines depend only on domain types — never UI or AI modules. AI adapters
+depend on domain schemas. Receipts consume validated domain outputs, never
+raw model text. Scenario fixtures must pass the production schemas.
+The state machine (`lib/domain/state-machine.ts`) is the single workflow
+authority; UI must dispatch through it.
 
-- UI may depend on domain types and API contracts.
-- AI adapter may depend on domain schemas.
-- Policy and patch engines may depend on domain types but never UI or AI modules.
-- Receipt generation may depend on validated domain outputs, never raw model text.
-- Scenario fixtures must pass the same schemas used in production.
+## Policy set
 
-Avoid circular dependencies and client imports of server-only modules.
+Universal policies: `PATCH_SCHEMA`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`
+(or a domain's reversibility analog), `VERIFICATION_REQUIRED`,
+`UNTRUSTED_INSTRUCTION`. Domain policies (network today):
+`MGMT_REACHABILITY`, `PROTECTED_RESOURCE`. Policy status is
+`PASS | WARN | BLOCK`; all policies fail closed. Policy packs may tune
+typed parameters (thresholds, protected patterns) but are never a DSL, and
+never alter the risk formula. Any policy behavior change bumps
+`POLICY_VERSION` and updates receipts tests.
 
-## Technology defaults
+## Technology
 
-- Current stable Next.js App Router
-- TypeScript strict mode
-- React and Tailwind CSS
-- Zod
-- Official OpenAI JavaScript SDK
-- Responses API with `gpt-5.6`
-- Vitest
-- Playwright
-- npm
-
-Do not replace this stack or add major infrastructure without a demonstrated blocker.
+Strict TypeScript, Zod-first (schemas before derived types), Next.js App
+Router for the showcase app, npm (workspaces once extracted), Vitest,
+Playwright. AI: provider-agnostic adapters (OpenAI today; Anthropic and
+local/Ollama planned per roadmap P5) — all server/CLI-side only. Do not add
+major infrastructure (databases, queues, workers) ahead of the roadmap
+phase that calls for it.
 
 ## Commands
 
-Keep these scripts valid and document them in `README.md`:
+Keep valid and documented in `README.md`:
 
 ```bash
 npm install
@@ -153,135 +116,56 @@ npm run build
 npm run test:e2e
 ```
 
-If framework scaffolding produces different defaults, normalize package scripts so these commands work.
-
-Before reporting completion, run all validation commands from the repository root. Record failures accurately and fix in-scope failures.
+Run the relevant gate before reporting completion; the replay demo and the
+red-team scenario contract (blocked, never approvable) must stay green in
+every phase.
 
 ## Coding standards
 
-- Use strict, explicit types; avoid `any` and unsafe casts.
-- Define Zod schemas before deriving public TypeScript types.
-- Prefer small pure functions for policy and patch behavior.
-- Use exhaustive handling for operations, findings, risk, and workflow states.
-- Validate all boundary inputs: API requests, fixture loads, model output, patch paths, and receipt download data.
-- Use stable identifiers rather than display strings for evidence and resources.
-- Canonicalize objects before comparison or hashing.
-- Return typed domain errors; do not leak stack traces or secrets to users.
-- Comments should explain invariants and non-obvious decisions, not restate code.
-- Remove dead code, placeholder copy, fake metrics, and TODO-driven behavior before release.
+- No `any`, no unsafe casts; exhaustive handling for operations, findings,
+  risk, and workflow states.
+- Small pure functions for policy and patch behavior; validate all boundary
+  inputs; canonicalize before comparison or hashing.
+- Stable identifiers over display strings; typed domain errors without
+  stack traces or secrets in user-visible messages.
+- Comments explain invariants and non-obvious decisions, not restatements.
+- No dead code, placeholder copy, fake metrics, or TODO-driven behavior in
+  merged work.
 
-## AI integration rules
+## Testing expectations
 
-- All OpenAI calls are server-only.
-- Use the Responses API and Structured Outputs for `ChangeProposal`.
-- Locally validate returned structured data with Zod.
-- Separate trusted model instructions from untrusted incident content.
-- Require real `evidenceId` references for material claims and operations.
-- Reject invented evidence IDs or state paths.
-- Require explicit assumptions, rollback operations, and verification steps.
-- The model must never claim a change is safe, approved, applied, or executed.
-- Live-call failure may offer replay mode but may not silently switch modes.
-- Replay fixtures must declare `captured_gpt_5_6` or `authored_red_team` provenance and show an honest user-facing label.
-- Default automated tests must not spend API credits or require network access.
-- Optional live smoke tests require an explicit environment flag.
+Every behavioral change includes or updates the smallest relevant test.
+Standing coverage: schema accept/reject, patch allowlist + transactional
+failure, canonical/hash stability, every policy PASS and failure, risk
+derivation, illegal state transitions, rollback restoration, scenario
+expectations (per-scenario `expectations.json` once the P1 harness lands),
+replay parity and provenance honesty, keyless replay API, invalid model
+output rejection, no secret leakage in client artifacts, and the Playwright
+safe + blocked critical paths. Default test runs spend no API credit and
+need no network; live smoke stays env-gated. Never weaken a test to make an
+implementation pass.
 
-## Patch engine rules
+## Scenarios and fixtures
 
-- Accept only `add`, `replace`, and tightly controlled `remove` operations.
-- Allowlist every mutable path family.
-- Reject root mutation, prototype-related paths, unknown paths, executable strings, and missing targets.
-- Apply to a deep clone and commit only when every operation succeeds.
-- Return a structured diff.
-- Generate or validate inverse operations using captured pre-change values.
-- Verify rollback by canonical equality with the original state.
-
-## UI standards
-
-- Product experience should resemble a high-signal enterprise operations console.
-- Make `AI PROPOSAL` and `DETERMINISTIC SAFETY GATE` visually distinct.
-- PASS is green, WARN amber, BLOCK red, and active selection blue.
-- Use monospace only for identifiers, paths, diffs, and hashes.
-- Provide clear ready, loading, error, blocked, approval, rejected, simulated, and receipt states.
-- Blocked approval must be impossible and visibly explained.
-- Support keyboard focus, semantic labels, accessible contrast, and mobile layout.
-- Avoid generic AI gradients, glassmorphism, fake terminal typing, decorative animation, and excessive visual noise.
-- Do not sacrifice correct state or readable evidence for visual polish.
-
-## Test expectations
-
-Every behavioral change must include or update the smallest relevant test.
-
-Required coverage includes:
-
-- Schema acceptance and rejection
-- Patch path allowlists and transactional failure
-- Canonical serialization and stable hashes
-- Every policy PASS and failure condition
-- Rollback restoration
-- Risk derivation
-- Illegal state transitions
-- Replay fixture schema parity
-- Safe scenario approvable and simulatable
-- Unsafe scenario always blocked and never simulatable
-- Replay endpoint without an API key
-- Invalid model output rejection
-- No secret leakage in client artifacts or user-visible errors
-- Playwright safe and blocked critical paths
-
-Do not weaken a test to make incorrect implementation pass. Fix the implementation or, if the requirement itself is inconsistent, document the inconsistency before changing it.
-
-## Build Week evidence
-
-Maintain `BUILD_WEEK_CHANGELOG.md` as implementation proceeds.
-
-- Distinguish pre-Build Week concept work from implementation created during the submission period.
-- Add dated milestones and relevant commit hashes when available.
-- Document how Codex accelerated implementation and where the human made product, safety, and design decisions.
-- Document the runtime role of GPT-5.6.
-- Leave a clear placeholder and retrieval instructions for the primary Codex `/feedback` session ID; never invent it.
-
-Required handoff files:
-
-- `README.md`
-- `BUILD_WEEK_CHANGELOG.md`
-- `docs/ARCHITECTURE.md`
-- `docs/THREAT_MODEL.md`
-- `docs/DEMO_SCRIPT.md`
-- `.env.example`
+Scenarios are first-class contribution surface: fully fictional, schema-
+valid, provenance-honest, each with an `expectations.json` (post-P1)
+proving its claimed verdicts in CI. Red-team scenarios must always produce
+their expected BLOCKs — that corpus never approving is a release gate.
 
 ## Git and external actions
 
-- Preserve unrelated user changes.
-- Inspect the worktree before editing.
-- Use small, intentional commits when the repository is under git and commit authorization is present.
-- Never rewrite history, force-push, delete branches, publish, deploy, or expose a private repository without explicit authorization.
-- Never commit secrets or local environment files.
-- Prepare deployment configuration and instructions; deploy only when explicitly authorized and credentials are available.
+- Inspect the worktree before editing; preserve unrelated changes.
+- Small intentional commits; never rewrite history, force-push, or delete
+  branches. Remote: github.com/wonkwonlee/ChangeSafe-v1 (private) — push
+  after verified milestones.
+- Never commit secrets or local env files.
+- Publishing packages (npm) or making the repo public requires explicit
+  owner authorization.
 
 ## Scope control
 
-When time is tight, prioritize in this order:
-
-1. Safety invariants and deterministic policy correctness
-2. Both end-to-end replay scenarios
-3. Clear product workflow and error states
-4. Automated tests and production build
-5. README, threat model, architecture, and demo script
-6. Visual polish
-7. Optional live-call tuning
-
-Do not add features to compensate for incomplete core behavior.
-
-## Definition of done
-
-Work is complete only when:
-
-- The safe replay scenario can be analyzed, validated, approved, simulated, and issued a receipt.
-- The unsafe replay scenario produces required BLOCK findings and cannot be approved or simulated through UI or domain/API manipulation.
-- Live GPT-5.6 integration exists and is server-only.
-- Deterministic policies never rely on model judgment.
-- Receipt hashes and rollback behavior are stable and tested.
-- No real execution path, secret leakage, proprietary data, or misleading live/replay claim exists.
-- Lint, typecheck, unit/integration tests, production build, and critical E2E tests pass.
-- A judge can run and understand the project from `README.md` without assistance.
-- The final report lists commands run, results, important files, deployment status, known limitations, and only genuinely external remaining actions.
+When effort is constrained, priority order: (1) safety invariants and
+deterministic correctness, (2) the always-working replay demo and red-team
+contract, (3) the current roadmap phase's exit gate, (4) tests and build
+health, (5) docs, (6) polish. The do-not-build list in
+`docs/OSS_ROADMAP.md` §6 is binding.
