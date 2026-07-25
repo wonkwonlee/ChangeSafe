@@ -3,6 +3,11 @@
 [![CI](https://github.com/wonkwonlee/ChangeSafe/actions/workflows/ci.yml/badge.svg)](https://github.com/wonkwonlee/ChangeSafe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+**TL;DR**
+- AI agents can now propose real infrastructure changes — and will confidently propose a dangerous one.
+- ChangeSafe treats every AI proposal as untrusted data: a pure, deterministic policy engine decides what's safe, not the model's confidence score.
+- Every approval, rejection, or block becomes a hashed, replayable receipt — so "the AI said it was fine" is never the answer to "why did this happen."
+
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
 An AI proposes a change. ChangeSafe treats that proposal as untrusted
