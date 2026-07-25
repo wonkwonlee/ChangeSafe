@@ -4,6 +4,7 @@ import { analyzeLive, type ResponsesParser } from "@/lib/ai/live";
 import { buildAnalysisInput, SYSTEM_INSTRUCTIONS } from "@/lib/ai/prompt";
 import { validateModelProposal } from "@/lib/ai/validate-model-output";
 import { DomainError } from "@/lib/domain/errors";
+import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { buildIncidentBundle, buildOperation, buildProposal } from "@/tests/helpers/fixtures";
 
 const bundle = buildIncidentBundle();
@@ -64,7 +65,7 @@ describe("analyzeLive with an injected parser", () => {
       parse: async () => ({ output_parsed: buildProposal(), status: "completed" }),
     };
     const result = await analyzeLive(bundle, parser);
-    expect(result.model).toBe("gpt-5.6");
+    expect(result.model).toBe(RUNTIME_MODEL);
     expect(result.proposal.proposalId).toBe("prop-test-001");
   });
 

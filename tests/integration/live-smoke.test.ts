@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { analyzeLive } from "@/lib/ai/live";
 import { ReplayFixtureSchema } from "@/lib/domain/schemas";
 import { evaluatePolicies } from "@/lib/policies";
+import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { getScenario } from "@/scenarios";
 
 /**
@@ -22,7 +23,7 @@ describe.skipIf(!liveEnabled)("live GPT-5.6 smoke (opt-in)", () => {
     if (!scenario) throw new Error("scenario A missing");
 
     const { proposal, model } = await analyzeLive(scenario.bundle);
-    expect(model).toBe("gpt-5.6");
+    expect(model).toBe(RUNTIME_MODEL);
     expect(proposal.operations.length).toBeGreaterThan(0);
 
     // The deterministic gate must run cleanly on live output too.

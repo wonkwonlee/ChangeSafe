@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/analyze/route";
 import { GET } from "@/app/api/status/route";
 import { AnalyzeErrorSchema, AnalyzeSuccessSchema, StatusResponseSchema } from "@/lib/domain/api";
+import { RUNTIME_MODEL } from "@/lib/domain/version";
 
 function analyzeRequest(body: unknown): Request {
   return new Request("http://localhost/api/analyze", {
@@ -97,7 +98,7 @@ describe("GET /api/status", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const payload = StatusResponseSchema.parse(await (await GET()).json());
     expect(payload.liveAvailable).toBe(false);
-    expect(payload.model).toBe("gpt-5.6");
+    expect(payload.model).toBe(RUNTIME_MODEL);
   });
 
   it("reports availability as a boolean only and never echoes the key", async () => {
