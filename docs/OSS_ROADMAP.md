@@ -65,7 +65,7 @@ fights the new direction.
       `SECURITY.md`, issue/PR templates, `engines` + `.nvmrc`,
       fix the dead `scripts/capture-fixture.ts` reference in scenario A's
       fixture note, soften "enterprise operations console" copy.
-- [ ] Decide public repo naming/timing (see §7 Open decisions).
+- [x] Public repository: `github.com/wonkwonlee/ChangeSafe`.
 
 Exit gate: a newcomer reading README + CONTRIBUTING + this roadmap
 understands what the project is, where it is going, and how to contribute;
@@ -285,9 +285,8 @@ schema changes follow semver + documented migrations.
 
 1. npm scope: is `@changesafe` claimable? Fallback names
    (`changesafe-core`, CLI bin name stays `changesafe`).
-2. Public repo naming/timing: keep `ChangeSafe-v1` private during P0–P1,
-   or rename/create `changesafe` and go public at P1 (recommended: go
-   public early — the history is clean and honest).
+2. ~~Public repo naming/timing.~~ **Resolved 2026-07-25**: the repository
+   is public at `github.com/wonkwonlee/ChangeSafe`.
 3. Docs site tooling (Starlight vs Nextra) — decide by P4; README suffices
    until then.
 4. Third domain after terraform: Kubernetes (largest audience) vs IAM

@@ -1,0 +1,43 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For suspected **gate bypasses**, policy unsoundness, or secret
+        leakage, please use private reporting instead — see `SECURITY.md`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the scenario or input you used.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: |
+        For gate behavior, state the findings and risk level you expected
+        versus what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Commands, scenario id, or a minimal input file.
+      placeholder: |
+        1. npm run dev
+        2. Select scenario ...
+        3. Run replay analysis
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "node 22.x, macOS 15, commit abc1234"
+    validations:
+      required: true

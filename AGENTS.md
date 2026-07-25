@@ -156,7 +156,7 @@ their expected BLOCKs — that corpus never approving is a release gate.
 
 - Inspect the worktree before editing; preserve unrelated changes.
 - Small intentional commits; never rewrite history, force-push, or delete
-  branches. Remote: github.com/wonkwonlee/ChangeSafe-v1 (private) — push
+  branches. Remote: github.com/wonkwonlee/ChangeSafe (private) — push
   after verified milestones.
 - Never commit secrets or local env files.
 - Publishing packages (npm) or making the repo public requires explicit

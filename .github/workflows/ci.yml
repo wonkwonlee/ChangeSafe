@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Default tests must never need network access, an API key, or paid credit.
+env:
+  CI: "true"
+
+jobs:
+  gate:
+    name: Lint, typecheck, test, build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.9", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: Playwright critical paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  no-secret-leak:
+    name: Client bundle carries no secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # The server-only key name and prompt internals must never be bundled
+      # into client chunks. grep -q exits 0 on a match, so a match fails here.
+      - name: Grep client chunks
+        run: |
+          if grep -rIq "OPENAI_API_KEY" .next/static; then
+            echo "::error::OPENAI_API_KEY appears in client bundle"
+            exit 1
+          fi
+          if grep -rIq "untrusted_incident_data" .next/static; then
+            echo "::error::Server prompt content appears in client bundle"
+            exit 1
+          fi
+          echo "Client bundle is clean."

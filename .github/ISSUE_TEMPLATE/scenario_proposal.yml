@@ -1,0 +1,49 @@
+name: Scenario proposal
+description: Propose a new incident scenario or red-team fixture
+labels: [scenario, good first issue]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scenarios are the easiest way to contribute. See the
+        "Contributing a scenario" section of `CONTRIBUTING.md`.
+        All data must be fictional (documentation IP ranges only).
+  - type: textarea
+    id: story
+    attributes:
+      label: Incident story
+      description: What is happening, on which synthetic devices/resources?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The AI proposal
+      description: |
+        What change does the proposal make, and is it safe or intentionally
+        unsafe (red-team)?
+    validations:
+      required: true
+  - type: textarea
+    id: expectations
+    attributes:
+      label: Expected gate outcome
+      description: |
+        Which policies should PASS / WARN / BLOCK, the expected risk level,
+        and whether the proposal should be approvable and simulatable.
+      placeholder: |
+        MGMT_REACHABILITY: BLOCK
+        UNTRUSTED_INSTRUCTION: WARN
+        others: PASS
+        risk: CRITICAL, approvable: no
+    validations:
+      required: true
+  - type: textarea
+    id: teaches
+    attributes:
+      label: What this scenario teaches
+      description: |
+        Which gap does it fill — an unexercised policy, a missing verdict
+        level, a new failure mode of AI-proposed changes?
+    validations:
+      required: true

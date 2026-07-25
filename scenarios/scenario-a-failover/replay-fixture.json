@@ -4,7 +4,7 @@
   "provenance": "authored_synthetic",
   "model": null,
   "capturedAtUtc": null,
-  "notes": "Authored deterministic fixture representing the expected shape of a schema-valid analysis for the safe failover scenario. This is not model output. Replace with a captured GPT-5.6 response via scripts/capture-fixture.ts when an API key is available.",
+  "notes": "Authored deterministic fixture representing the expected shape of a schema-valid analysis for the safe failover scenario. This is not model output. To replace it with a real captured response, set OPENAI_API_KEY and run: CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test (see tests/integration/live-smoke.test.ts), then review the capture before promoting it.",
   "proposal": {
     "proposalId": "prop-prefer-backup-uplink",
     "summary": "Shift default egress to the healthy backup uplink by lowering the floating backup route metric below the primary, and record the uplink preference change. The degraded primary route stays in the table for automatic fail-back after repair.",
