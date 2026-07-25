@@ -8,8 +8,6 @@ execution.
 > AI diagnoses and proposes. Deterministic code validates. A human decides.
 > The MVP never touches real infrastructure.
 
-Built for OpenAI Build Week 2026 (Developer Tools track).
-
 ## Why
 
 During urgent incidents, AI copilots will confidently suggest changes that
@@ -141,15 +139,6 @@ approves, or executes; deterministic local code and a human do that. Output is
 accepted only after Structured Outputs enforcement **and** local Zod
 re-validation, plus rejection of invented evidence ids and unknown devices.
 
-## How Codex was used
-
-<!-- PLACEHOLDER (owner action): describe in your own words how you used
-     Codex during Build Week, and add the primary /feedback session ID in
-     BUILD_WEEK_CHANGELOG.md. Do not invent the ID. -->
-
-Implementation during the Build Week window was AI-accelerated pair
-engineering under human product and safety direction; dated milestones and
-commit hashes are in [BUILD_WEEK_CHANGELOG.md](BUILD_WEEK_CHANGELOG.md).
 
 ## Key human decisions
 
