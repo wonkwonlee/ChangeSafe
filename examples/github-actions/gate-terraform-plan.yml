@@ -50,7 +50,7 @@ jobs:
           CHANGESAFE_PR_BODY
 
       - name: ChangeSafe gate
-        uses: wonkwonlee/ChangeSafe@main
+        uses: wonkwonlee/ChangeSafe@v0.1.0
         with:
           plan: tfplan.json
           context: pr-body.txt
