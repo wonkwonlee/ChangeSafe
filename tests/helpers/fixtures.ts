@@ -245,6 +245,7 @@ export function buildReceipt(overrides: Partial<ChangeReceipt> = {}): ChangeRece
     findings: [buildFinding("PASS")],
     riskLevel: "LOW",
     decision: "rejected",
+    approver: null,
     simulation: null,
     receiptSha256: DUMMY_SHA,
     ...overrides,

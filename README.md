@@ -124,6 +124,32 @@ then `--sign-key` when gating and `--public-key` when verifying. Hashing
 proves a receipt was not altered; only a signature proves who issued it, and
 `verify` exits 2 rather than 0 if it was given no key to check one with.
 
+## Self-hosting (optional)
+
+The demo above runs entirely in your browser, which is fine when the person
+clicking is the person accountable. A team can instead run the authenticated
+decision path, where the server — not the client — decides:
+
+```bash
+changesafe keygen --out signing-key
+changesafe serve --db decisions.db \
+  --oidc-issuer https://your-idp.example.com \
+  --oidc-audience changesafe \
+  --sign-key signing-key.pem
+```
+
+Approvers are verified against your own identity provider's keys, the server
+**recomputes the findings itself** rather than trusting what a client claims,
+each receipt names who approved it and is signed, and every decision is
+appended to a hash-chained SQLite ledger before the response is returned. A
+BLOCK is still unapprovable — authentication grants no new power over the
+gate. Nothing here can execute a change.
+
+Storage is `node:sqlite` and identity is verified with Web Crypto, so
+self-hosting adds no dependency and no native build step. See
+[@changesafe/server](packages/server/README.md) and
+[@changesafe/ledger](packages/ledger/README.md).
+
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
 

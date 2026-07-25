@@ -65,8 +65,8 @@ export { DiffEntrySchema, SimulationResultSchema } from "./simulation";
 export type { DiffEntry, SimulationResult } from "./simulation";
 
 // Receipts
-export { ChangeReceiptSchema, ReceiptDecisionSchema } from "./receipt";
-export type { ChangeReceipt, ReceiptDecision } from "./receipt";
+export { ApproverSchema, ChangeReceiptSchema, ReceiptDecisionSchema } from "./receipt";
+export type { Approver, ChangeReceipt, ReceiptDecision } from "./receipt";
 export { createReceipt, verifyReceiptHash } from "./create-receipt";
 export type { ReceiptInput } from "./create-receipt";
 export { canonicalize, canonicallyEqual } from "./canonical";

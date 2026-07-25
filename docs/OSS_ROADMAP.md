@@ -278,12 +278,28 @@ the earliest point where the project is useful to a stranger in 10 minutes.
 - App copy now names the configured provider and model, and receipts record
   the model that actually answered rather than the one configured.
 
-### P6 — Self-host hardening (L)
+### P6 — Self-host hardening (L) — **done**
 
-SQLite-first: server-side decision
-path (authenticated approve/reject; the pure libs relocate verbatim),
-SQLite append-only receipt/audit ledger (Postgres optional), OIDC approver
-identity, signed receipts (`changesafe verify` learns signatures).
+Added as a *separate self-hosting mode*; the public console keeps its
+keyless, client-side flow, since a Vercel deployment has no durable
+filesystem and the demo's "no signup" promise is worth keeping.
+
+- **Signed receipts.** Ed25519 through Web Crypto (`changesafe keygen`,
+  `--sign-key`, `verify --public-key`), so core stays isomorphic and the
+  feature costs no dependency. The envelope carries only a key fingerprint —
+  shipping the key beside the signature would invite a self-verifying check
+  that any forger satisfies. An unchecked signature exits 2, never 0.
+- **Append-only ledger.** `@changesafe/ledger` over `node:sqlite`:
+  triggers refuse UPDATE/DELETE, and a hash chain catches what triggers
+  cannot — an operator who owns the file. `ledger verify` exits 1 on any
+  break and prints a head worth witnessing elsewhere.
+- **Authenticated decision path.** `@changesafe/server` + `changesafe serve`
+  verifies OIDC bearer tokens against the issuer's JWKS (asymmetric
+  algorithms only, so `alg: none` and HS256 confusion are both refused),
+  **recomputes findings server-side** rather than trusting the caller, records
+  the approver on the receipt, signs it, and appends to the ledger before
+  answering. A BLOCK is still unapprovable — by anyone, authenticated or not.
+- Postgres remains optional and unbuilt; SQLite covers the self-hoster.
 
 ### P7 — Benchmark + community (ongoing)
 

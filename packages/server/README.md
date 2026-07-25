@@ -1,0 +1,88 @@
+# @changesafe/server
+
+The authenticated decision path, for self-hosting.
+
+```bash
+changesafe keygen --out signing-key
+changesafe serve \
+  --db decisions.db \
+  --oidc-issuer https://your-idp.example.com \
+  --oidc-audience changesafe \
+  --sign-key signing-key.pem
+```
+
+The public console runs the workflow in the browser, which is fine when the
+person clicking is the person accountable. A team needs something else: an
+approver whose identity was established by their own identity provider, a
+decision the client cannot fake, and a durable record neither party can
+quietly edit.
+
+It still cannot execute a change. There is no endpoint for that and there
+will not be one.
+
+## The client stops being trusted
+
+That is the whole reason to move a decision server-side, so the server
+**recomputes the findings itself** from the submitted input and proposal. A
+client that claims the gate passed something changes nothing, because its
+claim is never read — the request schema does not even have a field for it.
+
+Everything else is the same machinery the console and CLI use. In particular
+approval goes through the same `transition`, so:
+
+> **An authenticated, authorized, entirely legitimate operator has no more
+> power to approve a BLOCK than an anonymous one.** It answers 409 and nothing
+> reaches the ledger.
+
+## Approver identity
+
+Tokens are verified against the issuer's published keys — the standard shape
+for a service behind a reverse proxy — rather than ChangeSafe implementing a
+login flow and owning your session security.
+
+| Check | Why |
+| --- | --- |
+| Asymmetric algorithms only (RS*/ES*) | `alg: none` forges anything, and accepting HS256 against a *published* public key is the classic algorithm-confusion attack |
+| `iss` matches exactly | A near-match is a different issuer |
+| `aud` contains the configured audience | A token minted for another service must not be reusable here |
+| `exp` / `nbf` with a small skew allowance | Hosts drift; the window is narrow and configurable, not absent |
+| `kid` lookup, refetching once on a miss | Providers rotate keys without warning |
+
+The verified `subject`, `issuer`, and `email` are recorded on the receipt. A
+receipt with `approver: null` means no authenticated approver was
+established — the honest answer for a CLI gate run, not a claim that nobody
+decided. A `gate_only` receipt may never name an approver at all; the schema
+refuses it.
+
+There is **no anonymous mode**. `serve` will not start without an issuer and
+audience, because an unauthenticated endpoint that issues approvals would be
+strictly worse than the console it replaces — the console at least never
+pretends the decision was attributable.
+
+## Endpoints
+
+| Route | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | none | Liveness and entry count |
+| `POST /decisions` | bearer | Decide; recomputes findings, signs, appends |
+| `GET /decisions` | bearer | List recorded decisions |
+| `GET /ledger/verify` | bearer | Recompute the hash chain (409 if broken) |
+
+The decision is appended to the ledger **before** the response is returned: a
+decision the caller was told about but the ledger never saw is exactly the gap
+the ledger exists to close. There is no endpoint that writes to the ledger
+except by making a decision, so the audit trail cannot be edited through the
+same door it is written through.
+
+## What this does not do
+
+- **No execution.** Unchanged from every other part of ChangeSafe.
+- **No authorization model.** Any identity the issuer vouches for can decide.
+  Restrict who gets a token with the audience, or put a proxy in front —
+  ChangeSafe deliberately does not become a second, weaker IdP.
+- **No TLS.** Bind to localhost and terminate TLS at your proxy.
+- **No session or login flow.** Bring a token.
+
+## License
+
+MIT — see the repository root.

@@ -11,6 +11,7 @@ export default defineConfig({
       "@changesafe/ai": path.resolve(root, "packages/ai/src/index.ts"),
       "@changesafe/core": path.resolve(root, "packages/core/src/index.ts"),
       "@changesafe/ledger": path.resolve(root, "packages/ledger/src/index.ts"),
+      "@changesafe/server": path.resolve(root, "packages/server/src/index.ts"),
       "@changesafe/domain-network": path.resolve(
         root,
         "packages/domain-network/src/index.ts",

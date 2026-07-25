@@ -11,6 +11,7 @@ import { UsageError } from "./io";
 import { runKeygen } from "./keygen";
 import { runLedgerAppend, runLedgerList, runLedgerVerify } from "./ledger";
 import { runScenarioCheck, runScenarioInit } from "./scenario";
+import { runServe } from "./serve";
 import { runVerify } from "./verify";
 import { EXIT_USAGE, createConsole, paint, type Console } from "./output";
 
@@ -23,6 +24,7 @@ USAGE
   changesafe verify    <receipt.json>   recompute a receipt's hashes and signature
   changesafe keygen    [--out <path>]   generate an Ed25519 receipt signing key
   changesafe ledger    append|list|verify   append-only decision ledger
+  changesafe serve     [options]        authenticated self-hosted decision API
   changesafe scenario  check [dir]      check scenarios against their expectations
   changesafe scenario  init <name>      scaffold a new scenario
 
@@ -68,6 +70,19 @@ LEDGER OPTIONS
 that was altered, removed, or reordered. Append-only is enforced by database
 triggers; the chain is what catches someone who owns the file.
 
+SERVE OPTIONS (self-hosting)
+  --db <file>           append-only ledger (default: changesafe-ledger.db)
+  --host <host>         bind address (default: 127.0.0.1)
+  --port <n>            port (default: 8787)
+  --oidc-issuer <url>   required; approver tokens must come from this issuer
+  --oidc-audience <id>  required; tokens must be minted for this audience
+  --oidc-jwks-uri <url> skip discovery and use this key endpoint
+  --sign-key <file>     sign every receipt this API issues
+
+The API recomputes findings itself rather than trusting the caller, records an
+authenticated approver on every decision, and appends to the ledger before
+answering. It has no execution endpoint and no anonymous mode.
+
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
   --proposal <file>     also check the receipt describes this proposal
@@ -105,6 +120,11 @@ const OPTION_SPEC = {
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
   db: { type: "string" },
+  host: { type: "string" },
+  port: { type: "string" },
+  "oidc-issuer": { type: "string" },
+  "oidc-audience": { type: "string" },
+  "oidc-jwks-uri": { type: "string" },
   decision: { type: "string" },
   limit: { type: "string" },
   format: { type: "string", default: "pretty" },
@@ -221,6 +241,25 @@ export async function main(argv: string[], console: Console): Promise<number> {
         { out: values.out ?? "changesafe-signing-key", force: values.force, format },
         console,
       );
+
+    case "serve": {
+      const port = Number(values.port ?? "8787");
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new UsageError(`--port must be a port number, got "${values.port}"`);
+      }
+      return runServe(
+        {
+          db: values.db ?? "changesafe-ledger.db",
+          host: values.host ?? "127.0.0.1",
+          port,
+          oidcIssuer: values["oidc-issuer"],
+          oidcAudience: values["oidc-audience"],
+          oidcJwksUri: values["oidc-jwks-uri"],
+          signKey: values["sign-key"],
+        },
+        console,
+      );
+    }
 
     case "ledger": {
       const sub = positionals[1];

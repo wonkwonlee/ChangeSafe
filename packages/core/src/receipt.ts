@@ -17,6 +17,23 @@ export const ReceiptDecisionSchema = z.enum([
 ]);
 
 /**
+ * Who made a decision, when an authenticated identity was established.
+ *
+ * Null means no authenticated approver was recorded — which is the honest
+ * answer for a CLI gate run or the single-operator console, not a claim that
+ * nobody decided. A receipt must never imply an accountable human where there
+ * was only a process.
+ */
+export const ApproverSchema = z.strictObject({
+  /** Stable subject claim from the identity provider. */
+  subject: z.string().min(1).max(255),
+  /** Issuer that vouched for the subject. */
+  issuer: z.string().min(1).max(255),
+  /** Convenience only; `subject` is the identifier that matters. */
+  email: z.string().max(255).nullable(),
+});
+
+/**
  * The durable record of one airlock decision.
  *
  * `inputId` / `inputSha256` describe whatever was analyzed — an incident
@@ -42,6 +59,8 @@ export const ChangeReceiptSchema = z
     findings: z.array(PolicyFindingSchema).min(1).max(32),
     riskLevel: RiskLevelSchema,
     decision: ReceiptDecisionSchema,
+    /** The authenticated human who decided, when there was one. */
+    approver: ApproverSchema.nullable(),
     simulation: SimulationResultSchema.nullable(),
     /** SHA-256 of the canonical receipt content excluding this field. */
     receiptSha256: Sha256HexSchema,
@@ -70,6 +89,14 @@ export const ChangeReceiptSchema = z
         message: "only approved changes may carry a simulation result",
       });
     }
+    // An automated gate run has no human behind it, and must not appear to.
+    if (receipt.decision === "gate_only" && receipt.approver !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["approver"],
+        message: "a gate-only receipt records no human decision and must not name an approver",
+      });
+    }
     if (receipt.decision === "approved" && receipt.simulation === null) {
       ctx.addIssue({
         code: "custom",
@@ -79,5 +106,6 @@ export const ChangeReceiptSchema = z
     }
   });
 
+export type Approver = z.infer<typeof ApproverSchema>;
 export type ReceiptDecision = z.infer<typeof ReceiptDecisionSchema>;
 export type ChangeReceipt = z.infer<typeof ChangeReceiptSchema>;

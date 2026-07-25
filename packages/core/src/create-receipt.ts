@@ -2,7 +2,12 @@ import type { AnalysisMode, FixtureProvenance } from "./analysis";
 import type { PolicyFinding, RiskLevel } from "./findings";
 import { hashCanonical } from "./hash";
 import type { ChangeProposal } from "./proposal";
-import { ChangeReceiptSchema, type ChangeReceipt, type ReceiptDecision } from "./receipt";
+import {
+  ChangeReceiptSchema,
+  type Approver,
+  type ChangeReceipt,
+  type ReceiptDecision,
+} from "./receipt";
 import type { SimulationResult } from "./simulation";
 
 export interface ReceiptInput {
@@ -22,6 +27,9 @@ export interface ReceiptInput {
   findings: PolicyFinding[];
   riskLevel: RiskLevel;
   decision: ReceiptDecision;
+  /** Authenticated approver, when the decision came through an authenticated
+   *  path. Defaults to null: absence of a claim, not a claim of absence. */
+  approver?: Approver | null;
   simulation: SimulationResult | null;
   /** Injectable for deterministic tests; defaults to the current UTC instant. */
   createdAtUtc?: string;
@@ -57,6 +65,7 @@ export async function createReceipt(input: ReceiptInput): Promise<ChangeReceipt>
     findings: input.findings,
     riskLevel: input.riskLevel,
     decision: input.decision,
+    approver: input.approver ?? null,
     simulation: input.simulation,
   };
 
