@@ -10,6 +10,10 @@
 
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
+**[▶ Try the live demo](https://change-safe.vercel.app)** — no signup, no API
+key, nothing to install. Pick the route-leak scenario and watch a confident
+proposal get blocked.
+
 An AI proposes a change. ChangeSafe treats that proposal as untrusted
 data: pure, deterministic policies validate it, a human makes the decision,
 and every outcome — approved, rejected, or blocked — becomes a hashed,

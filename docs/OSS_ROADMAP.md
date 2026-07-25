@@ -1,7 +1,7 @@
 # ChangeSafe Open-Source Roadmap
 
-Status: adopted 2026-07-25. Supersedes the YC/Build Week framing of
-`docs/V2_PLAN.md` (kept for reference; its technical findings remain valid).
+Status: adopted 2026-07-25. Supersedes the project's earlier Build Week
+framing.
 This is the implementation plan. Phases P0–P3 are complete; P4 (Terraform
 plan ingestion) is next.
 
@@ -268,7 +268,7 @@ the earliest point where the project is useful to a stranger in 10 minutes.
 
 ### P6 — Self-host hardening (L)
 
-Adapted from `docs/V2_PLAN.md` §5 with SQLite-first: server-side decision
+SQLite-first: server-side decision
 path (authenticated approve/reject; the pure libs relocate verbatim),
 SQLite append-only receipt/audit ledger (Postgres optional), OIDC approver
 identity, signed receipts (`changesafe verify` learns signatures).

@@ -13,10 +13,9 @@ trust model is:
 > ChangeSafe never executes changes against infrastructure.
 
 Strategy, phases, and design constraints live in `docs/OSS_ROADMAP.md` —
-read it before starting multi-file work. `BUILD_WEEK_CHANGELOG.md` and
-`docs/V2_PLAN.md` are historical records of the project's origin (built
-during OpenAI Build Week 2026, not submitted, pivoted to OSS); do not treat
-their Build Week constraints (two-scenario cap, GPT-5.6/OpenAI-only,
+read it before starting multi-file work. `BUILD_WEEK_CHANGELOG.md` is a historical record of the project's origin
+(built during OpenAI Build Week 2026, not submitted, pivoted to OSS); do not
+treat its Build Week constraints (two-scenario cap, GPT-5.6/OpenAI-only,
 single-app scope) as current rules.
 
 ## Safety invariants
