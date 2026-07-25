@@ -206,7 +206,7 @@ capture time), are validated by the same schemas as live output, and run the
 identical validation → policy → decision → simulation → receipt pipeline. The
 UI labels replay output as fixture content and never presents it as a live
 model call. `scenario-a-failover`'s fixture is a real captured GPT-5.6
-response, promoted from the opt-in live smoke test; the other five bundled
+response, promoted from the opt-in live smoke test; the other eight bundled
 fixtures are authored — and every fixture says so on screen. The schema
 enforces the distinction in both directions: a `captured` claim without model
 and timestamp is rejected, and an authored fixture may not name a model.
@@ -241,7 +241,7 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@main
+  uses: wonkwonlee/ChangeSafe@v0.1.0
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed
@@ -311,10 +311,11 @@ implements a complete toy domain in one file to show the whole contract.
 
 ## Where this is going
 
-Next: provider-agnostic AI adapters (Anthropic, local models — because the
-gate is deterministic, swapping models cannot change what is safe),
-self-hosting with a SQLite ledger and signed receipts, and a public
-red-team benchmark of AI-proposed changes. Full plan and phase gates:
+Provider-agnostic analysis, the SQLite ledger, signed receipts, the
+authenticated self-hosted decision path, and the first benchmark-corpus pass
+are implemented. The open roadmap now centers on additional domains and
+failure modes, integration conversations, published cross-model reports, and
+the docs-site tooling decision. Full status and phase history:
 [docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md).
 
 ## Design commitments
@@ -332,13 +333,18 @@ These do not change:
 
 ## Limitations
 
-- The synthetic network model (reachability = physical path + covering
-  routes) is deliberately simple; it demonstrates deterministic validation,
-  not production routing semantics. Fidelity ladder is roadmap P7.
-- Receipts prove integrity, not authorship — no signatures yet (roadmap P6).
-- The decision path currently runs client-side in the demo app; moving it
-  behind an authenticated server boundary is roadmap P6.
-- Single user, no auth, no persistence; two bundled scenarios so far.
+- The synthetic network model is deliberately simple; it demonstrates
+  deterministic validation rather than production routing semantics.
+- Receipt signing is optional. Hash-only receipts prove integrity but not
+  authorship; a signature is meaningful only when checked against the expected
+  public key.
+- The public demo intentionally keeps its keyless decision path client-side.
+  Authenticated attribution, signed decisions, and durable storage are
+  available through the separate self-hosted server.
+- The benchmark corpus is nine synthetic network scenarios—six adversarial—
+  and should be treated as a coverage instrument, not a statistical safety
+  score.
+- ChangeSafe never executes an infrastructure change.
 
 ## Contributing
 
