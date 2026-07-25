@@ -1,0 +1,25 @@
+{
+  "name": "@changesafe/core",
+  "version": "0.1.0",
+  "description": "The deterministic airlock engine: typed change proposals, pure safety policies, transactional decisions, and hashed receipts. Domain-agnostic.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

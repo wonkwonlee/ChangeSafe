@@ -77,7 +77,7 @@ export function ChangeSafeApp() {
 
       <main className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <div className="min-w-0">
-          <IncidentPanel bundle={state.bundle} />
+          <IncidentPanel bundle={state.input} />
         </div>
 
         <div aria-label="Change airlock workflow" className="min-w-0">
@@ -173,7 +173,7 @@ export function ChangeSafeApp() {
 
             {hasProposal ? (
               <ProposalPanel
-                bundle={state.bundle}
+                bundle={state.input}
                 proposal={state.proposal}
                 mode={state.mode}
                 provenance={state.provenance}

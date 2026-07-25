@@ -1,4 +1,4 @@
-import type { PolicyStatus, RiskLevel } from "@/lib/domain/schemas";
+import type { PolicyStatus, RiskLevel } from "@changesafe/core";
 
 /** Verdict pill — the only place PASS/WARN/BLOCK colors are defined for text. */
 export function StatusPill({ status }: { status: PolicyStatus }) {

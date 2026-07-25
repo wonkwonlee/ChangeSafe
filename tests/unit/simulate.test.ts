@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { runSimulation } from "@/lib/patch/simulate";
-import { canonicalize } from "@/lib/receipt/canonical";
+import { runSimulation } from "@changesafe/domain-network";
+import { canonicalize } from "@changesafe/core";
 import { buildIncidentBundle, buildOperation, buildProposal } from "@/tests/helpers/fixtures";
 
 describe("runSimulation", () => {

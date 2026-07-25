@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(import.meta.dirname),
   },
+  // Workspace packages ship TypeScript source, so the app transpiles them.
+  transpilePackages: ["@changesafe/core", "@changesafe/domain-network"],
 };
 
 export default nextConfig;

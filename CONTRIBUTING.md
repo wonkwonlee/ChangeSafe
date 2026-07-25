@@ -9,6 +9,12 @@ easiest and most valuable way in**.
 Read `docs/OSS_ROADMAP.md` for where the project is going, and `CLAUDE.md`
 for the invariants every change must respect.
 
+The engine lives in workspace packages: `@changesafe/core` is the
+domain-agnostic gate (see `packages/core/README.md`) and
+`@changesafe/domain-network` teaches it about networks through the
+`DomainAdapter` contract. The Next.js console at the repository root is a
+consumer, not the product.
+
 ## Setup
 
 ```bash
@@ -93,11 +99,12 @@ Checklist before opening the PR:
 
 - Keep PRs focused; a scenario, a policy fix, and a refactor are three PRs.
 - Run the full local gate before pushing.
-- Describe the safety reasoning for anything touching `lib/policies/`,
-  `lib/patch/`, `lib/domain/state-machine.ts`, or `lib/receipt/` — say what
-  invariant the change preserves and which test proves it.
-- Policy behavior changes must bump `POLICY_VERSION` in
-  `lib/domain/version.ts` and update the affected receipt tests.
+- Describe the safety reasoning for anything touching `packages/core/src/`
+  or a domain package's policies and patch engine — say what invariant the
+  change preserves and which test proves it.
+- Policy behavior changes must bump `CORE_POLICY_VERSION`
+  (`packages/core/src/version.ts`) or the domain's `policyVersion`, and
+  update the affected receipt tests.
 - Commit messages: imperative subject, body explaining why.
 
 ## Reporting problems

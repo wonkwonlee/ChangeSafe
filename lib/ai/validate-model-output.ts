@@ -1,7 +1,8 @@
-import { DomainError } from "@/lib/domain/errors";
-import { ChangeProposalSchema, type ChangeProposal, type IncidentBundle } from "@/lib/domain/schemas";
-import { validateProposalEvidence } from "@/lib/domain/validate";
-import { parsePatchPath } from "@/lib/patch/paths";
+import { DomainError } from "@changesafe/core";
+import { ChangeProposalSchema, type ChangeProposal } from "@changesafe/core";
+import { type IncidentBundle , networkDomain } from "@changesafe/domain-network";
+import { validateProposalEvidence } from "@changesafe/core";
+import { parsePatchPath } from "@changesafe/domain-network";
 
 /**
  * Local validation layer for anything claiming to be a model-produced
@@ -21,7 +22,7 @@ export function validateModelProposal(bundle: IncidentBundle, data: unknown): Ch
   const proposal = parsed.data;
 
   // Invented evidence ids are a hard rejection (EVIDENCE_UNKNOWN).
-  validateProposalEvidence(bundle, proposal);
+  validateProposalEvidence(networkDomain, bundle, proposal);
 
   // Parseable paths must reference real devices; malformed paths are left to
   // the PATCH_SCHEMA policy so they surface as explained findings.

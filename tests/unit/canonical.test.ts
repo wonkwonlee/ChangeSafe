@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalize, canonicallyEqual } from "@/lib/receipt/canonical";
-import { hashCanonical, sha256Hex } from "@/lib/receipt/hash";
+import { canonicalize, canonicallyEqual } from "@changesafe/core";
+import { hashCanonical, sha256Hex } from "@changesafe/core";
 
 describe("canonicalize", () => {
   it("sorts object keys recursively", () => {

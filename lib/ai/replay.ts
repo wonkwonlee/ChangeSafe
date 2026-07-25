@@ -1,5 +1,5 @@
-import { DomainError } from "@/lib/domain/errors";
-import type { ChangeProposal, FixtureProvenance } from "@/lib/domain/schemas";
+import { DomainError } from "@changesafe/core";
+import type { ChangeProposal, FixtureProvenance } from "@changesafe/core";
 import { getScenario } from "@/scenarios";
 import { validateModelProposal } from "./validate-model-output";
 

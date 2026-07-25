@@ -1,4 +1,4 @@
-import type { CurrentState } from "@/lib/domain/schemas";
+import type { CurrentState } from "@changesafe/domain-network";
 
 function statusColor(status: "up" | "degraded" | "down"): string {
   return status === "up" ? "bg-pass" : status === "degraded" ? "bg-warn" : "bg-block";

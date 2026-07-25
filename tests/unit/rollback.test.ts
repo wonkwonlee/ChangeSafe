@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveInverseOperations } from "@/lib/patch/inverse";
-import { verifyRollback } from "@/lib/patch/rollback-verify";
+import { deriveInverseOperations, networkDomain } from "@changesafe/domain-network";
+import { verifyRollback } from "@changesafe/core";
 import { buildIncidentBundle, buildOperation } from "@/tests/helpers/fixtures";
 
 const state = () => buildIncidentBundle().currentState;
@@ -34,7 +34,9 @@ describe("deriveInverseOperations", () => {
     const inverse = deriveInverseOperations(original, forward);
 
     expect(inverse.map((op) => op.op)).toEqual(["remove", "add", "replace"]);
-    expect(verifyRollback(original, forward, inverse)).toEqual({ ok: true });
+    expect(verifyRollback(
+      networkDomain,
+      original, forward, inverse)).toEqual({ ok: true });
   });
 });
 
@@ -55,6 +57,7 @@ describe("routing-preference add has no expressible inverse (fail-safe)", () => 
     // A replace-based "rollback" cannot delete the added key, so canonical
     // equality with the original state is impossible.
     const verdict = verifyRollback(
+      networkDomain,
       state(),
       [addPreference],
       [
@@ -73,6 +76,7 @@ describe("verifyRollback", () => {
   it("accepts the proposal's own correct rollback", () => {
     const bundle = buildIncidentBundle();
     const verdict = verifyRollback(
+      networkDomain,
       bundle.currentState,
       [buildOperation()],
       [buildOperation({ value: 200 })],
@@ -81,12 +85,15 @@ describe("verifyRollback", () => {
   });
 
   it("fails when rollback is missing", () => {
-    const verdict = verifyRollback(state(), [buildOperation()], []);
+    const verdict = verifyRollback(
+      networkDomain,
+      state(), [buildOperation()], []);
     expect(verdict.ok).toBe(false);
   });
 
   it("fails when rollback restores the wrong value", () => {
     const verdict = verifyRollback(
+      networkDomain,
       state(),
       [buildOperation()],
       [buildOperation({ value: 100 })],
@@ -99,6 +106,7 @@ describe("verifyRollback", () => {
 
   it("fails when the rollback cannot be applied", () => {
     const verdict = verifyRollback(
+      networkDomain,
       state(),
       [buildOperation()],
       [buildOperation({ path: "/devices/edge-rtr-01/routes/rt-ghost/metric", value: 200 })],
@@ -111,6 +119,7 @@ describe("verifyRollback", () => {
 
   it("fails when forward operations cannot be applied", () => {
     const verdict = verifyRollback(
+      networkDomain,
       state(),
       [buildOperation({ path: "/devices/edge-rtr-01/name" })],
       [buildOperation({ value: 200 })],

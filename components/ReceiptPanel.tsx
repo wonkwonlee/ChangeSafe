@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeReceipt } from "@/lib/domain/schemas";
+import type { ChangeReceipt } from "@changesafe/core";
 import { IdChip } from "./atoms";
 
 function downloadReceipt(receipt: ChangeReceipt) {
@@ -17,9 +17,9 @@ function downloadReceipt(receipt: ChangeReceipt) {
 
 const FIELD_LABELS: [keyof ChangeReceipt, string][] = [
   ["receiptId", "Receipt"],
-  ["incidentId", "Incident"],
+  ["inputId", "Incident"],
   ["proposalId", "Proposal"],
-  ["scenarioId", "Scenario"],
+  ["sourceId", "Scenario"],
   ["createdAtUtc", "Created (UTC)"],
   ["appVersion", "App version"],
   ["policyVersion", "Policy version"],
@@ -66,7 +66,7 @@ export function ReceiptPanel({ receipt }: { receipt: ChangeReceipt }) {
         <p className="eyebrow text-ink-faint">Hashes (SHA-256, canonical serialization)</p>
         <p className="flex flex-wrap items-baseline gap-2">
           <span className="eyebrow w-20 shrink-0 text-ink-faint">incident</span>
-          <IdChip value={receipt.incidentSha256} />
+          <IdChip value={receipt.inputSha256} />
         </p>
         <p className="flex flex-wrap items-baseline gap-2">
           <span className="eyebrow w-20 shrink-0 text-ink-faint">proposal</span>

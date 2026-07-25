@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { DomainError } from "@/lib/domain/errors";
-import { affectedDeviceIds, applyOperations } from "@/lib/patch/apply";
-import { looksExecutable, parsePatchPath } from "@/lib/patch/paths";
-import { canonicalize } from "@/lib/receipt/canonical";
+import { DomainError } from "@changesafe/core";
+import { affectedDeviceIds, applyOperations } from "@changesafe/domain-network";
+import { looksExecutable, parsePatchPath } from "@changesafe/domain-network";
+import { canonicalize } from "@changesafe/core";
 import { buildIncidentBundle, buildOperation } from "@/tests/helpers/fixtures";
 
 const state = () => buildIncidentBundle().currentState;

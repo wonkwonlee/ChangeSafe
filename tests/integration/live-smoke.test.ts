@@ -1,10 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { networkDomain } from "@changesafe/domain-network";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { analyzeLive } from "@/lib/ai/live";
-import { ReplayFixtureSchema } from "@/lib/domain/schemas";
-import { evaluatePolicies } from "@/lib/policies";
+import { ReplayFixtureSchema } from "@changesafe/core";
+import { evaluatePolicies } from "@changesafe/core";
 import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { getScenario } from "@/scenarios";
 
@@ -27,7 +28,7 @@ describe.skipIf(!liveEnabled)("live GPT-5.6 smoke (opt-in)", () => {
     expect(proposal.operations.length).toBeGreaterThan(0);
 
     // The deterministic gate must run cleanly on live output too.
-    const { findings } = evaluatePolicies(scenario.bundle, proposal);
+    const { findings } = evaluatePolicies(networkDomain, scenario.bundle, proposal);
     expect(findings).toHaveLength(7);
 
     if (process.env.CHANGESAFE_CAPTURE_FIXTURE === "1") {

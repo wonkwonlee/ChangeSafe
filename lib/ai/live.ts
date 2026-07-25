@@ -1,8 +1,9 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 
-import { DomainError } from "@/lib/domain/errors";
-import { ChangeProposalSchema, type ChangeProposal, type IncidentBundle } from "@/lib/domain/schemas";
+import { DomainError } from "@changesafe/core";
+import { ChangeProposalSchema, type ChangeProposal } from "@changesafe/core";
+import { type IncidentBundle } from "@changesafe/domain-network";
 import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { buildAnalysisInput, SYSTEM_INSTRUCTIONS } from "./prompt";
 import { validateModelProposal } from "./validate-model-output";

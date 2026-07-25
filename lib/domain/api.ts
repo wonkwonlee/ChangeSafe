@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
   AnalysisModeSchema,
-  ChangeProposalSchema,
   FixtureProvenanceSchema,
   IdSchema,
-} from "./schemas";
+} from "@changesafe/core";
+import { NetworkChangeProposalSchema } from "@changesafe/domain-network";
 
 /**
  * Wire contracts for the two API routes. These are importable from client
@@ -24,7 +24,7 @@ export const AnalyzeSuccessSchema = z.strictObject({
   fixtureId: IdSchema.nullable(),
   /** Honest user-facing description of what a replay fixture is. */
   fixtureNotes: z.string().max(1000).nullable(),
-  proposal: ChangeProposalSchema,
+  proposal: NetworkChangeProposalSchema,
 });
 
 export const ApiErrorCodeSchema = z.enum([

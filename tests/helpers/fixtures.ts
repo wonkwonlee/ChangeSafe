@@ -1,12 +1,5 @@
-import type {
-  ChangeOperation,
-  ChangeProposal,
-  ChangeReceipt,
-  IncidentBundle,
-  PolicyFinding,
-  PolicyStatus,
-  SimulationResult,
-} from "@/lib/domain/schemas";
+import type { ChangeOperation, ChangeProposal, ChangeReceipt, PolicyFinding, PolicyStatus, SimulationResult } from "@changesafe/core";
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { APP_VERSION, POLICY_VERSION } from "@/lib/domain/version";
 
 /**
@@ -238,16 +231,16 @@ const DUMMY_SHA = "a".repeat(64);
 export function buildReceipt(overrides: Partial<ChangeReceipt> = {}): ChangeReceipt {
   return {
     receiptId: "rcpt-test-001",
-    incidentId: "inc-test-001",
+    inputId: "inc-test-001",
     proposalId: "prop-test-001",
-    scenarioId: "scenario-test",
+    sourceId: "scenario-test",
     appVersion: APP_VERSION,
     policyVersion: POLICY_VERSION,
     createdAtUtc: "2026-07-18T10:00:00Z",
     mode: "replay",
     model: null,
     fixtureProvenance: "authored_synthetic",
-    incidentSha256: DUMMY_SHA,
+    inputSha256: DUMMY_SHA,
     proposalSha256: DUMMY_SHA,
     findings: [buildFinding("PASS")],
     riskLevel: "LOW",

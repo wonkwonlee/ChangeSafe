@@ -4,7 +4,7 @@ import {
   type AnalyzeError,
   type ApiErrorCode,
 } from "@/lib/domain/api";
-import { isDomainError } from "@/lib/domain/errors";
+import { isDomainError } from "@changesafe/core";
 import { analyzeLive, isLiveConfigured } from "@/lib/ai/live";
 import { analyzeReplay } from "@/lib/ai/replay";
 import { getScenario } from "@/scenarios";

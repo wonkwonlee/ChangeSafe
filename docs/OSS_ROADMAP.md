@@ -113,32 +113,54 @@ loudly (verified).
 Goal: the pure engine becomes an embeddable, dependency-light package;
 the app becomes its first consumer.
 
-- npm workspaces monorepo:
+- [x] npm workspaces monorepo:
 
   ```text
-  packages/core/            schemas, state machine, policies, patch,
-                            receipt, validate  (dependency: zod only)
-  packages/domain-network/  network state model, path allowlist,
-                            reachability, network policies, simulator
-  apps/web/                 the existing Next.js console (imports core)
-  scenarios/                stays top-level content, consumed by both
+  packages/core/            proposal contract, findings + risk, workflow
+                            state machine, universal policies, receipts,
+                            the DomainAdapter contract   (dependency: zod)
+  packages/domain-network/  incident/topology model, path allowlist,
+                            transactional patch engine, reachability,
+                            simulator, MGMT_REACHABILITY + PROTECTED_RESOURCE
+  app/ components/ lib/ai/  the Next.js console (consumes both packages)
+  scenarios/                top-level content, consumed by both
   ```
 
-- While extracting (the only window for breaking renames — nothing external
-  depends on us yet): generalize `incident*` naming where it is
-  domain-neutral (e.g. receipt `incidentSha256` → `inputSha256` with a
-  documented mapping), and split policies into **universal**
-  (`PATCH_SCHEMA`-analog input validity, `BLAST_RADIUS`,
-  `ROLLBACK_COMPLETE`, `VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION`)
-  vs **domain** (`MGMT_REACHABILITY`, `PROTECTED_RESOURCE` semantics) —
-  see §5 plugin contract.
-- Public API surface documented (`packages/core/README.md`); semver from
-  `0.x`; changesets (or equivalent) for releases.
-- All 130+ tests move with their modules; app behavior unchanged
-  (e2e green proves it).
+- [x] Policies split into **universal** (`PATCH_SCHEMA`, `BLAST_RADIUS`,
+      `ROLLBACK_COMPLETE`, `VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION`,
+      all written against the adapter) and **domain**
+      (`MGMT_REACHABILITY`, `PROTECTED_RESOURCE`). Policy ids became open
+      strings so each domain contributes its own; evaluation order is
+      published by `policyOrder(adapter)` and stays
+      structural → domain → universal, which preserves the previous order
+      for the network domain.
+- [x] Breaking renames taken in this window: receipt `incidentId` →
+      `inputId`, `incidentSha256` → `inputSha256`, `scenarioId` →
+      `sourceId`; workflow state `bundle` → `input`, `scenarioId` →
+      `sourceId`. `createReceipt` now takes `appVersion`/`policyVersion`
+      explicitly instead of importing app constants, and `policyVersion`
+      composes core's version with the domain's.
+- [x] Public API documented in `packages/core/README.md`, including how to
+      implement a `DomainAdapter` and the rules a domain must keep.
+- [x] `packages/core/tests/standalone-domain.test.ts` implements a complete
+      toy domain (counters) and drives the entire airlock with it — proof
+      that core carries no network assumptions.
 
-Exit gate: `npm i` at root builds all workspaces; app runs on the extracted
-core; core has zero app/AI imports; tests + e2e green.
+Deviations from the original plan, taken deliberately:
+
+- The Next.js app stays at the repository root rather than moving to
+  `apps/web/`. Moving it is config churn with no effect on the library
+  story; it can happen when a second app (docs site) actually exists.
+- Tests stay in `tests/` at the root and exercise the packages through
+  their public APIs, except core's standalone-domain suite. Per-package
+  co-location lands with P3, when each package needs its own build.
+- Packages are `private: true` and export TypeScript source consumed via
+  workspace resolution. A compiled `dist` build lands in P3, when the CLI
+  must run under plain Node without a bundler.
+
+Exit gate: **met** — `npm i` links the workspaces, the app runs on the
+extracted packages, core imports nothing from the app or AI layer, and
+lint, typecheck, 184 tests, production build, and e2e are green.
 
 ### P3 — `changesafe` CLI (M)
 

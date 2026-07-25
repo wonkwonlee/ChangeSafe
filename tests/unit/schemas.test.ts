@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  ChangeProposalSchema,
-  ChangeReceiptSchema,
-  IncidentBundleSchema,
-  ReplayFixtureSchema,
-  ScenarioExpectationsSchema,
-  StatePathSchema,
-} from "@/lib/domain/schemas";
+import { ChangeProposalSchema, ChangeReceiptSchema, ReplayFixtureSchema, ScenarioExpectationsSchema, StatePathSchema } from "@changesafe/core";
+import { IncidentBundleSchema } from "@changesafe/domain-network";
 import {
   buildIncidentBundle,
   buildOperation,
@@ -169,13 +163,19 @@ describe("ScenarioExpectationsSchema self-consistency", () => {
     expect(ScenarioExpectationsSchema.safeParse(base).success).toBe(true);
   });
 
-  it("requires every policy to be declared", () => {
+  it("accepts any non-empty policy map, since domains contribute their own ids", () => {
     const partial = Object.fromEntries(
       Object.entries(allPass).filter(([policyId]) => policyId !== "PATCH_SCHEMA"),
     );
     expect(ScenarioExpectationsSchema.safeParse({ ...base, policies: partial }).success).toBe(
-      false,
+      true,
     );
+    // Exhaustiveness is a per-domain property, proven by the scenario harness
+    // asserting the declared ids equal the ids the gate actually produces.
+  });
+
+  it("rejects an empty policy map", () => {
+    expect(ScenarioExpectationsSchema.safeParse({ ...base, policies: {} }).success).toBe(false);
   });
 
   it("rejects a risk level that contradicts the declared statuses", () => {
@@ -226,11 +226,17 @@ describe("ScenarioExpectationsSchema self-consistency", () => {
     ).toBe(false);
   });
 
-  it("rejects unknown policy ids in affectedResources", () => {
+  it("rejects malformed policy ids", () => {
     expect(
       ScenarioExpectationsSchema.safeParse({
         ...base,
-        affectedResources: { NOT_A_POLICY: ["device:x"] },
+        affectedResources: { "not-a-policy": ["device:x"] },
+      }).success,
+    ).toBe(false);
+    expect(
+      ScenarioExpectationsSchema.safeParse({
+        ...base,
+        policies: { ...allPass, "lower_case": "PASS" },
       }).success,
     ).toBe(false);
   });

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { analyzeLive, type ResponsesParser } from "@/lib/ai/live";
 import { buildAnalysisInput, SYSTEM_INSTRUCTIONS } from "@/lib/ai/prompt";
 import { validateModelProposal } from "@/lib/ai/validate-model-output";
-import { DomainError } from "@/lib/domain/errors";
+import { DomainError } from "@changesafe/core";
 import { RUNTIME_MODEL } from "@/lib/domain/version";
 import { buildIncidentBundle, buildOperation, buildProposal } from "@/tests/helpers/fixtures";
 

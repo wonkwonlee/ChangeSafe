@@ -63,35 +63,48 @@ migration window for breaking renames are defined in `docs/OSS_ROADMAP.md`
 §P2/§5; do not restructure ad hoc outside that phase:
 
 ```text
-app/                 Next.js showcase console (routes, api/analyze, api/status)
-components/          console UI + client workflow hook
-lib/domain/          Zod schemas, state machine, evidence validation, wire contracts
-lib/patch/           allowlisted transactional patch engine, reachability, simulate
-lib/policies/        pure policies + deterministic risk derivation
-lib/receipt/         canonical serialization, SHA-256, receipts
-lib/ai/              provider adapters (server-only), hardened prompt, replay
-scenarios/           synthetic incident bundles + provenance-labeled fixtures
-tests/               unit, integration, e2e (Playwright)
-docs/                roadmap, architecture, threat model, plans
+packages/core/            @changesafe/core — proposal contract, findings and
+                          risk, workflow state machine, universal policies,
+                          receipts, the DomainAdapter contract (deps: zod)
+packages/domain-network/  @changesafe/domain-network — incident/topology
+                          model, path allowlist, transactional patch engine,
+                          reachability, simulator, network policies
+app/                      Next.js showcase console (api/analyze, api/status)
+components/               console UI + client workflow hook
+lib/ai/                   provider adapters (server-only), hardened prompt
+lib/domain/               app-level wire contracts and version constants
+scenarios/                synthetic incident bundles, fixtures, expectations
+tests/                    unit, integration, e2e (Playwright)
+docs/                     roadmap, architecture, threat model, authoring
 ```
 
-Dependency direction (violations are review failures): policies and patch
-engines depend only on domain types — never UI or AI modules. AI adapters
-depend on domain schemas. Receipts consume validated domain outputs, never
-raw model text. Scenario fixtures must pass the production schemas.
-The state machine (`lib/domain/state-machine.ts`) is the single workflow
-authority; UI must dispatch through it.
+Dependency direction (violations are review failures): `packages/core`
+depends on zod alone — never on the app, the AI layer, or a domain package.
+A domain package depends on core. The app depends on both. AI adapters may
+depend on domain schemas; receipts consume validated outputs, never raw
+model text. Scenario fixtures must pass the production schemas.
+`packages/core/src/state-machine.ts` is the single workflow authority; UI
+must dispatch through it.
+
+Domains reach core through the `DomainAdapter` contract
+(`packages/core/src/domain.ts`): state extraction, transactional
+`applyOperations`, blast-radius units, untrusted text, known evidence ids,
+and the domain's own policies. Adding a domain means implementing that
+interface — never editing a universal policy to special-case it.
 
 ## Policy set
 
-Universal policies: `PATCH_SCHEMA`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`
-(or a domain's reversibility analog), `VERIFICATION_REQUIRED`,
-`UNTRUSTED_INSTRUCTION`. Domain policies (network today):
-`MGMT_REACHABILITY`, `PROTECTED_RESOURCE`. Policy status is
-`PASS | WARN | BLOCK`; all policies fail closed. Policy packs may tune
-typed parameters (thresholds, protected patterns) but are never a DSL, and
-never alter the risk formula. Any policy behavior change bumps
-`POLICY_VERSION` and updates receipts tests.
+Universal policies (in `packages/core`): `PATCH_SCHEMA`, `BLAST_RADIUS`,
+`ROLLBACK_COMPLETE` (or a domain's reversibility analog),
+`VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION`. Domain policies (network
+today): `MGMT_REACHABILITY`, `PROTECTED_RESOURCE`. Policy ids are open
+UPPER_SNAKE strings so each domain contributes its own; `policyOrder(adapter)`
+publishes the evaluation order (structural → domain → universal). Policy
+status is `PASS | WARN | BLOCK`; all policies fail closed. Policy packs may
+tune typed parameters (thresholds, protected patterns) but are never a DSL,
+and never alter the risk formula. Any policy behavior change bumps
+`CORE_POLICY_VERSION` or the domain's version (both compose into the
+`policyVersion` recorded in receipts) and updates receipt tests.
 
 ## Technology
 

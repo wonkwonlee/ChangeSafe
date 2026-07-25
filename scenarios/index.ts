@@ -1,11 +1,5 @@
-import {
-  IncidentBundleSchema,
-  ReplayFixtureSchema,
-  ScenarioExpectationsSchema,
-  type IncidentBundle,
-  type ReplayFixture,
-  type ScenarioExpectations,
-} from "@/lib/domain/schemas";
+import { ReplayFixtureSchema, ScenarioExpectationsSchema, type ReplayFixture, type ScenarioExpectations } from "@changesafe/core";
+import { IncidentBundleSchema, type IncidentBundle } from "@changesafe/domain-network";
 import incidentA from "./scenario-a-failover/incident.json";
 import fixtureA from "./scenario-a-failover/replay-fixture.json";
 import expectationsA from "./scenario-a-failover/expectations.json";

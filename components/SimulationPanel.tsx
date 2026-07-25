@@ -1,4 +1,4 @@
-import type { SimulationResult } from "@/lib/domain/schemas";
+import type { SimulationResult } from "@changesafe/core";
 import { IdChip } from "./atoms";
 
 function formatValue(value: unknown): string {

@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { IllegalTransitionError } from "@/lib/domain/errors";
-import {
-  initialState,
-  transition,
-  type WorkflowState,
-} from "@/lib/domain/state-machine";
+import { IllegalTransitionError } from "@changesafe/core";
+import { initialState, transition, type WorkflowState } from "@changesafe/core";
 import {
   buildFinding,
   buildIncidentBundle,
@@ -148,8 +144,8 @@ describe("failure and reset behavior", () => {
     for (const state of states) {
       const reset = transition(state, {
         type: "RESET",
-        scenarioId: "scenario-test",
-        bundle,
+        sourceId: "scenario-test",
+        input: bundle,
       });
       expect(reset.phase).toBe("READY");
       expect("proposal" in reset).toBe(false);

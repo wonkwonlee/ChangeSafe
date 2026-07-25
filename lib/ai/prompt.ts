@@ -1,5 +1,5 @@
-import type { IncidentBundle } from "@/lib/domain/schemas";
-import { canonicalize } from "@/lib/receipt/canonical";
+import type { IncidentBundle } from "@changesafe/domain-network";
+import { canonicalize } from "@changesafe/core";
 
 /**
  * Hardened model instructions. Trusted instructions live here; the incident

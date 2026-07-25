@@ -1,4 +1,4 @@
-import type { PolicyFinding, RiskLevel } from "@/lib/domain/schemas";
+import type { PolicyFinding, RiskLevel } from "@changesafe/core";
 import { IdChip, RiskBadge, StatusPill } from "./atoms";
 
 /**

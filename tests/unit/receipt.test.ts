@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createReceipt, verifyReceiptHash, type ReceiptInput } from "@/lib/receipt/receipt";
+import { createReceipt, verifyReceiptHash, type ReceiptInput } from "@changesafe/core";
 import {
   buildFinding,
   buildIncidentBundle,
@@ -10,9 +10,12 @@ import {
 
 function baseInput(): ReceiptInput {
   return {
-    scenarioId: "scenario-test",
-    bundle: buildIncidentBundle(),
+    sourceId: "scenario-test",
+    inputId: buildIncidentBundle().incidentId,
+    input: buildIncidentBundle(),
     proposal: buildProposal(),
+    appVersion: "0.1.0",
+    policyVersion: "test-policies",
     mode: "replay",
     model: null,
     fixtureProvenance: "authored_synthetic",
@@ -30,7 +33,7 @@ describe("createReceipt", () => {
     const first = await createReceipt(baseInput());
     const second = await createReceipt(baseInput());
     expect(first.receiptSha256).toBe(second.receiptSha256);
-    expect(first.incidentSha256).toBe(second.incidentSha256);
+    expect(first.inputSha256).toBe(second.inputSha256);
     expect(first.proposalSha256).toBe(second.proposalSha256);
   });
 

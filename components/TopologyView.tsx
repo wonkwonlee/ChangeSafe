@@ -1,4 +1,4 @@
-import type { CurrentState, Topology } from "@/lib/domain/schemas";
+import type { CurrentState, Topology } from "@changesafe/domain-network";
 
 const ROLE_GLYPH: Record<string, string> = {
   "edge-router": "ER",

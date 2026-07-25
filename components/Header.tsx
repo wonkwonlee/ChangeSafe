@@ -44,7 +44,7 @@ export function Header({ controller }: { controller: WorkflowController }) {
         <label className="flex items-center gap-2 text-xs text-ink-dim">
           <span className="eyebrow">Scenario</span>
           <select
-            value={state.scenarioId}
+            value={state.sourceId}
             disabled={busy}
             onChange={(event) => selectScenario(event.target.value)}
             className="rounded border border-edge bg-raised px-2 py-1.5 text-[13px] text-ink focus-visible:border-active disabled:opacity-50"

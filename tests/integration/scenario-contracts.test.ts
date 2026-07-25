@@ -2,13 +2,13 @@ import { readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DomainError, IllegalTransitionError } from "@/lib/domain/errors";
-import { POLICY_ORDER } from "@/lib/policies";
-import { initialState, transition, type WorkflowState } from "@/lib/domain/state-machine";
-import { validateProposalEvidence } from "@/lib/domain/validate";
-import { runSimulation } from "@/lib/patch/simulate";
-import { evaluatePolicies } from "@/lib/policies";
-import { createReceipt, verifyReceiptHash } from "@/lib/receipt/receipt";
+import { DomainError, IllegalTransitionError , policyOrder } from "@changesafe/core";
+
+import { initialState, transition, type WorkflowState } from "@changesafe/core";
+import { validateProposalEvidence } from "@changesafe/core";
+import { runSimulation , networkDomain , POLICY_VERSION } from "@changesafe/domain-network";
+import { evaluatePolicies } from "@changesafe/core";
+import { createReceipt, verifyReceiptHash } from "@changesafe/core";
 import { SCENARIOS, getScenario, type ScenarioDefinition } from "@/scenarios";
 
 /**
@@ -58,7 +58,7 @@ describe("scenario integrity (all scenarios)", () => {
     "%s cites only evidence that exists in its bundle",
     (_id, scenario) => {
       expect(() =>
-        validateProposalEvidence(scenario.bundle, scenario.fixture.proposal),
+        validateProposalEvidence(networkDomain, scenario.bundle, scenario.fixture.proposal),
       ).not.toThrow();
     },
   );
@@ -97,7 +97,7 @@ describe("scenario integrity (all scenarios)", () => {
     const proposal = structuredClone(scenario.fixture.proposal);
     proposal.diagnosis.evidenceIds.push("ev-ghost-claim");
     try {
-      validateProposalEvidence(scenario.bundle, proposal);
+      validateProposalEvidence(networkDomain, scenario.bundle, proposal);
       expect.fail("expected EVIDENCE_UNKNOWN");
     } catch (error) {
       expect(error).toBeInstanceOf(DomainError);
@@ -110,9 +110,16 @@ describe("declared expectations hold (all scenarios)", () => {
   it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
     "%s produces exactly its declared policy verdicts and risk",
     (_id, scenario) => {
-      const { findings, riskLevel } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
+      const { findings, riskLevel } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
 
-      expect(findings.map((finding) => finding.policyId)).toEqual([...POLICY_ORDER]);
+      expect(findings.map((finding) => finding.policyId)).toEqual(policyOrder(networkDomain));
+
+      // Policy ids are open across domains, so exhaustiveness is proven here
+      // rather than in the schema: a scenario must declare a verdict for every
+      // policy this domain evaluates, and no others.
+      expect(Object.keys(scenario.expectations.policies).sort()).toEqual(
+        [...policyOrder(networkDomain)].sort(),
+      );
 
       for (const finding of findings) {
         expect(
@@ -130,7 +137,7 @@ describe("declared expectations hold (all scenarios)", () => {
     (_id, scenario) => {
       const declared = scenario.expectations.affectedResources;
       if (!declared) return;
-      const { findings } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
+      const { findings } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
 
       for (const [policyId, resources] of Object.entries(declared)) {
         const finding = findings.find((candidate) => candidate.policyId === policyId);
@@ -143,7 +150,7 @@ describe("declared expectations hold (all scenarios)", () => {
 
 /** Walk a scenario to the point where the human decision is required. */
 function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
-  const { findings, riskLevel } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
+  const { findings, riskLevel } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
   let state: WorkflowState = initialState(scenario.scenarioId, scenario.bundle);
   state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
   state = transition(state, {
@@ -175,8 +182,11 @@ describe.runIf(approvableScenarios.length > 0)("approvable scenarios", () => {
 
       if (state.phase !== "SIMULATED") throw new Error("expected SIMULATED");
       const receipt = await createReceipt({
-        scenarioId: scenario.scenarioId,
-        bundle: scenario.bundle,
+        sourceId: scenario.scenarioId,
+        inputId: scenario.bundle.incidentId,
+        input: scenario.bundle,
+        appVersion: "test",
+        policyVersion: POLICY_VERSION,
         proposal: scenario.fixture.proposal,
         mode: "replay",
         model: scenario.fixture.model,
@@ -231,8 +241,11 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
       if (state.phase !== "BLOCKED") throw new Error("expected BLOCKED");
 
       const receipt = await createReceipt({
-        scenarioId: scenario.scenarioId,
-        bundle: scenario.bundle,
+        sourceId: scenario.scenarioId,
+        inputId: scenario.bundle.incidentId,
+        input: scenario.bundle,
+        appVersion: "test",
+        policyVersion: POLICY_VERSION,
         proposal: scenario.fixture.proposal,
         mode: "replay",
         model: scenario.fixture.model,
@@ -248,8 +261,11 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
 
       await expect(
         createReceipt({
-          scenarioId: scenario.scenarioId,
-          bundle: scenario.bundle,
+          sourceId: scenario.scenarioId,
+          inputId: scenario.bundle.incidentId,
+          input: scenario.bundle,
+          appVersion: "test",
+          policyVersion: POLICY_VERSION,
           proposal: scenario.fixture.proposal,
           mode: "replay",
           model: scenario.fixture.model,

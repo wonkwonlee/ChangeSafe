@@ -7,18 +7,23 @@ import {
   AnalyzeSuccessSchema,
   StatusResponseSchema,
 } from "@/lib/domain/api";
-import { toDomainError } from "@/lib/domain/errors";
-import type { AnalysisMode } from "@/lib/domain/schemas";
 import {
+  createReceipt,
+  evaluatePolicies,
   initialState,
+  toDomainError,
   transition,
+  type AnalysisMode,
   type WorkflowEvent,
   type WorkflowState,
-} from "@/lib/domain/state-machine";
-import { RUNTIME_MODEL } from "@/lib/domain/version";
-import { runSimulation } from "@/lib/patch/simulate";
-import { evaluatePolicies } from "@/lib/policies";
-import { createReceipt } from "@/lib/receipt/receipt";
+} from "@changesafe/core";
+import {
+  networkDomain,
+  runSimulation,
+  POLICY_VERSION,
+  type IncidentBundle,
+} from "@changesafe/domain-network";
+import { APP_VERSION, RUNTIME_MODEL } from "@/lib/domain/version";
 import { SCENARIOS, getScenario } from "@/scenarios";
 
 /** Fixture metadata shown alongside a replay analysis; null in live mode. */
@@ -34,7 +39,12 @@ const FIRST_SCENARIO = (() => {
   return first;
 })();
 
-function reducer(state: WorkflowState, event: WorkflowEvent): WorkflowState {
+type BundleWorkflowState = WorkflowState<IncidentBundle>;
+
+function reducer(
+  state: BundleWorkflowState,
+  event: WorkflowEvent<IncidentBundle>,
+): BundleWorkflowState {
   // The domain transition function is the single authority; an illegal event
   // here is a programming error and must fail loudly, not be smoothed over.
   return transition(state, event);
@@ -69,12 +79,12 @@ export function useWorkflow() {
     if (!scenario) return;
     setAnalysisMeta(null);
     setReplayOffer(false);
-    dispatch({ type: "RESET", scenarioId: scenario.scenarioId, bundle: scenario.bundle });
+    dispatch({ type: "RESET", sourceId: scenario.scenarioId, input: scenario.bundle });
   }, []);
 
   const reset = useCallback(() => {
-    selectScenario(state.scenarioId);
-  }, [selectScenario, state.scenarioId]);
+    selectScenario(state.sourceId);
+  }, [selectScenario, state.sourceId]);
 
   const analyze = useCallback(
     async (mode: AnalysisMode) => {
@@ -87,7 +97,7 @@ export function useWorkflow() {
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ scenarioId: state.scenarioId, mode }),
+          body: JSON.stringify({ scenarioId: state.sourceId, mode }),
         });
         const payload: unknown = await response.json();
 
@@ -117,7 +127,7 @@ export function useWorkflow() {
         });
 
         // Deterministic gate runs locally on the validated proposal.
-        const { findings, riskLevel } = evaluatePolicies(state.bundle, success.proposal);
+        const { findings, riskLevel } = evaluatePolicies(networkDomain, state.input, success.proposal);
         dispatch({ type: "VALIDATION_COMPLETED", findings, riskLevel });
         dispatch({ type: "CLASSIFY" });
       } catch (error) {
@@ -128,18 +138,21 @@ export function useWorkflow() {
         });
       }
     },
-    [state.phase, state.scenarioId, state.bundle],
+    [state.phase, state.sourceId, state.input],
   );
 
   const approve = useCallback(async () => {
     if (state.phase !== "APPROVAL_REQUIRED") return;
     dispatch({ type: "APPROVE" });
     try {
-      const simulation = runSimulation(state.bundle, state.proposal);
+      const simulation = runSimulation(state.input, state.proposal);
       dispatch({ type: "SIMULATION_COMPLETED", simulation });
       const receipt = await createReceipt({
-        scenarioId: state.scenarioId,
-        bundle: state.bundle,
+        sourceId: state.sourceId,
+        inputId: state.input.incidentId,
+        input: state.input,
+        appVersion: APP_VERSION,
+        policyVersion: POLICY_VERSION,
         proposal: state.proposal,
         mode: state.mode,
         model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),
@@ -162,8 +175,11 @@ export function useWorkflow() {
     if (state.phase !== "APPROVAL_REQUIRED") return;
     dispatch({ type: "REJECT" });
     const receipt = await createReceipt({
-      scenarioId: state.scenarioId,
-      bundle: state.bundle,
+      sourceId: state.sourceId,
+      inputId: state.input.incidentId,
+      input: state.input,
+      appVersion: APP_VERSION,
+      policyVersion: POLICY_VERSION,
       proposal: state.proposal,
       mode: state.mode,
       model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),
@@ -179,8 +195,11 @@ export function useWorkflow() {
   const issueBlockedReceipt = useCallback(async () => {
     if (state.phase !== "BLOCKED") return;
     const receipt = await createReceipt({
-      scenarioId: state.scenarioId,
-      bundle: state.bundle,
+      sourceId: state.sourceId,
+      inputId: state.input.incidentId,
+      input: state.input,
+      appVersion: APP_VERSION,
+      policyVersion: POLICY_VERSION,
       proposal: state.proposal,
       mode: state.mode,
       model: state.mode === "live" ? RUNTIME_MODEL : (analysisMeta?.model ?? null),

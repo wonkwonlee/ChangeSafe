@@ -1,4 +1,4 @@
-import type { IncidentBundle } from "@/lib/domain/schemas";
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { IdChip, SeverityDot } from "./atoms";
 import { StateTree } from "./StateTree";
 import { TopologyView } from "./TopologyView";

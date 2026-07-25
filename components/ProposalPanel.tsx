@@ -1,5 +1,6 @@
-import type { AnalysisMode, ChangeProposal, DiffEntry, FixtureProvenance, IncidentBundle } from "@/lib/domain/schemas";
-import { applyOperations } from "@/lib/patch/apply";
+import type { AnalysisMode, ChangeProposal, DiffEntry, FixtureProvenance } from "@changesafe/core";
+import type { IncidentBundle } from "@changesafe/domain-network";
+import { applyOperations } from "@changesafe/domain-network";
 import { IdChip } from "./atoms";
 import type { AnalysisMeta } from "./useWorkflow";
 
