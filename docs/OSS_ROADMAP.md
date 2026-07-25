@@ -1,9 +1,8 @@
 # ChangeSafe Open-Source Roadmap
 
 Status: adopted 2026-07-25. Supersedes the project's earlier Build Week
-framing.
-This is the implementation plan. Phases P0–P3 are complete; P4 (Terraform
-plan ingestion) is next.
+framing. P0–P6 are complete; P7 has completed its first pass and remains the
+ongoing community phase.
 
 ## 1. Vision
 
@@ -17,8 +16,8 @@ The project ships three layers, in priority order:
 
 1. **`@changesafe/core` + CLI** — an embeddable library and a
    CI-friendly command-line gate. This is the adoption engine.
-2. **The showcase app** — the existing one-page console (replay-mode demo,
-   self-hostable later). This is the storefront.
+2. **The showcase app** — the public keyless console, plus an optional
+   authenticated self-hosting mode. This is the storefront.
 3. **The scenario/red-team corpus** — community-contributed incidents and
    adversarial proposals; long-term, a public benchmark for AI-agent change
    safety. This is the moat.
@@ -35,7 +34,7 @@ human-in-the-loop gate at the action level."*
 | First real-world ingestion | **Terraform plan JSON** (owner decision) | `terraform show -json` is a ubiquitous, read-only artifact; gating AI-generated infra PRs needs no device access and no collectors |
 | Trust model | Unchanged, permanent | AI proposes → deterministic code validates → a human decides → ChangeSafe never executes |
 | Model strategy | Provider-agnostic adapters (OpenAI, Anthropic, local/Ollama) | OSS users bring their own model; the deterministic gate makes model choice safety-neutral |
-| Persistence (later, self-host) | SQLite-first, Postgres optional | Zero-config self-hosting beats managed-DB-first for OSS |
+| Self-host persistence | SQLite implemented; Postgres remains optional | Zero-config self-hosting is shipped; Postgres is deferred until demand justifies it |
 | License | MIT (already in repo) | |
 | Package manager / language | npm workspaces, strict TypeScript, Zod-first | Continuity with the existing codebase |
 
@@ -99,9 +98,9 @@ and the demo shows more than LOW/CRITICAL.
      → `ROLLBACK_COMPLETE` BLOCK, everything else PASS.
   4. `scenario-f-over-reach` — one-device incident, three-device proposal →
      `BLAST_RADIUS` BLOCK, everything else PASS.
-- [ ] (Stretch, deferred to community) *Injection variant pack* — injection
-      in an alert message and in a device description; listed as a coverage
-      gap in the authoring guide.
+- [x] *Injection variant pack* — delivered in P7 with alert-body injection,
+      management-plane severance, protected-resource disablement, command
+      smuggling, and invalid-target scenarios.
 
 Exit gate: **met** — harness runs all six scenarios from disk; four new
 scenarios green; authoring guide published; falsified expectations fail
@@ -392,8 +391,9 @@ schema changes follow semver + documented migrations.
    (`changesafe-core`, CLI bin name stays `changesafe`).
 2. ~~Public repo naming/timing.~~ **Resolved 2026-07-25**: the repository
    is public at `github.com/wonkwonlee/ChangeSafe`.
-3. Docs site tooling (Starlight vs Nextra) — decide by P4; README suffices
-   until then.
+3. Docs-site tooling (Starlight vs Nextra) remains an open owner decision
+   after the P7 first pass; README plus the generated scenario gallery suffice
+   until there is enough documentation to justify a dedicated site.
 4. Third domain after terraform: Kubernetes (largest audience) vs IAM
    (most visceral lockout demo) — decide after P4 feedback.
 
