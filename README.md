@@ -14,9 +14,9 @@
 key, nothing to install. Pick the route-leak scenario and watch a confident
 proposal get blocked.
 
-**[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an English engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
+**[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
 
-**[↗ Open the Sites-hosted portfolio](https://changesafe-portfolio.wonkwon-lee94.chatgpt.site)** — an alternative hosted version of the same case study.
+**[↗ Open the Sites-hosted portfolio](https://changesafe-portfolio.wonkwon-lee94.chatgpt.site)** — an alternative hosted version of the same case study using OpenAI Sites.
 
 An AI proposes a change. ChangeSafe treats that proposal as untrusted
 data: pure, deterministic policies validate it, a human makes the decision,
