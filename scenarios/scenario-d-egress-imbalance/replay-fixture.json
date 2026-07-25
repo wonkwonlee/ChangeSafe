@@ -1,0 +1,65 @@
+{
+  "fixtureId": "fix-d-egress-imbalance-authored",
+  "scenarioId": "scenario-d-egress-imbalance",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Authored deterministic fixture. The change is defensible but touches two devices at once and states no precondition, so two policies warn and the risk rises to HIGH while remaining the human's call. This is not model output.",
+  "proposal": {
+    "proposalId": "prop-rebalance-egress",
+    "summary": "Shift part of the egress load to the idle circuit by raising the default-route metric on edge-rtr-02 and lowering it on edge-rtr-03.",
+    "diagnosis": {
+      "likelyCause": "Both default routes carry the same metric, so an upstream tie-break has pinned all egress traffic to edge-rtr-02, which is now near its committed rate while edge-rtr-03 stays idle.",
+      "confidence": 0.71,
+      "evidenceIds": ["ev-alert-saturation", "ev-alert-idle-peer", "ev-alert-latency", "ev-note-migration"],
+      "assumptions": [
+        "Both egress circuits are the same size, as recorded after the migration",
+        "Traffic will redistribute on the next convergence rather than requiring a session reset"
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-02/routes/rt-default-a/metric",
+        "value": 140,
+        "reason": "De-prefer the saturated egress circuit so part of the load moves off edge-rtr-02",
+        "evidenceIds": ["ev-alert-saturation", "ev-alert-latency"]
+      },
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-03/routes/rt-default-b/metric",
+        "value": 60,
+        "reason": "Prefer the idle egress circuit so edge-rtr-03 begins carrying its share",
+        "evidenceIds": ["ev-alert-idle-peer"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-03/routes/rt-default-b/metric",
+        "value": 100,
+        "reason": "Restore the original default-route metric on edge-rtr-03",
+        "evidenceIds": ["ev-alert-idle-peer"]
+      },
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-02/routes/rt-default-a/metric",
+        "value": 100,
+        "reason": "Restore the original default-route metric on edge-rtr-02",
+        "evidenceIds": ["ev-alert-saturation"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "postcheck",
+        "description": "Confirm edge-rtr-02 wan0 utilization drops below 70% and queue latency returns to baseline",
+        "evidenceIds": ["ev-alert-saturation", "ev-alert-latency"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm edge-rtr-03 wan0 utilization rises and no egress errors appear on either circuit",
+        "evidenceIds": ["ev-alert-idle-peer"]
+      }
+    ]
+  }
+}

@@ -443,6 +443,80 @@ export const PolicyFindingSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
+// Scenario expectations — the machine-checked contract of a bundled scenario
+// ---------------------------------------------------------------------------
+
+/**
+ * Every policy must be declared, so an author cannot leave a verdict
+ * unconsidered when contributing a scenario.
+ */
+export const PolicyExpectationMapSchema = z.record(PolicyIdSchema, PolicyStatusSchema);
+
+/**
+ * What a scenario claims the deterministic gate will do with it. The claims
+ * are deliberately redundant (risk and approvability are derivable from the
+ * policy statuses) so the file reads as documentation while `superRefine`
+ * proves it is self-consistent; the test harness then proves the engine
+ * agrees with it.
+ */
+export const ScenarioExpectationsSchema = z
+  .strictObject({
+    scenarioId: IdSchema,
+    /** Why this scenario exists — which gap in gate coverage it fills. */
+    teaches: z.string().min(1).max(500),
+    policies: PolicyExpectationMapSchema,
+    riskLevel: RiskLevelSchema,
+    approvable: z.boolean(),
+    /** Non-null only for approvable scenarios; asserts the sandbox outcome. */
+    simulation: z
+      .strictObject({ safetyPropertiesSatisfied: z.boolean() })
+      .nullable(),
+    /** Optional exact-set assertions on a finding's affected resources. */
+    affectedResources: z.partialRecord(PolicyIdSchema, z.array(z.string().min(1))).optional(),
+  })
+  .superRefine((expectations, ctx) => {
+    const statuses = Object.values(expectations.policies);
+    const blocks = statuses.filter((status) => status === "BLOCK").length;
+    const warns = statuses.filter((status) => status === "WARN").length;
+
+    const derivedRisk =
+      blocks > 0 ? "CRITICAL" : warns >= 2 ? "HIGH" : warns === 1 ? "MEDIUM" : "LOW";
+    if (expectations.riskLevel !== derivedRisk) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["riskLevel"],
+        message: `declared risk "${expectations.riskLevel}" contradicts the declared policy statuses (deterministic derivation gives "${derivedRisk}")`,
+      });
+    }
+
+    const derivedApprovable = blocks === 0;
+    if (expectations.approvable !== derivedApprovable) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["approvable"],
+        message: derivedApprovable
+          ? "a scenario with no BLOCK findings is approvable"
+          : "a scenario with a BLOCK finding can never be approvable",
+      });
+    }
+
+    if (!expectations.approvable && expectations.simulation !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["simulation"],
+        message: "only approvable scenarios reach simulation",
+      });
+    }
+    if (expectations.approvable && expectations.simulation === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["simulation"],
+        message: "approvable scenarios must declare their simulation outcome",
+      });
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // Analysis modes and replay fixtures
 // ---------------------------------------------------------------------------
 
@@ -600,6 +674,8 @@ export type PolicyId = z.infer<typeof PolicyIdSchema>;
 export type PolicyStatus = z.infer<typeof PolicyStatusSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 export type PolicyFinding = z.infer<typeof PolicyFindingSchema>;
+export type PolicyExpectationMap = z.infer<typeof PolicyExpectationMapSchema>;
+export type ScenarioExpectations = z.infer<typeof ScenarioExpectationsSchema>;
 export type AnalysisMode = z.infer<typeof AnalysisModeSchema>;
 export type FixtureProvenance = z.infer<typeof FixtureProvenanceSchema>;
 export type ReplayFixture = z.infer<typeof ReplayFixtureSchema>;

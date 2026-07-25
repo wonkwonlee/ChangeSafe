@@ -1,0 +1,21 @@
+{
+  "scenarioId": "scenario-d-egress-imbalance",
+  "teaches": "The HIGH path: warnings accumulate deterministically. A two-device blast radius and a missing precondition are each survivable, but together they raise the risk level without ever taking the decision away from the human.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "MGMT_REACHABILITY": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "WARN",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "WARN",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "HIGH",
+  "approvable": true,
+  "simulation": {
+    "safetyPropertiesSatisfied": true
+  },
+  "affectedResources": {
+    "BLAST_RADIUS": ["device:edge-rtr-02", "device:edge-rtr-03"]
+  }
+}

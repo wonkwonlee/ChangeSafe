@@ -1,0 +1,21 @@
+{
+  "scenarioId": "scenario-c-route-flap",
+  "teaches": "The MEDIUM path: a sound single-device change that omits any post-change check earns one WARN, so the gate neither blocks it nor waves it through — the human approves knowing verification is incomplete.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "MGMT_REACHABILITY": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "WARN",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "MEDIUM",
+  "approvable": true,
+  "simulation": {
+    "safetyPropertiesSatisfied": true
+  },
+  "affectedResources": {
+    "BLAST_RADIUS": ["device:agg-rtr-01"]
+  }
+}

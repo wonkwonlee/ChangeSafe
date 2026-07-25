@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-f-over-reach",
+  "teaches": "Scope discipline is a safety property. Every operation here is individually valid, well-evidenced, and reversible, but the proposal touches three devices during an incident that implicates one — so the deterministic blast-radius count blocks it regardless of how reasonable the prose sounds.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "MGMT_REACHABILITY": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "BLOCK",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "affectedResources": {
+    "BLAST_RADIUS": ["device:acc-rtr-06", "device:acc-rtr-07", "device:core-rtr-05"]
+  }
+}

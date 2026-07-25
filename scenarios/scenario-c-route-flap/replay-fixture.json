@@ -1,0 +1,46 @@
+{
+  "fixtureId": "fix-c-route-flap-authored",
+  "scenarioId": "scenario-c-route-flap",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Authored deterministic fixture. The proposal is reasonable and would be safe to approve, but it never says how anyone would confirm the change worked — the gate warns rather than blocks, and the decision stays with the human. This is not model output.",
+  "proposal": {
+    "proposalId": "prop-prefer-standby-transit",
+    "summary": "De-prefer the flapping primary transit path on agg-rtr-01 by raising its route metric above the standby path, so traffic stops re-converging while the carrier works the circuit.",
+    "diagnosis": {
+      "likelyCause": "The primary transit circuit is unstable at the carrier edge; each flap forces re-convergence on agg-rtr-01, which the access layer sees as brief loss windows. The standby path has been stable for two weeks with ample headroom.",
+      "confidence": 0.78,
+      "evidenceIds": ["ev-alert-flap", "ev-alert-reconverge", "ev-alert-standby", "ev-note-carrier"],
+      "assumptions": [
+        "The standby transit circuit can carry the full branch aggregate at 4% current utilization",
+        "The carrier maintenance case covers the flapping primary circuit and is still open"
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/devices/agg-rtr-01/routes/rt-transit-primary/metric",
+        "value": 150,
+        "reason": "Raise the primary transit metric above the standby (90) so the stable path is preferred until the carrier circuit is repaired",
+        "evidenceIds": ["ev-alert-flap", "ev-alert-standby"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/devices/agg-rtr-01/routes/rt-transit-primary/metric",
+        "value": 20,
+        "reason": "Restore the original primary transit metric once the circuit is stable",
+        "evidenceIds": ["ev-alert-flap"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm the standby transit path is up and its utilization leaves headroom for the branch aggregate",
+        "evidenceIds": ["ev-alert-standby"]
+      }
+    ]
+  }
+}

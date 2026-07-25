@@ -5,6 +5,7 @@ import {
   ChangeReceiptSchema,
   IncidentBundleSchema,
   ReplayFixtureSchema,
+  ScenarioExpectationsSchema,
   StatePathSchema,
 } from "@/lib/domain/schemas";
 import {
@@ -141,6 +142,97 @@ describe("ReplayFixtureSchema provenance honesty", () => {
       capturedAtUtc: null,
     };
     expect(ReplayFixtureSchema.safeParse(fixture).success).toBe(false);
+  });
+});
+
+describe("ScenarioExpectationsSchema self-consistency", () => {
+  const allPass = {
+    PATCH_SCHEMA: "PASS",
+    MGMT_REACHABILITY: "PASS",
+    PROTECTED_RESOURCE: "PASS",
+    BLAST_RADIUS: "PASS",
+    ROLLBACK_COMPLETE: "PASS",
+    VERIFICATION_REQUIRED: "PASS",
+    UNTRUSTED_INSTRUCTION: "PASS",
+  } as const;
+
+  const base = {
+    scenarioId: "scenario-test",
+    teaches: "A synthetic expectations file used by the schema unit tests.",
+    policies: allPass,
+    riskLevel: "LOW",
+    approvable: true,
+    simulation: { safetyPropertiesSatisfied: true },
+  };
+
+  it("accepts a consistent all-PASS expectation", () => {
+    expect(ScenarioExpectationsSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("requires every policy to be declared", () => {
+    const partial = Object.fromEntries(
+      Object.entries(allPass).filter(([policyId]) => policyId !== "PATCH_SCHEMA"),
+    );
+    expect(ScenarioExpectationsSchema.safeParse({ ...base, policies: partial }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a risk level that contradicts the declared statuses", () => {
+    expect(
+      ScenarioExpectationsSchema.safeParse({ ...base, riskLevel: "HIGH" }).success,
+    ).toBe(false);
+
+    const oneWarn = { ...allPass, VERIFICATION_REQUIRED: "WARN" } as const;
+    expect(
+      ScenarioExpectationsSchema.safeParse({ ...base, policies: oneWarn, riskLevel: "LOW" })
+        .success,
+    ).toBe(false);
+    expect(
+      ScenarioExpectationsSchema.safeParse({ ...base, policies: oneWarn, riskLevel: "MEDIUM" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("rejects claiming a blocked scenario is approvable", () => {
+    const blocked = { ...allPass, MGMT_REACHABILITY: "BLOCK" } as const;
+    expect(
+      ScenarioExpectationsSchema.safeParse({
+        ...base,
+        policies: blocked,
+        riskLevel: "CRITICAL",
+        approvable: true,
+        simulation: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a simulation outcome on a blocked scenario", () => {
+    const blocked = { ...allPass, PROTECTED_RESOURCE: "BLOCK" } as const;
+    expect(
+      ScenarioExpectationsSchema.safeParse({
+        ...base,
+        policies: blocked,
+        riskLevel: "CRITICAL",
+        approvable: false,
+        simulation: { safetyPropertiesSatisfied: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires an approvable scenario to declare its simulation outcome", () => {
+    expect(
+      ScenarioExpectationsSchema.safeParse({ ...base, simulation: null }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown policy ids in affectedResources", () => {
+    expect(
+      ScenarioExpectationsSchema.safeParse({
+        ...base,
+        affectedResources: { NOT_A_POLICY: ["device:x"] },
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -28,6 +28,11 @@ npx playwright install chromium   # once
 npm run test:e2e
 ```
 
+If something else already uses port 3000, run the app and the suite on
+another port: `PORT=3100 npm run dev` / `PORT=3100 npm run test:e2e`.
+If the dev server was running while you edited `next.config.ts`, restart it
+— Turbopack does not pick up config changes and will serve a stale bundle.
+
 ## Ground rules
 
 1. **Never add an execution path.** No SSH/NETCONF/RESTCONF/SNMP/gNMI-SET,
@@ -60,34 +65,29 @@ proposal is intentionally unsafe. Good scenarios teach something specific:
 a policy nobody has exercised yet, a verdict level the demo lacks, or a new
 way a plausible AI proposal can be wrong.
 
-A scenario lives in `scenarios/<scenario-id>/` and contains:
+A scenario lives in `scenarios/<scenario-id>/` and contains three files:
 
-- `incident.json` — an `IncidentBundle`: alerts and operator notes with
-  stable `ev-*` evidence ids, a topology, the declarative current state,
-  and the safety properties the change must preserve.
-- `replay-fixture.json` — a `ReplayFixture` wrapping one `ChangeProposal`,
-  with `provenance` set to `authored_synthetic`, `authored_red_team`, or
-  `captured_gpt_5_6` (captured requires `model` and `capturedAtUtc`;
-  authored requires `model: null`).
+- `incident.json` — the untrusted input (alerts, operator notes, topology,
+  declarative state, safety properties).
+- `replay-fixture.json` — one proposed change with honest provenance.
+- `expectations.json` — what the gate must do with it, verified in CI.
 
-Both files are validated against the production Zod schemas when
-`scenarios/index.ts` loads, so a malformed scenario fails fast. Register
-the scenario in `scenarios/index.ts` with an incident-styled label that
-describes the situation — never the expected verdict.
+**Read [docs/SCENARIO_AUTHORING.md](docs/SCENARIO_AUTHORING.md)** for the
+field-by-field guide, the reachability rules that decide whether your
+management paths behave, and a table of which verdicts are already covered
+versus which gaps are worth filling.
 
 Checklist before opening the PR:
 
 - [ ] All data fictional; documentation IP ranges only.
 - [ ] Every `evidenceId` cited by the proposal exists in the bundle.
 - [ ] Operation paths target real devices/resources in the bundle state.
-- [ ] Provenance labeled honestly (authored fixtures claim no model).
-- [ ] `npm test` passes, including the scenario contract tests.
-- [ ] The PR states what the scenario is *supposed* to demonstrate
-      (expected findings, risk level, whether it should be approvable).
-
-The scenario expectations harness described in `docs/OSS_ROADMAP.md` (P1)
-will turn that last point into a machine-checked `expectations.json`; until
-it lands, state expectations in the PR description.
+- [ ] Provenance labeled honestly (authored fixtures set `model: null`).
+- [ ] Registered in `scenarios/index.ts` with an incident-styled label that
+      describes the situation, never the verdict.
+- [ ] `npm test` passes — the harness verifies your `expectations.json`
+      against the real engine.
+- [ ] The PR says what the scenario teaches that existing ones do not.
 
 ## Pull requests
 

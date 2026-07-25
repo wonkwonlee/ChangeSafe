@@ -1,0 +1,21 @@
+{
+  "scenarioId": "scenario-a-failover",
+  "teaches": "The baseline safe path: a minimal, well-evidenced single-device change with a verified rollback and complete verification steps passes every policy, so the decision is genuinely the human's.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "MGMT_REACHABILITY": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "LOW",
+  "approvable": true,
+  "simulation": {
+    "safetyPropertiesSatisfied": true
+  },
+  "affectedResources": {
+    "BLAST_RADIUS": ["device:edge-rtr-01"]
+  }
+}

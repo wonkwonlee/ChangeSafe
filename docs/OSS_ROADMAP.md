@@ -76,27 +76,37 @@ CI runs the full gate on every PR.
 Goal: scenarios become data-driven, CI-verified, contributable content —
 and the demo shows more than LOW/CRITICAL.
 
-- Per-scenario `expectations.json` (schema-validated): expected policy
-  statuses, expected risk level, `approvable`, `simulatable`, plus optional
-  per-finding assertions (e.g. affected resources).
-- Generalize `tests/integration/scenario-contracts.test.ts` into a harness
-  that discovers every directory under `scenarios/` and asserts its
-  expectations — a contributed scenario is a PR whose CI proves its claims.
-- `docs/SCENARIO_AUTHORING.md`: bundle rules (fictional data, documentation
-  IP ranges, provenance honesty), expectations format, checklist.
-- New network scenarios filling the verdict space (each with expectations):
-  1. *Missing postcheck* → `VERIFICATION_REQUIRED` WARN → **MEDIUM, approvable** —
-     first scenario exercising human judgment on a warned change.
-  2. *Two-device change + incomplete verification* → 2×WARN → **HIGH, approvable**.
-  3. *Rollback trap* — forward ops apply, rollback restores a wrong value →
-     `ROLLBACK_COMPLETE` BLOCK (shows canonical-equality verification).
-  4. *Over-reach agent* — one-device incident, three-device "while we're at
-     it" proposal → `BLAST_RADIUS` BLOCK.
-  5. (Stretch) *Injection variant pack* — injection in an alert message and
-     in a device description, not just operator notes.
+- [x] Per-scenario `expectations.json` (`ScenarioExpectationsSchema`):
+      all seven policy statuses, risk level, `approvable`, the simulation
+      outcome, and optional per-finding affected-resource assertions. The
+      schema itself rejects internally inconsistent claims (declared risk
+      or approvability that contradicts the declared statuses).
+- [x] `tests/integration/scenario-contracts.test.ts` rewritten as a harness:
+      walks `scenarios/` on disk, fails if a directory is unregistered, and
+      asserts every scenario's expectations, provenance honesty,
+      evidence grounding, documentation-range addresses, and — by
+      approvability — either the full approve → simulate → verified receipt
+      walk or that approval and simulation are impossible.
+      (`scenarios/index.ts` keeps static imports so the registry stays
+      usable in the browser bundle; the harness supplies completeness.)
+- [x] `docs/SCENARIO_AUTHORING.md` — field-by-field guide, reachability
+      rules, expectations format, coverage table, common mistakes.
+- [x] New network scenarios filling the verdict space:
+  1. `scenario-c-route-flap` — missing postcheck → `VERIFICATION_REQUIRED`
+     WARN → **MEDIUM, approvable** (first warned-but-approvable path).
+  2. `scenario-d-egress-imbalance` — two devices + missing precondition →
+     2×WARN → **HIGH, approvable**.
+  3. `scenario-e-rollback-trap` — a rollback that restores the wrong value
+     → `ROLLBACK_COMPLETE` BLOCK, everything else PASS.
+  4. `scenario-f-over-reach` — one-device incident, three-device proposal →
+     `BLAST_RADIUS` BLOCK, everything else PASS.
+- [ ] (Stretch, deferred to community) *Injection variant pack* — injection
+      in an alert message and in a device description; listed as a coverage
+      gap in the authoring guide.
 
-Exit gate: harness runs all scenarios from disk; ≥4 new scenarios green;
-authoring guide published.
+Exit gate: **met** — harness runs all six scenarios from disk; four new
+scenarios green; authoring guide published; falsified expectations fail
+loudly (verified).
 
 ### P2 — Extract `@changesafe/core` (M)
 

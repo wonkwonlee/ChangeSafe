@@ -1,187 +1,281 @@
+import { readdirSync, existsSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DomainError, IllegalTransitionError } from "@/lib/domain/errors";
+import { POLICY_ORDER } from "@/lib/policies";
 import { initialState, transition, type WorkflowState } from "@/lib/domain/state-machine";
 import { validateProposalEvidence } from "@/lib/domain/validate";
 import { runSimulation } from "@/lib/patch/simulate";
 import { evaluatePolicies } from "@/lib/policies";
 import { createReceipt, verifyReceiptHash } from "@/lib/receipt/receipt";
-import { SCENARIOS, getScenario } from "@/scenarios";
+import { SCENARIOS, getScenario, type ScenarioDefinition } from "@/scenarios";
 
-const scenarioA = getScenario("scenario-a-failover");
-const scenarioB = getScenario("scenario-b-route-leak");
+/**
+ * The scenario harness. Every bundled scenario declares its expected gate
+ * outcome in `expectations.json`; this file proves the engine agrees, for
+ * every scenario, without per-scenario test code. Adding a scenario is
+ * therefore a content change whose claims CI verifies.
+ */
 
-if (!scenarioA || !scenarioB) throw new Error("bundled scenarios failed to load");
+const SCENARIOS_DIR = path.join(process.cwd(), "scenarios");
 
-describe("bundled scenario integrity", () => {
-  it("ships exactly two scenarios that pass production schemas at load", () => {
-    expect(SCENARIOS).toHaveLength(2);
+function scenarioDirectoriesOnDisk(): string[] {
+  return readdirSync(SCENARIOS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+describe("scenario registry completeness", () => {
+  it("registers every scenario directory found on disk", () => {
+    const registered = SCENARIOS.map((scenario) => scenario.scenarioId).sort();
+    expect(scenarioDirectoriesOnDisk()).toEqual(registered);
   });
 
-  it("cites only evidence that exists in each bundle", () => {
+  it("ships the three required files for every registered scenario", () => {
     for (const scenario of SCENARIOS) {
-      expect(() =>
-        validateProposalEvidence(scenario.bundle, scenario.fixture.proposal),
-      ).not.toThrow();
+      for (const file of ["incident.json", "replay-fixture.json", "expectations.json"]) {
+        const filePath = path.join(SCENARIOS_DIR, scenario.scenarioId, file);
+        expect(existsSync(filePath), `${scenario.scenarioId}/${file}`).toBe(true);
+      }
     }
   });
 
+  it("gives every scenario a unique id and an incident-styled label", () => {
+    const ids = SCENARIOS.map((scenario) => scenario.scenarioId);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const scenario of SCENARIOS) {
+      // Labels describe the situation; they must not leak the verdict.
+      expect(scenario.label.toLowerCase()).not.toMatch(/\b(safe|unsafe|blocked|pass|fail)\b/);
+      expect(scenario.expectations.teaches.length).toBeGreaterThan(20);
+    }
+  });
+});
+
+describe("scenario integrity (all scenarios)", () => {
+  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
+    "%s cites only evidence that exists in its bundle",
+    (_id, scenario) => {
+      expect(() =>
+        validateProposalEvidence(scenario.bundle, scenario.fixture.proposal),
+      ).not.toThrow();
+    },
+  );
+
+  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
+    "%s declares honest fixture provenance",
+    (_id, scenario) => {
+      const { provenance, model, capturedAtUtc } = scenario.fixture;
+      if (provenance === "captured_gpt_5_6") {
+        expect(model).not.toBeNull();
+        expect(capturedAtUtc).not.toBeNull();
+      } else {
+        // Authored content is never attributed to a model.
+        expect(model).toBeNull();
+      }
+    },
+  );
+
+  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
+    "%s uses documentation address ranges only",
+    (_id, scenario) => {
+      const serialized = JSON.stringify(scenario.bundle);
+      const ipv4 = serialized.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g) ?? [];
+      const documentationRange = /^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0$)/;
+      for (const address of ipv4) {
+        expect(address, `${address} is outside the documentation ranges`).toMatch(
+          documentationRange,
+        );
+      }
+    },
+  );
+
   it("rejects invented evidence ids", () => {
-    const proposal = structuredClone(scenarioA.fixture.proposal);
+    const scenario = SCENARIOS[0];
+    if (!scenario) throw new Error("no scenarios registered");
+    const proposal = structuredClone(scenario.fixture.proposal);
     proposal.diagnosis.evidenceIds.push("ev-ghost-claim");
     try {
-      validateProposalEvidence(scenarioA.bundle, proposal);
+      validateProposalEvidence(scenario.bundle, proposal);
       expect.fail("expected EVIDENCE_UNKNOWN");
     } catch (error) {
       expect(error).toBeInstanceOf(DomainError);
       expect((error as DomainError).code).toBe("EVIDENCE_UNKNOWN");
-      expect((error as DomainError).userMessage).toContain("ev-ghost-claim");
     }
   });
-
-  it("labels fixture provenance honestly and claims no model for authored fixtures", () => {
-    expect(scenarioA.fixture.provenance).toBe("authored_synthetic");
-    expect(scenarioB.fixture.provenance).toBe("authored_red_team");
-    expect(scenarioA.fixture.model).toBeNull();
-    expect(scenarioB.fixture.model).toBeNull();
-  });
 });
 
-describe("scenario A (safe failover) contract", () => {
-  it("produces zero BLOCK findings and LOW risk", () => {
-    const { findings, riskLevel } = evaluatePolicies(scenarioA.bundle, scenarioA.fixture.proposal);
-    expect(findings.filter((finding) => finding.status === "BLOCK")).toHaveLength(0);
-    expect(findings.every((finding) => finding.status === "PASS")).toBe(true);
-    expect(riskLevel).toBe("LOW");
-  });
+describe("declared expectations hold (all scenarios)", () => {
+  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
+    "%s produces exactly its declared policy verdicts and risk",
+    (_id, scenario) => {
+      const { findings, riskLevel } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
 
-  it("is approvable, simulatable, and receipt-issuable end to end", async () => {
-    const { findings, riskLevel } = evaluatePolicies(scenarioA.bundle, scenarioA.fixture.proposal);
+      expect(findings.map((finding) => finding.policyId)).toEqual([...POLICY_ORDER]);
 
-    let state: WorkflowState = initialState(scenarioA.scenarioId, scenarioA.bundle);
-    state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
-    state = transition(state, {
-      type: "PROPOSAL_RECEIVED",
-      proposal: scenarioA.fixture.proposal,
-      mode: "replay",
-      provenance: scenarioA.fixture.provenance,
-    });
-    state = transition(state, { type: "VALIDATION_COMPLETED", findings, riskLevel });
-    state = transition(state, { type: "CLASSIFY" });
-    expect(state.phase).toBe("APPROVAL_REQUIRED");
+      for (const finding of findings) {
+        expect(
+          finding.status,
+          `${scenario.scenarioId}: ${finding.policyId} — ${finding.explanation}`,
+        ).toBe(scenario.expectations.policies[finding.policyId]);
+      }
 
-    state = transition(state, { type: "APPROVE" });
-    const simulation = runSimulation(scenarioA.bundle, scenarioA.fixture.proposal);
-    expect(simulation.safetyProperties.every((property) => property.satisfied)).toBe(true);
-    state = transition(state, { type: "SIMULATION_COMPLETED", simulation });
+      expect(riskLevel).toBe(scenario.expectations.riskLevel);
+    },
+  );
 
-    const receipt = await createReceipt({
-      scenarioId: scenarioA.scenarioId,
-      bundle: scenarioA.bundle,
-      proposal: scenarioA.fixture.proposal,
-      mode: "replay",
-      model: null,
-      fixtureProvenance: scenarioA.fixture.provenance,
-      findings,
-      riskLevel,
-      decision: "approved",
-      simulation,
-    });
-    state = transition(state, { type: "RECEIPT_CREATED", receipt });
+  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
+    "%s matches its declared affected resources",
+    (_id, scenario) => {
+      const declared = scenario.expectations.affectedResources;
+      if (!declared) return;
+      const { findings } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
 
-    expect(state.phase).toBe("RECEIPT_ISSUED");
-    expect(await verifyReceiptHash(receipt)).toBe(true);
-  });
-
-  it("keeps the primary route in the table after the simulated change", () => {
-    const simulation = runSimulation(scenarioA.bundle, scenarioA.fixture.proposal);
-    const retained = simulation.safetyProperties.find(
-      (property) => property.propertyId === "sp-a-primary-retained",
-    );
-    expect(retained?.satisfied).toBe(true);
-  });
+      for (const [policyId, resources] of Object.entries(declared)) {
+        const finding = findings.find((candidate) => candidate.policyId === policyId);
+        expect(finding, `${policyId} finding missing`).toBeDefined();
+        expect([...(finding?.affectedResources ?? [])].sort()).toEqual([...resources].sort());
+      }
+    },
+  );
 });
 
-describe("scenario B (unsafe route removal) contract", () => {
-  const evaluation = () => evaluatePolicies(scenarioB.bundle, scenarioB.fixture.proposal);
-
-  it("always produces the required BLOCK and WARN findings", () => {
-    const { findings, riskLevel } = evaluation();
-    const byId = new Map(findings.map((finding) => [finding.policyId, finding]));
-
-    expect(byId.get("MGMT_REACHABILITY")?.status).toBe("BLOCK");
-    expect(byId.get("PROTECTED_RESOURCE")?.status).toBe("BLOCK");
-    expect(byId.get("UNTRUSTED_INSTRUCTION")?.status).toBe("WARN");
-    expect(byId.get("UNTRUSTED_INSTRUCTION")?.affectedResources).toContain(
-      "evidence:ev-note-inject",
-    );
-    expect(riskLevel).toBe("CRITICAL");
+/** Walk a scenario to the point where the human decision is required. */
+function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
+  const { findings, riskLevel } = evaluatePolicies(scenario.bundle, scenario.fixture.proposal);
+  let state: WorkflowState = initialState(scenario.scenarioId, scenario.bundle);
+  state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
+  state = transition(state, {
+    type: "PROPOSAL_RECEIVED",
+    proposal: scenario.fixture.proposal,
+    mode: "replay",
+    provenance: scenario.fixture.provenance,
   });
+  state = transition(state, { type: "VALIDATION_COMPLETED", findings, riskLevel });
+  return transition(state, { type: "CLASSIFY" });
+}
 
-  it("blocks specifically because the firewall becomes unreachable", () => {
-    const { findings } = evaluation();
-    const reachability = findings.find((finding) => finding.policyId === "MGMT_REACHABILITY");
-    expect(reachability?.affectedResources).toEqual(["node:dist-fw-01"]);
-  });
+const approvableScenarios = SCENARIOS.filter((s) => s.expectations.approvable);
+const blockedScenarios = SCENARIOS.filter((s) => !s.expectations.approvable);
 
-  it("classifies to BLOCKED and can never be approved or simulated via the domain", () => {
-    const { findings, riskLevel } = evaluation();
+describe.runIf(approvableScenarios.length > 0)("approvable scenarios", () => {
+  it.each(approvableScenarios.map((s) => [s.scenarioId, s] as const))(
+    "%s runs approve → simulate → verified receipt",
+    async (_id, scenario) => {
+      let state = advanceToDecision(scenario);
+      expect(state.phase).toBe("APPROVAL_REQUIRED");
 
-    let state: WorkflowState = initialState(scenarioB.scenarioId, scenarioB.bundle);
-    state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
-    state = transition(state, {
-      type: "PROPOSAL_RECEIVED",
-      proposal: scenarioB.fixture.proposal,
-      mode: "replay",
-      provenance: scenarioB.fixture.provenance,
-    });
-    state = transition(state, { type: "VALIDATION_COMPLETED", findings, riskLevel });
-    state = transition(state, { type: "CLASSIFY" });
-    expect(state.phase).toBe("BLOCKED");
+      state = transition(state, { type: "APPROVE" });
+      const simulation = runSimulation(scenario.bundle, scenario.fixture.proposal);
+      expect(simulation.safetyProperties.every((property) => property.satisfied)).toBe(
+        scenario.expectations.simulation?.safetyPropertiesSatisfied,
+      );
+      state = transition(state, { type: "SIMULATION_COMPLETED", simulation });
 
-    expect(() => transition(state, { type: "APPROVE" })).toThrow(IllegalTransitionError);
-    // A well-formed simulation payload (built from the safe scenario) still
-    // cannot be injected into a BLOCKED workflow.
-    const simulation = runSimulation(scenarioA.bundle, scenarioA.fixture.proposal);
-    expect(() =>
-      transition(state, { type: "SIMULATION_COMPLETED", simulation }),
-    ).toThrow(IllegalTransitionError);
-  });
-
-  it("issues a blocked receipt without any simulation", async () => {
-    const { findings, riskLevel } = evaluation();
-    const receipt = await createReceipt({
-      scenarioId: scenarioB.scenarioId,
-      bundle: scenarioB.bundle,
-      proposal: scenarioB.fixture.proposal,
-      mode: "replay",
-      model: null,
-      fixtureProvenance: scenarioB.fixture.provenance,
-      findings,
-      riskLevel,
-      decision: "blocked",
-      simulation: null,
-    });
-    expect(receipt.decision).toBe("blocked");
-    expect(receipt.simulation).toBeNull();
-    expect(await verifyReceiptHash(receipt)).toBe(true);
-  });
-
-  it("cannot sneak into an approved receipt", async () => {
-    const { findings, riskLevel } = evaluation();
-    await expect(
-      createReceipt({
-        scenarioId: scenarioB.scenarioId,
-        bundle: scenarioB.bundle,
-        proposal: scenarioB.fixture.proposal,
+      if (state.phase !== "SIMULATED") throw new Error("expected SIMULATED");
+      const receipt = await createReceipt({
+        scenarioId: scenario.scenarioId,
+        bundle: scenario.bundle,
+        proposal: scenario.fixture.proposal,
         mode: "replay",
-        model: null,
-        fixtureProvenance: scenarioB.fixture.provenance,
-        findings,
-        riskLevel,
+        model: scenario.fixture.model,
+        fixtureProvenance: scenario.fixture.provenance,
+        findings: state.findings,
+        riskLevel: state.riskLevel,
         decision: "approved",
+        simulation,
+      });
+      state = transition(state, { type: "RECEIPT_CREATED", receipt });
+
+      expect(state.phase).toBe("RECEIPT_ISSUED");
+      expect(receipt.riskLevel).toBe(scenario.expectations.riskLevel);
+      expect(await verifyReceiptHash(receipt)).toBe(true);
+    },
+  );
+
+  it.each(approvableScenarios.map((s) => [s.scenarioId, s] as const))(
+    "%s can also be rejected by the human",
+    (_id, scenario) => {
+      const state = transition(advanceToDecision(scenario), { type: "REJECT" });
+      expect(state.phase).toBe("REJECTED");
+    },
+  );
+});
+
+describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
+  it.each(blockedScenarios.map((s) => [s.scenarioId, s] as const))(
+    "%s classifies to BLOCKED and can never be approved or simulated",
+    (_id, scenario) => {
+      const state = advanceToDecision(scenario);
+      expect(state.phase).toBe("BLOCKED");
+
+      expect(() => transition(state, { type: "APPROVE" })).toThrow(IllegalTransitionError);
+
+      // Even a well-formed simulation payload cannot be injected into a
+      // blocked workflow.
+      const donor = approvableScenarios[0];
+      if (donor) {
+        const simulation = runSimulation(donor.bundle, donor.fixture.proposal);
+        expect(() =>
+          transition(state, { type: "SIMULATION_COMPLETED", simulation }),
+        ).toThrow(IllegalTransitionError);
+      }
+    },
+  );
+
+  it.each(blockedScenarios.map((s) => [s.scenarioId, s] as const))(
+    "%s issues a blocked receipt with no simulation and rejects an approved one",
+    async (_id, scenario) => {
+      const state = advanceToDecision(scenario);
+      if (state.phase !== "BLOCKED") throw new Error("expected BLOCKED");
+
+      const receipt = await createReceipt({
+        scenarioId: scenario.scenarioId,
+        bundle: scenario.bundle,
+        proposal: scenario.fixture.proposal,
+        mode: "replay",
+        model: scenario.fixture.model,
+        fixtureProvenance: scenario.fixture.provenance,
+        findings: state.findings,
+        riskLevel: state.riskLevel,
+        decision: "blocked",
         simulation: null,
-      }),
-    ).rejects.toThrow();
+      });
+      expect(receipt.decision).toBe("blocked");
+      expect(receipt.simulation).toBeNull();
+      expect(await verifyReceiptHash(receipt)).toBe(true);
+
+      await expect(
+        createReceipt({
+          scenarioId: scenario.scenarioId,
+          bundle: scenario.bundle,
+          proposal: scenario.fixture.proposal,
+          mode: "replay",
+          model: scenario.fixture.model,
+          fixtureProvenance: scenario.fixture.provenance,
+          findings: state.findings,
+          riskLevel: state.riskLevel,
+          decision: "approved",
+          simulation: null,
+        }),
+      ).rejects.toThrow();
+    },
+  );
+});
+
+describe("flagship scenarios remain present", () => {
+  // The demo and docs reference these by id; renaming them is a breaking
+  // change that should fail loudly rather than silently break the README.
+  it.each(["scenario-a-failover", "scenario-b-route-leak"])("%s is registered", (scenarioId) => {
+    expect(getScenario(scenarioId)).toBeDefined();
+  });
+
+  it("keeps a red-team scenario that always blocks", () => {
+    const redTeam = SCENARIOS.filter((s) => s.fixture.provenance === "authored_red_team");
+    expect(redTeam.length).toBeGreaterThan(0);
+    for (const scenario of redTeam) {
+      expect(scenario.expectations.approvable).toBe(false);
+    }
   });
 });

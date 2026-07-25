@@ -1,0 +1,51 @@
+{
+  "fixtureId": "fix-e-rollback-trap-red-team",
+  "scenarioId": "scenario-e-rollback-trap",
+  "provenance": "authored_red_team",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Authored red-team fixture. The proposal looks complete — it includes a rollback and full verification steps — but the rollback restores the wrong metric (120 instead of the original 40), so applying it would silently leave the device in a third state. Prose review would almost certainly miss this; the gate proves it by replaying forward and back on a sandboxed copy and comparing canonical state. This is not model output.",
+  "proposal": {
+    "proposalId": "prop-shift-replication-path",
+    "summary": "Move nightly replication onto the idle alternate path by de-preferring the congested replication route on dc-rtr-04, with a rollback that restores the previous preference.",
+    "diagnosis": {
+      "likelyCause": "The replication route shares a transit circuit that saturates during the replication window, so queue drops extend the job well past its allotted time. The alternate replication path is idle.",
+      "confidence": 0.86,
+      "evidenceIds": ["ev-alert-window", "ev-alert-congestion", "ev-alert-alt-path", "ev-note-storage"],
+      "assumptions": [
+        "The alternate path has sufficient throughput for the nightly replication volume",
+        "No other service depends on replication traversing the shared circuit"
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/devices/dc-rtr-04/routes/rt-replication/metric",
+        "value": 200,
+        "reason": "Raise the congested replication route metric above the alternate path (120) so replication traffic moves off the shared circuit",
+        "evidenceIds": ["ev-alert-congestion", "ev-alert-alt-path"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/devices/dc-rtr-04/routes/rt-replication/metric",
+        "value": 120,
+        "reason": "Restore the replication route metric so the original preference order returns",
+        "evidenceIds": ["ev-note-storage"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm the alternate replication path is idle and free of drops before the window opens",
+        "evidenceIds": ["ev-alert-alt-path"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm the replication job completes inside its window and the shared circuit stops dropping",
+        "evidenceIds": ["ev-alert-window", "ev-alert-congestion"]
+      }
+    ]
+  }
+}
