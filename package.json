@@ -9,7 +9,7 @@
     "url": "git+https://github.com/wonkwonlee/ChangeSafe.git"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "next dev",

@@ -17,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["20.9", "22", "24"]
+        # Node 20 reached end-of-life in April 2026 and the test runner needs
+        # APIs newer than the 20.x floor, so support starts at 22 (see engines).
+        node: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,8 +54,14 @@ jobs:
           retention-days: 7
 
   no-secret-leak:
-    name: Client bundle carries no secrets
+    name: Secrets never reach the client bundle
     runs-on: ubuntu-latest
+    env:
+      # A canary, not a credential. Building with a key set means the client
+      # bundle is checked for the key's VALUE — the property that actually
+      # matters. (Checking for the variable NAME would only find harmless
+      # mentions, such as the setup instructions in a scenario fixture note.)
+      OPENAI_API_KEY: sk-canary-must-never-reach-the-client-9f3a1c
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -62,16 +70,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # The server-only key name and prompt internals must never be bundled
-      # into client chunks. grep -q exits 0 on a match, so a match fails here.
-      - name: Grep client chunks
+      - name: Assert no secret material in client chunks
         run: |
-          if grep -rIq "OPENAI_API_KEY" .next/static; then
-            echo "::error::OPENAI_API_KEY appears in client bundle"
+          if grep -rIqF "$OPENAI_API_KEY" .next/static; then
+            echo "::error::The API key value reached the client bundle"
             exit 1
           fi
           if grep -rIq "untrusted_incident_data" .next/static; then
-            echo "::error::Server prompt content appears in client bundle"
+            echo "::error::Server prompt content appears in the client bundle"
             exit 1
           fi
-          echo "Client bundle is clean."
+          echo "No secret material in client chunks."

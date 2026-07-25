@@ -12,7 +12,7 @@ for the invariants every change must respect.
 ## Setup
 
 ```bash
-node --version   # >= 20.9 (see .nvmrc)
+node --version   # >= 22 (see .nvmrc)
 npm install
 npm run dev      # http://localhost:3000, works with no API key
 ```
