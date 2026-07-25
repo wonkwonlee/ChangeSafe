@@ -10,13 +10,19 @@ pass first. Written for the owner to send — nothing here posts itself.
       promise holds with large margin.
 - [x] Live demo responds and runs the full replay path with no API key:
       <https://change-safe.vercel.app>
-- [x] CI green on `main`: lint, typecheck, 228 tests, build, e2e, the
-      client-bundle secret check, and the Action's own gate path.
+- [x] CI green on the P7 merge candidate: lint, typecheck, 356 tests,
+      production build, three Playwright paths, the client-bundle secret
+      check, the Action's gate path, and scenario/gallery freshness checks.
 - [x] Repository description and topics set; MIT license detected.
 - [x] README links the live demo above the fold.
-- [ ] **Owner: confirm `RUNTIME_MODEL`.** `/api/status` currently advertises
-      `gpt-5.6-terra`. If that is not a model id you can actually call, live
-      mode will fail for anyone who adds a key — replay mode is unaffected.
+- [ ] **Owner: confirm the production `/api/status` response after the final
+      deployment.** The application no longer has a single `RUNTIME_MODEL`
+      constant. It resolves the configured provider and model at runtime.
+      Current code defaults are OpenAI `gpt-5.6`, Anthropic
+      `claude-opus-4-8`, and Ollama `llama3.1`, each overridable through the
+      corresponding `CHANGESAFE_*_MODEL` environment variable. Confirm that
+      the deployed response reports the intended provider/model—or honestly
+      reports `liveAvailable: false`—before posting.
 - [ ] **Owner: tag `v0.1.0`** once you are happy (see below).
 
 ## Tagging the launch
@@ -27,9 +33,11 @@ git push origin v0.1.0
 gh release create v0.1.0 --title "v0.1.0" --notes-file docs/RELEASE_NOTES_v0.1.0.md
 ```
 
-The Action example pins `@main`; after tagging, consider changing
-`examples/github-actions/gate-terraform-plan.yml` to `@v0.1.0` so copied
-workflows are reproducible.
+Before tagging, change the consumer examples in `README.md` and
+`examples/github-actions/gate-terraform-plan.yml` from `@main` to
+`@v0.1.0`. Then tag the exact reviewed commit and create the release from
+`docs/RELEASE_NOTES_v0.1.0.md`. This ensures the released documentation
+points users at a reproducible Action version rather than a moving branch.
 
 ## Show HN
 
@@ -89,11 +97,12 @@ Show HN: A gate that blocks AI infra changes even when the prompt is injected
 >   the skip, names the replacement (`REVERSIBILITY`), and that shows up in
 >   the policy order. Silently dropping checks is how gates rot.
 >
-> Honest limits: two domains (network, Terraform), receipts prove integrity
-> but are unsigned, the network model is deliberately simple, and the
-> bundled AI fixtures are authored and labeled as such rather than captured
-> model output. It started as an OpenAI Build Week project that I did not
-> submit, and is now an ordinary open-source thing.
+> Honest limits: two domains (network and Terraform); ordinary CLI receipts
+> are unsigned unless `--sign-key` is configured; the public demo keeps its
+> human-decision path client-side by design; the network model is deliberately
+> simple; and the nine-scenario network corpus is small and synthetic. One
+> bundled fixture is captured GPT-5.6 output and the remaining eight are
+> authored fixtures; every fixture declares its provenance.
 >
 > MIT. Scenario contributions are the easiest way in — each one declares its
 > expected verdicts in a file that CI checks against the real engine, so a
@@ -144,10 +153,15 @@ is a check in your pipeline, not a control plane. It reduces the chance that
 a plausible-sounding unsafe change gets waved through; it does not stop a
 determined human.
 
-**"Why should I trust the receipts?"** Only for integrity: they detect
-alteration and mismatch, because the hash covers the canonical content.
-They are unsigned in v0.1, so they prove nothing about authorship. Signing
-is on the roadmap and I would rather say this plainly than imply more.
+**"Why should I trust the receipts?"** A receipt hash detects content
+alteration and input/proposal mismatch, but a hash alone does not establish
+authorship. ChangeSafe also supports optional Ed25519 signing:
+`changesafe keygen`, `--sign-key`, and `verify --public-key`. A signed receipt
+checked without the expected public key exits 2 rather than pretending the
+signature was verified. In self-hosted mode, the OIDC-authenticated server
+recomputes the findings, records the approver, signs the receipt, and appends
+the decision to a hash-chained SQLite ledger. Key custody still matters, and
+this is not a third-party timestamping or non-repudiation service.
 
 **"Is this AI-written?"** Yes, substantially — built with Claude Code under
 my direction, and the commit history shows exactly that. The safety
@@ -156,10 +170,14 @@ properties are enforced by tests you can read and run.
 ## After posting
 
 - Watch `gh run list` — a first-time contributor's PR should hit green CI.
-- Issues labeled `good first issue` are the scenario templates; point people
-  at `docs/SCENARIO_AUTHORING.md`, which lists the coverage gaps worth
-  filling.
-- P5 landed: the live path runs against OpenAI, Anthropic, or a local Ollama
-  model, so people can try it with whatever they already pay for — or with
-  nothing at all. The next roadmap step is P6 (self-host hardening: signed
-  receipts, server-side decisions).
+- Issues labeled `good first issue` are the scenario templates.
+  `docs/SCENARIOS.md` shows the current failure-mode coverage, while
+  `docs/SCENARIO_AUTHORING.md` explains how to add a new scenario or extend
+  the taxonomy when a genuinely new gap is identified.
+- P5, P6, and the first P7 pass have landed: provider-agnostic analysis,
+  optional Ed25519 signatures, an append-only receipt ledger, an
+  OIDC-authenticated server-side decision path, a nine-scenario corpus,
+  generated scenario gallery, and versioned benchmark reports. The remaining
+  roadmap is community-shaped: a docs-site decision, integration
+  conversations, additional domains and failure modes, and published
+  cross-model reports.
