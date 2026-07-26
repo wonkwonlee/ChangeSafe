@@ -163,6 +163,8 @@ export interface ListOptions {
 
 export class Ledger {
   readonly #db: DatabaseSync;
+  /** Tail of the append queue; see `append`. */
+  #writes: Promise<void> = Promise.resolve();
 
   private constructor(db: DatabaseSync) {
     this.#db = db;
@@ -207,8 +209,35 @@ export class Ledger {
    * Recording the same receipt twice is rejected rather than ignored: a
    * duplicate means the caller lost track of whether a decision was already
    * durable, and silently succeeding would hide that.
+   *
+   * Appends are serialized against each other. Deciding the next entry means
+   * reading the chain head and then hashing, and hashing is asynchronous — so
+   * two decisions arriving together would both read the same head and build
+   * the same link, and the second would land on the sequence number the first
+   * just took. The database refuses that (`seq` is the primary key), which is
+   * the right failure but an unhelpful one: the second approver's genuine
+   * decision would come back as an internal error rather than the next entry
+   * in the chain. Queueing costs nothing here — a hash is microseconds — and
+   * turns a collision into an ordering.
+   *
+   * A second *process* writing the same file is still caught by the
+   * constraint rather than by this queue, which is why the constraint stays.
    */
   async append(record: LedgerRecord): Promise<LedgerEntry> {
+    // Each append waits for the one before it, whether that one succeeded or
+    // failed: a rejected append must not break the queue for the next caller.
+    const result = this.#writes.then(
+      () => this.#appendSerially(record),
+      () => this.#appendSerially(record),
+    );
+    this.#writes = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  async #appendSerially(record: LedgerRecord): Promise<LedgerEntry> {
     const { receipt, signatureKeyId } = splitRecord(record);
 
     if (this.get(receipt.receiptId)) {
