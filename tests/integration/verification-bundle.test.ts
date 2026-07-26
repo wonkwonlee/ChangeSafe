@@ -6,6 +6,7 @@ import {
   cpSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -104,6 +105,7 @@ function initializeGitRepository(root: string): void {
 
 function createBuilderRepository(options?: {
   fixture?: (fixture: Record<string, unknown>) => void;
+  cliHook?: string;
 }): BuilderRepository {
   const root = temporaryDirectory();
   const script = path.join(root, "scripts", "build-v0.1.0-bundle.mjs");
@@ -124,6 +126,34 @@ function createBuilderRepository(options?: {
   const fixture = readJson(path.join(SCENARIO, "replay-fixture.json"));
   options?.fixture?.(fixture);
   writeJson(path.join(scenario, "replay-fixture.json"), fixture);
+
+  if (options?.cliHook) {
+    const realCli = path.join(path.dirname(cli), "changesafe-real.js");
+    copyFileSync(cli, realCli);
+    writeFileSync(
+      cli,
+      `#!/usr/bin/env node
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
+const { run } = await import("./changesafe-real.js");
+const status = await run(args);
+if (status === 0) {
+${options.cliHook}
+}
+process.exitCode = status;
+`,
+    );
+  }
 
   symlinkSync(path.join(ROOT, "node_modules"), path.join(root, "node_modules"), "dir");
   initializeGitRepository(root);
@@ -646,5 +676,100 @@ describe("v0.1.0 bundle builder", () => {
 
     expect(() => runBuilder(repository, out, key)).toThrow();
     expect(existsSync(out)).toBe(false);
+  });
+
+  it.each(["directory", "symlink"])(
+    "preserves a concurrently appearing target %s while holding the publication lock",
+    async (kind) => {
+      await buildCliOnce();
+      const parent = temporaryDirectory();
+      const out = path.join(parent, "v0.1.0");
+      const lock = `${out}.lock`;
+      const decoy = path.join(parent, "decoy");
+      mkdirSync(decoy);
+      writeFileSync(path.join(decoy, "keep.txt"), "owner data");
+      const targetHook = kind === "directory"
+        ? `mkdirSync(${JSON.stringify(out)}); writeFileSync(${JSON.stringify(path.join(out, "keep.txt"))}, "owner data");`
+        : `symlinkSync(${JSON.stringify(decoy)}, ${JSON.stringify(out)}, "dir");`;
+      const repository = createBuilderRepository({
+        cliHook: `  if (args[0] === "verify" && existsSync(${JSON.stringify(lock)})) {
+    ${targetHook}
+  }`,
+      });
+      const key = generateTemporaryKey();
+
+      expect(() => runBuilder(repository, out, key)).toThrow();
+      expect(readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("owner data");
+      expect(lstatSync(out).isSymbolicLink()).toBe(kind === "symlink");
+      expect(existsSync(lock)).toBe(false);
+    },
+  );
+
+  it("publishes the recorded commit bytes even if the source fixture changes mid-build", async () => {
+    await buildCliOnce();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    const repository = createBuilderRepository({
+      cliHook: `  if (args[0] === "gate" && !args.includes("--receipt")) {
+    appendFileSync(path.join(repoRoot, "scenarios", "scenario-a-failover", "replay-fixture.json"), "\\n ");
+  }`,
+    });
+    const sourceFixture = path.join(
+      repository.root,
+      "scenarios",
+      "scenario-a-failover",
+      "replay-fixture.json",
+    );
+    const key = generateTemporaryKey();
+
+    runBuilder(repository, out, key);
+
+    const manifest = readJson(path.join(out, "provenance.json"));
+    const sourceCommit = String(manifest.sourceCommit);
+    const committedFixture = execFileSync(
+      "git",
+      [
+        "show",
+        `${sourceCommit}:scenarios/scenario-a-failover/replay-fixture.json`,
+      ],
+      { cwd: repository.root, encoding: "utf8" },
+    );
+    expect(readFileSync(sourceFixture, "utf8")).not.toBe(committedFixture);
+    expect(readFileSync(path.join(out, "replay-fixture.json"), "utf8")).toBe(
+      committedFixture,
+    );
+  });
+
+  it("surfaces sanitized staging cleanup failure after a late target race", async () => {
+    await buildCliOnce();
+    const parent = temporaryDirectory();
+    const out = path.join(parent, "v0.1.0");
+    const lock = `${out}.lock`;
+    const repository = createBuilderRepository({
+      cliHook: `  if (args[0] === "verify" && existsSync(${JSON.stringify(lock)})) {
+    mkdirSync(${JSON.stringify(out)});
+    writeFileSync(${JSON.stringify(path.join(out, "keep.txt"))}, "owner data");
+    chmodSync(${JSON.stringify(parent)}, 0o500);
+  }`,
+    });
+    const key = generateTemporaryKey();
+    const privateBefore = readFileSync(key.privatePath, "utf8");
+    const publicBefore = readFileSync(key.publicPath, "utf8");
+
+    let error: Error & { stderr?: string };
+    try {
+      runBuilder(repository, out, key);
+      throw new Error("builder unexpectedly succeeded");
+    } catch (caught) {
+      error = caught as Error & { stderr?: string };
+    } finally {
+      chmodSync(parent, 0o700);
+    }
+
+    expect(error.stderr).toBe("bundle build failed: staging cleanup\n");
+    expect(error.stderr).not.toContain(parent);
+    expect(error.stderr).not.toContain(key.privatePath);
+    expect(readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("owner data");
+    expect(readFileSync(key.privatePath, "utf8")).toBe(privateBefore);
+    expect(readFileSync(key.publicPath, "utf8")).toBe(publicBefore);
   });
 });

@@ -4,12 +4,15 @@ import { parseArgs } from "node:util";
 import { createPublicKey } from "node:crypto";
 import {
   copyFile,
+  lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   rename,
   rm,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -89,12 +92,19 @@ async function readJson(file, check) {
   return checked(check, async () => JSON.parse(await readFile(file, "utf8")));
 }
 
+async function pathExists(file) {
+  return lstat(file).then(
+    () => true,
+    (error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    },
+  );
+}
+
 async function main() {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const cli = path.join(repoRoot, CLI_RELATIVE_PATH);
-  const scenario = path.join(repoRoot, "scenarios", SOURCE_ID);
-  const sourceInput = path.join(scenario, "incident.json");
-  const sourceFixture = path.join(scenario, "replay-fixture.json");
 
   const parsed = checked("arguments", async () =>
     parseArgs({
@@ -142,12 +152,8 @@ async function main() {
     "npm version",
   );
 
-  const existingTarget = await stat(finalDirectory).then(
-    () => true,
-    (error) => {
-      if (error?.code === "ENOENT") return false;
-      throw new BundleBuildError("target");
-    },
+  const existingTarget = await checked("target", async () =>
+    pathExists(finalDirectory),
   );
   requireBuild(!existingTarget, "target exists");
 
@@ -178,6 +184,29 @@ async function main() {
     "source commit",
   );
 
+  const [sourceInputText, sourceFixtureText] = await Promise.all(
+    [
+      "scenarios/scenario-a-failover/incident.json",
+      "scenarios/scenario-a-failover/replay-fixture.json",
+    ].map(async (sourcePath) => {
+      const source = await checked("committed scenario", async () =>
+        runCommand("git", ["show", `${sourceCommit}:${sourcePath}`], {
+          cwd: repoRoot,
+          env,
+          timeoutMs: COMMAND_TIMEOUT_MS,
+        }),
+      );
+      requireBuild(
+        !source.timedOut && source.code === 0,
+        "committed scenario",
+      );
+      return source.stdout;
+    }),
+  );
+  const fixture = await checked("captured fixture", async () =>
+    CapturedFixtureMetadataSchema.parse(JSON.parse(sourceFixtureText)),
+  );
+
   const signingKeyStat = await checked("signing key permissions", async () =>
     stat(signingKey),
   );
@@ -204,39 +233,20 @@ async function main() {
   );
   requireBuild(privatePublicId === suppliedPublicId, "signing key pair");
 
-  const preflight = await checked("scenario preflight", async () =>
-    runCommand(
-      process.execPath,
-      [
-        cli,
-        "gate",
-        "--domain", "network",
-        "--input", sourceInput,
-        "--proposal", sourceFixture,
-        "--source-id", SOURCE_ID,
-        "--format", "json",
-      ],
-      { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },
-    ),
-  );
-  requireBuild(
-    !preflight.timedOut && preflight.code === 0,
-    "scenario preflight",
-  );
-
-  const fixture = await readJson(sourceFixture, "captured fixture");
-  await checked("captured fixture", async () =>
-    CapturedFixtureMetadataSchema.parse(fixture),
-  );
-
   const parentDirectory = path.dirname(finalDirectory);
   await checked("staging", async () => mkdir(parentDirectory, { recursive: true }));
-  const stagingDirectory = await checked("staging", async () =>
-    mkdtemp(path.join(parentDirectory, `.${path.basename(finalDirectory)}.tmp-`)),
+  const publicationLock = `${finalDirectory}.lock`;
+  const lockHandle = await checked("publication lock", async () =>
+    open(publicationLock, "wx", 0o600),
   );
+  let stagingDirectory;
   let published = false;
+  let failure;
 
   try {
+    stagingDirectory = await checked("staging", async () =>
+      mkdtemp(path.join(parentDirectory, `.${path.basename(finalDirectory)}.tmp-`)),
+    );
     const stagedInput = path.join(stagingDirectory, "input.json");
     const stagedFixture = path.join(stagingDirectory, "replay-fixture.json");
     const stagedPublicKey = path.join(stagingDirectory, "demo.pub.pem");
@@ -244,10 +254,30 @@ async function main() {
 
     await checked("staging files", async () =>
       Promise.all([
-        copyFile(sourceInput, stagedInput),
-        copyFile(sourceFixture, stagedFixture),
+        writeFile(stagedInput, sourceInputText),
+        writeFile(stagedFixture, sourceFixtureText),
         copyFile(publicKey, stagedPublicKey),
       ]),
+    );
+
+    const preflight = await checked("scenario preflight", async () =>
+      runCommand(
+        process.execPath,
+        [
+          cli,
+          "gate",
+          "--domain", "network",
+          "--input", stagedInput,
+          "--proposal", stagedFixture,
+          "--source-id", SOURCE_ID,
+          "--format", "json",
+        ],
+        { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },
+      ),
+    );
+    requireBuild(
+      !preflight.timedOut && preflight.code === 0,
+      "scenario preflight",
     );
 
     const gate = await checked("signed receipt", async () =>
@@ -317,23 +347,32 @@ async function main() {
       }),
     );
 
-    const appearedTarget = await stat(finalDirectory).then(
-      () => true,
-      (error) => {
-        if (error?.code === "ENOENT") return false;
-        throw new BundleBuildError("target");
-      },
+    const appearedTarget = await checked("target", async () =>
+      pathExists(finalDirectory),
     );
     requireBuild(!appearedTarget, "target exists");
     await checked("atomic publication", async () =>
       rename(stagingDirectory, finalDirectory),
     );
     published = true;
+  } catch (error) {
+    failure = error;
   } finally {
-    if (!published) {
-      await rm(stagingDirectory, { recursive: true, force: true }).catch(() => {});
+    if (!published && stagingDirectory !== undefined) {
+      try {
+        await rm(stagingDirectory, { recursive: true, force: true });
+      } catch {
+        failure = new BundleBuildError("staging cleanup");
+      }
+    }
+    try {
+      await lockHandle.close();
+      await unlink(publicationLock);
+    } catch {
+      failure ??= new BundleBuildError("publication lock cleanup");
     }
   }
+  if (failure) throw failure;
 
   process.stdout.write("bundle built and verified\n");
 }
