@@ -74,16 +74,30 @@ runs:
     - name: Run the gate
       id: gate
       shell: bash
+      # Inputs arrive as environment variables, never as `${{ }}` inside the
+      # script. An expression is substituted before bash parses the script, so
+      # an input assembled from event data (a branch name, a PR title) would
+      # otherwise be able to close its own quoting and run commands here.
+      env:
+        CHANGESAFE_DOMAIN: ${{ inputs.domain }}
+        CHANGESAFE_RECEIPT: ${{ inputs.receipt }}
+        CHANGESAFE_PLAN: ${{ inputs.plan }}
+        CHANGESAFE_INPUT: ${{ inputs.input }}
+        CHANGESAFE_PROPOSAL: ${{ inputs.proposal }}
+        CHANGESAFE_CONTEXT: ${{ inputs.context }}
+        CHANGESAFE_POLICY_PACK: ${{ inputs.policy-pack }}
+        CHANGESAFE_FAIL_ON_BLOCK: ${{ inputs.fail-on-block }}
+        CHANGESAFE_ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
-        ARGS=(gate --domain "${{ inputs.domain }}" --format json --receipt "${{ inputs.receipt }}")
-        if [ -n "${{ inputs.plan }}" ]; then ARGS+=(--input "${{ inputs.plan }}"); fi
-        if [ -n "${{ inputs.input }}" ]; then ARGS+=(--input "${{ inputs.input }}"); fi
-        if [ -n "${{ inputs.proposal }}" ]; then ARGS+=(--proposal "${{ inputs.proposal }}"); fi
-        if [ -n "${{ inputs.context }}" ]; then ARGS+=(--context "${{ inputs.context }}"); fi
-        if [ -n "${{ inputs.policy-pack }}" ]; then ARGS+=(--policy-pack "${{ inputs.policy-pack }}"); fi
+        ARGS=(gate --domain "$CHANGESAFE_DOMAIN" --format json --receipt "$CHANGESAFE_RECEIPT")
+        if [ -n "$CHANGESAFE_PLAN" ]; then ARGS+=(--input "$CHANGESAFE_PLAN"); fi
+        if [ -n "$CHANGESAFE_INPUT" ]; then ARGS+=(--input "$CHANGESAFE_INPUT"); fi
+        if [ -n "$CHANGESAFE_PROPOSAL" ]; then ARGS+=(--proposal "$CHANGESAFE_PROPOSAL"); fi
+        if [ -n "$CHANGESAFE_CONTEXT" ]; then ARGS+=(--context "$CHANGESAFE_CONTEXT"); fi
+        if [ -n "$CHANGESAFE_POLICY_PACK" ]; then ARGS+=(--policy-pack "$CHANGESAFE_POLICY_PACK"); fi
 
-        node "${{ github.action_path }}/packages/cli/dist/changesafe.js" "${ARGS[@]}" > changesafe-result.json
+        node "$CHANGESAFE_ACTION_PATH/packages/cli/dist/changesafe.js" "${ARGS[@]}" > changesafe-result.json
         CODE=$?
         set -e
 
@@ -99,12 +113,12 @@ runs:
         RISK=$(node -e "process.stdout.write(require('./changesafe-result.json').riskLevel)")
         echo "blocked=$BLOCKED" >> "$GITHUB_OUTPUT"
         echo "risk=$RISK" >> "$GITHUB_OUTPUT"
-        echo "receipt=${{ inputs.receipt }}" >> "$GITHUB_OUTPUT"
+        echo "receipt=$CHANGESAFE_RECEIPT" >> "$GITHUB_OUTPUT"
 
-        node "${{ github.action_path }}/scripts/format-summary.mjs" changesafe-result.json > changesafe-summary.md
+        node "$CHANGESAFE_ACTION_PATH/scripts/format-summary.mjs" changesafe-result.json > changesafe-summary.md
         cat changesafe-summary.md >> "$GITHUB_STEP_SUMMARY"
 
-        if [ "$BLOCKED" = "true" ] && [ "${{ inputs.fail-on-block }}" = "true" ]; then
+        if [ "$BLOCKED" = "true" ] && [ "$CHANGESAFE_FAIL_ON_BLOCK" = "true" ]; then
           echo "::error::ChangeSafe blocked this change (risk $RISK)."
           exit 1
         fi

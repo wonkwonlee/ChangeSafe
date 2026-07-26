@@ -14,6 +14,22 @@ if (!resultPath) {
 
 const result = JSON.parse(readFileSync(resultPath, "utf8"));
 
+/**
+ * Findings quote the change under review — `UNTRUSTED_INSTRUCTION` embeds the
+ * matched excerpt of a pull request body verbatim, which is exactly the text
+ * an attacker controls. Rendered raw, a `|` opens new table cells and a
+ * newline opens a new row, so the flagged content could forge a passing
+ * verdict inside ChangeSafe's own comment. Neutralize the characters that
+ * carry table structure; everything else may render as it likes.
+ */
+function cell(text) {
+  return String(text)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ")
+    .replace(/</g, "&lt;");
+}
+
 const ICON = { PASS: "✅", WARN: "⚠️", BLOCK: "⛔" };
 const RISK_NOTE = {
   LOW: "no warnings",
@@ -36,7 +52,7 @@ lines.push("");
 lines.push(
   `**Risk: ${result.riskLevel}** (${RISK_NOTE[result.riskLevel]}) · ` +
     `${counts.PASS} pass · ${counts.WARN} warn · ${counts.BLOCK} block · ` +
-    `domain \`${result.domain}\``,
+    `domain \`${cell(result.domain)}\``,
 );
 lines.push("");
 lines.push("| | Policy | Finding |");
@@ -44,9 +60,9 @@ lines.push("| --- | --- | --- |");
 for (const finding of result.findings) {
   const detail =
     finding.status === "PASS"
-      ? finding.title
-      : `**${finding.title}** — ${finding.explanation}`;
-  lines.push(`| ${ICON[finding.status]} | \`${finding.policyId}\` | ${detail} |`);
+      ? cell(finding.title)
+      : `**${cell(finding.title)}** — ${cell(finding.explanation)}`;
+  lines.push(`| ${ICON[finding.status]} | \`${cell(finding.policyId)}\` | ${detail} |`);
 }
 lines.push("");
 
@@ -55,7 +71,7 @@ if (actionable.length > 0) {
   lines.push("<details><summary>What to do</summary>");
   lines.push("");
   for (const finding of actionable) {
-    lines.push(`- \`${finding.policyId}\`: ${finding.remediation}`);
+    lines.push(`- \`${cell(finding.policyId)}\`: ${cell(finding.remediation)}`);
   }
   lines.push("");
   lines.push("</details>");
