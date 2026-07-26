@@ -32,6 +32,7 @@ import {
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const PYTHON = "/usr/bin/python3";
+const PLATFORM = process.platform;
 const DARWIN_RENAME_EXCL = `
 import ctypes
 import os
@@ -60,6 +61,37 @@ result = renameatx_np(
     AT_FDCWD,
     os.fsencode(sys.argv[2]),
     RENAME_EXCL,
+)
+sys.exit(0 if result == 0 else 1)
+`;
+const LINUX_RENAME_NOREPLACE = `
+import ctypes
+import os
+import sys
+
+AT_FDCWD = -100
+RENAME_NOREPLACE = 0x00000001
+
+try:
+    renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+except AttributeError:
+    sys.exit(69)
+
+renameat2.argtypes = [
+    ctypes.c_int,
+    ctypes.c_char_p,
+    ctypes.c_int,
+    ctypes.c_char_p,
+    ctypes.c_uint,
+]
+renameat2.restype = ctypes.c_int
+
+result = renameat2(
+    AT_FDCWD,
+    os.fsencode(sys.argv[1]),
+    AT_FDCWD,
+    os.fsencode(sys.argv[2]),
+    RENAME_NOREPLACE,
 )
 sys.exit(0 if result == 0 else 1)
 `;
@@ -134,9 +166,14 @@ async function pathExists(file) {
 }
 
 async function publishDirectoryNoReplace(source, target, { cwd, env }) {
-  requireBuild(process.platform === "darwin", "atomic publication unavailable");
+  const program = PLATFORM === "darwin"
+    ? DARWIN_RENAME_EXCL
+    : PLATFORM === "linux"
+      ? LINUX_RENAME_NOREPLACE
+      : null;
+  requireBuild(program !== null, "atomic publication unavailable");
   const publication = await checked("atomic publication", async () =>
-    runCommand(PYTHON, ["-c", DARWIN_RENAME_EXCL, source, target], {
+    runCommand(PYTHON, ["-c", program, source, target], {
       cwd,
       env,
       timeoutMs: COMMAND_TIMEOUT_MS,

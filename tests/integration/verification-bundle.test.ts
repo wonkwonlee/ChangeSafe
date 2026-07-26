@@ -107,6 +107,7 @@ function createBuilderRepository(options?: {
   fixture?: (fixture: Record<string, unknown>) => void;
   cliHook?: string;
   atomicRenameHook?: string;
+  platform?: "darwin" | "linux" | "win32";
 }): BuilderRepository {
   const root = temporaryDirectory();
   const script = path.join(root, "scripts", "build-v0.1.0-bundle.mjs");
@@ -136,7 +137,9 @@ function createBuilderRepository(options?: {
       `#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
+  renameSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -154,6 +157,16 @@ process.exitCode = result.status ?? 2;
       readFileSync(script, "utf8").replace(
         'const PYTHON = "/usr/bin/python3";',
         `const PYTHON = ${JSON.stringify(wrapper)};`,
+      ),
+    );
+  }
+
+  if (options?.platform) {
+    writeFileSync(
+      script,
+      readFileSync(script, "utf8").replace(
+        "const PLATFORM = process.platform;",
+        `const PLATFORM = ${JSON.stringify(options.platform)};`,
       ),
     );
   }
@@ -778,6 +791,70 @@ describe("v0.1.0 bundle builder", () => {
     })();
 
     expect(error.stderr).toBe("bundle build failed: atomic publication\n");
+    expect(existsSync(out)).toBe(false);
+    expect(existsSync(`${out}.lock`)).toBe(false);
+    expect(existsSync(key.privatePath)).toBe(true);
+    expect(existsSync(key.publicPath)).toBe(true);
+  });
+
+  it.each([
+    ["darwin", "renameatx_np", "RENAME_EXCL"],
+    ["linux", "renameat2", "RENAME_NOREPLACE"],
+  ] as const)(
+    "selects the %s native no-replace publication branch",
+    async (platform, expectedSymbol, expectedFlag) => {
+      await buildCliOnce();
+      const out = path.join(temporaryDirectory(), "v0.1.0");
+      const repository = createBuilderRepository({
+        platform,
+        atomicRenameHook: `
+const program = process.argv[3] ?? "";
+if (
+  !program.includes(${JSON.stringify(expectedSymbol)}) ||
+  !program.includes(${JSON.stringify(expectedFlag)})
+) process.exit(68);
+const source = process.argv[4];
+const target = process.argv[5];
+if (!source || !target || existsSync(target)) process.exit(1);
+renameSync(source, target);
+process.exit(0);
+`,
+      });
+      const key = generateTemporaryKey();
+
+      const result = runBuilder(repository, out, key);
+
+      expect(result).toContain("bundle built and verified");
+      expect(readdirSync(out).sort()).toEqual([
+        "README.md",
+        "demo.pub.pem",
+        "fingerprint.txt",
+        "input.json",
+        "provenance.json",
+        "receipt.signed.json",
+        "replay-fixture.json",
+      ]);
+    },
+  );
+
+  it("fails closed on a platform without a native no-replace primitive", async () => {
+    await buildCliOnce();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    const repository = createBuilderRepository({ platform: "win32" });
+    const key = generateTemporaryKey();
+
+    const error = (() => {
+      try {
+        runBuilder(repository, out, key);
+      } catch (caught) {
+        return caught as Error & { stderr?: string };
+      }
+      throw new Error("builder unexpectedly succeeded");
+    })();
+
+    expect(error.stderr).toBe(
+      "bundle build failed: atomic publication unavailable\n",
+    );
     expect(existsSync(out)).toBe(false);
     expect(existsSync(`${out}.lock`)).toBe(false);
     expect(existsSync(key.privatePath)).toBe(true);
