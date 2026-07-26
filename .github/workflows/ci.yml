@@ -12,20 +12,20 @@ env:
 
 jobs:
   gate:
-    name: Lint, typecheck, test, build (Node ${{ matrix.node }})
+    name: Lint, typecheck, test, build (Node 22)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Node 20 reached end-of-life in April 2026 and the test runner needs
-        # APIs newer than the 20.x floor, so support starts at 22 (see engines).
-        node: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
           cache: npm
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
@@ -45,6 +45,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -66,6 +72,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npm run build:cli
       # Exercise exactly what action.yml runs: gate a plan, render the
@@ -103,6 +115,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npm run build:cli
       - name: Every scenario matches its declared expectations
@@ -129,6 +147,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npm run build
       - name: Assert no secret material in client chunks
