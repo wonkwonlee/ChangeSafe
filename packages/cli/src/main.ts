@@ -204,6 +204,8 @@ export async function main(argv: string[], console: Console): Promise<number> {
           policyPack: values["policy-pack"],
           receipt: values.receipt,
           signKey: values["sign-key"],
+          receiptId: values["receipt-id"],
+          now: values["created-at"],
           sourceId: values["source-id"],
           format,
         },

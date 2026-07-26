@@ -30,6 +30,7 @@ export interface AnalyzeCommandOptions {
   policyPack?: string;
   receipt?: string;
   signKey?: string;
+  receiptId?: string;
   sourceId?: string;
   format: "pretty" | "json";
   /** Injectable so tests get deterministic receipts and fixtures. */
@@ -107,6 +108,7 @@ export async function runAnalyze(
       policyPack: options.policyPack,
       receipt: options.receipt,
       signKey: options.signKey,
+      receiptId: options.receiptId,
       format: options.format,
       mode: "live",
       model: analysis.model,

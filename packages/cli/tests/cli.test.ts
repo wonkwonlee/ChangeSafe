@@ -455,6 +455,46 @@ describe("analyze — the only command that calls a model", () => {
     }
   });
 
+  it("reproduces a signed envelope when audited metadata is fixed", async () => {
+    const dir = temporaryDir();
+    const keyOut = path.join(dir, "analyze-key");
+    await main(["keygen", "--out", keyOut], createCapture());
+
+    const fixture = JSON.parse(readFileSync(path.join(SAFE, "replay-fixture.json"), "utf8"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({
+        model: "llama3.1",
+        done: true,
+        message: { content: JSON.stringify(fixture.proposal) },
+      })) as typeof globalThis.fetch;
+
+    try {
+      const args = [
+        "analyze",
+        "--scenario",
+        SAFE,
+        "--provider",
+        "ollama",
+        "--sign-key",
+        `${keyOut}.pem`,
+        "--receipt-id",
+        "rcpt-v0-1-0-analyze",
+        "--created-at",
+        "2026-07-26T12:00:00.000Z",
+      ];
+      const first = path.join(dir, "first.json");
+      const second = path.join(dir, "second.json");
+
+      await main([...args, "--receipt", first], createCapture());
+      await main([...args, "--receipt", second], createCapture());
+
+      expect(readFileSync(first, "utf8")).toBe(readFileSync(second, "utf8"));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("stops with a usage error rather than guessing a provider", async () => {
     const capture = createCapture();
     // Silently picking a different model than the operator expected would be
