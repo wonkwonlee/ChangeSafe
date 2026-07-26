@@ -82,11 +82,18 @@ SERVE OPTIONS (self-hosting)
   --oidc-issuer <url>   required; approver tokens must come from this issuer
   --oidc-audience <id>  required; tokens must be minted for this audience
   --oidc-jwks-uri <url> skip discovery and use this key endpoint
+  --approver <subject>  restrict approvers to this token subject (repeatable)
+  --approver-claim <name>=<value>
+                        require this claim, e.g. groups=sre (repeatable)
   --sign-key <file>     sign every receipt this API issues
 
 The API recomputes findings itself rather than trusting the caller, records an
 authenticated approver on every decision, and appends to the ledger before
 answering. It has no execution endpoint and no anonymous mode.
+
+Authentication says who someone is; --approver and --approver-claim say which
+of those people may act here. With neither, anyone your issuer will mint a
+token for is an approver, and startup says so.
 
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
@@ -134,6 +141,8 @@ const OPTION_SPEC = {
   "oidc-issuer": { type: "string" },
   "oidc-audience": { type: "string" },
   "oidc-jwks-uri": { type: "string" },
+  approver: { type: "string", multiple: true },
+  "approver-claim": { type: "string", multiple: true },
   decision: { type: "string" },
   limit: { type: "string" },
   format: { type: "string", default: "pretty" },
@@ -269,6 +278,8 @@ export async function main(argv: string[], console: Console): Promise<number> {
           oidcIssuer: values["oidc-issuer"],
           oidcAudience: values["oidc-audience"],
           oidcJwksUri: values["oidc-jwks-uri"],
+          approvers: values.approver,
+          approverClaims: values["approver-claim"],
           signKey: values["sign-key"],
         },
         console,

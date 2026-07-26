@@ -1,15 +1,38 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { isDomainError } from "@changesafe/core";
+import { DomainError, isDomainError } from "@changesafe/core";
 import type { Ledger } from "@changesafe/ledger";
 
 import { DecisionService, type DecisionRequest } from "./decisions";
 import { SERVER_DOMAIN_IDS } from "./domains";
-import { AuthenticationError, OidcVerifier, bearerToken } from "./oidc";
+import { AuthenticationError, AuthorizationError, OidcVerifier, bearerToken } from "./oidc";
 
 /** Plans and bundles are large; anything past this is not our client. */
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Distinct from a schema failure: the body was never read, so telling the
+ * caller it did not match a shape would be a guess about content nobody
+ * looked at.
+ */
+class PayloadTooLargeError extends DomainError {
+  constructor() {
+    super(
+      "REQUEST_INVALID",
+      `The request body exceeds the ${Math.round(MAX_BODY_BYTES / 1024)} KiB limit.`,
+    );
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+/** Malformed JSON is the caller's mistake, and a 500 would blame the server. */
+class MalformedJsonError extends DomainError {
+  constructor() {
+    super("REQUEST_INVALID", "The request body is not valid JSON.");
+    this.name = "MalformedJsonError";
+  }
+}
 
 const DecisionBodySchema = z.strictObject({
   domain: z.enum(SERVER_DOMAIN_IDS as [string, ...string[]]),
@@ -51,6 +74,16 @@ function sendError(response: ServerResponse, error: unknown): void {
     send(response, 401, { error: { code: "UNAUTHENTICATED", message: error.userMessage } });
     return;
   }
+  // Authenticated, and still not allowed to do this. A fresh token does not
+  // help, so it must not read as an authentication problem.
+  if (error instanceof AuthorizationError) {
+    send(response, 403, { error: { code: "FORBIDDEN", message: error.userMessage } });
+    return;
+  }
+  if (error instanceof PayloadTooLargeError) {
+    send(response, 413, { error: { code: "REQUEST_INVALID", message: error.userMessage } });
+    return;
+  }
   if (isDomainError(error)) {
     const status =
       error.code === "ILLEGAL_TRANSITION" ? 409
@@ -80,11 +113,15 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request) {
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new z.ZodError([]);
+    if (size > MAX_BODY_BYTES) throw new PayloadTooLargeError();
     chunks.push(buffer);
   }
   if (size === 0) return undefined;
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    throw new MalformedJsonError();
+  }
 }
 
 /**
@@ -141,11 +178,17 @@ async function handle(
   }
 
   if (route === "GET /decisions") {
-    const limit = url.searchParams.get("limit");
+    // A query string is caller input: "limit=abc" is Number -> NaN, which the
+    // ledger would otherwise carry into SQL. Absent and unreadable both mean
+    // unspecified — note that `Number(null)` is 0, not NaN, so the absent case
+    // has to be handled before the conversion rather than after it.
+    const requestedLimit = url.searchParams.get("limit");
+    const parsedLimit = requestedLimit === null ? Number.NaN : Number(requestedLimit);
+    const limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
     send(response, 200, {
       entries: options.ledger
         .list({
-          limit: limit === null ? undefined : Number(limit),
+          limit,
           sourceId: url.searchParams.get("sourceId") ?? undefined,
           decision: url.searchParams.get("decision") ?? undefined,
         })

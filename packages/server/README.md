@@ -47,6 +47,8 @@ login flow and owning your session security.
 | `aud` contains the configured audience | A token minted for another service must not be reusable here |
 | `exp` / `nbf` with a small skew allowance | Hosts drift; the window is narrow and configurable, not absent |
 | `kid` lookup, refetching once on a miss | Providers rotate keys without warning |
+| Keys filtered to signing keys for the token's algorithm | A JWKS also carries encryption keys and keys for algorithms this server does not accept |
+| Key documents fetched over https, under a deadline and a size cap | These fetches decide whose signatures count; a provider that stops talking must not hang every request behind it |
 
 The verified `subject`, `issuer`, and `email` are recorded on the receipt. A
 receipt with `approver: null` means no authenticated approver was
@@ -58,6 +60,39 @@ There is **no anonymous mode**. `serve` will not start without an issuer and
 audience, because an unauthenticated endpoint that issues approvals would be
 strictly worse than the console it replaces — the console at least never
 pretends the decision was attributable.
+
+## Who may approve
+
+Authentication answers *which person is this*. It does not answer *should
+this person be approving infrastructure changes* — at most organizations
+every employee holds a valid token from the same issuer, so without a second
+answer your approver list is whatever your user directory happens to be.
+
+```bash
+changesafe serve \
+  --oidc-issuer https://your-idp.example.com \
+  --oidc-audience changesafe \
+  --approver-claim groups=sre \
+  --approver-claim groups=platform \
+  --approver user-alice
+```
+
+- `--approver <subject>` — allowed `sub` values. Repeatable.
+- `--approver-claim <name>=<value>` — a claim the token must carry, e.g.
+  `groups=sre`. Repeatable: values for the *same* claim are alternatives,
+  different claims are all required. A claim holding an array matches when
+  any element does.
+
+Both are matched exactly — a list of people, not a pattern language. A token
+that is genuine but not permitted gets **403**, not 401: the identity is
+real, so retrying with a fresh token would not help.
+
+With neither flag, every identity the issuer vouches for may approve, and
+startup says so in yellow rather than letting the default pass for a
+decision.
+
+This narrows who reaches the gate. It grants nothing: an approver on every
+list still cannot approve a BLOCK.
 
 ## Endpoints
 

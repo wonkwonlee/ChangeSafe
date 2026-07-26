@@ -167,6 +167,87 @@ describe("OIDC bearer verification", () => {
   });
 });
 
+describe("fetching the provider's keys", () => {
+  it("refuses to fetch keys over plaintext", async () => {
+    const idp = await FakeIdp.create("http://idp.test");
+    const verifier = new OidcVerifier(
+      { issuer: idp.issuer, audience: AUDIENCE, jwksUri: "http://idp.test/jwks" },
+      { fetch: idp.fetch() },
+    );
+
+    await expect(verifier.verify(await idp.token())).rejects.toThrow(/https/);
+  });
+
+  it("allows loopback, where there is no path to sit on", async () => {
+    const idp = await FakeIdp.create("http://127.0.0.1:9999");
+    const verifier = new OidcVerifier(
+      { issuer: idp.issuer, audience: AUDIENCE, jwksUri: `${idp.issuer}/jwks` },
+      { fetch: idp.fetch() },
+    );
+
+    await expect(verifier.verify(await idp.token())).resolves.toBeTruthy();
+  });
+
+  it("gives up on a provider that accepts the connection and stops talking", async () => {
+    const idp = await FakeIdp.create();
+    const hanging: typeof globalThis.fetch = ((_input, init) =>
+      new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit | undefined)?.signal;
+        signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as typeof globalThis.fetch;
+
+    const verifier = new OidcVerifier(
+      {
+        issuer: idp.issuer,
+        audience: AUDIENCE,
+        jwksUri: `${idp.issuer}/jwks`,
+        jwksTimeoutMs: 50,
+      },
+      { fetch: hanging },
+    );
+
+    await expect(verifier.verify(await idp.token())).rejects.toThrow(/could not be read/);
+  });
+
+  it("refuses an implausibly large key document", async () => {
+    const idp = await FakeIdp.create();
+    const flood: typeof globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ keys: [], padding: "x".repeat(400 * 1024) }), {
+        headers: { "content-type": "application/json" },
+      })) as typeof globalThis.fetch;
+
+    const verifier = new OidcVerifier(
+      { issuer: idp.issuer, audience: AUDIENCE, jwksUri: `${idp.issuer}/jwks` },
+      { fetch: flood },
+    );
+
+    await expect(verifier.verify(await idp.token())).rejects.toThrow(/implausibly large/);
+  });
+
+  it("ignores keys published for another purpose or algorithm", async () => {
+    const idp = await FakeIdp.create();
+    const signing = (await idp.jwks()).keys[0] as Record<string, unknown>;
+    // The real signing key, republished as an encryption key, plus an RSA
+    // entry. Neither may be used to check an ES256 signature — so a verifier
+    // that tries them all would still pass this, and one that filters
+    // correctly finds nothing usable.
+    const misleading: typeof globalThis.fetch = (async () =>
+      Response.json({
+        keys: [
+          { ...signing, use: "enc" },
+          { kty: "RSA", kid: "rsa-1", use: "sig", alg: "RS256", n: "abc", e: "AQAB" },
+        ],
+      })) as typeof globalThis.fetch;
+
+    const verifier = new OidcVerifier(
+      { issuer: idp.issuer, audience: AUDIENCE, jwksUri: `${idp.issuer}/jwks` },
+      { fetch: misleading },
+    );
+
+    await expect(verifier.verify(await idp.token())).rejects.toThrow(/signature is not valid/);
+  });
+});
+
 describe("bearerToken", () => {
   it("extracts a token from an Authorization header", () => {
     expect(bearerToken("Bearer abc.def.ghi")).toBe("abc.def.ghi");

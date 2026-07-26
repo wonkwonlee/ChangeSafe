@@ -143,10 +143,13 @@ changesafe keygen --out signing-key
 changesafe serve --db decisions.db \
   --oidc-issuer https://your-idp.example.com \
   --oidc-audience changesafe \
+  --approver-claim groups=sre \
   --sign-key signing-key.pem
 ```
 
-Approvers are verified against your own identity provider's keys, the server
+Approvers are verified against your own identity provider's keys and narrowed
+to the people you name (`--approver`, `--approver-claim` — without them, every
+identity your issuer vouches for may approve, and startup says so), the server
 **recomputes the findings itself** rather than trusting what a client claims,
 each receipt names who approved it and is signed, and every decision is
 appended to a hash-chained SQLite ledger before the response is returned. A
