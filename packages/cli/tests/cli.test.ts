@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ChangeReceiptSchema,
@@ -455,6 +455,101 @@ describe("analyze — the only command that calls a model", () => {
     }
   });
 
+  it("reproduces a signed envelope when audited metadata is fixed", async () => {
+    const dir = temporaryDir();
+    const keyOut = path.join(dir, "analyze-key");
+    await main(["keygen", "--out", keyOut], createCapture());
+
+    const fixture = JSON.parse(readFileSync(path.join(SAFE, "replay-fixture.json"), "utf8"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({
+        model: "llama3.1",
+        done: true,
+        message: { content: JSON.stringify(fixture.proposal) },
+      })) as typeof globalThis.fetch;
+
+    try {
+      const args = [
+        "analyze",
+        "--scenario",
+        SAFE,
+        "--provider",
+        "ollama",
+        "--sign-key",
+        `${keyOut}.pem`,
+        "--receipt-id",
+        "rcpt-v0-1-0-analyze",
+        "--created-at",
+        "2026-07-26T12:00:00.000Z",
+      ];
+      const first = path.join(dir, "first.json");
+      const second = path.join(dir, "second.json");
+
+      await main([...args, "--receipt", first], createCapture());
+      await main([...args, "--receipt", second], createCapture());
+
+      expect(readFileSync(first, "utf8")).toBe(readFileSync(second, "utf8"));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps receipt snapshot time separate from capture provenance time", async () => {
+    const dir = temporaryDir();
+    const keyOut = path.join(dir, "provenance-key");
+    await main(["keygen", "--out", keyOut], createCapture());
+
+    const fixture = JSON.parse(readFileSync(path.join(SAFE, "replay-fixture.json"), "utf8"));
+    const originalFetch = globalThis.fetch;
+    const receiptTime = "2026-07-26T12:00:00.000Z";
+    const captureTime = "2026-07-26T13:00:00.000Z";
+    globalThis.fetch = (async () =>
+      Response.json({
+        model: "llama3.1",
+        done: true,
+        message: { content: JSON.stringify(fixture.proposal) },
+      })) as typeof globalThis.fetch;
+    vi.useFakeTimers();
+    vi.setSystemTime(captureTime);
+
+    try {
+      const receiptPath = path.join(dir, "receipt.json");
+      const capturePath = path.join(dir, "capture.json");
+      await main(
+        [
+          "analyze",
+          "--scenario",
+          SAFE,
+          "--provider",
+          "ollama",
+          "--sign-key",
+          `${keyOut}.pem`,
+          "--receipt-id",
+          "rcpt-v0-1-0-provenance",
+          "--created-at",
+          receiptTime,
+          "--receipt",
+          receiptPath,
+          "--capture",
+          capturePath,
+        ],
+        createCapture(),
+      );
+
+      const signed = JSON.parse(readFileSync(receiptPath, "utf8"));
+      const captured = JSON.parse(readFileSync(capturePath, "utf8"));
+      expect(signed.receipt.createdAtUtc).toBe(receiptTime);
+      expect(signed.signature.signedAtUtc).toBe(receiptTime);
+      expect(captured.capturedAtUtc).toBe(captureTime);
+      expect(captured.notes).toContain(captureTime);
+      expect(captured.notes).not.toContain(receiptTime);
+    } finally {
+      vi.useRealTimers();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("stops with a usage error rather than guessing a provider", async () => {
     const capture = createCapture();
     // Silently picking a different model than the operator expected would be
@@ -513,6 +608,29 @@ describe("signed receipts", () => {
     );
     return receiptPath;
   }
+
+  it("reproduces a signed envelope when receipt identity and time are fixed", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const args = [
+      "gate",
+      "--scenario",
+      SAFE,
+      "--sign-key",
+      key.privatePath,
+      "--receipt-id",
+      "rcpt-v0-1-0-demo",
+      "--created-at",
+      "2026-07-26T12:00:00.000Z",
+    ];
+    const first = path.join(dir, "first.json");
+    const second = path.join(dir, "second.json");
+
+    await main([...args, "--receipt", first], createCapture());
+    await main([...args, "--receipt", second], createCapture());
+
+    expect(readFileSync(first, "utf8")).toBe(readFileSync(second, "utf8"));
+  });
 
   it("writes an envelope whose receipt is unchanged by signing", async () => {
     const dir = temporaryDir();

@@ -1,0 +1,24 @@
+{
+  "bundleVersion": "v0.1.0",
+  "schemaVersion": 1,
+  "sourceCommit": "7ea0eaa869ab0e491db1478868af442a81d5e3cf",
+  "receiptCreatedAtUtc": "2026-07-26T09:58:10.000Z",
+  "scenarioId": "scenario-a-failover",
+  "fixtureId": "fix-a-failover-captured",
+  "fixtureProvenance": "captured",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "appVersion": "changesafe-cli-0.1.0",
+  "policyVersion": "core-v0.1.0+network-v0.1.0",
+  "publicKeyId": "3b6039b0aa32f0c8b61d4b9d36ff2724",
+  "verificationCommand": "npm run verify:v0.1.0",
+  "files": {
+    "README.md": "42c9acc238ee3065ff25bfd3220723d31a945430e6fe6ef107b7a9a0ba7d451b",
+    "input.json": "252245a8c22c67cc8bf754947c07f5e1d9bc4cd6a47cc659aa9b776592145bd3",
+    "replay-fixture.json": "d1b2e19d232601fa68ca106a624e0572dc1623f317780c2937aaf2ea06e62e10",
+    "receipt.signed.json": "e0e647e1476db677b84595b7bf6ccd3303de441bd3244c7fd637b37dbfdb291f",
+    "demo.pub.pem": "39d9256ce27f25a359e6085dd1da91f8c6a62ba6fbcd7f36b36275517a152e00",
+    "fingerprint.txt": "574fa1029fd48080d5c9c3e2efac8f16fc4b0e127b219cab9b4ec8e05b020eb2"
+  },
+  "manifestSha256": "9d4bc1c12b109855a9679d278cbe1e1661e6d2fb2a380dec28a92da721be28e2"
+}

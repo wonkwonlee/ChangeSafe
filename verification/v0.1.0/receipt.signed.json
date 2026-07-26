@@ -1,0 +1,94 @@
+{
+  "receipt": {
+    "receiptId": "rcpt-v0-1-0-demo",
+    "inputId": "inc-uplink-degraded-4821",
+    "proposalId": "prefer-backup-uplink",
+    "sourceId": "scenario-a-failover",
+    "appVersion": "changesafe-cli-0.1.0",
+    "policyVersion": "core-v0.1.0+network-v0.1.0",
+    "createdAtUtc": "2026-07-26T09:58:10.000Z",
+    "mode": "offline",
+    "model": null,
+    "fixtureProvenance": "captured",
+    "inputSha256": "37738e8b8d0d52871e1e3a0cbb426198327d632495eec0fb2acee1fd0b982e83",
+    "proposalSha256": "e50197b34adb64a267ca86d1bf2228deb59c3ddae4810244db12302fb3bc51f7",
+    "findings": [
+      {
+        "policyId": "PATCH_SCHEMA",
+        "status": "PASS",
+        "title": "All operations are valid declarative patches",
+        "explanation": "1 operation(s) target allowlisted state paths with valid values and resolvable targets. No command strings detected.",
+        "affectedResources": [
+          "/devices/edge-rtr-01/routing/preferences/active-uplink"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "MGMT_REACHABILITY",
+        "status": "PASS",
+        "title": "Management reachability preserved",
+        "explanation": "Simulated on a sandboxed copy: management origin \"mgmt-01\" still reaches all 2 protected target(s) after the change.",
+        "affectedResources": [
+          "node:edge-rtr-01",
+          "node:core-sw-01"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "PROTECTED_RESOURCE",
+        "status": "PASS",
+        "title": "No protected resource is removed or disabled",
+        "explanation": "Every operation leaves protected routes present and protected devices' interfaces enabled.",
+        "affectedResources": [],
+        "remediation": null
+      },
+      {
+        "policyId": "BLAST_RADIUS",
+        "status": "PASS",
+        "title": "Blast radius limited to one device",
+        "explanation": "All operations touch a single device (edge-rtr-01).",
+        "affectedResources": [
+          "device:edge-rtr-01"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "ROLLBACK_COMPLETE",
+        "status": "PASS",
+        "title": "Rollback verified against a sandboxed copy",
+        "explanation": "Applying the forward operations and then the rollback operations restores a canonically identical pre-change state.",
+        "affectedResources": [
+          "/devices/edge-rtr-01/routing/preferences/active-uplink"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "VERIFICATION_REQUIRED",
+        "status": "PASS",
+        "title": "Verification plan is complete",
+        "explanation": "The proposal declares 2 precondition(s) and 2 post-change check(s).",
+        "affectedResources": [],
+        "remediation": null
+      },
+      {
+        "policyId": "UNTRUSTED_INSTRUCTION",
+        "status": "PASS",
+        "title": "No instruction-like language in the input",
+        "explanation": "No untrusted text supplied with this change attempts to issue instructions to the system.",
+        "affectedResources": [],
+        "remediation": null
+      }
+    ],
+    "riskLevel": "LOW",
+    "decision": "gate_only",
+    "approver": null,
+    "simulation": null,
+    "receiptSha256": "07bde05d6d2340e54c87393e51ff7d5333ef07d8ad123a9a16f41ca3f36a8147"
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "publicKeyId": "3b6039b0aa32f0c8b61d4b9d36ff2724",
+    "signature": "2J+JRtQqm4Ry/142hXStYqNEcA0z0vAqpDQeui7CKeAVAZ4SOvnORRshb8KvQQQISC9A3pTmTin5XmIEw4p8CA==",
+    "signedAtUtc": "2026-07-26T09:58:10.000Z"
+  }
+}

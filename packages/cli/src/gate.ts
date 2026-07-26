@@ -37,6 +37,8 @@ export interface GateOptions {
   context?: string;
   /** Private-key PEM; when set, the written receipt is signed. */
   signKey?: string;
+  /** Injectable so audited snapshots can use a fixed receipt identity. */
+  receiptId?: string;
   /** Injectable so tests get deterministic receipts. */
   now?: string;
 }
@@ -123,6 +125,7 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
       policyPack: options.policyPack,
       receipt: options.receipt,
       signKey: options.signKey,
+      receiptId: options.receiptId,
       format: options.format,
       // The proposal was handed to us; this run produced nothing and attests
       // nothing about how it was written.
@@ -145,6 +148,7 @@ export interface GateExecution {
   policyPack?: string;
   receipt?: string;
   signKey?: string;
+  receiptId?: string;
   format: "pretty" | "json";
   /** How this run obtained the proposal. Recorded in the receipt. */
   mode: AnalysisMode;
@@ -188,6 +192,7 @@ export async function gateParsedProposal(
 
   if (options.receipt) {
     const unsigned = await createReceipt({
+      receiptId: options.receiptId,
       sourceId: options.sourceId,
       inputId,
       input,

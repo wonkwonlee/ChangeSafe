@@ -9,8 +9,10 @@
     "url": "git+https://github.com/wonkwonlee/ChangeSafe.git"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22 <23",
+    "npm": "10.9.8"
   },
+  "packageManager": "npm@10.9.8",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -21,6 +23,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "build:cli": "npm run build -w changesafe",
+    "build:bundle:v0.1.0": "npm run build:cli --silent && node scripts/build-v0.1.0-bundle.mjs",
+    "verify:v0.1.0": "npm run build:cli --silent && node scripts/verify-v0.1.0.mjs",
     "changesafe": "node packages/cli/dist/changesafe.js"
   },
   "dependencies": {
