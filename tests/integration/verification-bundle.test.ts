@@ -227,6 +227,24 @@ describe("v0.1.0 public verification bundle", () => {
     ).rejects.toThrow(/verification failed: manifest integrity/i);
   });
 
+  it("rejects tag-comparison traversal before file processing even when no tag exists", async () => {
+    const bundle = await buildTemporaryBundle();
+    writeFileSync(path.join(bundle.directory, "unexpected.txt"), "later file-set failure");
+    mkdirSync(path.join(bundle.directory, "child"));
+
+    for (const repoRoot of [ROOT, path.join(bundle.directory, "child")]) {
+      const error = await verifyBundle({
+        repoRoot,
+        bundleDir: bundle.directory,
+        compareTag: true,
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("verification failed: bundle path");
+      expect((error as Error).message).not.toContain(bundle.directory);
+    }
+  });
+
   it("requires the exact public file set before hashing files", async () => {
     const bundle = await buildTemporaryBundle();
     writeFileSync(path.join(bundle.directory, "private.pem"), "must not ship");

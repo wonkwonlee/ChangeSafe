@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
 } from "node:fs/promises";
 import os from "node:os";
@@ -163,6 +164,22 @@ export async function verifyBundle({ repoRoot, bundleDir, compareTag }) {
     "manifest integrity",
   );
 
+  let tagBundlePath = null;
+  if (compareTag) {
+    const [realRepoRoot, realBundleDir] = await checked("bundle path", async () =>
+      Promise.all([realpath(repoRoot), realpath(bundleDir)]),
+    );
+    const relativeBundle = path.relative(realRepoRoot, realBundleDir);
+    requireCheck(
+      relativeBundle !== "" &&
+        relativeBundle !== ".." &&
+        !relativeBundle.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relativeBundle),
+      "bundle path",
+    );
+    tagBundlePath = relativeBundle;
+  }
+
   const expectedFiles = [...PROTECTED_FILES, MANIFEST_FILE].sort();
   const actualFiles = await checked("bundle file set", async () =>
     (await readdir(bundleDir)).sort(),
@@ -308,6 +325,9 @@ export async function verifyBundle({ repoRoot, bundleDir, compareTag }) {
   }
 
   if (compareTag) {
+    if (tagBundlePath === null) {
+      throw new ReleaseVerificationError("bundle path");
+    }
     const tag = await checked("tag availability", async () =>
       runCommand(
         "git",
@@ -317,18 +337,11 @@ export async function verifyBundle({ repoRoot, bundleDir, compareTag }) {
     );
     requireCheck(tag.code === 0 || tag.code === 1, "tag availability");
     if (tag.code === 0) {
-      const relativeBundle = path.relative(repoRoot, bundleDir);
-      requireCheck(
-        relativeBundle !== "" &&
-          !relativeBundle.startsWith(`..${path.sep}`) &&
-          !path.isAbsolute(relativeBundle),
-        "tag comparison",
-      );
       for (const name of expectedFiles) {
         const tagged = await checked("tag comparison", async () =>
           runCommand(
             "git",
-            ["show", `${VERSION}:${path.join(relativeBundle, name).split(path.sep).join("/")}`],
+            ["show", `${VERSION}:${path.join(tagBundlePath, name).split(path.sep).join("/")}`],
             { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },
           ),
         );
