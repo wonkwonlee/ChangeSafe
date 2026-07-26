@@ -10,6 +10,7 @@ import {
   type DeviceState,
   type Route,
 } from "./schemas";
+import { own } from "./lookup";
 import { isOpAllowedForPath, looksExecutable, parsePatchPath } from "./paths";
 
 export interface PatchResult {
@@ -53,7 +54,7 @@ function invalidValue(path: string, detail: string): DomainError {
 }
 
 function requireDevice(state: CurrentState, deviceId: string, path: string): DeviceState {
-  const device = state.devices[deviceId];
+  const device = own(state.devices, deviceId);
   if (!device) throw missing(path, `unknown device "${deviceId}"`);
   return device;
 }
@@ -74,7 +75,7 @@ function applySingle(state: CurrentState, operation: ChangeOperation): DiffEntry
 
   switch (parsed.family) {
     case "interface-enabled": {
-      const iface = device.interfaces[parsed.interfaceId];
+      const iface = own(device.interfaces, parsed.interfaceId);
       if (!iface) throw missing(path, `unknown interface "${parsed.interfaceId}"`);
       if (typeof value !== "boolean") throw invalidValue(path, "expected a boolean");
       const before: JsonValue = iface.enabled;
@@ -84,7 +85,7 @@ function applySingle(state: CurrentState, operation: ChangeOperation): DiffEntry
 
     case "route": {
       if (op === "add") {
-        if (device.routes[parsed.routeId]) {
+        if (own(device.routes, parsed.routeId)) {
           throw conflict(path, `route "${parsed.routeId}" already exists`);
         }
         const parsedValue = RouteValueSchema.safeParse(value);
@@ -120,7 +121,7 @@ function applySingle(state: CurrentState, operation: ChangeOperation): DiffEntry
         return { op, path, before: null, after: routeToJson(route) };
       }
       // remove: must capture the full prior value so a valid inverse exists.
-      const route = device.routes[parsed.routeId];
+      const route = own(device.routes, parsed.routeId);
       if (!route) throw missing(path, `unknown route "${parsed.routeId}"`);
       if (value !== null) throw invalidValue(path, "remove operations must carry value null");
       delete device.routes[parsed.routeId];
@@ -128,7 +129,7 @@ function applySingle(state: CurrentState, operation: ChangeOperation): DiffEntry
     }
 
     case "route-metric": {
-      const route = device.routes[parsed.routeId];
+      const route = own(device.routes, parsed.routeId);
       if (!route) throw missing(path, `unknown route "${parsed.routeId}"`);
       if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1000) {
         throw invalidValue(path, "expected an integer metric between 0 and 1000");
@@ -153,7 +154,7 @@ function applySingle(state: CurrentState, operation: ChangeOperation): DiffEntry
       if (typeof value === "string" && looksExecutable(value)) {
         throw invalidValue(path, "string value contains executable content");
       }
-      const before: JsonValue = exists ? (preferences[parsed.preferenceName] ?? null) : null;
+      const before: JsonValue = exists ? (own(preferences, parsed.preferenceName) ?? null) : null;
       preferences[parsed.preferenceName] = value;
       return { op, path, before, after: value };
     }

@@ -1,3 +1,4 @@
+import { own } from "./lookup";
 import type { CurrentState, Topology } from "./schemas";
 
 /**
@@ -35,7 +36,7 @@ export function checkReachability(input: ReachabilityInput): ReachabilityResult 
 
   const forwardsToward = (nodeId: string, ip: string | undefined): boolean => {
     if (ip === undefined) return true; // layer-2 only evaluation
-    const device = state.devices[nodeId];
+    const device = own(state.devices, nodeId);
     if (!device) return true; // unmodeled node is passive
     const routes = Object.values(device.routes);
     if (routes.length === 0) return true; // passive host
@@ -43,7 +44,7 @@ export function checkReachability(input: ReachabilityInput): ReachabilityResult 
   };
 
   const interfaceEnabled = (nodeId: string, interfaceId: string): boolean => {
-    const iface = state.devices[nodeId]?.interfaces[interfaceId];
+    const iface = own(own(state.devices, nodeId)?.interfaces ?? {}, interfaceId);
     return iface ? iface.enabled : true;
   };
 

@@ -43,11 +43,16 @@ jobs:
       # The pull request body travels with the change and is attacker-
       # influenceable, so it is passed as untrusted text: the gate scans it
       # for injected instructions and never obeys it.
+      #
+      # It reaches the shell through the environment, never through `${{ }}`
+      # inside the script. An expression is substituted into the script before
+      # bash parses it, so a body can otherwise close whatever quoting wraps
+      # it — including a heredoc delimiter — and the remainder runs as
+      # commands, in the workspace, before the gate ever reads the plan.
       - name: Capture the pull request body
-        run: |
-          cat <<'CHANGESAFE_PR_BODY' > pr-body.txt
-          ${{ github.event.pull_request.body }}
-          CHANGESAFE_PR_BODY
+        env:
+          CHANGESAFE_PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$CHANGESAFE_PR_BODY" > pr-body.txt
 
       - name: ChangeSafe gate
         uses: wonkwonlee/ChangeSafe@v0.1.0

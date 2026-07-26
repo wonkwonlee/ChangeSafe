@@ -15,24 +15,68 @@ export interface TerraformPolicyDeps {
 
 const DESTRUCTIVE: PlannedChange["action"][] = ["delete", "replace"];
 
+/**
+ * A tag name is operator-supplied and a tag map is plain plan data, so a name
+ * that happens to exist on `Object.prototype` ("constructor") would otherwise
+ * read back an inherited function instead of a tag that was never set.
+ */
+function tag(tags: Record<string, string>, name: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(tags, name) ? tags[name] : undefined;
+}
+
 export function isStateful(change: PlannedChange, pack: ResolvedTerraformPack): boolean {
   const type = change.resourceType.toLowerCase();
   return pack.statefulResourcePatterns.some((pattern) => type.includes(pattern.toLowerCase()));
 }
 
 export function isProtected(change: PlannedChange, pack: ResolvedTerraformPack): boolean {
-  if (change.tags[pack.protectedTag]?.toLowerCase() === "true") return true;
+  if (tag(change.tags, pack.protectedTag)?.toLowerCase() === "true") return true;
   return pack.protectedAddressPatterns.some((pattern) => matchesAddress(change.address, pattern));
 }
 
 function hasBackup(change: PlannedChange, pack: ResolvedTerraformPack): boolean {
-  return change.tags[pack.backupTag]?.toLowerCase() === "true";
+  return tag(change.tags, pack.backupTag)?.toLowerCase() === "true";
 }
 
-/** Glob matching limited to `*`; no regex, so a pack cannot be pathological. */
+/**
+ * Glob matching limited to `*`, matched directly rather than compiled to a
+ * regex.
+ *
+ * Translating each `*` into `.*` looks equivalent and is not: a pattern with
+ * several stars backtracks catastrophically against a long non-matching
+ * address, so a pack of ordinary-looking patterns could hang the gate — and a
+ * gate that never answers is a CI job that never finishes. This scan is
+ * linear in the address per star, with no backtracking to explode.
+ */
 export function matchesAddress(address: string, pattern: string): boolean {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`).test(address);
+  let addressIndex = 0;
+  let patternIndex = 0;
+  // Where to resume if the current star's guess turns out to be too short.
+  let starIndex = -1;
+  let addressAfterStar = 0;
+
+  while (addressIndex < address.length) {
+    if (patternIndex < pattern.length && pattern[patternIndex] === address[addressIndex]) {
+      addressIndex += 1;
+      patternIndex += 1;
+    } else if (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+      starIndex = patternIndex;
+      addressAfterStar = addressIndex;
+      patternIndex += 1;
+    } else if (starIndex >= 0) {
+      // Let the most recent star absorb one more character and retry.
+      patternIndex = starIndex + 1;
+      addressAfterStar += 1;
+      addressIndex = addressAfterStar;
+    } else {
+      return false;
+    }
+  }
+
+  while (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+    patternIndex += 1;
+  }
+  return patternIndex === pattern.length;
 }
 
 /**

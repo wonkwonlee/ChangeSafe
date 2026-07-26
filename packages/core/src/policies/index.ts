@@ -1,4 +1,5 @@
 import type { DomainAdapter, PolicyContext } from "../domain";
+import { isDomainError } from "../errors";
 import { deriveRiskLevel, type PolicyFinding, type RiskLevel } from "../findings";
 import type { ChangeProposal } from "../proposal";
 import { resolvePolicyPack, type PolicyPack } from "../policy-pack";
@@ -23,6 +24,37 @@ export interface PolicyEvaluation {
 export interface EvaluateOptions {
   /** Typed threshold overrides; omitted means ChangeSafe's defaults. */
   policyPack?: PolicyPack | null;
+}
+
+/**
+ * Run one policy such that it fails closed even when it fails *unexpectedly*.
+ *
+ * "All policies fail closed" has to hold for a policy with a bug in it, not
+ * only for a policy that reaches a considered verdict. An escaping throw
+ * would otherwise abandon the whole evaluation: no findings, no risk, no
+ * receipt — a change that was never judged, which is the one outcome the gate
+ * must never produce quietly. A policy that cannot answer is therefore
+ * recorded as BLOCK under its own id, which makes the change unapprovable and
+ * puts the failure on the receipt where someone will see it.
+ *
+ * The message carries no internals: typed domain errors are written for
+ * people, and anything else is reported only as having happened.
+ */
+function evaluateFailClosed(policyId: string, evaluate: () => PolicyFinding): PolicyFinding {
+  try {
+    return evaluate();
+  } catch (error) {
+    const detail = isDomainError(error) ? error.userMessage : "an unexpected internal error";
+    return {
+      policyId,
+      status: "BLOCK",
+      title: "Policy could not be evaluated",
+      explanation: `${policyId} did not reach a verdict (${detail}). An unevaluated policy is treated as blocking: the gate cannot show this change is safe.`,
+      affectedResources: [],
+      remediation:
+        "Report this with the input and proposal that triggered it. Until the policy evaluates, this change cannot be approved through ChangeSafe.",
+    };
+  }
 }
 
 /**
@@ -53,7 +85,7 @@ export function evaluatePolicies<TInput, TState>(
   );
 
   const domainFindings = adapter.policies.map((policy) => {
-    const finding = policy.evaluate(context);
+    const finding = evaluateFailClosed(policy.id, () => policy.evaluate(context));
     if (finding.policyId !== policy.id) {
       // A domain whose declared id and produced id disagree would silently
       // break scenario expectations and receipt comparison.
@@ -74,7 +106,7 @@ export function evaluatePolicies<TInput, TState>(
   const run = (id: string): PolicyFinding[] => {
     if (skipped.has(id)) return [];
     const entry = universal.find(([candidate]) => candidate === id);
-    return entry ? [entry[1]()] : [];
+    return entry ? [evaluateFailClosed(id, entry[1])] : [];
   };
 
   const findings: PolicyFinding[] = [

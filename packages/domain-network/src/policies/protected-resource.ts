@@ -1,4 +1,5 @@
 
+import { own } from "../lookup";
 import { parsePatchPath } from "../paths";
 import type { PolicyFinding } from "@changesafe/core";
 import type { NetworkPolicyContext } from "../adapter";
@@ -16,11 +17,11 @@ export function evaluateProtectedResource(context: NetworkPolicyContext): Policy
     const parsed = parsePatchPath(operation.path);
     if (!parsed) continue; // unparseable paths are PATCH_SCHEMA's finding
 
-    const device = bundle.currentState.devices[parsed.deviceId];
+    const device = own(bundle.currentState.devices, parsed.deviceId);
     if (!device) continue;
 
     if (parsed.family === "route" && operation.op === "remove") {
-      const route = device.routes[parsed.routeId];
+      const route = own(device.routes, parsed.routeId);
       if (route?.protected) {
         violations.push({
           resource: `route:${parsed.deviceId}/${parsed.routeId}`,
