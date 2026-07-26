@@ -9,7 +9,6 @@ import {
   mkdtemp,
   open,
   readFile,
-  rename,
   rm,
   stat,
   unlink,
@@ -32,6 +31,38 @@ import {
 } from "./lib/v0.1.0-release.mjs";
 
 const COMMAND_TIMEOUT_MS = 30_000;
+const PYTHON = "/usr/bin/python3";
+const DARWIN_RENAME_EXCL = `
+import ctypes
+import os
+import sys
+
+AT_FDCWD = -2
+RENAME_EXCL = 0x00000004
+
+try:
+    renameatx_np = ctypes.CDLL(None, use_errno=True).renameatx_np
+except AttributeError:
+    sys.exit(69)
+
+renameatx_np.argtypes = [
+    ctypes.c_int,
+    ctypes.c_char_p,
+    ctypes.c_int,
+    ctypes.c_char_p,
+    ctypes.c_uint,
+]
+renameatx_np.restype = ctypes.c_int
+
+result = renameatx_np(
+    AT_FDCWD,
+    os.fsencode(sys.argv[1]),
+    AT_FDCWD,
+    os.fsencode(sys.argv[2]),
+    RENAME_EXCL,
+)
+sys.exit(0 if result == 0 else 1)
+`;
 const REQUIRED_ENVIRONMENT = [
   "CHANGESAFE_DEMO_SIGNING_KEY",
   "CHANGESAFE_DEMO_PUBLIC_KEY",
@@ -99,6 +130,21 @@ async function pathExists(file) {
       if (error?.code === "ENOENT") return false;
       throw error;
     },
+  );
+}
+
+async function publishDirectoryNoReplace(source, target, { cwd, env }) {
+  requireBuild(process.platform === "darwin", "atomic publication unavailable");
+  const publication = await checked("atomic publication", async () =>
+    runCommand(PYTHON, ["-c", DARWIN_RENAME_EXCL, source, target], {
+      cwd,
+      env,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+    }),
+  );
+  requireBuild(
+    !publication.timedOut && publication.code === 0,
+    "atomic publication",
   );
 }
 
@@ -347,29 +393,35 @@ async function main() {
       }),
     );
 
-    const appearedTarget = await checked("target", async () =>
-      pathExists(finalDirectory),
-    );
-    requireBuild(!appearedTarget, "target exists");
-    await checked("atomic publication", async () =>
-      rename(stagingDirectory, finalDirectory),
-    );
+    await publishDirectoryNoReplace(stagingDirectory, finalDirectory, {
+      cwd: repoRoot,
+      env,
+    });
     published = true;
   } catch (error) {
     failure = error;
   } finally {
+    const cleanupFailures = [];
     if (!published && stagingDirectory !== undefined) {
       try {
         await rm(stagingDirectory, { recursive: true, force: true });
       } catch {
-        failure = new BundleBuildError("staging cleanup");
+        cleanupFailures.push("staging");
       }
     }
     try {
       await lockHandle.close();
+    } catch {
+      cleanupFailures.push("publication lock");
+    }
+    try {
       await unlink(publicationLock);
     } catch {
-      failure ??= new BundleBuildError("publication lock cleanup");
+      cleanupFailures.push("publication lock");
+    }
+    if (cleanupFailures.length > 0) {
+      const checks = [...new Set(cleanupFailures)];
+      failure = new BundleBuildError(`cleanup (${checks.join(", ")})`);
     }
   }
   if (failure) throw failure;

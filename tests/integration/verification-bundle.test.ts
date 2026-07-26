@@ -106,6 +106,7 @@ function initializeGitRepository(root: string): void {
 function createBuilderRepository(options?: {
   fixture?: (fixture: Record<string, unknown>) => void;
   cliHook?: string;
+  atomicRenameHook?: string;
 }): BuilderRepository {
   const root = temporaryDirectory();
   const script = path.join(root, "scripts", "build-v0.1.0-bundle.mjs");
@@ -126,6 +127,36 @@ function createBuilderRepository(options?: {
   const fixture = readJson(path.join(SCENARIO, "replay-fixture.json"));
   options?.fixture?.(fixture);
   writeJson(path.join(scenario, "replay-fixture.json"), fixture);
+
+  if (options?.atomicRenameHook) {
+    const wrapper = path.join(root, "bin", "python3");
+    mkdirSync(path.dirname(wrapper), { recursive: true });
+    writeFileSync(
+      wrapper,
+      `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+
+${options.atomicRenameHook}
+const result = spawnSync("/usr/bin/python3", process.argv.slice(2), {
+  stdio: "inherit",
+});
+process.exitCode = result.status ?? 2;
+`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      script,
+      readFileSync(script, "utf8").replace(
+        'const PYTHON = "/usr/bin/python3";',
+        `const PYTHON = ${JSON.stringify(wrapper)};`,
+      ),
+    );
+  }
 
   if (options?.cliHook) {
     const realCli = path.join(path.dirname(cli), "changesafe-real.js");
@@ -705,6 +736,54 @@ describe("v0.1.0 bundle builder", () => {
     },
   );
 
+  it.each(["directory", "symlink"])(
+    "atomically refuses a target %s injected inside the no-replace publication call",
+    async (kind) => {
+      await buildCliOnce();
+      const parent = temporaryDirectory();
+      const out = path.join(parent, "v0.1.0");
+      const decoy = path.join(parent, "decoy");
+      mkdirSync(decoy);
+      writeFileSync(path.join(decoy, "keep.txt"), "owner data");
+      const injection = kind === "directory"
+        ? `mkdirSync(${JSON.stringify(out)}); writeFileSync(${JSON.stringify(path.join(out, "keep.txt"))}, "owner data");`
+        : `symlinkSync(${JSON.stringify(decoy)}, ${JSON.stringify(out)}, "dir");`;
+      const repository = createBuilderRepository({
+        atomicRenameHook: injection,
+      });
+      const key = generateTemporaryKey();
+
+      expect(() => runBuilder(repository, out, key)).toThrow();
+      expect(readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("owner data");
+      expect(lstatSync(out).isSymbolicLink()).toBe(kind === "symlink");
+      expect(existsSync(`${out}.lock`)).toBe(false);
+    },
+  );
+
+  it("fails closed when the atomic no-replace publication primitive is unavailable", async () => {
+    await buildCliOnce();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    const repository = createBuilderRepository({
+      atomicRenameHook: "process.exit(69);",
+    });
+    const key = generateTemporaryKey();
+
+    const error = (() => {
+      try {
+        runBuilder(repository, out, key);
+      } catch (caught) {
+        return caught as Error & { stderr?: string };
+      }
+      throw new Error("builder unexpectedly succeeded");
+    })();
+
+    expect(error.stderr).toBe("bundle build failed: atomic publication\n");
+    expect(existsSync(out)).toBe(false);
+    expect(existsSync(`${out}.lock`)).toBe(false);
+    expect(existsSync(key.privatePath)).toBe(true);
+    expect(existsSync(key.publicPath)).toBe(true);
+  });
+
   it("publishes the recorded commit bytes even if the source fixture changes mid-build", async () => {
     await buildCliOnce();
     const out = path.join(temporaryDirectory(), "v0.1.0");
@@ -765,11 +844,14 @@ describe("v0.1.0 bundle builder", () => {
       chmodSync(parent, 0o700);
     }
 
-    expect(error.stderr).toBe("bundle build failed: staging cleanup\n");
+    expect(error.stderr).toBe(
+      "bundle build failed: cleanup (staging, publication lock)\n",
+    );
     expect(error.stderr).not.toContain(parent);
     expect(error.stderr).not.toContain(key.privatePath);
     expect(readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("owner data");
     expect(readFileSync(key.privatePath, "utf8")).toBe(privateBefore);
     expect(readFileSync(key.publicPath, "utf8")).toBe(publicBefore);
+    expect(lstatSync(lock).isFile()).toBe(true);
   });
 });
