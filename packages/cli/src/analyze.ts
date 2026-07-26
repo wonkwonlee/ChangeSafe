@@ -31,9 +31,11 @@ export interface AnalyzeCommandOptions {
   receipt?: string;
   signKey?: string;
   receiptId?: string;
+  /** Fixed receipt and signature time for audited snapshot generation. */
+  receiptCreatedAtUtc?: string;
   sourceId?: string;
   format: "pretty" | "json";
-  /** Injectable so tests get deterministic receipts and fixtures. */
+  /** Injectable capture time; never derived from receipt snapshot metadata. */
   now?: string;
 }
 
@@ -113,7 +115,7 @@ export async function runAnalyze(
       mode: "live",
       model: analysis.model,
       note: `proposed live by ${provider.label} · model ${analysis.model}`,
-      now: options.now,
+      now: options.receiptCreatedAtUtc,
     },
     console,
   );

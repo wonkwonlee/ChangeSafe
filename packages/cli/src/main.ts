@@ -205,7 +205,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           receipt: values.receipt,
           signKey: values["sign-key"],
           receiptId: values["receipt-id"],
-          now: values["created-at"],
+          receiptCreatedAtUtc: values["created-at"],
           sourceId: values["source-id"],
           format,
         },
