@@ -7,6 +7,8 @@ import {
 } from "@changesafe/core";
 import { z } from "zod";
 
+import { own } from "./lookup";
+
 /**
  * The network domain's declarative model: what an incident looks like, what
  * state the gate reasons about, and which operation values are legal.
@@ -230,7 +232,7 @@ export const IncidentBundleSchema = z
           });
         } else if (
           deviceIds.has(end.nodeId) &&
-          !bundle.currentState.devices[end.nodeId]?.interfaces[end.interfaceId]
+          !own(own(bundle.currentState.devices, end.nodeId)?.interfaces ?? {}, end.interfaceId)
         ) {
           ctx.addIssue({
             code: "custom",
@@ -291,7 +293,7 @@ export const IncidentBundleSchema = z
     bundle.expectedSafetyProperties.forEach((property, index) => {
       const check = property.check;
       if (check.type === "route-exists") {
-        if (!bundle.currentState.devices[check.nodeId]?.routes[check.routeId]) {
+        if (!own(own(bundle.currentState.devices, check.nodeId)?.routes ?? {}, check.routeId)) {
           ctx.addIssue({
             code: "custom",
             path: ["expectedSafetyProperties", index],
@@ -300,7 +302,9 @@ export const IncidentBundleSchema = z
         }
       }
       if (check.type === "interface-enabled") {
-        if (!bundle.currentState.devices[check.nodeId]?.interfaces[check.interfaceId]) {
+        if (
+          !own(own(bundle.currentState.devices, check.nodeId)?.interfaces ?? {}, check.interfaceId)
+        ) {
           ctx.addIssue({
             code: "custom",
             path: ["expectedSafetyProperties", index],

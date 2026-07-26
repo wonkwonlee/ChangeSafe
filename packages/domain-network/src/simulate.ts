@@ -5,6 +5,7 @@ import {
 } from "@changesafe/core";
 import type { CurrentState, IncidentBundle, SafetyProperty } from "./schemas";
 import { applyOperations } from "./apply";
+import { own } from "./lookup";
 import { parsePatchPath } from "./paths";
 import { checkReachability } from "./reachability";
 
@@ -79,7 +80,7 @@ function evaluateSafetyProperty(
     }
 
     case "route-exists": {
-      const exists = Boolean(patched.devices[check.nodeId]?.routes[check.routeId]);
+      const exists = Boolean(own(own(patched.devices, check.nodeId)?.routes ?? {}, check.routeId));
       return {
         propertyId: property.id,
         satisfied: exists,
@@ -91,7 +92,7 @@ function evaluateSafetyProperty(
 
     case "interface-enabled": {
       const enabled = Boolean(
-        patched.devices[check.nodeId]?.interfaces[check.interfaceId]?.enabled,
+        own(own(patched.devices, check.nodeId)?.interfaces ?? {}, check.interfaceId)?.enabled,
       );
       return {
         propertyId: property.id,
@@ -106,13 +107,16 @@ function evaluateSafetyProperty(
       const violations: string[] = [];
       for (const [deviceId, device] of Object.entries(bundle.currentState.devices)) {
         for (const [routeId, route] of Object.entries(device.routes)) {
-          if (route.protected && !patched.devices[deviceId]?.routes[routeId]) {
+          if (route.protected && !own(own(patched.devices, deviceId)?.routes ?? {}, routeId)) {
             violations.push(`route ${deviceId}/${routeId} removed`);
           }
         }
         if (device.protected) {
           for (const [interfaceId, iface] of Object.entries(device.interfaces)) {
-            if (iface.enabled && patched.devices[deviceId]?.interfaces[interfaceId]?.enabled === false) {
+            if (
+              iface.enabled &&
+              own(own(patched.devices, deviceId)?.interfaces ?? {}, interfaceId)?.enabled === false
+            ) {
               violations.push(`interface ${deviceId}/${interfaceId} disabled`);
             }
           }
