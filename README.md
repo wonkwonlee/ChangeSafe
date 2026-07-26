@@ -182,6 +182,22 @@ to `live available` and names the configured model. Model calls run **only**
 server-side; the key never reaches the browser, and a failed live call offers
 an explicit switch to replay — never a silent substitution.
 
+### Exposing live mode publicly
+
+`POST /api/analyze` is unauthenticated by design — the demo promises no
+signup — so on a deployment with a key configured, a live call spends your
+credit for whoever asks. Live calls are therefore capped per client
+(`CHANGESAFE_LIVE_RATE_LIMIT`, default 10 per hour; `0` disables it,
+`CHANGESAFE_LIVE_RATE_WINDOW_SECONDS` retunes it). Replay is never capped: it
+costs nothing and the demo's promise depends on it.
+
+The cap is a speed bump, not a defense. It counts in one process's memory, so
+a serverless deployment holds a counter per instance, and it identifies
+callers by a forwarded header that only a trusted proxy makes trustworthy. If
+you expose live mode to the internet, put authentication or a proxy in front
+of it — the cap turns "a loop empties the account" into "a loop is noticed",
+and nothing more.
+
 All three adapters are plain `fetch` — no vendor SDKs, so the CLI stays
 dependency-free and every adapter is testable without a network or a
 credential. One Zod schema derives all three wire schemas, and every

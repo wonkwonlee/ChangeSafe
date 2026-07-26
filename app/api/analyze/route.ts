@@ -7,17 +7,23 @@ import {
 import { isDomainError } from "@changesafe/core";
 import { analyzeLive, isLiveConfigured } from "@/lib/ai/live";
 import { analyzeReplay } from "@/lib/ai/replay";
+import { clientKey, liveRateLimiter, livePolicyFromEnv } from "@/lib/rate-limit";
 import { getScenario } from "@/scenarios";
 
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 4096; // { scenarioId, mode } — anything bigger is not our client
 
-function errorResponse(status: number, code: ApiErrorCode, message: string): Response {
+function errorResponse(
+  status: number,
+  code: ApiErrorCode,
+  message: string,
+  headers?: Record<string, string>,
+): Response {
   const body: AnalyzeError = {
     error: { code, message, replayAvailable: true },
   };
-  return Response.json(body, { status });
+  return Response.json(body, { status, ...(headers ? { headers } : {}) });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -54,6 +60,23 @@ export async function POST(request: Request): Promise<Response> {
           503,
           "AI_UNAVAILABLE",
           "Live mode is not configured on this server. Switch to replay mode.",
+        );
+      }
+
+      // Only live calls are capped. Replay costs nothing and stays open —
+      // limiting it would break the demo's promise to protect a budget it
+      // never touches.
+      const verdict = liveRateLimiter.check(
+        clientKey(request.headers),
+        livePolicyFromEnv(),
+        Date.now(),
+      );
+      if (!verdict.allowed) {
+        return errorResponse(
+          429,
+          "RATE_LIMITED",
+          "Too many live analyses from this client. Replay mode is unlimited and runs the identical pipeline.",
+          { "retry-after": String(verdict.retryAfterSeconds) },
         );
       }
       const { proposal, model, provider } = await analyzeLive(scenario.bundle);

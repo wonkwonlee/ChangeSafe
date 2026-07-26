@@ -3,21 +3,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/analyze/route";
 import { GET } from "@/app/api/status/route";
 import { AnalyzeErrorSchema, AnalyzeSuccessSchema, StatusResponseSchema } from "@/lib/domain/api";
+import { liveRateLimiter } from "@/lib/rate-limit";
 import { getScenario } from "@/scenarios";
 
 const capturedScenarioA = getScenario("scenario-a-failover");
 if (!capturedScenarioA) throw new Error("scenario-a-failover missing");
 
-function analyzeRequest(body: unknown): Request {
+function analyzeRequest(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/analyze", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  liveRateLimiter.reset();
 });
 
 describe("POST /api/analyze in replay mode (no API key required)", () => {
@@ -62,6 +64,78 @@ describe("POST /api/analyze live mode configuration errors", () => {
     expect(payload.error.code).toBe("AI_UNAVAILABLE");
     expect(payload.error.replayAvailable).toBe(true);
     expect(payload.error.message).not.toMatch(/sk-|api[_-]?key|bearer/i);
+  });
+});
+
+describe("POST /api/analyze live-call rate limiting", () => {
+  const CLIENT = "203.0.113.5";
+  const POLICY = { limit: 2, windowSeconds: 3600 };
+
+  /**
+   * The window is consumed directly rather than by issuing live calls: the
+   * point is that the route refuses before reaching a provider, and a test
+   * that got there would need a network and a credential to prove it.
+   */
+  function exhaustWindow() {
+    for (let call = 0; call < POLICY.limit; call += 1) {
+      liveRateLimiter.check(CLIENT, POLICY, Date.now());
+    }
+  }
+
+  it("refuses a live call over the limit without calling a model", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-never-used-because-the-cap-answers-first");
+    vi.stubEnv("CHANGESAFE_LIVE_RATE_LIMIT", String(POLICY.limit));
+    vi.stubEnv("CHANGESAFE_LIVE_RATE_WINDOW_SECONDS", String(POLICY.windowSeconds));
+    exhaustWindow();
+
+    const response = await POST(
+      analyzeRequest(
+        { scenarioId: "scenario-a-failover", mode: "live" },
+        { "x-forwarded-for": CLIENT },
+      ),
+    );
+
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    const payload = AnalyzeErrorSchema.parse(await response.json());
+    expect(payload.error.code).toBe("RATE_LIMITED");
+    // The refusal points at the path that always works and costs nothing.
+    expect(payload.error.replayAvailable).toBe(true);
+    expect(payload.error.message).toMatch(/replay/i);
+    expect(payload.error.message).not.toMatch(/sk-|api[_-]?key|bearer/i);
+  });
+
+  it("never limits replay, whatever the live window says", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("CHANGESAFE_LIVE_RATE_LIMIT", String(POLICY.limit));
+    exhaustWindow();
+
+    // Replay spends nothing, and the demo promises it always works.
+    for (let call = 0; call < POLICY.limit + 3; call += 1) {
+      const response = await POST(
+        analyzeRequest(
+          { scenarioId: "scenario-a-failover", mode: "replay" },
+          { "x-forwarded-for": CLIENT },
+        ),
+      );
+      expect(response.status, `replay call ${call}`).toBe(200);
+    }
+  });
+
+  it("does not let one client's spending refuse another's first call", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("CHANGESAFE_LIVE_RATE_LIMIT", String(POLICY.limit));
+    exhaustWindow();
+
+    // A different client reaches the live path proper, which without a
+    // credential answers 503 rather than 429.
+    const response = await POST(
+      analyzeRequest(
+        { scenarioId: "scenario-a-failover", mode: "live" },
+        { "x-forwarded-for": "198.51.100.9" },
+      ),
+    );
+    expect(response.status).toBe(503);
   });
 });
 

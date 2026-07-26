@@ -34,6 +34,7 @@ export const ApiErrorCodeSchema = z.enum([
   "REQUEST_INVALID",
   "SCENARIO_UNKNOWN",
   "AI_UNAVAILABLE",
+  "RATE_LIMITED",
   "AI_CALL_FAILED",
   "AI_INVALID_OUTPUT",
   "INTERNAL",
