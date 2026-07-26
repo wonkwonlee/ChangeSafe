@@ -43,6 +43,8 @@ GATE OPTIONS
   --policy-pack <file>  typed threshold overrides
   --receipt <file>      write a hashed receipt of this evaluation
   --sign-key <file>     private-key PEM; signs the receipt it writes
+  --receipt-id <id>     fix receipt identity for audited snapshot generation
+  --created-at <UTC>    fix receipt and signature time for audited snapshots
   --source-id <id>      what to record as the input's origin
   --format pretty|json  output format (default: pretty)
 
@@ -119,6 +121,8 @@ const OPTION_SPEC = {
   capture: { type: "string" },
   runs: { type: "string", default: "1" },
   "sign-key": { type: "string" },
+  "receipt-id": { type: "string" },
+  "created-at": { type: "string" },
   "public-key": { type: "string" },
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
@@ -178,6 +182,8 @@ export async function main(argv: string[], console: Console): Promise<number> {
           policyPack: values["policy-pack"],
           receipt: values.receipt,
           signKey: values["sign-key"],
+          receiptId: values["receipt-id"],
+          now: values["created-at"],
           sourceId: values["source-id"],
           context: values.context,
           format,

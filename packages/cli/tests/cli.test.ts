@@ -514,6 +514,29 @@ describe("signed receipts", () => {
     return receiptPath;
   }
 
+  it("reproduces a signed envelope when receipt identity and time are fixed", async () => {
+    const dir = temporaryDir();
+    const key = await keys(dir);
+    const args = [
+      "gate",
+      "--scenario",
+      SAFE,
+      "--sign-key",
+      key.privatePath,
+      "--receipt-id",
+      "rcpt-v0-1-0-demo",
+      "--created-at",
+      "2026-07-26T12:00:00.000Z",
+    ];
+    const first = path.join(dir, "first.json");
+    const second = path.join(dir, "second.json");
+
+    await main([...args, "--receipt", first], createCapture());
+    await main([...args, "--receipt", second], createCapture());
+
+    expect(readFileSync(first, "utf8")).toBe(readFileSync(second, "utf8"));
+  });
+
   it("writes an envelope whose receipt is unchanged by signing", async () => {
     const dir = temporaryDir();
     const key = await keys(dir);
