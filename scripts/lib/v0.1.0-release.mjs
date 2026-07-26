@@ -26,10 +26,33 @@ export const PROTECTED_FILES = [
   "fingerprint.txt",
 ];
 
-const CLI_RELATIVE_PATH = "packages/cli/dist/changesafe.js";
-const MANIFEST_FILE = "provenance.json";
+export const CLI_RELATIVE_PATH = "packages/cli/dist/changesafe.js";
+export const MANIFEST_FILE = "provenance.json";
 const COMMAND_TIMEOUT_MS = 30_000;
 const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const CapturedFixtureMetadataSchema = z.looseObject({
+  fixtureId: z.string().min(2).max(64),
+  scenarioId: z.literal(SOURCE_ID),
+  provenance: z.literal("captured"),
+  model: z.string().min(1).max(64),
+  capturedAtUtc: z.iso.datetime({ offset: true }),
+});
+
+export const SignedReceiptMetadataSchema = z.looseObject({
+  receipt: z.looseObject({
+    receiptId: z.literal(RECEIPT_ID),
+    sourceId: z.literal(SOURCE_ID),
+    createdAtUtc: z.iso.datetime({ offset: true }),
+    appVersion: z.literal("changesafe-cli-0.1.0"),
+    policyVersion: z.string().min(1).max(32),
+    fixtureProvenance: z.literal("captured"),
+  }),
+  signature: z.looseObject({
+    publicKeyId: z.string().regex(/^[a-f0-9]{32}$/),
+    signedAtUtc: z.iso.datetime({ offset: true }),
+  }),
+});
 
 export const VerificationManifestSchema = z.strictObject({
   bundleVersion: z.literal(VERSION),
@@ -119,6 +142,47 @@ export function canonicalJson(value) {
 
 export function sha256Text(text) {
   return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+export async function createVerificationManifest({
+  bundleDir,
+  sourceCommit,
+  fixture,
+  signedReceipt,
+  publicKeyId,
+}) {
+  const captured = CapturedFixtureMetadataSchema.parse(fixture);
+  const signed = SignedReceiptMetadataSchema.parse(signedReceipt);
+  const files = Object.fromEntries(
+    await Promise.all(
+      PROTECTED_FILES.map(async (name) => [
+        name,
+        await sha256File(path.join(bundleDir, name)),
+      ]),
+    ),
+  );
+  const unsignedManifest = {
+    bundleVersion: VERSION,
+    schemaVersion: 1,
+    sourceCommit,
+    receiptCreatedAtUtc: signed.receipt.createdAtUtc,
+    scenarioId: SOURCE_ID,
+    fixtureId: captured.fixtureId,
+    fixtureProvenance: captured.provenance,
+    // Scenario A's captured fixture predates a provider field. Its capture
+    // record is OpenAI-specific, while the model identifier remains fixture-owned.
+    provider: "openai",
+    model: captured.model,
+    appVersion: signed.receipt.appVersion,
+    policyVersion: signed.receipt.policyVersion,
+    publicKeyId,
+    verificationCommand: VERIFY_COMMAND,
+    files,
+  };
+  return VerificationManifestSchema.parse({
+    ...unsignedManifest,
+    manifestSha256: sha256Text(canonicalJson(unsignedManifest)),
+  });
 }
 
 async function checked(check, operation) {

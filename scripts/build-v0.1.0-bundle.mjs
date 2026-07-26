@@ -1,0 +1,347 @@
+#!/usr/bin/env node
+
+import { parseArgs } from "node:util";
+import { createPublicKey } from "node:crypto";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { z } from "zod";
+
+import {
+  CLI_RELATIVE_PATH,
+  CapturedFixtureMetadataSchema,
+  RECEIPT_ID,
+  SOURCE_ID,
+  createVerificationManifest,
+  publicKeyIdFromPem,
+  runCommand,
+  verifyBundle,
+} from "./lib/v0.1.0-release.mjs";
+
+const COMMAND_TIMEOUT_MS = 30_000;
+const REQUIRED_ENVIRONMENT = [
+  "CHANGESAFE_DEMO_SIGNING_KEY",
+  "CHANGESAFE_DEMO_PUBLIC_KEY",
+  "CHANGESAFE_DEMO_CREATED_AT",
+];
+const README = (publicKeyId) => `# ChangeSafe v0.1.0 verification snapshot
+
+This directory freezes a fictional incident input, a captured model proposal,
+the deterministic gate result, and an Ed25519 signature. Verification proves
+that these files agree and that the receipt was signed by the key whose
+fingerprint is shown below. A public key stored beside a signature is not, by
+itself, external proof of the publisher's identity; compare this fingerprint
+with the v0.1.0 release notes or presentation material.
+
+Fingerprint: \`${publicKeyId}\`
+
+Run from the repository root:
+
+\`\`\`bash
+npm ci
+npm run verify:v0.1.0
+\`\`\`
+
+The private key is intentionally absent. Public users reproduce the gate
+payload and verify the frozen signature; they do not re-sign the snapshot.
+`;
+
+class BundleBuildError extends Error {
+  constructor(check) {
+    super(`bundle build failed: ${check}`);
+    this.name = "BundleBuildError";
+  }
+}
+
+function requireBuild(condition, check) {
+  if (!condition) throw new BundleBuildError(check);
+}
+
+async function checked(check, operation) {
+  try {
+    return await operation();
+  } catch {
+    throw new BundleBuildError(check);
+  }
+}
+
+function subprocessEnvironment() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) =>
+        !REQUIRED_ENVIRONMENT.includes(name) &&
+        !/(?:API_KEY|TOKEN|SECRET)$/i.test(name),
+    ),
+  );
+}
+
+async function readJson(file, check) {
+  return checked(check, async () => JSON.parse(await readFile(file, "utf8")));
+}
+
+async function main() {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const cli = path.join(repoRoot, CLI_RELATIVE_PATH);
+  const scenario = path.join(repoRoot, "scenarios", SOURCE_ID);
+  const sourceInput = path.join(scenario, "incident.json");
+  const sourceFixture = path.join(scenario, "replay-fixture.json");
+
+  const parsed = checked("arguments", async () =>
+    parseArgs({
+      args: process.argv.slice(2),
+      options: { out: { type: "string" } },
+      strict: true,
+      allowPositionals: false,
+    }),
+  );
+  const { values } = await parsed;
+  const finalDirectory = path.resolve(
+    repoRoot,
+    values.out ?? path.join("verification", "v0.1.0"),
+  );
+
+  const environment = Object.fromEntries(
+    REQUIRED_ENVIRONMENT.map((name) => {
+      const value = process.env[name];
+      requireBuild(typeof value === "string" && value.length > 0, "environment");
+      return [name, value];
+    }),
+  );
+  const signingKey = path.resolve(environment.CHANGESAFE_DEMO_SIGNING_KEY);
+  const publicKey = path.resolve(environment.CHANGESAFE_DEMO_PUBLIC_KEY);
+  const createdAt = await checked("created time", async () =>
+    z.iso.datetime({ offset: true }).parse(
+      process.env.CHANGESAFE_DEMO_CREATED_AT,
+    ),
+  );
+
+  requireBuild(Number(process.versions.node.split(".")[0]) === 22, "Node version");
+
+  const env = subprocessEnvironment();
+  const npmVersion = await checked("npm version", async () =>
+    runCommand("npm", ["--version"], {
+      cwd: repoRoot,
+      env,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+    }),
+  );
+  requireBuild(
+    !npmVersion.timedOut &&
+      npmVersion.code === 0 &&
+      npmVersion.stdout.trim() === "10.9.8",
+    "npm version",
+  );
+
+  const existingTarget = await stat(finalDirectory).then(
+    () => true,
+    (error) => {
+      if (error?.code === "ENOENT") return false;
+      throw new BundleBuildError("target");
+    },
+  );
+  requireBuild(!existingTarget, "target exists");
+
+  const worktree = await checked("source worktree", async () =>
+    runCommand("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+      cwd: repoRoot,
+      env,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+    }),
+  );
+  requireBuild(
+    !worktree.timedOut && worktree.code === 0 && worktree.stdout === "",
+    "source worktree",
+  );
+
+  const sourceCommitCommand = await checked("source commit", async () =>
+    runCommand("git", ["rev-parse", "HEAD"], {
+      cwd: repoRoot,
+      env,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+    }),
+  );
+  const sourceCommit = sourceCommitCommand.stdout.trim();
+  requireBuild(
+    !sourceCommitCommand.timedOut &&
+      sourceCommitCommand.code === 0 &&
+      /^[a-f0-9]{40}$/.test(sourceCommit),
+    "source commit",
+  );
+
+  const signingKeyStat = await checked("signing key permissions", async () =>
+    stat(signingKey),
+  );
+  requireBuild(
+    signingKeyStat.isFile() && (signingKeyStat.mode & 0o077) === 0,
+    "signing key permissions",
+  );
+
+  const [privatePem, publicPem] = await checked("signing key pair", async () =>
+    Promise.all([readFile(signingKey, "utf8"), readFile(publicKey, "utf8")]),
+  );
+  requireBuild(
+    publicPem.includes("-----BEGIN PUBLIC KEY-----") &&
+      !publicPem.includes("PRIVATE KEY"),
+    "signing key pair",
+  );
+  const privatePublicId = await checked("signing key pair", async () =>
+    publicKeyIdFromPem(
+      createPublicKey(privatePem).export({ type: "spki", format: "pem" }),
+    ),
+  );
+  const suppliedPublicId = await checked("signing key pair", async () =>
+    publicKeyIdFromPem(publicPem),
+  );
+  requireBuild(privatePublicId === suppliedPublicId, "signing key pair");
+
+  const preflight = await checked("scenario preflight", async () =>
+    runCommand(
+      process.execPath,
+      [
+        cli,
+        "gate",
+        "--domain", "network",
+        "--input", sourceInput,
+        "--proposal", sourceFixture,
+        "--source-id", SOURCE_ID,
+        "--format", "json",
+      ],
+      { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },
+    ),
+  );
+  requireBuild(
+    !preflight.timedOut && preflight.code === 0,
+    "scenario preflight",
+  );
+
+  const fixture = await readJson(sourceFixture, "captured fixture");
+  await checked("captured fixture", async () =>
+    CapturedFixtureMetadataSchema.parse(fixture),
+  );
+
+  const parentDirectory = path.dirname(finalDirectory);
+  await checked("staging", async () => mkdir(parentDirectory, { recursive: true }));
+  const stagingDirectory = await checked("staging", async () =>
+    mkdtemp(path.join(parentDirectory, `.${path.basename(finalDirectory)}.tmp-`)),
+  );
+  let published = false;
+
+  try {
+    const stagedInput = path.join(stagingDirectory, "input.json");
+    const stagedFixture = path.join(stagingDirectory, "replay-fixture.json");
+    const stagedPublicKey = path.join(stagingDirectory, "demo.pub.pem");
+    const stagedReceipt = path.join(stagingDirectory, "receipt.signed.json");
+
+    await checked("staging files", async () =>
+      Promise.all([
+        copyFile(sourceInput, stagedInput),
+        copyFile(sourceFixture, stagedFixture),
+        copyFile(publicKey, stagedPublicKey),
+      ]),
+    );
+
+    const gate = await checked("signed receipt", async () =>
+      runCommand(
+        process.execPath,
+        [
+          cli,
+          "gate",
+          "--domain", "network",
+          "--input", stagedInput,
+          "--proposal", stagedFixture,
+          "--source-id", SOURCE_ID,
+          "--receipt", stagedReceipt,
+          "--sign-key", signingKey,
+          "--receipt-id", RECEIPT_ID,
+          "--created-at", createdAt,
+          "--format", "json",
+        ],
+        { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },
+      ),
+    );
+    requireBuild(
+      !gate.timedOut && gate.code === 0,
+      "signed receipt",
+    );
+
+    const signedReceipt = await readJson(stagedReceipt, "signed receipt");
+    requireBuild(
+      signedReceipt?.signature?.publicKeyId === suppliedPublicId,
+      "signed receipt key",
+    );
+
+    await checked("public metadata", async () =>
+      Promise.all([
+        writeFile(
+          path.join(stagingDirectory, "fingerprint.txt"),
+          `${suppliedPublicId}\n`,
+        ),
+        writeFile(
+          path.join(stagingDirectory, "README.md"),
+          README(suppliedPublicId),
+        ),
+      ]),
+    );
+
+    const manifest = await checked("provenance manifest", async () =>
+      createVerificationManifest({
+        bundleDir: stagingDirectory,
+        sourceCommit,
+        fixture,
+        signedReceipt,
+        publicKeyId: suppliedPublicId,
+      }),
+    );
+    await checked("provenance manifest", async () =>
+      writeFile(
+        path.join(stagingDirectory, "provenance.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+      ),
+    );
+
+    await checked("bundle verification", async () =>
+      verifyBundle({
+        repoRoot,
+        bundleDir: stagingDirectory,
+        compareTag: false,
+      }),
+    );
+
+    const appearedTarget = await stat(finalDirectory).then(
+      () => true,
+      (error) => {
+        if (error?.code === "ENOENT") return false;
+        throw new BundleBuildError("target");
+      },
+    );
+    requireBuild(!appearedTarget, "target exists");
+    await checked("atomic publication", async () =>
+      rename(stagingDirectory, finalDirectory),
+    );
+    published = true;
+  } finally {
+    if (!published) {
+      await rm(stagingDirectory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  process.stdout.write("bundle built and verified\n");
+}
+
+main().catch((error) => {
+  const message = error instanceof BundleBuildError
+    ? error.message
+    : "bundle build failed";
+  process.stderr.write(`${message}\n`);
+  process.exitCode = 1;
+});

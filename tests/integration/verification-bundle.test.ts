@@ -2,11 +2,14 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  chmodSync,
   cpSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -39,6 +42,16 @@ interface TemporaryBundle {
   privateKey: string;
 }
 
+interface TemporaryKey {
+  privatePath: string;
+  publicPath: string;
+}
+
+interface BuilderRepository {
+  root: string;
+  script: string;
+}
+
 function temporaryDirectory(): string {
   const directory = mkdtempSync(path.join(os.tmpdir(), "changesafe-v0.1.0-"));
   temporaryDirectories.push(directory);
@@ -60,6 +73,80 @@ function runCli(args: string[]): string {
     cwd: ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function generateTemporaryKey(): TemporaryKey {
+  const root = temporaryDirectory();
+  const keyBase = path.join(root, "demo");
+  const keygen = JSON.parse(
+    runCli(["keygen", "--out", keyBase, "--format", "json"]),
+  ) as {
+    privateKey: string;
+    publicKey: string;
+  };
+  return {
+    privatePath: path.resolve(keygen.privateKey),
+    publicPath: path.resolve(keygen.publicKey),
+  };
+}
+
+function initializeGitRepository(root: string): void {
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
+  execFileSync("git", ["config", "user.name", "ChangeSafe Test"], { cwd: root });
+  execFileSync("git", ["config", "user.email", "test@changesafe.invalid"], {
+    cwd: root,
+  });
+  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: root });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "--quiet", "-m", "builder fixture"], { cwd: root });
+}
+
+function createBuilderRepository(options?: {
+  fixture?: (fixture: Record<string, unknown>) => void;
+}): BuilderRepository {
+  const root = temporaryDirectory();
+  const script = path.join(root, "scripts", "build-v0.1.0-bundle.mjs");
+  const releaseLibrary = path.join(root, "scripts", "lib", "v0.1.0-release.mjs");
+  const cli = path.join(root, "packages", "cli", "dist", "changesafe.js");
+  const scenario = path.join(root, "scenarios", "scenario-a-failover");
+
+  mkdirSync(path.dirname(releaseLibrary), { recursive: true });
+  mkdirSync(path.dirname(cli), { recursive: true });
+  mkdirSync(scenario, { recursive: true });
+  copyFileSync(path.join(ROOT, "scripts", "build-v0.1.0-bundle.mjs"), script);
+  copyFileSync(path.join(ROOT, "scripts", "lib", "v0.1.0-release.mjs"), releaseLibrary);
+  copyFileSync(CLI, cli);
+  copyFileSync(path.join(ROOT, "package.json"), path.join(root, "package.json"));
+  copyFileSync(path.join(ROOT, "README.md"), path.join(root, "README.md"));
+  copyFileSync(path.join(SCENARIO, "incident.json"), path.join(scenario, "incident.json"));
+
+  const fixture = readJson(path.join(SCENARIO, "replay-fixture.json"));
+  options?.fixture?.(fixture);
+  writeJson(path.join(scenario, "replay-fixture.json"), fixture);
+
+  symlinkSync(path.join(ROOT, "node_modules"), path.join(root, "node_modules"), "dir");
+  initializeGitRepository(root);
+  return { root, script };
+}
+
+function runBuilder(
+  repository: BuilderRepository,
+  out: string,
+  key: TemporaryKey,
+  envOverrides: Record<string, string | undefined> = {},
+): string {
+  return execFileSync(process.execPath, [repository.script, "--out", out], {
+    cwd: repository.root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      CHANGESAFE_DEMO_SIGNING_KEY: key.privatePath,
+      CHANGESAFE_DEMO_PUBLIC_KEY: key.publicPath,
+      CHANGESAFE_DEMO_CREATED_AT: CREATED_AT,
+      ...envOverrides,
+    },
   });
 }
 
@@ -413,5 +500,151 @@ describe("v0.1.0 public verification bundle", () => {
     expect(sha256Text("ChangeSafe")).toBe(
       "60f391e27ed97ae698df8f0f027f20c8108325e5cb4031495d964b72243569f9",
     );
+  });
+});
+
+describe("v0.1.0 bundle builder", () => {
+  it("builds and immediately verifies a bundle with out-of-band key paths", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+
+    const result = runBuilder(repository, out, key);
+
+    expect(result).toContain("bundle built and verified");
+    expect(readdirSync(out).sort()).toEqual([
+      "README.md",
+      "demo.pub.pem",
+      "fingerprint.txt",
+      "input.json",
+      "provenance.json",
+      "receipt.signed.json",
+      "replay-fixture.json",
+    ]);
+
+    const privateKey = readFileSync(key.privatePath, "utf8");
+    for (const name of readdirSync(out)) {
+      const published = readFileSync(path.join(out, name), "utf8");
+      expect(published).not.toContain(privateKey);
+      expect(published).not.toContain(key.privatePath);
+    }
+  });
+
+  it("refuses to overwrite any existing bundle", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = temporaryDirectory();
+    writeFileSync(path.join(out, "keep.txt"), "owner data");
+
+    expect(() => runBuilder(repository, out, key)).toThrow();
+    expect(readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("owner data");
+  });
+
+  it.each([
+    "CHANGESAFE_DEMO_SIGNING_KEY",
+    "CHANGESAFE_DEMO_PUBLIC_KEY",
+    "CHANGESAFE_DEMO_CREATED_AT",
+  ])("rejects a missing %s before publishing the bundle", async (missing) => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+
+    expect(() => runBuilder(repository, out, key, { [missing]: "" })).toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("rejects a dirty source worktree before publishing the bundle", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    appendFileSync(path.join(repository.root, "README.md"), "\ndirty\n");
+
+    expect(() => runBuilder(repository, out, key)).toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("rejects a public/private key mismatch before publishing the bundle", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const signingKey = generateTemporaryKey();
+    const otherKey = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+
+    expect(() =>
+      runBuilder(repository, out, {
+        privatePath: signingKey.privatePath,
+        publicPath: otherKey.publicPath,
+      }),
+    ).toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("rejects a private PEM supplied as the public key before publishing", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+
+    expect(() =>
+      runBuilder(repository, out, {
+        privatePath: key.privatePath,
+        publicPath: key.privatePath,
+      }),
+    ).toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("rejects a private key mode broader than 0600 before publishing the bundle", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    chmodSync(key.privatePath, 0o640);
+
+    expect(() => runBuilder(repository, out, key)).toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("redacts private-key values and paths from builder failures", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository();
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+    const secret = "SECRET_PRIVATE_KEY_MATERIAL";
+    writeFileSync(key.privatePath, secret, { mode: 0o600 });
+
+    const error = (() => {
+      try {
+        runBuilder(repository, out, key);
+      } catch (caught) {
+        return caught as Error & { stderr?: string };
+      }
+      throw new Error("builder unexpectedly succeeded");
+    })();
+
+    expect(error.stderr).toBe("bundle build failed: signing key pair\n");
+    expect(error.message).not.toContain(secret);
+    expect(error.message).not.toContain(key.privatePath);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("rejects a non-captured fixture before publishing the bundle", async () => {
+    await buildCliOnce();
+    const repository = createBuilderRepository({
+      fixture(fixture) {
+        fixture.provenance = "authored";
+        fixture.model = null;
+        fixture.capturedAtUtc = null;
+      },
+    });
+    const key = generateTemporaryKey();
+    const out = path.join(temporaryDirectory(), "v0.1.0");
+
+    expect(() => runBuilder(repository, out, key)).toThrow();
+    expect(existsSync(out)).toBe(false);
   });
 });
