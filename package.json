@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "build:cli": "npm run build -w changesafe",
+    "verify:v0.1.0": "npm run build:cli --silent && node scripts/verify-v0.1.0.mjs",
     "changesafe": "node packages/cli/dist/changesafe.js"
   },
   "dependencies": {
