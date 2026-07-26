@@ -1,0 +1,85 @@
+{
+  "fixtureId": "fix-a-failover-captured",
+  "scenarioId": "scenario-a-failover",
+  "provenance": "captured",
+  "model": "gpt-5.6-terra",
+  "capturedAtUtc": "2026-07-25T10:04:59.625Z",
+  "notes": "Captured from a real GPT-5.6 Responses API call via the opt-in live smoke test (CHANGESAFE_LIVE_SMOKE=1 CHANGESAFE_CAPTURE_FIXTURE=1 npm test) and reviewed before being promoted to the bundled replay fixture. This is genuine model output, not authored.",
+  "proposal": {
+    "proposalId": "prefer-backup-uplink",
+    "summary": "Propose changing the active-uplink preference on edge-rtr-01 from wan-primary to wan-backup to steer uplink selection away from the degraded primary path while retaining both default routes and the protected management route.",
+    "diagnosis": {
+      "likelyCause": "The primary WAN uplink is likely causing the observed external packet loss: wan-primary reports a 12.5% CRC error rate and degraded status, while the alert associates 8% end-to-end packet loss with the primary uplink path. The backup uplink is reported up with a 0.1% error rate and low utilization.",
+      "confidence": 0.92,
+      "evidenceIds": [
+        "ev-alert-crc",
+        "ev-alert-loss",
+        "ev-alert-backup-ok",
+        "ev-note-oncall"
+      ],
+      "assumptions": [
+        "The active-uplink preference controls egress uplink selection on edge-rtr-01 without removing either default route; the available evidence does not explicitly define this preference's routing semantics.",
+        "Changing active-uplink to wan-backup does not affect the management subnet route, which is a separate protected connected route.",
+        "No instruction-like content requiring operational action was present in the untrusted incident data; operator notes were treated only as observational evidence."
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routing/preferences/active-uplink",
+        "value": "wan-backup",
+        "reason": "Prefer the healthy backup uplink over wan-primary, whose CRC error rate and associated packet loss indicate primary-path degradation. This preserves rt-default-primary for fail-back and does not alter the protected management route.",
+        "evidenceIds": [
+          "ev-alert-crc",
+          "ev-alert-loss",
+          "ev-alert-backup-ok",
+          "ev-note-oncall"
+        ]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/devices/edge-rtr-01/routing/preferences/active-uplink",
+        "value": "wan-primary",
+        "reason": "Restore the pre-change active-uplink preference value.",
+        "evidenceIds": [
+          "ev-alert-crc"
+        ]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm edge-rtr-01 management reachability from mgmt-01 and confirm the protected rt-mgmt route and both default routes remain present before the proposed preference change.",
+        "evidenceIds": [
+          "ev-alert-crc",
+          "ev-alert-loss"
+        ]
+      },
+      {
+        "kind": "precondition",
+        "description": "Confirm wan-backup remains up and healthy before selecting it as the active uplink.",
+        "evidenceIds": [
+          "ev-alert-backup-ok"
+        ]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm management reachability from mgmt-01 to edge-rtr-01 and core-sw-01, including continued presence of edge-rtr-01 rt-mgmt and rt-default-primary.",
+        "evidenceIds": [
+          "ev-alert-crc",
+          "ev-alert-loss"
+        ]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm external probes use the backup uplink and that packet loss improves relative to the reported 8% primary-path loss.",
+        "evidenceIds": [
+          "ev-alert-loss",
+          "ev-alert-backup-ok"
+        ]
+      }
+    ]
+  }
+}
