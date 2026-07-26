@@ -147,6 +147,15 @@ function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStrictDescendant(relativePath) {
+  return (
+    relativePath !== "" &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  );
+}
+
 /**
  * Verify an immutable public snapshot using only deterministic CLI commands
  * and the trusted public key shipped in the bundle.
@@ -166,18 +175,20 @@ export async function verifyBundle({ repoRoot, bundleDir, compareTag }) {
 
   let tagBundlePath = null;
   if (compareTag) {
+    const requestedBundlePath = path.relative(
+      path.resolve(repoRoot),
+      path.resolve(bundleDir),
+    );
+    requireCheck(isStrictDescendant(requestedBundlePath), "bundle path");
+
     const [realRepoRoot, realBundleDir] = await checked("bundle path", async () =>
       Promise.all([realpath(repoRoot), realpath(bundleDir)]),
     );
-    const relativeBundle = path.relative(realRepoRoot, realBundleDir);
     requireCheck(
-      relativeBundle !== "" &&
-        relativeBundle !== ".." &&
-        !relativeBundle.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relativeBundle),
+      isStrictDescendant(path.relative(realRepoRoot, realBundleDir)),
       "bundle path",
     );
-    tagBundlePath = relativeBundle;
+    tagBundlePath = requestedBundlePath;
   }
 
   const expectedFiles = [...PROTECTED_FILES, MANIFEST_FILE].sort();

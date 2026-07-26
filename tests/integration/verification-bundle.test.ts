@@ -2,11 +2,14 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  cpSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -243,6 +246,44 @@ describe("v0.1.0 public verification bundle", () => {
       expect((error as Error).message).toBe("verification failed: bundle path");
       expect((error as Error).message).not.toContain(bundle.directory);
     }
+  });
+
+  it("anchors tag comparison to the requested path instead of an in-repo symlink target", async () => {
+    const bundle = await buildTemporaryBundle();
+    const repoRoot = realpathSync(temporaryDirectory());
+    const target = path.join(repoRoot, "artifacts", "different-bundle-path");
+    const requested = path.join(repoRoot, "verification", "v0.1.0");
+    const cli = path.join(repoRoot, "packages", "cli", "dist", "changesafe.js");
+
+    mkdirSync(path.dirname(target), { recursive: true });
+    cpSync(bundle.directory, target, { recursive: true });
+    mkdirSync(path.dirname(requested), { recursive: true });
+    symlinkSync("../artifacts/different-bundle-path", requested, "dir");
+    mkdirSync(path.dirname(cli), { recursive: true });
+    copyFileSync(CLI, cli);
+    writeJson(path.join(repoRoot, "packages", "cli", "package.json"), {
+      type: "module",
+    });
+
+    execFileSync("git", ["init", "--quiet"], { cwd: repoRoot });
+    execFileSync("git", ["config", "user.name", "ChangeSafe Test"], { cwd: repoRoot });
+    execFileSync("git", ["config", "user.email", "test@changesafe.invalid"], {
+      cwd: repoRoot,
+    });
+    execFileSync("git", ["add", "."], { cwd: repoRoot });
+    execFileSync("git", ["commit", "--quiet", "-m", "tag fixture"], { cwd: repoRoot });
+    execFileSync("git", ["tag", "v0.1.0"], { cwd: repoRoot });
+
+    const error = await verifyBundle({
+      repoRoot,
+      bundleDir: requested,
+      compareTag: true,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("verification failed: tag comparison");
+    expect((error as Error).message).not.toContain(target);
+    expect((error as Error).message).not.toContain(requested);
   });
 
   it("requires the exact public file set before hashing files", async () => {
