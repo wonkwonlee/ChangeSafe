@@ -4,7 +4,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { CLI_APP_VERSION, SERVER_APP_VERSION } from "changesafe/version";
+import {
+  CLI_APP_VERSION,
+  CLI_PACKAGE_VERSION,
+  SERVER_APP_VERSION,
+} from "changesafe/version";
 import { APP_VERSION } from "@/lib/domain/version";
 import { CORE_POLICY_VERSION } from "@changesafe/core";
 import { NETWORK_POLICY_VERSION } from "@changesafe/domain-network";
@@ -99,17 +103,11 @@ describe("v0.2.0 workspace release identity", () => {
 });
 
 describe("build identity tracks package versions", () => {
-  it("names the CLI's own version", () => {
-    expect(CLI_APP_VERSION).toBe(
-      `changesafe-cli-${readManifest("packages/cli").version}`,
-    );
-  });
-
-  it("names the server's own version", () => {
-    // The server ships inside the CLI bundle, so it releases with it.
-    expect(SERVER_APP_VERSION).toBe(
-      `changesafe-server-${readManifest("packages/cli").version}`,
-    );
+  it("names the CLI package and receipts from one version constant", () => {
+    const cliVersion = readManifest("packages/cli").version;
+    expect(CLI_PACKAGE_VERSION).toBe(cliVersion);
+    expect(CLI_APP_VERSION).toBe(`changesafe-cli-${cliVersion}`);
+    expect(SERVER_APP_VERSION).toBe(`changesafe-server-${cliVersion}`);
   });
 
   it("names the app's own version", () => {

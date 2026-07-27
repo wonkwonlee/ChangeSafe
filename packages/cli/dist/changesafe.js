@@ -17411,8 +17411,9 @@ import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
 // src/version.ts
-var CLI_APP_VERSION = "changesafe-cli-0.2.0";
-var SERVER_APP_VERSION = "changesafe-server-0.2.0";
+var CLI_PACKAGE_VERSION = "0.2.0";
+var CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
+var SERVER_APP_VERSION = `changesafe-server-${CLI_PACKAGE_VERSION}`;
 
 // src/output.ts
 var EXIT_OK = 0;
@@ -19673,7 +19674,7 @@ async function main(argv, console) {
   }
   const { values, positionals } = parsed;
   if (values.version) {
-    console.out("changesafe 0.1.0");
+    console.out(`changesafe ${CLI_PACKAGE_VERSION}`);
     return 0;
   }
   if (values.help || positionals.length === 0) {

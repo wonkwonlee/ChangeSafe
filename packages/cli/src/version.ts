@@ -12,6 +12,8 @@
  * a check.
  */
 
-export const CLI_APP_VERSION = "changesafe-cli-0.2.0";
+export const CLI_PACKAGE_VERSION = "0.2.0";
 
-export const SERVER_APP_VERSION = "changesafe-server-0.2.0";
+export const CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
+
+export const SERVER_APP_VERSION = `changesafe-server-${CLI_PACKAGE_VERSION}`;

@@ -22,7 +22,7 @@ import { networkDomain } from "@changesafe/domain-network";
 import { getScenario } from "@/scenarios";
 
 import { main } from "../src/main";
-import { CLI_APP_VERSION } from "../src/version";
+import { CLI_APP_VERSION, CLI_PACKAGE_VERSION } from "../src/version";
 import type { Console } from "../src/output";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
@@ -59,6 +59,16 @@ afterEach(() => {
     const dir = temporaryDirectories.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("changesafe identity", () => {
+  it("reports the package version through --version", async () => {
+    const capture = createCapture();
+    const code = await main(["--version"], capture);
+
+    expect(code).toBe(0);
+    expect(capture.stdout).toBe(`changesafe ${CLI_PACKAGE_VERSION}`);
+  });
 });
 
 describe("changesafe gate", () => {
