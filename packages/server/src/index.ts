@@ -23,8 +23,8 @@ export type {
 export { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
 export type { ServerDomain } from "./domains";
 
-export { AuthenticationError, OidcVerifier, bearerToken } from "./oidc";
-export type { Jwk, OidcConfig, VerifiedIdentity } from "./oidc";
+export { AuthenticationError, AuthorizationError, OidcVerifier, bearerToken } from "./oidc";
+export type { ApproverPolicy, Jwk, OidcConfig, VerifiedIdentity } from "./oidc";
 
 export { createDecisionServer } from "./http";
 export type { DecisionServerOptions } from "./http";

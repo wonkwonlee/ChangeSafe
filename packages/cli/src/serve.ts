@@ -1,6 +1,7 @@
 import { importSigningKeyPair } from "@changesafe/core";
 import { Ledger } from "@changesafe/ledger";
 import { DecisionService, OidcVerifier, createDecisionServer } from "@changesafe/server";
+import type { ApproverPolicy } from "@changesafe/server";
 
 import { UsageError, readTextFile } from "./io";
 import { EXIT_OK, paint, type Console } from "./output";
@@ -12,6 +13,10 @@ export interface ServeOptions {
   oidcIssuer?: string;
   oidcAudience?: string;
   oidcJwksUri?: string;
+  /** Token subjects allowed to act here. Empty means every authenticated one. */
+  approvers?: string[];
+  /** Claim requirements as `name=value`, e.g. `groups=sre`. */
+  approverClaims?: string[];
   signKey?: string;
   /** Resolves once the server is listening; tests use it to stop waiting. */
   onListening?: (close: () => Promise<void>) => void;
@@ -25,6 +30,44 @@ export interface ServeOptions {
  * the browser console it replaces — the console at least never pretends the
  * decision was attributable.
  */
+/** `name=value`, split on the first `=` so a value may contain one. */
+function parseClaimRule(raw: string): { name: string; values: string[] } {
+  const separator = raw.indexOf("=");
+  const name = separator === -1 ? "" : raw.slice(0, separator).trim();
+  const value = separator === -1 ? "" : raw.slice(separator + 1).trim();
+  if (!name || !value) {
+    throw new UsageError(`--approver-claim takes name=value, got "${raw}"`);
+  }
+  return { name, values: [value] };
+}
+
+/** Repeated rules for one claim are alternatives; distinct claims are all required. */
+function buildApproverPolicy(options: ServeOptions): ApproverPolicy | undefined {
+  const subjects = options.approvers ?? [];
+  const rules = (options.approverClaims ?? []).map(parseClaimRule);
+  if (subjects.length === 0 && rules.length === 0) return undefined;
+
+  const byName = new Map<string, string[]>();
+  for (const rule of rules) {
+    byName.set(rule.name, [...(byName.get(rule.name) ?? []), ...rule.values]);
+  }
+  return {
+    ...(subjects.length > 0 ? { subjects } : {}),
+    ...(byName.size > 0
+      ? { claims: [...byName].map(([name, values]) => ({ name, values })) }
+      : {}),
+  };
+}
+
+function describePolicy(policy: ApproverPolicy): string {
+  const parts: string[] = [];
+  if (policy.subjects?.length) parts.push(`${policy.subjects.length} subject(s)`);
+  for (const claim of policy.claims ?? []) {
+    parts.push(`${claim.name} in [${claim.values.join(", ")}]`);
+  }
+  return parts.join(" and ");
+}
+
 export async function runServe(options: ServeOptions, console: Console): Promise<number> {
   if (!options.oidcIssuer || !options.oidcAudience) {
     throw new UsageError(
@@ -32,6 +75,8 @@ export async function runServe(options: ServeOptions, console: Console): Promise
         "  an approver, so it will not start without a way to establish who that is.",
     );
   }
+
+  const approverPolicy = buildApproverPolicy(options);
 
   const ledger = Ledger.open(options.db);
   const signingKeyPair = options.signKey
@@ -44,6 +89,7 @@ export async function runServe(options: ServeOptions, console: Console): Promise
       issuer: options.oidcIssuer,
       audience: options.oidcAudience,
       jwksUri: options.oidcJwksUri,
+      approvers: approverPolicy,
     }),
     decisions: new DecisionService({
       ledger,
@@ -59,6 +105,13 @@ export async function runServe(options: ServeOptions, console: Console): Promise
   console.out(`  ${paint(console.color, "dim", `listening on http://${options.host}:${options.port}`)}`);
   console.out(`  ${paint(console.color, "dim", `ledger ${options.db} · ${ledger.count()} entries`)}`);
   console.out(`  ${paint(console.color, "dim", `approvers verified against ${options.oidcIssuer}`)}`);
+  // An unrestricted approver list is a real deployment choice, and a quiet one
+  // would be indistinguishable from having made no choice at all.
+  console.out(
+    approverPolicy
+      ? `  ${paint(console.color, "dim", `approving restricted to ${describePolicy(approverPolicy)}`)}`
+      : `  ${paint(console.color, "yellow", "every identity this issuer vouches for may approve")} ${paint(console.color, "dim", "— pass --approver or --approver-claim to narrow it")}`,
+  );
   console.out(
     signingKeyPair
       ? `  ${paint(console.color, "dim", "receipts are signed")}`

@@ -85,6 +85,9 @@ type Row = z.infer<typeof RowSchema>;
 
 const SCHEMA_VERSION = 1;
 
+const DEFAULT_LIST_LIMIT = 50;
+const MAX_LIST_LIMIT = 1000;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS receipts (
   seq                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -278,7 +281,14 @@ export class Ledger {
       params.push(options.decision);
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const limit = Math.min(Math.max(options.limit ?? 50, 1), 1000);
+    // The limit is the one value interpolated into SQL rather than bound, so
+    // it has to be a whole number before it gets there: NaN clamps to NaN and
+    // a fraction stays a fraction, and SQLite answers both with an error the
+    // caller reads as the server having broken.
+    const requested = options.limit ?? DEFAULT_LIST_LIMIT;
+    const limit = Number.isFinite(requested)
+      ? Math.min(Math.max(Math.trunc(requested), 1), MAX_LIST_LIMIT)
+      : DEFAULT_LIST_LIMIT;
 
     const rows = this.#db
       .prepare(`SELECT * FROM receipts ${where} ORDER BY seq DESC LIMIT ${limit}`)
