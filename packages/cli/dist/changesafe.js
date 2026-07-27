@@ -17410,6 +17410,10 @@ var ExpectationsFileSchema = external_exports.looseObject({ scenarioId: external
 import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
+// src/version.ts
+var CLI_APP_VERSION = "changesafe-cli-0.1.0";
+var SERVER_APP_VERSION = "changesafe-server-0.1.0";
+
 // src/output.ts
 var EXIT_OK = 0;
 var EXIT_BLOCKED = 1;
@@ -17531,7 +17535,8 @@ async function runGate(options, console) {
       // nothing about how it was written.
       mode: "offline",
       model: null,
-      now: options.now
+      now: options.now,
+      appVersion: options.appVersion
     },
     console
   );
@@ -17554,7 +17559,7 @@ async function gateParsedProposal(options, console) {
       inputId,
       input,
       proposal,
-      appVersion: `changesafe-cli-0.1.0`,
+      appVersion: options.appVersion ?? CLI_APP_VERSION,
       // The adapter already composes core's version with its own.
       policyVersion: domain2.adapter.policyVersion,
       mode: options.mode,
@@ -19342,7 +19347,7 @@ async function runServe(options, console) {
     }),
     decisions: new DecisionService({
       ledger,
-      appVersion: "changesafe-server-0.1.0",
+      appVersion: SERVER_APP_VERSION,
       signingKeyPair
     })
   });
@@ -19531,6 +19536,9 @@ GATE OPTIONS
   --sign-key <file>     private-key PEM; signs the receipt it writes
   --receipt-id <id>     fix receipt identity for audited snapshot generation
   --created-at <UTC>    fix receipt and signature time for audited snapshots
+  --app-version <id>    record this build identity instead of this build's own;
+                        only for regenerating or re-verifying a published
+                        snapshot with a later build
   --source-id <id>      what to record as the input's origin
   --format pretty|json  output format (default: pretty)
 
@@ -19615,6 +19623,7 @@ var OPTION_SPEC = {
   "sign-key": { type: "string" },
   "receipt-id": { type: "string" },
   "created-at": { type: "string" },
+  "app-version": { type: "string" },
   "public-key": { type: "string" },
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
@@ -19672,6 +19681,7 @@ async function main(argv, console) {
           signKey: values["sign-key"],
           receiptId: values["receipt-id"],
           now: values["created-at"],
+          appVersion: values["app-version"],
           sourceId: values["source-id"],
           context: values.context,
           format

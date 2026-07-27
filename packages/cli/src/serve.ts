@@ -5,6 +5,7 @@ import type { ApproverPolicy } from "@changesafe/server";
 
 import { UsageError, readTextFile } from "./io";
 import { EXIT_OK, paint, type Console } from "./output";
+import { SERVER_APP_VERSION } from "./version";
 
 export interface ServeOptions {
   db: string;
@@ -93,7 +94,7 @@ export async function runServe(options: ServeOptions, console: Console): Promise
     }),
     decisions: new DecisionService({
       ledger,
-      appVersion: "changesafe-server-0.1.0",
+      appVersion: SERVER_APP_VERSION,
       signingKeyPair,
     }),
   });

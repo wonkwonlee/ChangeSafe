@@ -15,6 +15,7 @@ import {
 } from "@changesafe/core";
 
 import { resolveDomain, type CliDomain } from "./domains";
+import { CLI_APP_VERSION } from "./version";
 import { UsageError, parseOrThrow, readJsonFile, readTextFile } from "./io";
 import {
   EXIT_BLOCKED,
@@ -41,6 +42,13 @@ export interface GateOptions {
   receiptId?: string;
   /** Injectable so tests get deterministic receipts. */
   now?: string;
+  /**
+   * Build identity to stamp on the receipt, for regenerating or re-verifying
+   * an audited snapshot with a build that is no longer the one that made it.
+   * Defaults to this build's own identity, which is what every ordinary run
+   * records.
+   */
+  appVersion?: string;
 }
 
 /**
@@ -132,6 +140,7 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
       mode: "offline",
       model: null,
       now: options.now,
+      appVersion: options.appVersion,
     },
     console,
   );
@@ -157,6 +166,8 @@ export interface GateExecution {
   /** Extra dim line under the header (e.g. which provider proposed). */
   note?: string;
   now?: string;
+  /** See GateOptions.appVersion. */
+  appVersion?: string;
 }
 
 /**
@@ -197,7 +208,7 @@ export async function gateParsedProposal(
       inputId,
       input,
       proposal,
-      appVersion: `changesafe-cli-0.1.0`,
+      appVersion: options.appVersion ?? CLI_APP_VERSION,
       // The adapter already composes core's version with its own.
       policyVersion: domain.adapter.policyVersion,
       mode: options.mode,
