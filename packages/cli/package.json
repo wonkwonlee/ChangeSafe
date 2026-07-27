@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "Gate AI-proposed infrastructure changes from the terminal or CI: deterministic policies, honest exit codes, hashed receipts. The gate itself never calls a model.",
   "license": "MIT",
-  "private": true,
   "type": "module",
   "bin": {
     "changesafe": "./dist/changesafe.js"
@@ -11,21 +10,44 @@
   "files": [
     "dist"
   ],
+  "keywords": [
+    "terraform",
+    "policy",
+    "guardrails",
+    "ai-safety",
+    "infrastructure",
+    "ci",
+    "cli"
+  ],
+  "homepage": "https://github.com/wonkwonlee/ChangeSafe#readme",
+  "bugs": {
+    "url": "https://github.com/wonkwonlee/ChangeSafe/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wonkwonlee/ChangeSafe.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
+  "//": "No `dependencies` on purpose: dist/changesafe.js is one esbuild bundle whose only imports are node: builtins. The workspace packages and zod below are build-time inputs — listing them as dependencies would make npm fetch unpublished @changesafe/* from the registry and install code the bundle already contains.",
+  "devDependencies": {
     "@changesafe/ai": "0.1.0",
     "@changesafe/core": "0.1.0",
     "@changesafe/domain-network": "0.1.0",
-    "zod": "^4.4.3",
     "@changesafe/domain-terraform": "0.1.0",
     "@changesafe/ledger": "0.1.0",
-    "@changesafe/server": "0.1.0"
-  },
-  "devDependencies": {
+    "@changesafe/server": "0.1.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "zod": "^4.4.3"
   }
 }

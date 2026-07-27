@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 import { PROVIDER_IDS } from "@changesafe/ai";
@@ -361,7 +362,28 @@ export async function run(argv: string[]): Promise<number> {
   }
 }
 
-// Bundled binaries run immediately; importing this module for tests does not.
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Was this file invoked, or imported?
+ *
+ * The comparison has to be made on real paths. npm installs a `bin` as a
+ * symlink, and Node resolves a module to its real path while `process.argv[1]`
+ * keeps the symlink it was called through — so comparing them directly says
+ * "imported" for every `changesafe` and `npx changesafe` invocation. The CLI
+ * would then evaluate nothing and exit 0, which is the code that means
+ * "nothing blocking": a gate that silently approves.
+ */
+function invokedDirectly(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.filename === realpathSync(entry);
+  } catch {
+    // An argv[1] that does not resolve is not this file.
+    return false;
+  }
+}
+
+// Bundled binaries run immediately; importing this module does not.
+if (invokedDirectly()) {
   process.exitCode = await run(process.argv.slice(2));
 }

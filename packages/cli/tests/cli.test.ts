@@ -1,6 +1,14 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -897,5 +905,43 @@ describe("the built binary", () => {
     const payload = JSON.parse(stdout);
     expect(payload.blocked).toBe(false);
     expect(payload.findings).toHaveLength(7);
+  });
+
+  /**
+   * npm installs a `bin` as a symlink, and Node resolves a symlinked module to
+   * its real path. Anything that decides whether to run by comparing
+   * `import.meta.url` with `process.argv[1]` therefore does nothing when
+   * invoked as `changesafe` or through `npx` — and exits 0 having evaluated
+   * nothing, which is the code that means "nothing blocking".
+   *
+   * So the binary is exercised the way a published package is reached: through
+   * a symlink, on a change that must be refused.
+   */
+  it.runIf(existsSync(built))("gates when reached through a bin symlink", () => {
+    const directory = temporaryDir();
+    const link = path.join(directory, "changesafe");
+    symlinkSync(built, link);
+
+    const result = spawnSync(
+      link,
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        path.join(REPO_ROOT, "packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json"),
+        "--format",
+        "json",
+      ],
+      { encoding: "utf8", cwd: directory },
+    );
+
+    // Silence and exit 0 is the failure this guards against, so assert the
+    // verdict arrived, not merely that nothing crashed.
+    expect(result.stdout, "the symlinked binary produced no output").not.toBe("");
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stdout) as { blocked: boolean; riskLevel: string };
+    expect(payload.blocked).toBe(true);
+    expect(payload.riskLevel).toBe("CRITICAL");
   });
 });

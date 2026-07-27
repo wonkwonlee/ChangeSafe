@@ -6,6 +6,7 @@ var __export = (target, all) => {
 };
 
 // src/main.ts
+import { realpathSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 // ../core/src/errors.ts
@@ -19822,7 +19823,16 @@ async function run(argv) {
     return EXIT_USAGE;
   }
 }
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.filename === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+if (invokedDirectly()) {
   process.exitCode = await run(process.argv.slice(2));
 }
 export {

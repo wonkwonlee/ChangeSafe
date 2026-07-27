@@ -150,6 +150,27 @@ git tag -a v0.1.1 -m "ChangeSafe v0.1.1" && git push origin v0.1.1
 git tag -f v0 v0.1.1 && git push -f origin v0   # the one tag that moves
 ```
 
+### Publishing the CLI to npm
+
+Publishing the `changesafe` package to npm is automatic: `.github/workflows/publish.yml`
+runs when a GitHub release is *published*, and needs an `NPM_TOKEN` repository
+secret (an npm automation token for the `changesafe` package).
+
+It refuses to publish rather than guessing:
+
+- the release tag must equal `v<version>` from `packages/cli/package.json`;
+- that version must not already exist on npm, since npm versions are immutable;
+- lint, typecheck, the full test suite, and the bundle-freshness check must pass
+  on the tagged commit;
+- the packed tarball is installed into a throwaway project and must gate a
+  destructive plan to exit 1 — a package that installs but does not evaluate
+  would otherwise be found by whoever ran `npx changesafe` first.
+
+It publishes with `--provenance`, so the registry records which workflow,
+repository, and commit produced the tarball. Bump `packages/cli/package.json`
+in the release PR; the tag and the published version are then the same number
+by construction.
+
 ## Reporting problems
 
 - Security issues: follow `SECURITY.md` (private reporting), not a public
