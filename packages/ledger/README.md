@@ -78,6 +78,15 @@ Rows are parsed with a schema on the way out rather than asserted: the
 database file is a boundary input, and for a feature whose purpose is
 detecting tampering, trusting its shape on faith would be the wrong instinct.
 
+`append` is safe to call concurrently. Deciding the next entry means reading
+the chain head and then hashing, and hashing is asynchronous — so two
+decisions arriving together would otherwise build the same link and the
+second would land on the sequence number the first just took. Appends queue
+behind each other instead, which costs microseconds and turns a collision
+into an ordering. Two *processes* writing the same file are still caught by
+the primary key rather than by that queue; a ledger is meant to have one
+writer.
+
 ## License
 
 MIT — see the repository root.

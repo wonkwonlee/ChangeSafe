@@ -169,6 +169,57 @@ describe("append-only ledger", () => {
   });
 });
 
+describe("concurrent appends", () => {
+  /**
+   * The server answers requests concurrently, so two approvers deciding at
+   * the same moment both reach `append`. Deciding the next entry spans an
+   * await, and without serialization both would build the same link and the
+   * second would collide on the sequence number the first just took —
+   * turning a legitimate decision into an internal error.
+   */
+  it("orders simultaneous appends instead of colliding on a sequence number", async () => {
+    const ledger = Ledger.open(tempDb());
+    const receipts = await Promise.all(Array.from({ length: 12 }, () => receipt()));
+
+    const entries = await Promise.all(receipts.map((record) => ledger.append(record)));
+
+    // Every decision was recorded, exactly once, in an unbroken run.
+    expect(entries).toHaveLength(receipts.length);
+    expect([...entries].map((entry) => entry.seq).sort((a, b) => a - b)).toEqual(
+      receipts.map((_, index) => index + 1),
+    );
+    expect(new Set(entries.map((entry) => entry.chainSha256)).size).toBe(receipts.length);
+    expect(ledger.count()).toBe(receipts.length);
+
+    const verdict = await ledger.verifyChain();
+    expect(verdict.ok).toBe(true);
+    expect(verdict.breaks).toEqual([]);
+    ledger.close();
+  });
+
+  it("keeps serving later appends after one of them is rejected", async () => {
+    const ledger = Ledger.open(tempDb());
+    const duplicated = await receipt();
+    await ledger.append(duplicated);
+
+    // Built before the calls: awaiting between them would leave the first
+    // rejection briefly unhandled, which is a property of this test rather
+    // than of the ledger.
+    const fresh = await Promise.all([receipt(), receipt()]);
+    const results = await Promise.allSettled([
+      ledger.append(duplicated), // rejected: already recorded
+      ...fresh.map((record) => ledger.append(record)),
+    ]);
+
+    expect(results[0]?.status).toBe("rejected");
+    expect(results[1]?.status).toBe("fulfilled");
+    expect(results[2]?.status).toBe("fulfilled");
+    expect(ledger.count()).toBe(3);
+    expect((await ledger.verifyChain()).ok).toBe(true);
+    ledger.close();
+  });
+});
+
 describe("tamper evidence", () => {
   /** Drop the guard triggers, simulating someone who owns the file. */
   function unguard(file: string): DatabaseSync {
