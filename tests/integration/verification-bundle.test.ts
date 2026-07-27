@@ -35,6 +35,16 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const CLI = path.join(ROOT, "packages/cli/dist/changesafe.js");
 const SCENARIO = path.join(ROOT, "scenarios/scenario-a-failover");
 const CREATED_AT = "2026-07-26T12:00:00.000Z";
+/**
+ * Proving that cleanup *fails* means making it fail, and the portable way is
+ * to remove write permission from the parent directory. Root is exempt from
+ * that check, so under uid 0 — how many CI containers and devcontainers run —
+ * the removal succeeds and the build fails somewhere else entirely, failing
+ * the assertion for a reason that has nothing to do with the code. Skipped
+ * rather than weakened: the behavior stays covered wherever permissions mean
+ * something.
+ */
+const itWherePermissionsApply = it.skipIf(process.getuid?.() === 0);
 const temporaryDirectories: string[] = [];
 let cliBuild: Promise<void> | undefined;
 
@@ -895,7 +905,7 @@ process.exit(0);
     );
   });
 
-  it("surfaces sanitized staging cleanup failure after a late target race", async () => {
+  itWherePermissionsApply("surfaces sanitized staging cleanup failure after a late target race", async () => {
     await buildCliOnce();
     const parent = temporaryDirectory();
     const out = path.join(parent, "v0.1.0");

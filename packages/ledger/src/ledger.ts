@@ -1,4 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 
 import {
@@ -121,6 +122,23 @@ BEGIN
 END;
 `;
 
+/**
+ * `node:sqlite` is loaded when a ledger is actually opened, not when this
+ * module is imported.
+ *
+ * It is still an experimental Node builtin, so importing it prints a warning
+ * to stderr — and the CLI bundles every command into one file, which meant
+ * `changesafe gate` announced an experimental database it never touches on
+ * every CI run. A static import cannot be deferred (ESM hoists it), so the
+ * builtin is required at open time instead.
+ */
+const nodeRequire = createRequire(import.meta.url);
+
+function openDatabase(path: string): DatabaseSync {
+  const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+  return new sqlite.DatabaseSync(path);
+}
+
 function splitRecord(record: LedgerRecord): {
   receipt: ChangeReceipt;
   signatureKeyId: string | null;
@@ -176,7 +194,7 @@ export class Ledger {
    * throwaway ledger in tests.
    */
   static open(path: string): Ledger {
-    const db = new DatabaseSync(path);
+    const db = openDatabase(path);
     // Durability over speed: a receipt that was reported as recorded must
     // survive the process dying immediately afterwards.
     db.exec("PRAGMA journal_mode = WAL");
