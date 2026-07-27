@@ -16,6 +16,7 @@ import { runScenarioCheck, runScenarioInit } from "./scenario";
 import { runServe } from "./serve";
 import { runVerify } from "./verify";
 import { EXIT_USAGE, createConsole, paint, type Console } from "./output";
+import { CLI_PACKAGE_VERSION } from "./version";
 
 const HELP = `changesafe — a deterministic airlock for AI-proposed infrastructure changes
 
@@ -174,7 +175,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
   const { values, positionals } = parsed;
 
   if (values.version) {
-    console.out("changesafe 0.1.0");
+    console.out(`changesafe ${CLI_PACKAGE_VERSION}`);
     return 0;
   }
   if (values.help || positionals.length === 0) {

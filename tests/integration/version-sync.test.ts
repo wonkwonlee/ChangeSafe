@@ -2,8 +2,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
-import { CLI_APP_VERSION, SERVER_APP_VERSION } from "changesafe/version";
+import {
+  CLI_APP_VERSION,
+  CLI_PACKAGE_VERSION,
+  SERVER_APP_VERSION,
+} from "changesafe/version";
 import { APP_VERSION } from "@/lib/domain/version";
 import { CORE_POLICY_VERSION } from "@changesafe/core";
 import { NETWORK_POLICY_VERSION } from "@changesafe/domain-network";
@@ -20,21 +25,93 @@ import { TERRAFORM_POLICY_VERSION } from "@changesafe/domain-terraform";
  */
 
 const root = path.resolve(import.meta.dirname, "../..");
-const readVersion = (relative: string): string =>
-  JSON.parse(readFileSync(path.join(root, relative, "package.json"), "utf8")).version;
 
-describe("build identity tracks package versions", () => {
-  it("names the CLI's own version", () => {
-    expect(CLI_APP_VERSION).toBe(`changesafe-cli-${readVersion("packages/cli")}`);
+const TARGET_VERSION = "0.2.0";
+const TARGET_INTERNAL_RANGE = "^0.2.0";
+
+const ManifestSchema = z.object({
+  name: z.string().min(1),
+  version: z.string().min(1),
+  private: z.boolean().optional(),
+  dependencies: z.record(z.string(), z.string()).optional(),
+  devDependencies: z.record(z.string(), z.string()).optional(),
+});
+
+const MANIFEST_PATHS = [
+  ".",
+  "packages/ai",
+  "packages/cli",
+  "packages/core",
+  "packages/domain-network",
+  "packages/domain-terraform",
+  "packages/ledger",
+  "packages/server",
+] as const;
+
+const PUBLISHABLE_PACKAGE_PATHS = [
+  "packages/cli",
+  "packages/core",
+  "packages/domain-network",
+  "packages/domain-terraform",
+] as const;
+
+const DEFERRED_PRIVATE_PACKAGE_PATHS = [
+  "packages/ai",
+  "packages/ledger",
+  "packages/server",
+] as const;
+
+function readManifest(relative: string) {
+  return ManifestSchema.parse(
+    JSON.parse(readFileSync(path.join(root, relative, "package.json"), "utf8")),
+  );
+}
+
+function internalRanges(manifest: z.infer<typeof ManifestSchema>) {
+  return Object.entries({
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+  }).filter(([name]) => name.startsWith("@changesafe/"));
+}
+
+describe("v0.2.0 workspace release identity", () => {
+  it("moves every root and workspace manifest together", () => {
+    for (const relative of MANIFEST_PATHS) {
+      expect(readManifest(relative).version, `${relative}/package.json version`).toBe(
+        TARGET_VERSION,
+      );
+    }
   });
 
-  it("names the server's own version", () => {
-    // The server ships inside the CLI bundle, so it releases with it.
-    expect(SERVER_APP_VERSION).toBe(`changesafe-server-${readVersion("packages/cli")}`);
+  it("uses the adopted compatible 0.2.x range on every internal edge", () => {
+    for (const relative of MANIFEST_PATHS) {
+      for (const [dependency, range] of internalRanges(readManifest(relative))) {
+        expect(range, `${relative} -> ${dependency}`).toBe(TARGET_INTERNAL_RANGE);
+      }
+    }
+  });
+
+  it("publishes only the CLI, core, and two selected domains", () => {
+    expect(readManifest(".").private).toBe(true);
+    for (const relative of PUBLISHABLE_PACKAGE_PATHS) {
+      expect(readManifest(relative).private, relative).not.toBe(true);
+    }
+    for (const relative of DEFERRED_PRIVATE_PACKAGE_PATHS) {
+      expect(readManifest(relative).private, relative).toBe(true);
+    }
+  });
+});
+
+describe("build identity tracks package versions", () => {
+  it("names the CLI package and receipts from one version constant", () => {
+    const cliVersion = readManifest("packages/cli").version;
+    expect(CLI_PACKAGE_VERSION).toBe(cliVersion);
+    expect(CLI_APP_VERSION).toBe(`changesafe-cli-${cliVersion}`);
+    expect(SERVER_APP_VERSION).toBe(`changesafe-server-${cliVersion}`);
   });
 
   it("names the app's own version", () => {
-    expect(APP_VERSION).toBe(readVersion("."));
+    expect(APP_VERSION).toBe(readManifest(".").version);
   });
 });
 
