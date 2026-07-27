@@ -16,6 +16,21 @@ import { z } from "zod";
 export const VERSION = "v0.1.0";
 export const RECEIPT_ID = "rcpt-v0-1-0-demo";
 export const SOURCE_ID = "scenario-a-failover";
+/**
+ * The build identity this snapshot's receipt records, pinned here rather than
+ * inherited from whatever CLI is running.
+ *
+ * Verification replays the receipt with the *current* CLI and requires the
+ * result to be canonically identical, so every field inside the receipt has
+ * to be reproducible — including the one that names the build. Left to
+ * default, the first release that bumps the CLI version would fail this
+ * check, and the only ways out would be freezing the version string forever
+ * (a receipt that lies about which build made it) or giving up byte
+ * equality (the strongest thing this snapshot proves). Pinning it keeps the
+ * claim exact: told to stamp the same identity, today's gate reproduces this
+ * receipt to the byte.
+ */
+export const APP_VERSION = "changesafe-cli-0.1.0";
 export const VERIFY_COMMAND = "npm run verify:v0.1.0";
 export const PROTECTED_FILES = [
   "README.md",
@@ -44,7 +59,7 @@ export const SignedReceiptMetadataSchema = z.looseObject({
     receiptId: z.literal(RECEIPT_ID),
     sourceId: z.literal(SOURCE_ID),
     createdAtUtc: z.iso.datetime({ offset: true }),
-    appVersion: z.literal("changesafe-cli-0.1.0"),
+    appVersion: z.literal(APP_VERSION),
     policyVersion: z.string().min(1).max(32),
     fixtureProvenance: z.literal("captured"),
   }),
@@ -64,7 +79,7 @@ export const VerificationManifestSchema = z.strictObject({
   fixtureProvenance: z.literal("captured"),
   provider: z.literal("openai"),
   model: z.string().min(1).max(64),
-  appVersion: z.literal("changesafe-cli-0.1.0"),
+  appVersion: z.literal(APP_VERSION),
   policyVersion: z.string().min(1).max(32),
   publicKeyId: z.string().regex(/^[a-f0-9]{32}$/),
   verificationCommand: z.literal(VERIFY_COMMAND),
@@ -342,6 +357,7 @@ export async function verifyBundle({ repoRoot, bundleDir, compareTag }) {
           "--receipt", replayedReceiptPath,
           "--receipt-id", RECEIPT_ID,
           "--created-at", manifest.receiptCreatedAtUtc,
+          "--app-version", APP_VERSION,
           "--format", "json",
         ],
         { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },

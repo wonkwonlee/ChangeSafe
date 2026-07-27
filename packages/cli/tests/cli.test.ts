@@ -14,6 +14,7 @@ import { networkDomain } from "@changesafe/domain-network";
 import { getScenario } from "@/scenarios";
 
 import { main } from "../src/main";
+import { CLI_APP_VERSION } from "../src/version";
 import type { Console } from "../src/output";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
@@ -165,6 +166,34 @@ describe("changesafe gate", () => {
     expect(receipt.simulation).toBeNull();
     expect(receipt.mode).toBe("offline");
     expect(receipt.riskLevel).toBe("LOW");
+  });
+
+  /**
+   * Regenerating or re-verifying a published snapshot means running a build
+   * that is no longer the one that produced it. The receipt has to come back
+   * byte-identical, so the identity of the build has to be settable — for
+   * that purpose only, alongside --receipt-id and --created-at.
+   */
+  it("stamps a supplied build identity, and its own by default", async () => {
+    const dir = temporaryDir();
+    const pinned = path.join(dir, "pinned.json");
+    const ordinary = path.join(dir, "ordinary.json");
+
+    await main(
+      ["gate", "--scenario", SAFE, "--receipt", pinned, "--app-version", "changesafe-cli-0.0.9"],
+      createCapture(),
+    );
+    await main(["gate", "--scenario", SAFE, "--receipt", ordinary], createCapture());
+
+    expect(JSON.parse(readFileSync(pinned, "utf8")).appVersion).toBe("changesafe-cli-0.0.9");
+    expect(JSON.parse(readFileSync(ordinary, "utf8")).appVersion).toBe(CLI_APP_VERSION);
+
+    // Only the identity differs: an override must not change a verdict.
+    const [a, b] = [pinned, ordinary].map(
+      (file) => JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>,
+    );
+    expect(a?.findings).toEqual(b?.findings);
+    expect(a?.riskLevel).toBe(b?.riskLevel);
   });
 
   it("records a blocked decision when the gate blocks", async () => {

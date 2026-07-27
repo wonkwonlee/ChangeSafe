@@ -45,6 +45,9 @@ GATE OPTIONS
   --sign-key <file>     private-key PEM; signs the receipt it writes
   --receipt-id <id>     fix receipt identity for audited snapshot generation
   --created-at <UTC>    fix receipt and signature time for audited snapshots
+  --app-version <id>    record this build identity instead of this build's own;
+                        only for regenerating or re-verifying a published
+                        snapshot with a later build
   --source-id <id>      what to record as the input's origin
   --format pretty|json  output format (default: pretty)
 
@@ -130,6 +133,7 @@ const OPTION_SPEC = {
   "sign-key": { type: "string" },
   "receipt-id": { type: "string" },
   "created-at": { type: "string" },
+  "app-version": { type: "string" },
   "public-key": { type: "string" },
   "skip-signature": { type: "boolean", default: false },
   force: { type: "boolean", default: false },
@@ -193,6 +197,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           signKey: values["sign-key"],
           receiptId: values["receipt-id"],
           now: values["created-at"],
+          appVersion: values["app-version"],
           sourceId: values["source-id"],
           context: values.context,
           format,

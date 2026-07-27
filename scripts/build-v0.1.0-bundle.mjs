@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import {
+  APP_VERSION,
   CLI_RELATIVE_PATH,
   CapturedFixtureMetadataSchema,
   RECEIPT_ID,
@@ -377,6 +378,7 @@ async function main() {
           "--sign-key", signingKey,
           "--receipt-id", RECEIPT_ID,
           "--created-at", createdAt,
+          "--app-version", APP_VERSION,
           "--format", "json",
         ],
         { cwd: repoRoot, env, timeoutMs: COMMAND_TIMEOUT_MS },

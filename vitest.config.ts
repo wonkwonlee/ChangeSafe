@@ -20,6 +20,7 @@ export default defineConfig({
         root,
         "packages/domain-terraform/src/index.ts",
       ),
+      "changesafe/version": path.resolve(root, "packages/cli/src/version.ts"),
       changesafe: path.resolve(root, "packages/cli/src/main.ts"),
       "@": root,
     },
