@@ -13,6 +13,7 @@ import {
   evaluatePolicies,
   hasBlockingFinding,
   type ChangeProposal,
+  type ScenarioExpectations,
 } from "@changesafe/core";
 import { IncidentBundleSchema, networkDomain } from "@changesafe/domain-network";
 
@@ -39,17 +40,18 @@ export interface EvalOptions {
  * definitions. Comparing two models is only meaningful if both reports were
  * produced by the same methodology.
  */
-export const EVAL_REPORT_VERSION = 1;
+export const EVAL_REPORT_VERSION = 2;
 
 type Outcome = ProposalVerdict["outcome"];
 
-interface ScenarioReport {
+export interface ScenarioReport {
   scenarioId: string;
-  /** Whether the scenario's declared expectations include a BLOCK. */
+  /** Corpus taxonomy; independent from whether a policy is expected to BLOCK. */
+  adversarial: boolean;
+  /** Whether the scenario's declared policy expectations include a BLOCK. */
   expectsBlock: boolean;
   attempts: number;
   outcomes: Record<Outcome, number>;
-  /** Gate verdicts for the attempts that produced an accepted proposal. */
   blocked: number;
   clean: number;
   notes: string[];
@@ -62,6 +64,22 @@ const EMPTY_OUTCOMES: Record<Outcome, number> = {
   schema_invalid: 0,
   ungrounded: 0,
 };
+
+export function createScenarioReport(
+  expectations: ScenarioExpectations,
+  attempts: number,
+): ScenarioReport {
+  return {
+    scenarioId: expectations.scenarioId,
+    adversarial: expectations.corpus.adversarial,
+    expectsBlock: Object.values(expectations.policies).includes("BLOCK"),
+    attempts,
+    outcomes: { ...EMPTY_OUTCOMES },
+    blocked: 0,
+    clean: 0,
+    notes: [],
+  };
+}
 
 /**
  * Measure a model against the bundled scenarios.
@@ -129,17 +147,7 @@ async function evaluateScenario(
     readJsonFile(path.join(dir, "expectations.json"), "expectations"),
     "expectations",
   );
-  const expectsBlock = Object.values(expectations.policies).includes("BLOCK");
-
-  const report: ScenarioReport = {
-    scenarioId: expectations.scenarioId,
-    expectsBlock,
-    attempts: runs,
-    outcomes: { ...EMPTY_OUTCOMES },
-    blocked: 0,
-    clean: 0,
-    notes: [],
-  };
+  const report = createScenarioReport(expectations, runs);
 
   for (let run = 0; run < runs; run += 1) {
     const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
@@ -164,27 +172,35 @@ async function evaluateScenario(
   return report;
 }
 
-function report(
-  reports: ScenarioReport[],
+interface EvalArtifactContext {
+  directory: string;
+  generatedAtUtc: string;
+  runsPerScenario: number;
+}
+
+export function buildEvalArtifact(
+  reports: readonly ScenarioReport[],
   target: { provider: string; model: string },
-  options: EvalOptions,
-  console: Console,
-): number {
-  const total = (pick: (r: ScenarioReport) => number) => reports.reduce((sum, r) => sum + pick(r), 0);
+  context: EvalArtifactContext,
+) {
+  const total = (pick: (report: ScenarioReport) => number): number =>
+    reports.reduce((sum, report) => sum + pick(report), 0);
 
-  const attempts = total((r) => r.attempts);
-  const callFailed = total((r) => r.outcomes.call_failed);
-  // A transport failure says nothing about the model, so it is excluded from
-  // every rate rather than silently counted as a model error.
+  const attempts = total((entry) => entry.attempts);
+  const callFailed = total((entry) => entry.outcomes.call_failed);
   const answered = attempts - callFailed;
-  const accepted = total((r) => r.outcomes.accepted);
-  const ungrounded = total((r) => r.outcomes.ungrounded);
+  const accepted = total((entry) => entry.outcomes.accepted);
+  const ungrounded = total((entry) => entry.outcomes.ungrounded);
   const schemaValid = accepted + ungrounded;
-
-  const redTeam = reports.filter((r) => r.expectsBlock);
-  const redTeamAccepted = redTeam.reduce((sum, r) => sum + r.outcomes.accepted, 0);
-  const redTeamBlocked = redTeam.reduce((sum, r) => sum + r.blocked, 0);
-
+  const blockExpected = reports.filter((entry) => entry.expectsBlock);
+  const redTeamAccepted = blockExpected.reduce(
+    (sum, entry) => sum + entry.outcomes.accepted,
+    0,
+  );
+  const redTeamBlocked = blockExpected.reduce(
+    (sum, entry) => sum + entry.blocked,
+    0,
+  );
   const rate = (numerator: number, denominator: number): number | null =>
     denominator === 0 ? null : Math.round((numerator / denominator) * 1000) / 10;
 
@@ -199,29 +215,39 @@ function report(
     redTeamBlockedPct: rate(redTeamBlocked, redTeamAccepted),
   };
 
+  return {
+    reportVersion: EVAL_REPORT_VERSION,
+    generatedAtUtc: context.generatedAtUtc,
+    target: { provider: target.provider, model: target.model },
+    corpus: {
+      directory: context.directory,
+      scenarios: reports.length,
+      adversarial: reports.filter((entry) => entry.adversarial).length,
+      runsPerScenario: context.runsPerScenario,
+    },
+    summary,
+    scenarios: [...reports],
+  };
+}
+
+function report(
+  reports: ScenarioReport[],
+  target: { provider: string; model: string },
+  options: EvalOptions,
+  console: Console,
+): number {
+  const artifact = buildEvalArtifact(reports, target, {
+    directory: options.dir,
+    generatedAtUtc: options.now ?? new Date().toISOString(),
+    runsPerScenario: options.runs,
+  });
+  const { summary } = artifact;
+  const redTeamAccepted = reports
+    .filter((entry) => entry.expectsBlock)
+    .reduce((sum, entry) => sum + entry.outcomes.accepted, 0);
+
   if (options.report) {
-    // Records the corpus it ran against, not just the score: a number is
-    // only comparable to another number from the same scenarios.
-    writeFileSync(
-      options.report,
-      `${JSON.stringify(
-        {
-          reportVersion: EVAL_REPORT_VERSION,
-          generatedAtUtc: options.now ?? new Date().toISOString(),
-          target: { provider: summary.provider, model: summary.model },
-          corpus: {
-            directory: options.dir,
-            scenarios: reports.length,
-            adversarial: reports.filter((entry) => entry.expectsBlock).length,
-            runsPerScenario: options.runs,
-          },
-          summary,
-          scenarios: reports,
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    writeFileSync(options.report, `${JSON.stringify(artifact, null, 2)}\n`);
   }
 
   if (options.format === "json") {
@@ -250,14 +276,16 @@ function report(
   }
 
   console.out("");
-  console.out(`  schema-valid       ${pct(summary.schemaValidPct)}  (of ${answered} answered)`);
-  console.out(`  evidence-grounded  ${pct(summary.evidenceGroundedPct)}  (of ${answered} answered)`);
+  console.out(`  schema-valid       ${pct(summary.schemaValidPct)}  (of ${summary.answered} answered)`);
+  console.out(
+    `  evidence-grounded  ${pct(summary.evidenceGroundedPct)}  (of ${summary.answered} answered)`,
+  );
   console.out(
     `  red-team blocked   ${pct(summary.redTeamBlockedPct)}  (of ${redTeamAccepted} accepted on block-expected scenarios)`,
   );
-  if (callFailed > 0) {
+  if (summary.callFailed > 0) {
     console.out(
-      `  ${paint(console.color, "dim", `${callFailed} call(s) failed and are excluded from every rate`)}`,
+      `  ${paint(console.color, "dim", `${summary.callFailed} call(s) failed and are excluded from every rate`)}`,
     );
   }
   console.out("");
