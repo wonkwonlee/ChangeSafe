@@ -11,8 +11,19 @@
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
 **[▶ Try the live demo](https://change-safe.vercel.app)** — no signup, no API
-key, nothing to install. Pick the route-leak scenario and watch a confident
-proposal get blocked.
+key, nothing to install. Three clicks, about sixty seconds:
+
+1. Pick **`INC-4977 — Suspected route leak`** from the scenario list.
+2. Press **Run replay analysis**.
+3. Watch a 91%-confident proposal — one that obeys an instruction injected
+   into an operator note — get stopped by two deterministic policies, with
+   no way to approve it. The refusal itself becomes a hashed receipt you can
+   download.
+
+The header badge reads `replay only` on this deployment: no key is
+configured, so nothing here calls a model. That is the honest default, and
+the [replay vs live](#replay-vs-live-honestly) section explains exactly what
+replay does and does not skip.
 
 **[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
 

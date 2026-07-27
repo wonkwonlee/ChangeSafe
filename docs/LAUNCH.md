@@ -15,29 +15,38 @@ pass first. Written for the owner to send — nothing here posts itself.
       check, the Action's gate path, and scenario/gallery freshness checks.
 - [x] Repository description and topics set; MIT license detected.
 - [x] README links the live demo above the fold.
-- [ ] **Owner: confirm the production `/api/status` response after the final
-      deployment.** The application no longer has a single `RUNTIME_MODEL`
-      constant. It resolves the configured provider and model at runtime.
-      Current code defaults are OpenAI `gpt-5.6`, Anthropic
-      `claude-opus-4-8`, and Ollama `llama3.1`, each overridable through the
-      corresponding `CHANGESAFE_*_MODEL` environment variable. Confirm that
-      the deployed response reports the intended provider/model—or honestly
-      reports `liveAvailable: false`—before posting.
-- [ ] **Owner: tag `v0.1.0`** once you are happy (see below).
+- [x] Production `/api/status` confirmed 2026-07-27. The deployment reports
+      `{"liveAvailable":false,"provider":null,"model":null,"appVersion":"0.2.0"}`
+      — no key is configured, so the header badge renders `replay only` and
+      the demo honestly claims no model call. The app resolves provider and
+      model at runtime rather than from a single `RUNTIME_MODEL` constant;
+      code defaults are OpenAI `gpt-5.6`, Anthropic `claude-opus-4-8`, and
+      Ollama `llama3.1`, each overridable through the corresponding
+      `CHANGESAFE_*_MODEL` environment variable. If a key is ever added to
+      the public deployment, re-confirm this response before posting again —
+      the launch copy promises no signup and no spend.
+- [x] Release tagged. `v0.1.0` was documented but never tagged; the shipped
+      tags are `v0.1.1`, `v0.2.0`, and the floating `v0`. The Action examples
+      and README pin `@v0.2.0`, so the tag the launch post points at exists.
 
 ## Tagging the launch
 
+Done for the current release. `v0.1.0` was written up but never tagged, so
+the first real tag was `v0.1.1` and the shipped release is `v0.2.0`:
+
 ```bash
-git tag -a v0.1.0 -m "ChangeSafe v0.1.0 — deterministic airlock for AI-proposed infrastructure changes"
-git push origin v0.1.0
-gh release create v0.1.0 --title "v0.1.0" --notes-file docs/RELEASE_NOTES_v0.1.0.md
+git tag -a v0.2.0 -m "ChangeSafe v0.2.0 — publishable packages and the deterministic airlock"
+git push origin v0.2.0
+gh release create v0.2.0 --title "v0.2.0" --notes-file docs/RELEASE_NOTES_v0.2.0.md
+git tag -f v0 v0.2.0 && git push -f origin v0   # move the floating major tag
 ```
 
-Before tagging, change the consumer examples in `README.md` and
-`examples/github-actions/gate-terraform-plan.yml` from `@main` to
-`@v0.1.0`. Then tag the exact reviewed commit and create the release from
-`docs/RELEASE_NOTES_v0.1.0.md`. This ensures the released documentation
-points users at a reproducible Action version rather than a moving branch.
+The consumer examples in `README.md` and
+`examples/github-actions/gate-terraform-plan.yml` already pin `@v0.2.0`
+rather than `@main`, so the released documentation points users at a
+reproducible Action version. Repeat this shape for each release: pin the
+examples first, tag the exact reviewed commit, create the release from that
+version's notes, then move `v0`.
 
 ## Show HN
 

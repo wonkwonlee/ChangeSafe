@@ -59,7 +59,9 @@ fights the new direction.
 - [x] README rewritten for OSS with an honest history line and a roadmap
       link.
 - [x] GitHub Actions CI: lint, typecheck, test, build, e2e, and a
-      client-bundle secret check on Node 22/24.
+      client-bundle secret check on Node 22. (Every job in `ci.yml` and
+      `publish.yml` pins `node-version: 22`; `engines` and `.nvmrc` agree.
+      Adding a 24 matrix leg is open work, not a shipped claim.)
 - [x] Repo hygiene: `CONTRIBUTING.md` (scenario contributions first-class),
       `SECURITY.md`, issue/PR templates, `engines` + `.nvmrc`, dead
       fixture-note reference fixed, overclaiming copy softened.
@@ -387,8 +389,11 @@ schema changes follow semver + documented migrations.
 
 ## 7. Open decisions (owner)
 
-1. npm scope: is `@changesafe` claimable? Fallback names
-   (`changesafe-core`, CLI bin name stays `changesafe`).
+1. ~~npm scope: is `@changesafe` claimable?~~ **Resolved 2026-07-27**: both
+   the `@changesafe` scope and the unscoped `changesafe` name were unclaimed
+   and are now published. `changesafe`, `@changesafe/core`,
+   `@changesafe/domain-network`, and `@changesafe/domain-terraform` are on
+   npm at `0.2.0` with provenance attestation. No fallback name was needed.
 2. ~~Public repo naming/timing.~~ **Resolved 2026-07-25**: the repository
    is public at `github.com/wonkwonlee/ChangeSafe`.
 3. Docs-site tooling (Starlight vs Nextra) remains an open owner decision
