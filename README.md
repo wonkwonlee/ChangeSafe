@@ -260,11 +260,19 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.1.0
+  uses: wonkwonlee/ChangeSafe@v0.1.1
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed
 ```
+
+`@v0` tracks the newest `v0.x` patch if you would rather receive fixes
+automatically; pin the exact tag, or a commit SHA, if you want the stricter
+supply-chain posture. Either way, the pull request body must reach the gate
+through the environment and never through a `${{ }}` expression inside a
+script — [the example workflow](examples/github-actions/gate-terraform-plan.yml)
+shows the safe shape, and
+[v0.1.1's notes](docs/RELEASE_NOTES_v0.1.1.md) explain why it matters.
 
 A pull request that replaces a protected compliance bucket — with a body
 telling the review tooling to approve it anyway:
