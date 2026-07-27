@@ -1,11 +1,24 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
-const workflow = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+/**
+ * Every workflow, not only CI: the publish workflow builds the artifact that
+ * reaches the registry, so it is the last place a drifting runtime should be
+ * allowed to go unnoticed.
+ */
+const workflowDir = path.join(root, ".github/workflows");
+const workflowFiles = readdirSync(workflowDir)
+  .filter((name) => name.endsWith(".yml"))
+  .sort();
+const workflows = workflowFiles.map((name) => ({
+  name,
+  body: readFileSync(path.join(workflowDir, name), "utf8"),
+}));
+const workflow = workflows.map((entry) => entry.body).join("\n");
 
 function topLevelJobBlocks(yaml: string): Array<{ name: string; body: string }> {
   const lines = yaml.split("\n");
@@ -54,7 +67,15 @@ describe("v0.1.0 runtime contract", () => {
     expect(workflow).toContain("npm@10.9.8");
     expect(workflow).toContain("npm ci");
 
-    const jobs = topLevelJobBlocks(workflow);
+    expect(workflowFiles).toContain("ci.yml");
+    expect(workflowFiles).toContain("publish.yml");
+
+    const jobs = workflows.flatMap((entry) =>
+      topLevelJobBlocks(entry.body).map((job) => ({
+        name: `${entry.name}:${job.name}`,
+        body: job.body,
+      })),
+    );
     expect(jobs.length).toBeGreaterThan(0);
 
     for (const job of jobs) {

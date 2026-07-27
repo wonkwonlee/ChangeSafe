@@ -1,0 +1,104 @@
+name: Publish
+
+# Publishing runs from a published GitHub release, never from a branch push:
+# the tag is what names a release, and the same commit CI proved is the one
+# that reaches the registry.
+on:
+  release:
+    types: [published]
+  # Manual re-run for a release whose publish step failed. It still refuses to
+  # publish anything whose version does not match the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.1.2"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish changesafe to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm provenance: the registry records which workflow, which repository,
+      # and which commit produced the tarball, signed by GitHub's OIDC
+      # identity. For a tool whose product is "you can check this yourself",
+      # an unverifiable package would be an odd thing to ship.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Pin npm
+        run: npm install --global npm@10.9.8
+      - name: Assert runtime contract
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v22"
+          test "$(npm --version)" = "10.9.8"
+      - run: npm ci
+
+      # The tag names the release, so the package must agree with it. Without
+      # this, a forgotten version bump publishes the previous version's number
+      # against this version's code — and npm versions are immutable, so that
+      # is not a mistake anyone can take back.
+      - name: The version matches the tag
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag $TAG does not match changesafe@$VERSION — bump the package version or fix the tag"
+            exit 1
+          fi
+          if npm view "changesafe@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::changesafe@$VERSION is already published; npm versions are immutable"
+            exit 1
+          fi
+
+      # Publishing is the one action that cannot be undone, so the gate runs
+      # again here rather than trusting that it ran on the pull request.
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build:cli
+      - name: The shipped bundle matches the source
+        run: |
+          if ! git diff --quiet -- packages/cli/dist/changesafe.js; then
+            echo "::error::packages/cli/dist/changesafe.js is stale; refusing to publish it"
+            exit 1
+          fi
+      - run: npm test
+
+      # What a consumer will actually get: install the tarball somewhere with
+      # no workspace, no dependencies, and gate a plan that must be refused.
+      # A package that installs but does not evaluate would otherwise be
+      # discovered by whoever ran `npx changesafe` first.
+      - name: The packed tarball gates a real change
+        run: |
+          set -euo pipefail
+          npm pack -w changesafe --pack-destination "$RUNNER_TEMP"
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          WORKDIR="$RUNNER_TEMP/consumer"
+          mkdir -p "$WORKDIR"
+          cp packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json "$WORKDIR/plan.json"
+          cd "$WORKDIR"
+          npm init -y >/dev/null
+          npm install "$RUNNER_TEMP/changesafe-$VERSION.tgz" --no-audit --no-fund
+          set +e
+          ./node_modules/.bin/changesafe gate --domain terraform --input plan.json --format json > out.json
+          CODE=$?
+          set -e
+          test "$CODE" -eq 1 || { echo "::error::expected exit 1 (blocked) from the installed binary, got $CODE"; cat out.json || true; exit 1; }
+          test "$(node -p "require('./out.json').blocked")" = "true"
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish -w changesafe --provenance --access public
