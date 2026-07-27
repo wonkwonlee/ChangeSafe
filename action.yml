@@ -59,17 +59,17 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # The gate ships pre-bundled at packages/cli/dist/changesafe.js: one file,
+    # no dependencies, nothing to install. Building it here instead would mean
+    # an `npm ci` of this whole repository inside every consumer's CI run —
+    # a minute of their time, a dependency on the registry being up, and a
+    # pile of build tooling executing on their runner to produce a file this
+    # repository could simply have shipped. CI rebuilds the bundle and fails
+    # if the committed bytes differ, so what runs here is the reviewed source.
     - name: Set up Node
       uses: actions/setup-node@v4
       with:
         node-version: 22
-
-    - name: Build the gate
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: |
-        npm ci --ignore-scripts --no-audit --no-fund
-        npm run build:cli
 
     - name: Run the gate
       id: gate

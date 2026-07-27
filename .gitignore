@@ -60,3 +60,9 @@ next-env.d.ts
 
 # built packages
 packages/*/dist/
+# ...except the CLI bundle, which the GitHub Action executes directly. It is a
+# build output living in git on purpose: a consumer's CI must not have to
+# install this repository to run the gate. CI rebuilds it and fails if the
+# committed bytes differ, so what ships is always the reviewed source.
+!packages/cli/dist/
+!packages/cli/dist/changesafe.js
