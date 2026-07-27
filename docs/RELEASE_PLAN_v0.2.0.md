@@ -106,6 +106,20 @@ So: a per-package `tsconfig.build.json` emitting JS plus `.d.ts` via plain
 `tsc` (no bundler, no new dependency), `files: ["dist"]`, and the workspace
 keeps consuming TypeScript source with no build step in the test loop.
 
+Two consequences surfaced during implementation and are worth recording.
+
+`tsc` rewrites no import specifiers, so extensionless relative imports emit
+JavaScript that Node refuses and declarations that NodeNext consumers reject.
+Adding `.js` to the *source* is the usual fix and does not work here: the app
+imports these packages as TypeScript, and Turbopack does not resolve a `.js`
+specifier to a `.ts` file, so the app stops building. The extensions are added
+to the build output instead, by `scripts/finish-package-build.mjs`, which
+fails loudly on anything it cannot resolve.
+
+The build configs also drop the repository's `paths`, so a domain package
+resolves `@changesafe/core` through node_modules — against the declarations
+that actually ship — which is why core builds first.
+
 Each package gets a pack-install-import smoke test. This is not optional:
 packaging the CLI turned up two defects that only exist once someone installs
 rather than clones — dependencies that could not resolve, and a binary that
@@ -116,8 +130,8 @@ symlink. Cloning would never have shown either.
 
 | PR | Contents | Depends on |
 | --- | --- | --- |
-| 1 | `--app-version` + verifier and builder pin the snapshot identity; this plan | — |
-| 2 | Library build pipeline + pack smoke tests | — |
+| 1 | `--app-version` + verifier and builder pin the snapshot identity; this plan | — (merged) |
+| 2 | Library build pipeline + pack smoke tests | — (merged) |
 | 3 | Version bump to 0.2.0 across the workspace | 1, 2 |
 | 4 | Release notes, tag, release → npm publishes | 3 |
 

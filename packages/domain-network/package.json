@@ -3,17 +3,43 @@
   "version": "0.1.0",
   "description": "Network domain for ChangeSafe: declarative device state, an allowlisted patch engine, deterministic reachability, sandboxed simulation, and network safety policies.",
   "license": "MIT",
-  "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "src"
+    "dist"
   ],
+  "sideEffects": false,
+  "keywords": [
+    "network",
+    "policy",
+    "guardrails",
+    "ai-safety",
+    "simulation"
+  ],
+  "homepage": "https://github.com/wonkwonlee/ChangeSafe#readme",
+  "bugs": {
+    "url": "https://github.com/wonkwonlee/ChangeSafe/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wonkwonlee/ChangeSafe.git",
+    "directory": "packages/domain-network"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

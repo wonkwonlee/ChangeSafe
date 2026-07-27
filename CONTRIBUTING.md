@@ -125,6 +125,13 @@ Checklist before opening the PR:
   The build is deterministic, and CI rebuilds it and fails if the committed
   bytes differ. That check is the point: it keeps the gate that ships
   identical to the gate that was reviewed.
+- **Source keeps extensionless relative imports** (`from "./errors"`). The
+  published packages need `./errors.js`, and `scripts/finish-package-build.mjs`
+  adds that to the build output — not to the source, because the app imports
+  these packages as TypeScript and Turbopack does not resolve a `.js`
+  specifier to a `.ts` file. `tests/integration/publishable-packages.test.ts`
+  installs the packed tarballs and uses them, so a broken specifier fails here
+  rather than in someone's install.
 - Commit messages: imperative subject, body explaining why.
 
 ## Releases (maintainers)
