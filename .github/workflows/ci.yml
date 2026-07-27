@@ -46,6 +46,10 @@ jobs:
             git diff --stat -- packages/cli/dist/changesafe.js
             exit 1
           fi
+      # The libraries ship compiled output, and only a build produces it. The
+      # pack-and-consume test skips itself when there is none, so leaving this
+      # out would quietly stop testing what an installer actually receives.
+      - run: npm run build:packages
       - run: npm test
       - run: npm run build
 

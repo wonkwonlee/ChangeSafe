@@ -1,0 +1,27 @@
+{
+  // Emit configuration for the published package. The repository's tsconfig
+  // only type-checks (`noEmit`), and its `paths` point at workspace source —
+  // which is what keeps the test loop free of a build step. This one produces
+  // what an installer gets: ESM plus declarations, from src alone.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "declaration": true,
+    // No maps: they would point at `src`, which the package does not ship.
+    "declarationMap": false,
+    "sourceMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "incremental": false,
+    "tsBuildInfoFile": null,
+    // Resolve `@changesafe/*` the way an installer does — through
+    // node_modules to the dependency's published types — instead of through
+    // the repository's source aliases. Building against a sibling's source
+    // would drag it into this package's output tree, and would never exercise
+    // the declarations that actually ship. Core therefore builds first.
+    "paths": {}
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["tests/**/*"]
+}

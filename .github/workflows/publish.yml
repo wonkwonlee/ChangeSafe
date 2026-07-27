@@ -68,6 +68,10 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build:cli
+      # Not published yet (the libraries join in v0.2.0), but built here so the
+      # pack-and-consume test runs against this exact commit rather than
+      # skipping.
+      - run: npm run build:packages
       - name: The shipped bundle matches the source
         run: |
           if ! git diff --quiet -- packages/cli/dist/changesafe.js; then
