@@ -3,16 +3,14 @@ name: Publish
 # Publishing runs from a published GitHub release, never from a branch push:
 # the tag is what names a release, and the same commit CI proved is the one
 # that reaches the registry.
+# Only a published release. npm's trusted-publishing docs warn that with
+# `workflow_dispatch` (and `workflow_call`) the OIDC validation checks the
+# *calling* workflow's name rather than the one containing the publish, which
+# produces a configuration mismatch that looks like a credentials problem. To
+# retry a failed publish, re-publish the release; see CONTRIBUTING.
 on:
   release:
     types: [published]
-  # Manual re-run for a release whose publish step failed. It still refuses to
-  # publish anything whose version does not match the tag.
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to publish, e.g. v0.1.2"
-        required: true
 
 permissions:
   contents: read
@@ -23,20 +21,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # npm provenance: the registry records which workflow, which repository,
-      # and which commit produced the tarball, signed by GitHub's OIDC
-      # identity. For a tool whose product is "you can check this yourself",
-      # an unverifiable package would be an odd thing to ship.
+      # Required twice over: it is what trusted publishing exchanges for a
+      # publish credential, and what lets npm attach provenance recording
+      # which workflow, repository, and commit produced each tarball. For a
+      # tool whose product is "you can check this yourself", an unverifiable
+      # package would be an odd thing to ship.
       id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: ${{ github.event.release.tag_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
           registry-url: https://registry.npmjs.org
+          # npm's release guidance: never cache the package manager in a
+          # release build. What reaches the registry should come from a clean
+          # resolve, not from whatever a previous run happened to leave behind.
+          package-manager-cache: false
       - name: Pin npm
         run: npm install --global npm@10.9.8
       - name: Assert runtime contract
@@ -51,7 +53,7 @@ jobs:
       # is not a mistake anyone can take back.
       - name: Every version matches the tag
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./packages/cli/package.json').version")
@@ -115,17 +117,33 @@ jobs:
           test "$CODE" -eq 1 || { echo "::error::expected exit 1 (blocked) from the installed binary, got $CODE"; cat out.json || true; exit 1; }
           test "$(node -p "require('./out.json').blocked")" = "true"
 
+      # Trusted publishing needs npm 11.5.1 or later, and everything above
+      # deliberately ran on the pinned 10.9.8 — that pin is what makes the
+      # gate reproducible, so it is not loosened for the whole job just to
+      # reach a publish command. The upgrade happens here, after the last
+      # check, and applies only to the publish itself.
+      - name: Use an npm that can publish over OIDC
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.5.1
+          test "$(npm --version)" = "11.5.1"
+
+      # No token. Each package trusts this repository and this workflow file
+      # through npm's trusted publishing, so the credential is a short-lived
+      # OIDC token minted per publish and never stored anywhere. `--provenance`
+      # is absent on purpose: under trusted publishing npm attaches provenance
+      # automatically, and passing the flag would only invite someone to
+      # "fix" it by adding a token later.
+      #
       # Dependency order, not alphabetical: a domain published before core
       # would be uninstallable for as long as the gap lasted. The CLI bundles
       # everything and depends on none of them at runtime, so it goes last —
       # if an earlier publish fails, the command-line entry point has not yet
       # advertised a release that is only half there.
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           for package in @changesafe/core @changesafe/domain-network @changesafe/domain-terraform changesafe; do
             echo "publishing $package"
-            npm publish -w "$package" --provenance --access public
+            npm publish -w "$package" --access public
           done

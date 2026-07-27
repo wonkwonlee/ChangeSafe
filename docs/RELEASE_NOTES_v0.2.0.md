@@ -26,8 +26,16 @@ npm i @changesafe/core @changesafe/domain-terraform
 `@changesafe/ai`, `@changesafe/ledger`, and `@changesafe/server` stay
 unpublished for now; they are the self-hosting pieces and join in v0.3.0.
 
-Every package is published with npm **provenance**, so the registry records
-which workflow, repository, and commit produced each tarball.
+These four tarballs were published by hand. npm retired the classic publish
+tokens the release workflow was written against, so 0.2.0 went out from a
+maintainer's machine and **carries no provenance attestation** — the registry
+records the publisher, not the workflow and commit that built it. Verify this
+release the way the repository has always asked you to instead: check out the
+`v0.2.0` tag and reproduce it (see [Verification](#verification) below).
+
+Publishing moves to npm trusted publishing (OIDC) from the next release, which
+attaches provenance automatically. `@changesafe/core` already has the
+publisher configured.
 
 ## Embedding the gate
 
