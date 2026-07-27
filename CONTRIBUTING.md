@@ -113,6 +113,18 @@ Checklist before opening the PR:
 - Policy behavior changes must bump `CORE_POLICY_VERSION`
   (`packages/core/src/version.ts`) or the domain's `policyVersion`, and
   update the affected receipt tests.
+- **Changed the CLI, core, or a domain package? Rebuild and commit the
+  bundle.** `packages/cli/dist/changesafe.js` is a build output that lives in
+  git, because the GitHub Action executes it directly in other people's CI
+  and must not have to install this repository first:
+
+  ```bash
+  npm run build:cli && git add packages/cli/dist/changesafe.js
+  ```
+
+  The build is deterministic, and CI rebuilds it and fails if the committed
+  bytes differ. That check is the point: it keeps the gate that ships
+  identical to the gate that was reviewed.
 - Commit messages: imperative subject, body explaining why.
 
 ## Releases (maintainers)
@@ -130,6 +142,8 @@ has not shipped to anyone using it.
 - A release does not modify `verification/`. Published snapshots are
   evidence about the version that produced them; rebuilding one to make it
   agree with newer code would destroy the only thing it proves.
+- A tag carries the bundle the Action will run, so confirm CI's bundle check
+  passed on the commit you are tagging.
 
 ```bash
 git tag -a v0.1.1 -m "ChangeSafe v0.1.1" && git push origin v0.1.1

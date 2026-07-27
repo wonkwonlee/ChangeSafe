@@ -76,8 +76,37 @@ describe("v0.1.0 runtime contract", () => {
       const immutableInstall = job.body.indexOf("- run: npm ci");
 
       expect(setupNode, `${job.name} must set up Node`).toBeGreaterThanOrEqual(0);
+      expect(
+        assertNode22,
+        `${job.name} must assert Node 22, installing or not`,
+      ).toBeGreaterThan(setupNode);
+
+      /**
+       * A job that installs nothing is held to a different contract, not to a
+       * looser one. `action-selftest` deliberately runs with no dependencies
+       * because that is what a consumer of the Action has — the committed CLI
+       * bundle and a checkout — and an `npm ci` there would hide a bundle
+       * that only works inside its own workspace. So it must prove the
+       * absence rather than merely omit the install.
+       */
+      if (immutableInstall === -1) {
+        expect(
+          job.body,
+          `${job.name} installs nothing, so it must prove node_modules is absent`,
+        ).toContain("test ! -d node_modules");
+        expect(
+          job.body,
+          `${job.name} installs nothing, so it must not need the npm pin`,
+        ).not.toContain("npm@10.9.8");
+        continue;
+      }
+
       expect(cacheNpm, `${job.name} must cache npm`).toBeGreaterThan(setupNode);
       expect(pinNpm, `${job.name} must pin npm after setup`).toBeGreaterThan(cacheNpm);
+      expect(
+        assertNode22,
+        `${job.name} must assert Node 22 after pinning npm`,
+      ).toBeGreaterThan(pinNpm);
       expect(
         pinNpmCommand,
         `${job.name} must install npm 10.9.8 in its pin step`,

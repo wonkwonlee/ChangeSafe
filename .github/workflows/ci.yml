@@ -33,6 +33,19 @@ jobs:
       # bundle exists, and that test is the proof it works outside the
       # workspace.
       - run: npm run build:cli
+      # The committed bundle is what the Action executes in other people's CI,
+      # so it has to be the reviewed source and not a stale copy of it. The
+      # build is deterministic, so a rebuild from this commit must reproduce
+      # the committed bytes exactly; if it does not, someone changed the CLI
+      # or its dependencies without rebuilding, and the shipped gate no longer
+      # matches the code this pull request shows.
+      - name: The shipped bundle matches the source
+        run: |
+          if ! git diff --quiet -- packages/cli/dist/changesafe.js; then
+            echo "::error::packages/cli/dist/changesafe.js is stale. Run 'npm run build:cli' and commit the result."
+            git diff --stat -- packages/cli/dist/changesafe.js
+            exit 1
+          fi
       - run: npm test
       - run: npm run build
 
@@ -66,20 +79,21 @@ jobs:
   action-selftest:
     name: The Action's gate path works end to end
     runs-on: ubuntu-latest
+    # Deliberately no `npm ci` and no build: a consumer of the Action gets a
+    # checkout and the committed bundle, nothing else. Installing here would
+    # hide a bundle that only works inside its own workspace — the failure
+    # mode that matters most, since it would appear first in someone else's
+    # CI rather than ours.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - name: Pin npm
-        run: npm install --global npm@10.9.8
       - name: Assert runtime contract
+        run: test "$(node --version | cut -d. -f1)" = "v22"
+      - name: No dependencies are installed
         run: |
-          test "$(node --version | cut -d. -f1)" = "v22"
-          test "$(npm --version)" = "10.9.8"
-      - run: npm ci
-      - run: npm run build:cli
+          test ! -d node_modules || { echo "::error::node_modules exists; this job must prove the bundle needs none"; exit 1; }
       # Exercise exactly what action.yml runs: gate a plan, render the
       # comment, and assert the exit code and verdict.
       - name: Gate a destructive plan

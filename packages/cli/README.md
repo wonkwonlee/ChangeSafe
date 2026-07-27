@@ -163,14 +163,20 @@ See [@changesafe/ledger](../ledger/README.md).
 
 ## In CI
 
+The bundle is committed, so a checkout is all it takes — there is nothing to
+install and nothing to build:
+
 ```yaml
-- run: npm run build:cli
 - run: node packages/cli/dist/changesafe.js gate --scenario ./change --receipt receipt.json
 - uses: actions/upload-artifact@v4
   with:
     name: changesafe-receipt
     path: receipt.json
 ```
+
+(The [Action](../../action.yml) wraps exactly this. Working from a clone
+rather than a checkout of this repository? `npm run build:cli` regenerates the
+same file.)
 
 A blocking finding fails the step. The receipt is the durable evidence of
 what the gate saw, verifiable later with `changesafe verify`.
