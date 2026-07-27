@@ -23,6 +23,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import {
   PROTECTED_FILES,
+  APP_VERSION,
   RECEIPT_ID,
   SOURCE_ID,
   canonicalJson,
@@ -319,6 +320,12 @@ async function buildTemporaryBundle(): Promise<TemporaryBundle> {
     RECEIPT_ID,
     "--created-at",
     CREATED_AT,
+    // The same identity the real builder stamps. This stands in for the
+    // published v0.1.0 bundle, and a bundle that named today's build would
+    // not be one — the manifest schema says so, which is how the omission
+    // was found.
+    "--app-version",
+    APP_VERSION,
     "--format",
     "json",
   ]);
