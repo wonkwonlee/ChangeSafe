@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish changesafe to npm
+    name: Publish to npm
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,32 +45,45 @@ jobs:
           test "$(npm --version)" = "10.9.8"
       - run: npm ci
 
-      # The tag names the release, so the package must agree with it. Without
-      # this, a forgotten version bump publishes the previous version's number
+      # Every published package carries the same version and the tag names it.
+      # Without this, a forgotten bump publishes the previous version's number
       # against this version's code — and npm versions are immutable, so that
       # is not a mistake anyone can take back.
-      - name: The version matches the tag
+      - name: Every version matches the tag
         env:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
+          set -euo pipefail
           VERSION=$(node -p "require('./packages/cli/package.json').version")
           if [ "$TAG" != "v$VERSION" ]; then
-            echo "::error::tag $TAG does not match changesafe@$VERSION — bump the package version or fix the tag"
+            echo "::error::tag $TAG does not match version $VERSION — bump the packages or fix the tag"
             exit 1
           fi
-          if npm view "changesafe@$VERSION" version >/dev/null 2>&1; then
-            echo "::error::changesafe@$VERSION is already published; npm versions are immutable"
-            exit 1
-          fi
+          for entry in "cli:changesafe" \
+                       "core:@changesafe/core" \
+                       "domain-network:@changesafe/domain-network" \
+                       "domain-terraform:@changesafe/domain-terraform"; do
+            DIRECTORY="${entry%%:*}"
+            NAME="${entry#*:}"
+            OWN=$(node -p "require('./packages/$DIRECTORY/package.json').version")
+            if [ "$OWN" != "$VERSION" ]; then
+              echo "::error::$NAME is $OWN while the release is $VERSION; the workspace publishes as a set"
+              exit 1
+            fi
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "::error::$NAME@$VERSION is already published; npm versions are immutable"
+              exit 1
+            fi
+          done
 
       # Publishing is the one action that cannot be undone, so the gate runs
       # again here rather than trusting that it ran on the pull request.
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build:cli
-      # Not published yet (the libraries join in v0.2.0), but built here so the
-      # pack-and-consume test runs against this exact commit rather than
-      # skipping.
+      # The libraries publish compiled output, and the pack-and-consume test
+      # skips itself without a build — a silent skip here would mean nothing
+      # checked what the registry is about to receive.
       - run: npm run build:packages
       - name: The shipped bundle matches the source
         run: |
@@ -102,7 +115,17 @@ jobs:
           test "$CODE" -eq 1 || { echo "::error::expected exit 1 (blocked) from the installed binary, got $CODE"; cat out.json || true; exit 1; }
           test "$(node -p "require('./out.json').blocked")" = "true"
 
+      # Dependency order, not alphabetical: a domain published before core
+      # would be uninstallable for as long as the gap lasted. The CLI bundles
+      # everything and depends on none of them at runtime, so it goes last —
+      # if an earlier publish fails, the command-line entry point has not yet
+      # advertised a release that is only half there.
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish -w changesafe --provenance --access public
+        run: |
+          set -euo pipefail
+          for package in @changesafe/core @changesafe/domain-network @changesafe/domain-terraform changesafe; do
+            echo "publishing $package"
+            npm publish -w "$package" --provenance --access public
+          done

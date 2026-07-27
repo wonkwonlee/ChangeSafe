@@ -260,7 +260,7 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.1.1
+  uses: wonkwonlee/ChangeSafe@v0.2.0
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed
@@ -303,8 +303,7 @@ The engine is a library, and the CLI is the same engine with **no AI
 dependency** — nothing in the gate calls a model.
 
 ```bash
-npm run build:cli
-node packages/cli/dist/changesafe.js gate --scenario scenarios/scenario-b-route-leak
+npx changesafe gate --scenario scenarios/scenario-b-route-leak
 ```
 
 ```text
@@ -324,6 +323,13 @@ gates and never approves: its receipts record `gate_only` or `blocked`, and
 there is no `--auto-approve`. Full usage: [packages/cli/README.md](packages/cli/README.md).
 
 ## Packages
+
+All four are on npm, published with provenance:
+
+```bash
+npm i @changesafe/core @changesafe/domain-terraform   # embed the gate
+npm i -g changesafe                                    # or just npx changesafe
+```
 
 | Package | What it is |
 | --- | --- |

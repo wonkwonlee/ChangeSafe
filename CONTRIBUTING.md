@@ -157,16 +157,22 @@ git tag -a v0.1.1 -m "ChangeSafe v0.1.1" && git push origin v0.1.1
 git tag -f v0 v0.1.1 && git push -f origin v0   # the one tag that moves
 ```
 
-### Publishing the CLI to npm
+### Publishing to npm
 
-Publishing the `changesafe` package to npm is automatic: `.github/workflows/publish.yml`
-runs when a GitHub release is *published*, and needs an `NPM_TOKEN` repository
-secret (an npm automation token for the `changesafe` package).
+Publishing is automatic: `.github/workflows/publish.yml` runs when a GitHub
+release is *published*, and needs an `NPM_TOKEN` repository secret (an npm
+automation token with publish rights for `changesafe` and the `@changesafe`
+scope).
+
+Four packages publish as a set — `@changesafe/core`, the two domains, then
+`changesafe` — in dependency order, because a domain that reached the
+registry before core would be uninstallable until core caught up.
 
 It refuses to publish rather than guessing:
 
-- the release tag must equal `v<version>` from `packages/cli/package.json`;
-- that version must not already exist on npm, since npm versions are immutable;
+- the release tag must equal `v<version>`, and every published package must
+  carry that same version — they release together or not at all;
+- no version may already exist on npm, since npm versions are immutable;
 - lint, typecheck, the full test suite, and the bundle-freshness check must pass
   on the tagged commit;
 - the packed tarball is installed into a throwaway project and must gate a
@@ -174,9 +180,9 @@ It refuses to publish rather than guessing:
   would otherwise be found by whoever ran `npx changesafe` first.
 
 It publishes with `--provenance`, so the registry records which workflow,
-repository, and commit produced the tarball. Bump `packages/cli/package.json`
-in the release PR; the tag and the published version are then the same number
-by construction.
+repository, and commit produced each tarball. Bump every workspace version in
+the release PR; the tag and the published versions are then the same number by
+construction.
 
 ## Reporting problems
 

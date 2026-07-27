@@ -132,8 +132,8 @@ symlink. Cloning would never have shown either.
 | --- | --- | --- |
 | 1 | `--app-version` + verifier and builder pin the snapshot identity; this plan | — (merged) |
 | 2 | Library build pipeline + pack smoke tests | — (merged) |
-| 3 | Version bump to 0.2.0 across the workspace | 1, 2 |
-| 4 | Release notes, tag, release → npm publishes | 3 |
+| 3 | Version bump to 0.2.0 across the workspace | 1, 2 (merged) |
+| 4 | Release notes, pins, publish workflow covers all four packages | 3 |
 
 PR 1 must land before PR 3. Reversed, the version bump turns the release gate
 red and the verifier gets repaired while the gate is broken — fixing the gate
@@ -141,8 +141,8 @@ with the gate down.
 
 ## Open
 
-- `NPM_TOKEN` secret (owner).
-- Whether inter-package ranges publish as `^0.2.0` or exact pins. Caret is
-  assumed here; exact would force lockstep upgrades on consumers.
+- ~~`NPM_TOKEN` secret (owner).~~ Added 2026-07-27.
+- ~~Whether inter-package ranges publish as `^0.2.0` or exact pins.~~ Caret,
+  as assumed: exact pins would force consumers to upgrade the set in lockstep.
 - GitHub Marketplace listing for the Action, now that it no longer builds
   itself at consumer runtime. Independent of this release.
