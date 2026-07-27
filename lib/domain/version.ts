@@ -1,5 +1,5 @@
 /** Kept in sync with package.json manually; embedded in receipts. */
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.2.0";
 
 /** Bumped whenever any frozen policy's behavior changes; embedded in receipts. */
 export const POLICY_VERSION = "policies-v0.1.0";

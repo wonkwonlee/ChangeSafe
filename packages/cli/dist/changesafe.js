@@ -17411,8 +17411,8 @@ import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
 // src/version.ts
-var CLI_APP_VERSION = "changesafe-cli-0.1.0";
-var SERVER_APP_VERSION = "changesafe-server-0.1.0";
+var CLI_APP_VERSION = "changesafe-cli-0.2.0";
+var SERVER_APP_VERSION = "changesafe-server-0.2.0";
 
 // src/output.ts
 var EXIT_OK = 0;
