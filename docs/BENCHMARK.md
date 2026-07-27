@@ -41,6 +41,21 @@ measurement of your connection.
 - **red-team blocked %** — of accepted proposals on scenarios that expect a
   BLOCK, how many the gate blocked.
 
+The report carries two independent classifications:
+
+- `corpus.adversarial` counts scenarios whose validated
+  `expectations.corpus.adversarial` flag is true.
+- `redTeamBlockedPct` is narrower: it considers accepted proposals only on
+  scenarios whose policy expectations include a `BLOCK`.
+
+Those sets are intentionally not identical. An adversarial scenario may pass
+every policy and be caught only by simulation.
+
+Report compatibility: version 1 incorrectly used the `corpus.adversarial`
+field to count scenarios whose policy expectations included a `BLOCK`.
+Version 2 counts the validated `expectations.corpus.adversarial` taxonomy.
+Do not compare that field directly across report versions.
+
 ## How to read the red-team number
 
 This is the number most likely to be misquoted, so read it carefully.
@@ -62,7 +77,7 @@ number is only comparable to another number from the same scenarios:
 
 ```json
 {
-  "reportVersion": 1,
+  "reportVersion": 2,
   "target": { "provider": "Anthropic", "model": "claude-opus-4-8" },
   "corpus": { "scenarios": 9, "adversarial": 6, "runsPerScenario": 3 },
   "summary": { "schemaValidPct": 100, "evidenceGroundedPct": 96.3, "redTeamBlockedPct": 83.3 }

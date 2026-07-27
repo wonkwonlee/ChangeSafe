@@ -17727,7 +17727,7 @@ function pickProvider(requested) {
 // src/eval.ts
 import { existsSync, readdirSync, writeFileSync as writeFileSync3 } from "node:fs";
 import path4 from "node:path";
-var EVAL_REPORT_VERSION = 1;
+var EVAL_REPORT_VERSION = 2;
 var EMPTY_OUTCOMES = {
   accepted: 0,
   call_failed: 0,
@@ -17735,6 +17735,18 @@ var EMPTY_OUTCOMES = {
   schema_invalid: 0,
   ungrounded: 0
 };
+function createScenarioReport(expectations, attempts) {
+  return {
+    scenarioId: expectations.scenarioId,
+    adversarial: expectations.corpus.adversarial,
+    expectsBlock: Object.values(expectations.policies).includes("BLOCK"),
+    attempts,
+    outcomes: { ...EMPTY_OUTCOMES },
+    blocked: 0,
+    clean: 0,
+    notes: []
+  };
+}
 async function runEval(options, console) {
   const provider = resolveProvider(options.provider);
   if (!provider.isConfigured(process.env)) {
@@ -17772,16 +17784,7 @@ async function evaluateScenario(dir, providerId, model, runs) {
     readJsonFile(path4.join(dir, "expectations.json"), "expectations"),
     "expectations"
   );
-  const expectsBlock = Object.values(expectations.policies).includes("BLOCK");
-  const report2 = {
-    scenarioId: expectations.scenarioId,
-    expectsBlock,
-    attempts: runs,
-    outcomes: { ...EMPTY_OUTCOMES },
-    blocked: 0,
-    clean: 0,
-    notes: []
-  };
+  const report2 = createScenarioReport(expectations, runs);
   for (let run2 = 0; run2 < runs; run2 += 1) {
     const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
       provider: resolveProvider(providerId),
@@ -17802,17 +17805,23 @@ async function evaluateScenario(dir, providerId, model, runs) {
   }
   return report2;
 }
-function report(reports, target, options, console) {
-  const total = (pick2) => reports.reduce((sum, r) => sum + pick2(r), 0);
-  const attempts = total((r) => r.attempts);
-  const callFailed2 = total((r) => r.outcomes.call_failed);
+function buildEvalArtifact(reports, target, context) {
+  const total = (pick2) => reports.reduce((sum, report2) => sum + pick2(report2), 0);
+  const attempts = total((entry) => entry.attempts);
+  const callFailed2 = total((entry) => entry.outcomes.call_failed);
   const answered = attempts - callFailed2;
-  const accepted = total((r) => r.outcomes.accepted);
-  const ungrounded = total((r) => r.outcomes.ungrounded);
+  const accepted = total((entry) => entry.outcomes.accepted);
+  const ungrounded = total((entry) => entry.outcomes.ungrounded);
   const schemaValid = accepted + ungrounded;
-  const redTeam = reports.filter((r) => r.expectsBlock);
-  const redTeamAccepted = redTeam.reduce((sum, r) => sum + r.outcomes.accepted, 0);
-  const redTeamBlocked = redTeam.reduce((sum, r) => sum + r.blocked, 0);
+  const blockExpected = reports.filter((entry) => entry.expectsBlock);
+  const redTeamAccepted = blockExpected.reduce(
+    (sum, entry) => sum + entry.outcomes.accepted,
+    0
+  );
+  const redTeamBlocked = blockExpected.reduce(
+    (sum, entry) => sum + entry.blocked,
+    0
+  );
   const rate = (numerator, denominator) => denominator === 0 ? null : Math.round(numerator / denominator * 1e3) / 10;
   const summary2 = {
     provider: target.provider,
@@ -17824,28 +17833,31 @@ function report(reports, target, options, console) {
     evidenceGroundedPct: rate(accepted, answered),
     redTeamBlockedPct: rate(redTeamBlocked, redTeamAccepted)
   };
+  return {
+    reportVersion: EVAL_REPORT_VERSION,
+    generatedAtUtc: context.generatedAtUtc,
+    target: { provider: target.provider, model: target.model },
+    corpus: {
+      directory: context.directory,
+      scenarios: reports.length,
+      adversarial: reports.filter((entry) => entry.adversarial).length,
+      runsPerScenario: context.runsPerScenario
+    },
+    summary: summary2,
+    scenarios: [...reports]
+  };
+}
+function report(reports, target, options, console) {
+  const artifact = buildEvalArtifact(reports, target, {
+    directory: options.dir,
+    generatedAtUtc: options.now ?? (/* @__PURE__ */ new Date()).toISOString(),
+    runsPerScenario: options.runs
+  });
+  const { summary: summary2 } = artifact;
+  const redTeamAccepted = reports.filter((entry) => entry.expectsBlock).reduce((sum, entry) => sum + entry.outcomes.accepted, 0);
   if (options.report) {
-    writeFileSync3(
-      options.report,
-      `${JSON.stringify(
-        {
-          reportVersion: EVAL_REPORT_VERSION,
-          generatedAtUtc: options.now ?? (/* @__PURE__ */ new Date()).toISOString(),
-          target: { provider: summary2.provider, model: summary2.model },
-          corpus: {
-            directory: options.dir,
-            scenarios: reports.length,
-            adversarial: reports.filter((entry) => entry.expectsBlock).length,
-            runsPerScenario: options.runs
-          },
-          summary: summary2,
-          scenarios: reports
-        },
-        null,
-        2
-      )}
-`
-    );
+    writeFileSync3(options.report, `${JSON.stringify(artifact, null, 2)}
+`);
   }
   if (options.format === "json") {
     console.out(JSON.stringify({ summary: summary2, scenarios: reports }, null, 2));
@@ -17868,14 +17880,16 @@ function report(reports, target, options, console) {
     }
   }
   console.out("");
-  console.out(`  schema-valid       ${pct(summary2.schemaValidPct)}  (of ${answered} answered)`);
-  console.out(`  evidence-grounded  ${pct(summary2.evidenceGroundedPct)}  (of ${answered} answered)`);
+  console.out(`  schema-valid       ${pct(summary2.schemaValidPct)}  (of ${summary2.answered} answered)`);
+  console.out(
+    `  evidence-grounded  ${pct(summary2.evidenceGroundedPct)}  (of ${summary2.answered} answered)`
+  );
   console.out(
     `  red-team blocked   ${pct(summary2.redTeamBlockedPct)}  (of ${redTeamAccepted} accepted on block-expected scenarios)`
   );
-  if (callFailed2 > 0) {
+  if (summary2.callFailed > 0) {
     console.out(
-      `  ${paint(console.color, "dim", `${callFailed2} call(s) failed and are excluded from every rate`)}`
+      `  ${paint(console.color, "dim", `${summary2.callFailed} call(s) failed and are excluded from every rate`)}`
     );
   }
   console.out("");
