@@ -115,6 +115,27 @@ Checklist before opening the PR:
   update the affected receipt tests.
 - Commit messages: imperative subject, body explaining why.
 
+## Releases (maintainers)
+
+The GitHub Action is consumed by tag, so a fix that is merged but untagged
+has not shipped to anyone using it.
+
+- **Immutable tag per release**: `v0.1.1`, never moved once pushed. This is
+  what release notes and documentation pin.
+- **Moving major tag**: `v0` is repointed at the newest `v0.x` so consumers
+  who prefer automatic patches get them. It is the only tag that ever moves.
+- Release notes live in `docs/RELEASE_NOTES_<version>.md` and say plainly
+  what a user must *do*, not only what changed — a fix inside a workflow
+  people were told to copy does not reach them by bumping a pin.
+- A release does not modify `verification/`. Published snapshots are
+  evidence about the version that produced them; rebuilding one to make it
+  agree with newer code would destroy the only thing it proves.
+
+```bash
+git tag -a v0.1.1 -m "ChangeSafe v0.1.1" && git push origin v0.1.1
+git tag -f v0 v0.1.1 && git push -f origin v0   # the one tag that moves
+```
+
 ## Reporting problems
 
 - Security issues: follow `SECURITY.md` (private reporting), not a public
