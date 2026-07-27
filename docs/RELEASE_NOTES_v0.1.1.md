@@ -4,13 +4,18 @@ A security and correctness patch. Nothing about the trust model changes: AI
 proposes, deterministic code validates, a human decides, and ChangeSafe still
 executes nothing.
 
-**Everyone using the GitHub Action should update.** One of these fixes is in
-the example workflow the README tells you to copy, so updating the Action
-version is necessary but — for that one — not sufficient. See *Action
-required* below.
+> **This is ChangeSafe's first tagged release.** `v0.1.0` was documented but
+> never tagged, so `uses: wonkwonlee/ChangeSafe@v0.1.0` never resolved for
+> anyone. That does not make the fix below less urgent, and here is the part
+> worth reading twice: in the example workflow, the vulnerable capture step
+> runs *before* the `uses:` step that would have failed. A copied workflow was
+> therefore exploitable even though the gate itself never ran once.
+
+**If you copied the example workflow, you have something to change**, and
+bumping a version pin is not it. See *Action required* below.
 
 ```yaml
-- uses: wonkwonlee/ChangeSafe@v0.1.1
+- uses: wonkwonlee/ChangeSafe@v0.1.1   # or @v0 to track v0.x patches
 ```
 
 ## Action required if you copied the example workflow
@@ -45,6 +50,18 @@ repository. Replace that step with:
 
 The body still reaches the gate as untrusted text that is scanned and never
 obeyed. It just stops reaching the shell.
+
+To find affected copies in your own repositories:
+
+```bash
+grep -rn 'CHANGESAFE_PR_BODY' .github/workflows/
+```
+
+While you are there, the general shape is worth a wider look: any `run:` block
+containing `${{ github.event.… }}` has the same problem, whatever tool it was
+copied from. The expression is substituted before the shell parses the script,
+so no amount of quoting inside the script protects it. Passing the value
+through `env:` does.
 
 ## Fixed
 
@@ -130,28 +147,42 @@ and requires the replayed receipt to be canonically identical to the signed
 one, and `appVersion` is inside that receipt. Moving the string would mean the
 v0.1.0 snapshot no longer reproduces from this repository.
 
-The honest resolution is that the snapshot should reproduce from the code at
-its own tag rather than from the working tree, which is now possible because
-tags exist. That is a v0.2.0 change, not a patch-release change — it touches
-the release verifier, which is exactly the tool a release should not be
-quietly modifying.
+The honest resolution is that the snapshot should reproduce from the code it
+names rather than from the working tree — from the `sourceCommit` already
+recorded in its own `provenance.json`, since there will never be a `v0.1.0`
+tag to reproduce from. Tagging that commit would publish the pre-fix workflow
+as an installable `@v0.1.0`, which is the opposite of what this release is
+for. That change belongs in v0.2.0, not in a patch: it touches the release
+verifier, which is exactly the tool a release should not be quietly modifying.
 
 Nothing is published to npm, so no package version is implied by this. The
 git tag names the release.
 
+`v0` also exists and tracks the newest `v0.x`. It is the only tag that moves;
+`v0.1.1` will always mean this commit.
+
 ## Upgrading
 
-| From | Do |
+| Your situation | Do |
 | --- | --- |
-| The Action, any pin | Move to `@v0.1.1`, and fix a copied example workflow (above) |
+| You copied the example workflow | **Fix the capture step in your repository** (above). Then pin `@v0.1.1` — until now there was no tag to pin |
+| You are adopting the Action for the first time | Follow the README; it already pins `@v0.1.1` |
 | The CLI or library, from source | Pull `main`; no API changed |
 | The self-hosted server | No change required. Consider `--approver` / `--approver-claim` — without them, every identity your issuer vouches for may approve |
 | The app with live mode public | Nothing required. Consider `CHANGESAFE_LIVE_RATE_LIMIT`, and read the README note on what the cap is not |
 
 ## Verification
 
+Checked at the tagged commit, not only on a branch:
+
 ```bash
-npm run verify:v0.1.0   # the published snapshot still reproduces
-npm test                # 440 passing
-npm run build:cli && node packages/cli/dist/changesafe.js scenario check
+git checkout v0.1.1
+npm ci
+npm run verify:v0.1.0   # the published v0.1.0 snapshot still reproduces
+npm test                # 440 passing, 2 skipped
+npm run build:cli && node packages/cli/dist/changesafe.js scenario check   # 9/9
 ```
+
+The red-team corpus still refuses every proposal it is supposed to refuse.
+That is the release gate this project actually cares about, and no change in
+this release moved it.
