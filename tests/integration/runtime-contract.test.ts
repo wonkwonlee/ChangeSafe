@@ -122,8 +122,26 @@ describe("v0.1.0 runtime contract", () => {
         continue;
       }
 
-      expect(cacheNpm, `${job.name} must cache npm`).toBeGreaterThan(setupNode);
-      expect(pinNpm, `${job.name} must pin npm after setup`).toBeGreaterThan(cacheNpm);
+      /**
+       * Caching is required everywhere except a release build, where npm's
+       * own guidance is the opposite: what reaches the registry should come
+       * from a clean resolve rather than from whatever a previous run left
+       * behind. A job may therefore opt out, but only by saying so — silence
+       * still fails.
+       */
+      const noCache = job.body.indexOf("package-manager-cache: false");
+      if (noCache === -1) {
+        expect(cacheNpm, `${job.name} must cache npm`).toBeGreaterThan(setupNode);
+      } else {
+        expect(
+          cacheNpm,
+          `${job.name} disables the package-manager cache, so it must not also enable it`,
+        ).toBe(-1);
+        expect(noCache, `${job.name} must disable the cache in its setup step`).toBeGreaterThan(
+          setupNode,
+        );
+      }
+      expect(pinNpm, `${job.name} must pin npm after setup`).toBeGreaterThan(setupNode);
       expect(
         assertNode22,
         `${job.name} must assert Node 22 after pinning npm`,
@@ -148,6 +166,71 @@ describe("v0.1.0 runtime contract", () => {
         immutableInstall,
         `${job.name} must run npm ci after the runtime assertion`,
       ).toBeGreaterThan(assertNpmVersion);
+
+      /**
+       * The one sanctioned departure from the pinned npm, and it has to stay
+       * sanctioned rather than become habit.
+       *
+       * Trusted publishing needs npm 11.5.1 or later, which the pinned 10.9.8
+       * cannot do. Loosening the pin for the whole job would mean the gate no
+       * longer ran on the runtime this repository claims to support, so the
+       * upgrade happens after every check and applies only to the publish. If
+       * a job upgrades npm, it must therefore do so *after* installing and
+       * testing on the pin — never before.
+       */
+      const upgradeNpm = job.body.indexOf("npm install --global npm@11.5.1");
+      if (upgradeNpm !== -1) {
+        const test = job.body.indexOf("- run: npm test");
+        expect(test, `${job.name} must still run the suite`).toBeGreaterThan(immutableInstall);
+        expect(
+          upgradeNpm,
+          `${job.name} must upgrade npm only after the gate has run on the pinned version`,
+        ).toBeGreaterThan(test);
+        expect(
+          job.body,
+          `${job.name} must assert the upgraded npm version it relies on`,
+        ).toContain('test "$(npm --version)" = "11.5.1"');
+      }
     }
+  });
+
+  /**
+   * Publishing authenticates over OIDC, not with a stored credential. A token
+   * reappearing in this workflow would be a silent step back to a long-lived
+   * secret — and it would still *work*, which is exactly why a test has to
+   * say so rather than a comment.
+   */
+  it("publishes over OIDC and stores no npm credential", () => {
+    const publish = workflows.find((entry) => entry.name === "publish.yml");
+    expect(publish, "publish.yml must exist").toBeDefined();
+    const body = publish?.body ?? "";
+
+    /**
+     * Comments in this workflow explain why a token, `--provenance`, and
+     * `workflow_dispatch` are absent — so a naive substring search over the
+     * file would be failed by the very sentences documenting the rule. The
+     * assertions therefore read the executable YAML only.
+     */
+    const code = body
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+
+    expect(code, "publishing must not read an npm token").not.toContain("NODE_AUTH_TOKEN");
+    expect(code, "publishing must not read an npm token").not.toContain("NPM_TOKEN");
+    expect(code, "OIDC needs id-token: write").toContain("id-token: write");
+
+    const publishCommands = code.split("\n").filter((line) => line.includes("npm publish"));
+    expect(publishCommands.length, "publish.yml must publish something").toBeGreaterThan(0);
+    for (const command of publishCommands) {
+      expect(command, "provenance is attached automatically").not.toContain("--provenance");
+    }
+    // npm's docs: with workflow_dispatch or workflow_call, OIDC validation
+    // checks the calling workflow's name, which fails as a mismatch.
+    expect(code, "only a published release may publish").not.toContain("workflow_dispatch");
+    expect(code, "only a published release may publish").not.toContain("workflow_call");
+    expect(code, "release builds must not reuse a package cache").toContain(
+      "package-manager-cache: false",
+    );
   });
 });

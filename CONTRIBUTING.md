@@ -160,9 +160,43 @@ git tag -f v0 v0.1.1 && git push -f origin v0   # the one tag that moves
 ### Publishing to npm
 
 Publishing is automatic: `.github/workflows/publish.yml` runs when a GitHub
-release is *published*, and needs an `NPM_TOKEN` repository secret (an npm
-automation token with publish rights for `changesafe` and the `@changesafe`
-scope).
+release is *published*. There is no npm token — the workflow authenticates
+over OIDC using npm's [trusted publishing][tp], so nothing long-lived is
+stored in this repository and a leaked secret is not a way to publish.
+
+[tp]: https://docs.npmjs.com/trusted-publishers
+
+Each package trusts this repository through its own npm settings, at
+*Settings → Trusted Publisher* on npmjs.com. All four use the same values:
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `wonkwonlee` |
+| Repository | `ChangeSafe` |
+| Workflow filename | `publish.yml` |
+| Environment | *(blank)* |
+| Allowed actions | `npm publish` |
+
+Two consequences of how npm implements this, both already encoded in the
+workflow and asserted by `tests/integration/runtime-contract.test.ts`:
+
+- **The trigger must stay `release: published`.** With `workflow_dispatch` or
+  `workflow_call`, npm validates the *calling* workflow's name rather than the
+  one containing the publish, and the mismatch surfaces as an authentication
+  error. To retry a failed publish, re-publish the release; there is
+  deliberately no manual-run button.
+- **npm 11.5.1 is installed just before publishing.** The pinned 10.9.8
+  predates OIDC publishing. The upgrade happens *after* lint, typecheck, the
+  suite, and the install smoke test, so the gate still runs on the runtime
+  this repository claims to support.
+
+A brand-new package name cannot be configured before it exists, so the first
+version of any package is published by hand (`npm publish -w <package>
+--access public` from the tagged commit) and its trusted publisher is
+configured immediately afterwards. Such a version has no provenance
+attestation — say so in its release notes rather than letting the standing
+"published with provenance" sentence stand.
 
 Four packages publish as a set — `@changesafe/core`, the two domains, then
 `changesafe` — in dependency order, because a domain that reached the
@@ -179,10 +213,11 @@ It refuses to publish rather than guessing:
   destructive plan to exit 1 — a package that installs but does not evaluate
   would otherwise be found by whoever ran `npx changesafe` first.
 
-It publishes with `--provenance`, so the registry records which workflow,
-repository, and commit produced each tarball. Bump every workspace version in
-the release PR; the tag and the published versions are then the same number by
-construction.
+Provenance needs no flag: under trusted publishing npm attaches it
+automatically, recording which workflow, repository, and commit produced each
+tarball. Passing `--provenance` explicitly is not an improvement, so the
+workflow does not. Bump every workspace version in the release PR; the tag and
+the published versions are then the same number by construction.
 
 ## Reporting problems
 
