@@ -51,8 +51,36 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 
-# local tooling state (not part of the product)
+# local orchestration runtime state (not part of the product). Keep generated
+# state ignored at every depth, including nested worktrees. The root-level
+# exceptions below are the only durable, human-authored Markdown allowlist.
 .omc/
+.omx/
+.superpowers/
+
+!/.omc/
+/.omc/*
+!/.omc/README.md
+!/.omc/handoffs/
+/.omc/handoffs/*
+!/.omc/handoffs/*.md
+
+!/.omx/
+/.omx/*
+!/.omx/README.md
+!/.omx/context/
+/.omx/context/*
+!/.omx/context/*.md
+!/.omx/context/**/*.md
+!/.omx/plans/
+/.omx/plans/*
+!/.omx/plans/*.md
+!/.omx/plans/**/*.md
+!/.omx/specs/
+/.omx/specs/*
+!/.omx/specs/*.md
+!/.omx/specs/**/*.md
+
 .worktrees/
 .claude/settings.local.json
 
