@@ -106,7 +106,7 @@ const input = {
   alert: "Link instability",
 };
 
-const session: ReviewSessionEnvelope = {
+const publicReplaySession: ReviewSessionEnvelope = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
   policyVersion: "test-network-v1",
@@ -123,6 +123,25 @@ const session: ReviewSessionEnvelope = {
   analysisMode: "replay",
   provenance: "captured-replay",
 };
+
+/** Lifecycle tests must opt into authenticated durable authority explicitly. */
+const selfHostedDurableSession: ReviewSessionEnvelope = {
+  ...publicReplaySession,
+  capabilities: {
+    ...publicReplaySession.capabilities,
+    durableDecision: true,
+  },
+  runtimeMode: "self-hosted",
+};
+
+function asSelfHostedReview(
+  review: ReviewAnalysisResult,
+): ReviewAnalysisResult {
+  return {
+    ...review,
+    session: selfHostedDurableSession,
+  };
+}
 
 async function validReview(): Promise<ReviewAnalysisResult> {
   const response = await reviewPost(
@@ -181,7 +200,7 @@ beforeEach(() => {
 
 describe("useReviewController", () => {
   it("delegates transport results and workflow authority to the pure reducer", async () => {
-    const payload = await validReview();
+    const payload = asSelfHostedReview(await validReview());
     const transport = vi.fn<ReviewTransport<typeof payload.input>>(
       async (request) => ({
         attemptId: request.attemptId,
@@ -222,6 +241,32 @@ describe("useReviewController", () => {
     hook.approve();
     hook = useRenderedController(options);
     expect(hook.state.workflow.phase).toBe("APPROVED");
+  });
+
+  it("keeps public replay evidence-only when callers dispatch lifecycle actions", async () => {
+    const payload = await validReview();
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport: vi.fn<ReviewTransport<typeof payload.input>>(
+        async (request) => ({ attemptId: request.attemptId, payload }),
+      ),
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+
+    await hook.analyze();
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("APPROVAL_REQUIRED");
+
+    hook.approve();
+    hook.reject();
+    hook.completeSimulation({});
+    hook = useRenderedController(options);
+
+    expect(hook.state.workflow.phase).toBe("APPROVAL_REQUIRED");
   });
 
   it("fails the current attempt safely when transport returns a mismatched attempt id", async () => {
@@ -372,7 +417,7 @@ describe("useReviewController", () => {
       sourceId: "scenario-one",
       input,
       expectedInputId: input.incidentId,
-      session,
+      session: publicReplaySession,
       transport,
       attemptIdFactory: () => "attempt-one",
     };
@@ -500,7 +545,7 @@ describe("useReviewController", () => {
   });
 
   it("routes rejection and receipt issuance through the pure controller", async () => {
-    const payload = await validReview();
+    const payload = asSelfHostedReview(await validReview());
     const options = {
       sourceId: "scenario-a-failover",
       input: payload.input,
@@ -528,7 +573,7 @@ describe("useReviewController", () => {
   });
 
   it("fails safely when async receipt validation finds a workflow mismatch", async () => {
-    const payload = await validReview();
+    const payload = asSelfHostedReview(await validReview());
     const options = {
       sourceId: "scenario-a-failover",
       input: payload.input,
@@ -558,7 +603,7 @@ describe("useReviewController", () => {
   });
 
   it("does not install an async receipt result after rebind", async () => {
-    const payload = await validReview();
+    const payload = asSelfHostedReview(await validReview());
     const options = {
       sourceId: "scenario-a-failover",
       input: payload.input,
@@ -598,7 +643,7 @@ describe("useReviewController", () => {
 
   it("exposes validated transport error and replay metadata", async () => {
     const liveSession: ReviewSessionEnvelope = {
-      ...session,
+      ...publicReplaySession,
       source: "live-model",
       analysisMode: "live",
       provenance: "live-model",
