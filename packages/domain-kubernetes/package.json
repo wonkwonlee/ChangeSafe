@@ -1,0 +1,53 @@
+{
+  "name": "@changesafe/domain-kubernetes",
+  "version": "0.2.0",
+  "description": "Kubernetes domain contracts for ChangeSafe: offline snapshots and manifest proposals only; never contacts or mutates a cluster.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "kubernetes",
+    "policy",
+    "guardrails",
+    "ai-safety",
+    "infrastructure"
+  ],
+  "homepage": "https://github.com/wonkwonlee/ChangeSafe#readme",
+  "bugs": {
+    "url": "https://github.com/wonkwonlee/ChangeSafe/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wonkwonlee/ChangeSafe.git",
+    "directory": "packages/domain-kubernetes"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@changesafe/core": "^0.2.0",
+    "yaml": "2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

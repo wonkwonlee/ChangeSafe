@@ -17,8 +17,8 @@ export const DiffEntrySchema = z.strictObject({
  */
 export const SimulationResultSchema = z.strictObject({
   status: z.literal("completed"),
-  changedResourceIds: z.array(z.string().min(1).max(256)).min(1).max(64),
-  diff: z.array(DiffEntrySchema).min(1).max(64),
+  changedResourceIds: z.array(z.string().min(1).max(256)).min(1).max(5000),
+  diff: z.array(DiffEntrySchema).min(1).max(5000),
   safetyProperties: z.array(
     z.strictObject({
       propertyId: IdSchema,

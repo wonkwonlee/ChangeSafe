@@ -29,6 +29,7 @@
       "@changesafe/server": ["./packages/server/src/index.ts"],
       "@changesafe/domain-network": ["./packages/domain-network/src/index.ts"],
       "@changesafe/domain-terraform": ["./packages/domain-terraform/src/index.ts"],
+      "@changesafe/domain-kubernetes": ["./packages/domain-kubernetes/src/index.ts"],
       "changesafe": ["./packages/cli/src/main.ts"],
       "changesafe/version": ["./packages/cli/src/version.ts"]
     }
