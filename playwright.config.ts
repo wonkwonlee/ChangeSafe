@@ -10,7 +10,6 @@ export default defineConfig({
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"]],
-  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{ext}",
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",
