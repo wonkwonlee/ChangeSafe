@@ -9,7 +9,9 @@ describe("/workbench route", () => {
     const markup = renderToStaticMarkup(createElement(WorkbenchPage));
 
     expect(markup).toContain('<nav aria-label="Product navigation"');
-    expect(markup).toContain('<main aria-label="Review canvas"');
+    expect(markup).toMatch(
+      /<main\b(?=[^>]*\baria-label="Review canvas")(?=[^>]*\baria-busy="false")[^>]*>/,
+    );
     expect(markup).toContain('<aside aria-label="Review authority"');
     expect(markup).toContain("Public replay");
     expect(metadata.title).toBe("ChangeSafe Workbench — Public Replay");
