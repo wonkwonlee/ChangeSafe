@@ -7,7 +7,11 @@ function declarations(block: string): Map<string, string> {
   const result = new Map<string, string>();
 
   for (const match of block.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-    result.set(match[1], match[2].trim());
+    const [, name, value] = match;
+    if (name === undefined || value === undefined) {
+      throw new Error("Expected every CSS declaration match to include a name and value");
+    }
+    result.set(name, value.trim());
   }
 
   return result;
