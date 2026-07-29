@@ -42,7 +42,8 @@ export type {
 
 export { resourceIdOf } from "./identity";
 export { normalizeSnapshot } from "./normalize";
-export { deriveManifestProposal, parseManifestDocuments } from "./manifests";
+export { deriveManifestProposal } from "./manifest-proposal";
+export { parseManifestDocuments } from "./manifests";
 export { parseKubernetesPath } from "./paths";
 export { applyKubernetesOperations } from "./apply";
 export type { KubernetesPatchResult } from "./apply";

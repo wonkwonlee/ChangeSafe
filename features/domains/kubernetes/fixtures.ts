@@ -5,7 +5,7 @@ import {
   normalizeSnapshot,
   type KubernetesChangeProposal,
   type KubernetesSnapshot,
-} from "@changesafe/domain-kubernetes";
+} from "@changesafe/domain-kubernetes/offline";
 
 /**
  * Offline, fictional Kubernetes replay inputs for the public workbench.
