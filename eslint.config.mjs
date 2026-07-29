@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Build artifacts: the CLI bundle inlines its dependencies.
     "packages/*/dist/**",
+    ".worktrees/**",
+    ".claude/worktrees/**",
     "test-results/**",
     "playwright-report/**",
   ]),

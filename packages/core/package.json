@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The deterministic airlock engine: typed change proposals, pure safety policies, transactional decisions, and hashed receipts. Domain-agnostic.",
   "license": "MIT",
   "type": "module",

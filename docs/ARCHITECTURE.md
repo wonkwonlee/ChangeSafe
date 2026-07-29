@@ -129,3 +129,7 @@ route covers the target's management IP (devices with zero routes are
 passive); the target must hold a covering route back to the origin. This is
 enough to make "removing the only management route severs access" provable on
 a sandboxed copy, which is the property the demo depends on.
+
+## Kubernetes acquisition boundary
+
+Kubernetes collection is isolated from the pure gate: the optional collector performs explicit namespace-scoped `get/list` reads and atomically writes a validated snapshot. `@changesafe/domain-kubernetes` consumes only that snapshot and proposed manifests, derives deterministic resource-level operations, and simulates on a clone. No collector or Kubernetes client is imported by core policies.

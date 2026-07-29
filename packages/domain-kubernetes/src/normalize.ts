@@ -39,6 +39,8 @@ const RawContainerSchema = z.looseObject({
 
 const RawPodSpecSchema = z.looseObject({
   containers: z.array(RawContainerSchema).optional(),
+  initContainers: z.array(RawContainerSchema).optional(),
+  securityContext: z.looseObject({ runAsUser: z.number().int().min(0).optional() }).optional(),
   hostNetwork: z.boolean().optional(),
   hostPID: z.boolean().optional(),
   hostIPC: z.boolean().optional(),
@@ -152,12 +154,10 @@ export function identityOfRawResource(raw: unknown): KubernetesIdentity {
   return parsed.data;
 }
 
-function normalizeContainers(
-  podSpec: z.infer<typeof RawPodSpecSchema> | undefined,
-) {
-  if (!podSpec?.containers) return undefined;
+function normalizeContainers(containers: z.infer<typeof RawContainerSchema>[] | undefined) {
+  if (!containers) return undefined;
 
-  return podSpec.containers.map((container) => {
+  return containers.map((container) => {
     const securityContext = container.securityContext;
     const security =
       securityContext === undefined
@@ -196,12 +196,17 @@ function normalizeContainers(
 
 function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undefined) {
   const podSpec = template?.spec;
-  const containers = normalizeContainers(podSpec);
+  const containers = normalizeContainers(podSpec?.containers);
+  const initContainers = normalizeContainers(podSpec?.initContainers);
   return {
     ...(template?.metadata?.labels === undefined
       ? {}
       : { podLabels: sortRecord(template.metadata.labels) }),
     ...(containers === undefined ? {} : { containers }),
+    ...(initContainers === undefined ? {} : { initContainers }),
+    ...(podSpec?.securityContext?.runAsUser === undefined
+      ? {}
+      : { podRunAsUser: podSpec.securityContext.runAsUser }),
     hostNetwork: podSpec?.hostNetwork ?? false,
     hostPID: podSpec?.hostPID ?? false,
     hostIPC: podSpec?.hostIPC ?? false,

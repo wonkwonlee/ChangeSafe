@@ -15,6 +15,7 @@ import { runLedgerAppend, runLedgerList, runLedgerVerify } from "./ledger";
 import { runScenarioCheck, runScenarioInit } from "./scenario";
 import { runServe } from "./serve";
 import { runVerify } from "./verify";
+import { runKubernetesCollect } from "./kubernetes-collect";
 import { EXIT_USAGE, createConsole, paint, type Console } from "./output";
 import { CLI_PACKAGE_VERSION } from "./version";
 
@@ -22,6 +23,7 @@ const HELP = `changesafe — a deterministic airlock for AI-proposed infrastruct
 
 USAGE
   changesafe gate      [options]        evaluate a proposal against the safety gate
+  changesafe kubernetes collect [options] acquire a namespace-scoped read-only snapshot
   changesafe analyze   [options]        ask a model for a proposal, then gate it
   changesafe eval      [options]        measure a model against the scenario suite
   changesafe verify    <receipt.json>   recompute a receipt's hashes and signature
@@ -34,6 +36,7 @@ USAGE
 
 GATE OPTIONS
   --input <file>        the analyzed input: an incident bundle, or
+                        a Kubernetes snapshot for --domain kubernetes, or
                         \`terraform show -json\` output for --domain terraform
   --proposal <file>     a proposal, or a replay fixture containing one
                         (the terraform domain derives this from the plan)
@@ -69,6 +72,16 @@ EVAL OPTIONS
   --runs <n>            attempts per scenario (default: 1, max 20)
   --report <file>       write a versioned, committable report
   --format pretty|json
+
+KUBERNETES COLLECT OPTIONS
+  --namespace <name>    namespace to read (required, repeatable)
+  --kubeconfig <file>   optional kubeconfig path (default: standard lookup)
+  --context <name>      optional kubeconfig context
+  --out <file>          atomically write the validated snapshot (required)
+
+Collection performs only namespace-scoped get/list reads for Deployments,
+StatefulSets, DaemonSets, and Services. It rejects credential plugins and has
+no apply, patch, delete, watch, exec, or cluster-wide mode.
 
 LEDGER OPTIONS
   --db <file>           ledger database (default: changesafe-ledger.db)
@@ -126,7 +139,6 @@ const OPTION_SPEC = {
   "policy-pack": { type: "string" },
   receipt: { type: "string" },
   "source-id": { type: "string" },
-  context: { type: "string" },
   provider: { type: "string" },
   model: { type: "string" },
   out: { type: "string" },
@@ -153,6 +165,9 @@ const OPTION_SPEC = {
   limit: { type: "string" },
   format: { type: "string", default: "pretty" },
   dir: { type: "string" },
+  namespace: { type: "string", multiple: true },
+  kubeconfig: { type: "string" },
+  context: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
   version: { type: "boolean", default: false },
 } as const;
@@ -187,6 +202,15 @@ export async function main(argv: string[], console: Console): Promise<number> {
   const command = positionals[0];
 
   switch (command) {
+    case "kubernetes": {
+      if (positionals[1] !== "collect") throw new UsageError("use changesafe kubernetes collect");
+      return runKubernetesCollect({
+        namespaces: values.namespace,
+        kubeconfig: values.kubeconfig,
+        context: values.context,
+        out: values.out,
+      }, console);
+    }
     case "gate":
       return runGate(
         {

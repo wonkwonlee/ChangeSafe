@@ -234,6 +234,15 @@ const privilegeBlock = (detail: string): PolicyFinding => ({
 });
 
 describe("Kubernetes domain policy publication and risk", () => {
+  it("blocks forward remove operations even when called through core", () => {
+    const removal = { ...replacement(deployment), op: "remove" as const };
+    const forward = proposal(snapshot, removal);
+    const result = evaluatePolicies(kubernetesDomain, snapshot, {
+      ...forward,
+      operations: [removal],
+    });
+    expect(result.findings.some((finding) => finding.status === "BLOCK")).toBe(true);
+  });
   it("publishes the complete structural, domain, and universal policy order", () => {
     expect(policyOrder(kubernetesDomain)).toEqual([
       "PATCH_SCHEMA",
@@ -279,6 +288,12 @@ describe("K8S_PRIVILEGE_ESCALATION", () => {
     ["host process namespace", { hostPID: true }, "hostPID"],
     ["host IPC namespace", { hostIPC: true }, "hostIPC"],
     ["hostPath volume", { hasHostPath: true }, "hasHostPath"],
+    ["pod-level root UID", { podRunAsUser: 0 }, "pod:runAsUser=0"],
+    [
+      "privileged init container",
+      { initContainers: [{ name: "setup", image: "registry.example.invalid/setup:v1", security: { privileged: true, allowPrivilegeEscalation: false } }] },
+      "setup:privileged",
+    ],
     [
       "privilege escalation",
       {
@@ -716,6 +731,7 @@ describe("K8S_MUTABLE_IMAGE", () => {
   it.each([
     ["untagged image", "registry.example.invalid/web"],
     [":latest image", "registry.example.invalid/web:latest"],
+    ["malformed digest", "registry.example.invalid/web@sha256:abc123"],
   ])("warns for an introduced %s", (_case, image) => {
     expect(
       finding(
@@ -741,7 +757,7 @@ describe("K8S_MUTABLE_IMAGE", () => {
   });
 
   it.each([
-    ["digest-pinned image", "registry.example.invalid/web@sha256:abc123"],
+    ["digest-pinned image", `registry.example.invalid/web@sha256:${"a".repeat(64)}`],
     ["non-latest tagged image", "registry.example.invalid/web:v2"],
   ])("passes for an introduced %s", (_case, image) => {
     expect(

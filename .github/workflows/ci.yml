@@ -147,6 +147,26 @@ jobs:
         # A gallery that drifts advertises coverage the suite does not have.
         run: node packages/cli/dist/changesafe.js scenario gallery --check
 
+  kubernetes-safety:
+    name: Kubernetes offline and read-only contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global npm@10.9.8
+      - run: npm ci
+      - name: Offline domain and collector contracts
+        run: npx vitest run packages/domain-kubernetes packages/kubernetes-collector tests/integration/kubernetes-contracts.test.ts tests/integration/kubernetes-kind.test.ts
+      - name: Collector has no mutation or command capability
+        run: |
+          if grep -RIE '\.(create|replace|patch|delete|deleteCollection|connect|exec|portForward|watch)[A-Z]|node:child_process|kubectl' packages/kubernetes-collector/src; then
+            echo "::error::Kubernetes collector contains a prohibited capability"
+            exit 1
+          fi
+
   no-secret-leak:
     name: Secrets never reach the client bundle
     runs-on: ubuntu-latest

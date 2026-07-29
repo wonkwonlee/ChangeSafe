@@ -48,6 +48,28 @@ export function postChangeState(
   context: KubernetesPolicyContext,
   policyId: string,
 ): KubernetesState | PolicyFinding {
+  const operations = context.proposal.operations;
+  const forwardRemoval = Array.isArray(operations)
+    ? operations.find(
+        (operation) =>
+          typeof operation === "object" &&
+          operation !== null &&
+          "op" in operation &&
+          operation.op === "remove" &&
+          "path" in operation &&
+          typeof operation.path === "string",
+      )
+    : undefined;
+  if (forwardRemoval) {
+    return {
+      policyId,
+      status: "BLOCK",
+      title: "Kubernetes resource deletion is unsupported",
+      explanation: `${policyId} cannot evaluate a forward remove operation. Manifest omission is not deletion, and v0.3.0 accepts only add or replace operations.`,
+      affectedResources: [forwardRemoval.path],
+      remediation: "Remove the delete intent and submit only complete resource upserts.",
+    };
+  }
   try {
     return context.adapter.applyOperations(
       context.adapter.stateOf(context.input),

@@ -25,6 +25,7 @@ const PACKAGES = [
   { name: "@changesafe/core", directory: "packages/core" },
   { name: "@changesafe/domain-network", directory: "packages/domain-network" },
   { name: "@changesafe/domain-terraform", directory: "packages/domain-terraform" },
+  { name: "@changesafe/domain-kubernetes", directory: "packages/domain-kubernetes" },
 ] as const;
 
 const built = PACKAGES.every((entry) => existsSync(path.join(root, entry.directory, "dist")));

@@ -10,9 +10,17 @@ import {
   normalizePlan,
   terraformDomain,
 } from "@changesafe/domain-terraform";
+import {
+  KubernetesManifestSetSchema,
+  deriveManifestProposal,
+  normalizeSnapshot,
+  parseManifestDocuments,
+  kubernetesDomain,
+  type KubernetesSnapshot,
+} from "@changesafe/domain-kubernetes";
 import { z } from "zod";
 
-import { UsageError, parseOrThrow } from "./io";
+import { UsageError, parseOrThrow, readTextFile } from "./io";
 
 /**
  * Domains the CLI can gate. Adding one here is the only wiring a new domain
@@ -34,11 +42,12 @@ export interface CliDomain {
   readonly derivesProposalFromInput?: boolean;
   deriveProposal?(input: unknown): unknown;
   /** Parse a proposal file, accepting either a bare proposal or a fixture. */
-  parseProposal(raw: unknown): {
+  parseProposal(raw: unknown, input?: unknown): {
     proposal: unknown;
     provenance: string | null;
     fixtureId: string | null;
   };
+  readProposalFile?(filePath: string): unknown;
   /** What `--input` should point at, for help text. */
   readonly inputDescription: string;
 }
@@ -97,7 +106,32 @@ const terraform: CliDomain = {
   },
 };
 
-const DOMAINS: Record<string, CliDomain> = { network, terraform };
+const kubernetes: CliDomain = {
+  id: "kubernetes",
+  adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
+  inputDescription: "a changesafe-kubernetes-snapshot/v1 JSON file",
+
+  parseInput(raw) {
+    const snapshot = normalizeSnapshot(raw);
+    return { input: snapshot, inputId: snapshot.snapshotId };
+  },
+
+  readProposalFile(filePath) {
+    return parseManifestDocuments(readTextFile(filePath, "Kubernetes proposal"));
+  },
+
+  parseProposal(raw, input) {
+    const manifestSet = KubernetesManifestSetSchema.parse(raw);
+    if (!input) throw new UsageError("Kubernetes proposal parsing requires a snapshot input");
+    const derived = deriveManifestProposal(
+      input as KubernetesSnapshot,
+      manifestSet,
+    );
+    return { proposal: derived.proposal, provenance: null, fixtureId: null };
+  },
+};
+
+const DOMAINS: Record<string, CliDomain> = { network, terraform, kubernetes };
 
 export const DOMAIN_IDS = Object.keys(DOMAINS);
 
