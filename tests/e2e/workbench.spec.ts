@@ -39,10 +39,17 @@ test("public workbench evaluates a selected bundled replay without creating deci
 
   await page.getByRole("button", { name: /INC-4977/ }).click();
   await expect(page.getByRole("heading", { level: 1, name: /Suspected route leak/ })).toBeVisible();
+  // The selected fixture's authorship must stay visible before the replay is
+  // evaluated. In particular, a red-team fixture must never look like a
+  // captured model result simply because it travels through the replay path.
+  await expect(page.getByText("Fixture provenance").locator(".."))
+    .toContainText("authored_red_team");
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "BLOCKED" })).toBeVisible();
   await expect(page.getByText(/BLOCKED by deterministic findings/)).toBeVisible();
   await expect(page.getByRole("list", { name: "Evaluated policy findings" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Risk" }).locator(".."))
+    .toContainText("CRITICAL");
   await expect(page.getByText("Not created. This ephemeral public replay")).toBeVisible();
   await expectNoDecisionOrExecutionControls(page);
   expect(dataRequests).toEqual([
@@ -53,6 +60,11 @@ test("public workbench evaluates a selected bundled replay without creating deci
 test("public workbench renders a safe replay result without granting its available human decision", async ({ page }) => {
   await page.goto("/workbench");
 
+  // The default fixture is captured. This is deliberately asserted in the
+  // public UI as well as the legacy airlock: provenance is an operator-facing
+  // safety boundary, not just transport metadata.
+  await expect(page.getByText("Fixture provenance").locator(".."))
+    .toContainText("captured");
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "APPROVAL_REQUIRED" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Risk" }).locator("..")).toContainText("LOW");
