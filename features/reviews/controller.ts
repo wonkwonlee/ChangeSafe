@@ -4,9 +4,13 @@ import {
   IllegalTransitionError,
   SimulationResultSchema,
   canonicallyEqual,
+  hashCanonical,
   initialState,
   transition,
+  verifyReceiptHash,
+  type ChangeReceipt,
   type FixtureProvenance,
+  type ReceiptDecision,
   type WorkflowState,
 } from "@changesafe/core";
 
@@ -21,6 +25,12 @@ import {
 
 export const SAFE_REVIEW_ERROR_MESSAGE =
   "Review analysis could not be loaded safely.";
+export const SAFE_RECEIPT_ERROR_MESSAGE =
+  "Review receipt could not be verified safely.";
+
+const verifiedReceiptCommandBrand: unique symbol = Symbol(
+  "verified-receipt-command",
+);
 
 export interface ActiveReviewRequest {
   readonly attemptId: string;
@@ -52,7 +62,17 @@ export type ReviewControllerCommand<TInput = never> =
   | { readonly type: "APPROVE_REVIEW" }
   | { readonly type: "REJECT_REVIEW" }
   | { readonly type: "SIMULATION_COMPLETED"; readonly simulation: unknown }
-  | { readonly type: "RECEIPT_CREATED"; readonly receipt: unknown };
+  | {
+      readonly type: "RECEIPT_CREATED";
+      readonly receipt: ChangeReceipt;
+      readonly expectedWorkflow: WorkflowState<TInput>;
+      readonly [verifiedReceiptCommandBrand]: true;
+    }
+  | {
+      readonly type: "RECEIPT_REJECTED";
+      readonly expectedWorkflow: WorkflowState<TInput>;
+      readonly [verifiedReceiptCommandBrand]: true;
+    };
 
 export interface InitialReviewControllerInput<TInput> {
   readonly sourceId: string;
@@ -108,8 +128,36 @@ export function completeReviewSimulation(
   return { type: "SIMULATION_COMPLETED", simulation };
 }
 
-export function recordReviewReceipt(receipt: unknown): ReviewControllerCommand {
-  return { type: "RECEIPT_CREATED", receipt };
+export async function recordReviewReceipt<TInput>(
+  state: ReviewControllerState<TInput>,
+  receipt: unknown,
+): Promise<ReviewControllerCommand<TInput>> {
+  if (!isReceiptPhase(state.workflow)) {
+    throw new IllegalTransitionError(
+      state.workflow.phase,
+      "RECEIPT_CREATED",
+    );
+  }
+
+  const parsed = ChangeReceiptSchema.safeParse(receipt);
+  if (!parsed.success) {
+    return rejectedReceiptCommand(state.workflow);
+  }
+
+  try {
+    if (!(await receiptMatchesWorkflow(state, parsed.data))) {
+      return rejectedReceiptCommand(state.workflow);
+    }
+  } catch {
+    return rejectedReceiptCommand(state.workflow);
+  }
+
+  return {
+    type: "RECEIPT_CREATED",
+    receipt: parsed.data,
+    expectedWorkflow: state.workflow,
+    [verifiedReceiptCommandBrand]: true,
+  };
 }
 
 export function reviewControllerReducer<TInput>(
@@ -202,13 +250,28 @@ export function reviewControllerReducer<TInput>(
     }
 
     case "RECEIPT_CREATED":
+      if (
+        command[verifiedReceiptCommandBrand] !== true ||
+        command.expectedWorkflow !== state.workflow
+      ) {
+        return state;
+      }
       return {
         ...state,
         workflow: transition(state.workflow, {
           type: "RECEIPT_CREATED",
-          receipt: ChangeReceiptSchema.parse(command.receipt),
+          receipt: command.receipt,
         }),
       };
+
+    case "RECEIPT_REJECTED":
+      if (
+        command[verifiedReceiptCommandBrand] !== true ||
+        command.expectedWorkflow !== state.workflow
+      ) {
+        return state;
+      }
+      return failSafely(state, SAFE_RECEIPT_ERROR_MESSAGE);
 
     default: {
       const exhaustive: never = command;
@@ -311,6 +374,7 @@ function failWithTransportError<TInput>(
 
 function failSafely<TInput>(
   state: ReviewControllerState<TInput>,
+  userMessage = SAFE_REVIEW_ERROR_MESSAGE,
 ): ReviewControllerState<TInput> {
   return {
     ...state,
@@ -319,9 +383,73 @@ function failSafely<TInput>(
     activeRequest: null,
     workflow: transition(state.workflow, {
       type: "FAIL",
-      userMessage: SAFE_REVIEW_ERROR_MESSAGE,
+      userMessage,
     }),
   };
+}
+
+type ReceiptWorkflow<TInput> = Extract<
+  WorkflowState<TInput>,
+  { phase: "BLOCKED" | "REJECTED" | "SIMULATED" }
+>;
+
+function isReceiptPhase<TInput>(
+  workflow: WorkflowState<TInput>,
+): workflow is ReceiptWorkflow<TInput> {
+  return (
+    workflow.phase === "BLOCKED" ||
+    workflow.phase === "REJECTED" ||
+    workflow.phase === "SIMULATED"
+  );
+}
+
+function rejectedReceiptCommand<TInput>(
+  expectedWorkflow: WorkflowState<TInput>,
+): ReviewControllerCommand<TInput> {
+  return {
+    type: "RECEIPT_REJECTED",
+    expectedWorkflow,
+    [verifiedReceiptCommandBrand]: true,
+  };
+}
+
+async function receiptMatchesWorkflow<TInput>(
+  state: ReviewControllerState<TInput>,
+  receipt: ChangeReceipt,
+): Promise<boolean> {
+  if (!isReceiptPhase(state.workflow)) {
+    return false;
+  }
+
+  const workflow = state.workflow;
+  const expectedDecision: ReceiptDecision =
+    workflow.phase === "BLOCKED"
+      ? "blocked"
+      : workflow.phase === "REJECTED"
+        ? "rejected"
+        : "approved";
+  const expectedSimulation =
+    workflow.phase === "SIMULATED" ? workflow.simulation : null;
+  const [inputSha256, proposalSha256, receiptHashValid] = await Promise.all([
+    hashCanonical(workflow.input),
+    hashCanonical(workflow.proposal),
+    verifyReceiptHash(receipt),
+  ]);
+
+  return (
+    receipt.sourceId === workflow.sourceId &&
+    receipt.inputId === state.expectedInputId &&
+    receipt.inputSha256 === inputSha256 &&
+    receipt.proposalId === workflow.proposal.proposalId &&
+    receipt.proposalSha256 === proposalSha256 &&
+    canonicallyEqual(receipt.findings, workflow.findings) &&
+    receipt.riskLevel === workflow.riskLevel &&
+    receipt.mode === workflow.mode &&
+    receipt.fixtureProvenance === workflow.provenance &&
+    receipt.decision === expectedDecision &&
+    canonicallyEqual(receipt.simulation, expectedSimulation) &&
+    receiptHashValid
+  );
 }
 
 function coreProvenance(

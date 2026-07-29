@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ChangeReceiptSchema,
+  createReceipt,
+  hashCanonical,
   IllegalTransitionError,
+  type ChangeReceipt,
   type SimulationResult,
 } from "@changesafe/core";
 
@@ -21,6 +25,7 @@ import {
   reviewCanSimulate,
   reviewControllerReducer,
   startReview,
+  type ReviewControllerState,
 } from "@/features/reviews/controller";
 
 const input = {
@@ -217,6 +222,57 @@ function simulatedState() {
   );
 }
 
+async function buildBoundReceipt(
+  state: ReviewControllerState<typeof input>,
+): Promise<ChangeReceipt> {
+  const { workflow } = state;
+  if (
+    workflow.phase !== "BLOCKED" &&
+    workflow.phase !== "REJECTED" &&
+    workflow.phase !== "SIMULATED"
+  ) {
+    throw new Error(`cannot build a bound receipt from ${workflow.phase}`);
+  }
+  const decision =
+    workflow.phase === "BLOCKED"
+      ? "blocked"
+      : workflow.phase === "REJECTED"
+        ? "rejected"
+        : "approved";
+  return createReceipt({
+    sourceId: workflow.sourceId,
+    inputId: state.expectedInputId,
+    input: workflow.input,
+    proposal: workflow.proposal,
+    appVersion: "test",
+    policyVersion: "test-v1",
+    mode: workflow.mode,
+    model: state.review?.provenance.model ?? null,
+    fixtureProvenance: workflow.provenance,
+    findings: workflow.findings,
+    riskLevel: workflow.riskLevel,
+    decision,
+    simulation: workflow.phase === "SIMULATED" ? workflow.simulation : null,
+    receiptId: `receipt-${decision}`,
+    createdAtUtc: "2026-07-29T12:00:00Z",
+  });
+}
+
+async function rehashReceipt(
+  receipt: ChangeReceipt,
+  overrides: Partial<ChangeReceipt>,
+): Promise<ChangeReceipt> {
+  const { receiptSha256, ...unhashed } = {
+    ...receipt,
+    ...overrides,
+  };
+  void receiptSha256;
+  return ChangeReceiptSchema.parse({
+    ...unhashed,
+    receiptSha256: await hashCanonical(unhashed),
+  });
+}
+
 describe("pure review controller", () => {
   it("validates review correlation identifiers at reducer boundaries", () => {
     const ready = initialReviewControllerState({
@@ -398,19 +454,24 @@ describe("pure review controller", () => {
     ["SIMULATED", simulatedState],
     [
       "RECEIPT_ISSUED",
-      () =>
-        reviewControllerReducer(
-          decisionState("BLOCK"),
-          recordReviewReceipt(buildReceipt({ decision: "blocked" })),
-        ),
+      async () => {
+        const blocked = decisionState("BLOCK");
+        return reviewControllerReducer(
+          blocked,
+          await recordReviewReceipt(
+            blocked,
+            await buildBoundReceipt(blocked),
+          ),
+        );
+      },
     ],
-  ] as const)("rebinds %s through core RESET", (_phase, buildState) => {
+  ] as const)("rebinds %s through core RESET", async (_phase, buildState) => {
     const replacementInput = {
       incidentId: "incident-two",
       alert: "Route instability",
     };
     const state = reviewControllerReducer(
-      buildState(),
+      await buildState(),
       rebindReview({
         sourceId: "scenario-two",
         input: replacementInput,
@@ -452,25 +513,15 @@ describe("pure review controller", () => {
   });
 
   it.each([
-    [
-      "BLOCKED",
-      () => decisionState("BLOCK"),
-      buildReceipt({ decision: "blocked" }),
-    ],
-    [
-      "REJECTED",
-      rejectedState,
-      buildReceipt({ decision: "rejected" }),
-    ],
-    [
-      "SIMULATED",
-      simulatedState,
-      buildReceipt({ decision: "approved", simulation }),
-    ],
-  ] as const)("records a receipt from %s", (_phase, buildState, receipt) => {
+    ["BLOCKED", () => decisionState("BLOCK")],
+    ["REJECTED", rejectedState],
+    ["SIMULATED", simulatedState],
+  ] as const)("records a bound receipt from %s", async (_phase, buildState) => {
+    const beforeReceipt = buildState();
+    const receipt = await buildBoundReceipt(beforeReceipt);
     const state = reviewControllerReducer(
-      buildState(),
-      recordReviewReceipt(receipt),
+      beforeReceipt,
+      await recordReviewReceipt(beforeReceipt, receipt),
     );
 
     expect(state.workflow.phase).toBe("RECEIPT_ISSUED");
@@ -483,13 +534,122 @@ describe("pure review controller", () => {
     ["READY", readyState],
     ["APPROVAL_REQUIRED", () => decisionState("PASS")],
     ["APPROVED", approvedState],
-  ] as const)("lets core reject a receipt from %s", (_phase, buildState) => {
-    expect(() =>
-      reviewControllerReducer(
+  ] as const)("rejects receipt preparation from %s", async (_phase, buildState) => {
+    await expect(
+      recordReviewReceipt(
         buildState(),
-        recordReviewReceipt(buildReceipt({ decision: "blocked" })),
+        buildReceipt({ decision: "blocked" }),
       ),
-    ).toThrow(IllegalTransitionError);
+    ).rejects.toThrow(IllegalTransitionError);
+  });
+
+  it("fails safely instead of installing a malformed receipt", async () => {
+    const blocked = decisionState("BLOCK");
+    const receipt = await buildBoundReceipt(blocked);
+    const state = reviewControllerReducer(
+      blocked,
+      await recordReviewReceipt(blocked, {
+        ...receipt,
+        findings: undefined,
+      }),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review receipt could not be verified safely.",
+    });
+    expect("receipt" in state.workflow).toBe(false);
+    expect(state.review).toBeNull();
+  });
+
+  it.each([
+    ["source", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { sourceId: "scenario-other" })],
+    ["input id", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { inputId: "incident-other" })],
+    ["input hash", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { inputSha256: "a".repeat(64) })],
+    ["proposal id", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { proposalId: "proposal-other" })],
+    ["proposal hash", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { proposalSha256: "b".repeat(64) })],
+    ["findings", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, {
+        findings: receipt.findings.map((finding, index) =>
+          index === 0 ? { ...finding, title: "Altered finding" } : finding,
+        ),
+      })],
+    ["risk", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { riskLevel: "MEDIUM" })],
+    ["mode", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { mode: "offline" })],
+    ["provenance", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { fixtureProvenance: "authored_synthetic" })],
+    ["simulation", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, {
+        simulation: receipt.simulation
+          ? { ...receipt.simulation, summary: "Altered simulation" }
+          : null,
+      })],
+    ["receipt hash", async (receipt: ChangeReceipt) => ({
+      ...receipt,
+      receiptSha256: "c".repeat(64),
+    })],
+  ] as const)(
+    "fails an approved receipt with a schema-valid %s mismatch",
+    async (_field, mutate) => {
+      const simulated = simulatedState();
+      const receipt = await mutate(await buildBoundReceipt(simulated));
+      const state = reviewControllerReducer(
+        simulated,
+        await recordReviewReceipt(simulated, receipt),
+      );
+
+      expect(state.workflow).toMatchObject({
+        phase: "ERROR",
+        userMessage: "Review receipt could not be verified safely.",
+      });
+      expect("receipt" in state.workflow).toBe(false);
+      expect(state.review).toBeNull();
+    },
+  );
+
+  it("fails a blocked receipt whose decision was rebound to rejection", async () => {
+    const blocked = decisionState("BLOCK");
+    const receipt = await rehashReceipt(
+      await buildBoundReceipt(blocked),
+      { decision: "rejected" },
+    );
+    const state = reviewControllerReducer(
+      blocked,
+      await recordReviewReceipt(blocked, receipt),
+    );
+
+    expect(state.workflow.phase).toBe("ERROR");
+    expect("receipt" in state.workflow).toBe(false);
+  });
+
+  it("ignores a verified receipt command after the active workflow is rebound", async () => {
+    const blocked = decisionState("BLOCK");
+    const command = await recordReviewReceipt(
+      blocked,
+      await buildBoundReceipt(blocked),
+    );
+    const replacementInput = {
+      incidentId: "incident-two",
+      alert: "Route instability",
+    };
+    const rebound = reviewControllerReducer(
+      blocked,
+      rebindReview({
+        sourceId: "scenario-two",
+        input: replacementInput,
+        expectedInputId: replacementInput.incidentId,
+        session: networkSession,
+      }),
+    );
+
+    expect(reviewControllerReducer(rebound, command)).toBe(rebound);
   });
 
   it.each([
