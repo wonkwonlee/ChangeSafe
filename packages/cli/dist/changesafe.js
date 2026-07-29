@@ -5046,7 +5046,7 @@ var error5 = () => {
         return `Clau inv\xE0lida a ${issue2.origin}`;
       case "invalid_union":
         return "Entrada inv\xE0lida";
-      // Could also be "Tipus d'uniÃ³ invÃ lid" but "Entrada invÃ lida" is more general
+      // Could also be "Tipus d'unió invàlid" but "Entrada invàlida" is more general
       case "invalid_element":
         return `Element inv\xE0lid a ${issue2.origin}`;
       default:
@@ -14864,7 +14864,7 @@ var ReceiptSignatureSchema = external_exports.strictObject({
   /**
    * Fingerprint of the signing key: the first 32 hex characters of SHA-256
    * over its SPKI encoding. Names which key signed without shipping the key
-   * itself â a verifier must obtain the real key out of band.
+   * itself — a verifier must obtain the real key out of band.
    */
   publicKeyId: external_exports.string().regex(/^[a-f0-9]{32}$/),
   /** Base64 Ed25519 signature over the canonical receipt. */
@@ -15014,7 +15014,7 @@ var FailureModeSchema = external_exports.enum([
 ]);
 var ScenarioExpectationsSchema = external_exports.strictObject({
   scenarioId: IdSchema,
-  /** Why this scenario exists â which gap in gate coverage it fills. */
+  /** Why this scenario exists — which gap in gate coverage it fills. */
   teaches: external_exports.string().min(1).max(500),
   policies: external_exports.record(PolicyIdSchema, PolicyStatusSchema),
   riskLevel: RiskLevelSchema,
@@ -15028,7 +15028,7 @@ var ScenarioExpectationsSchema = external_exports.strictObject({
   corpus: external_exports.strictObject({
     /**
      * True when the proposal is constructed to get an unsafe change past a
-     * reviewer â including honest-looking mistakes a prose review would
+     * reviewer — including honest-looking mistakes a prose review would
      * approve, not only deliberate attacks.
      */
     adversarial: external_exports.boolean(),
@@ -18228,13 +18228,13 @@ var Ledger = class _Ledger {
    * durable, and silently succeeding would hide that.
    *
    * Appends are serialized against each other. Deciding the next entry means
-   * reading the chain head and then hashing, and hashing is asynchronous â so
+   * reading the chain head and then hashing, and hashing is asynchronous — so
    * two decisions arriving together would both read the same head and build
    * the same link, and the second would land on the sequence number the first
    * just took. The database refuses that (`seq` is the primary key), which is
    * the right failure but an unhelpful one: the second approver's genuine
    * decision would come back as an internal error rather than the next entry
-   * in the chain. Queueing costs nothing here â a hash is microseconds â and
+   * in the chain. Queueing costs nothing here — a hash is microseconds — and
    * turns a collision into an ordering.
    *
    * A second *process* writing the same file is still caught by the
@@ -18321,7 +18321,7 @@ var Ledger = class _Ledger {
    *
    * Catches what the append-only triggers cannot: someone editing the
    * database file directly, or rebuilding the table. A gap in the sequence is
-   * itself a break â that is the case a plain receipts table cannot see.
+   * itself a break — that is the case a plain receipts table cannot see.
    */
   async verifyChain() {
     const rows = this.#db.prepare("SELECT * FROM receipts ORDER BY seq ASC").all().map((row) => RowSchema.parse(row));
@@ -19068,8 +19068,8 @@ var OidcVerifier = class {
   /**
    * Verify a bearer token and return the identity it establishes.
    *
-   * Every failure is the same class of answer â the request is not
-   * authenticated â so callers cannot accidentally treat "expired" or "wrong
+   * Every failure is the same class of answer — the request is not
+   * authenticated — so callers cannot accidentally treat "expired" or "wrong
    * audience" as a softer outcome than "bad signature".
    */
   async verify(token) {
