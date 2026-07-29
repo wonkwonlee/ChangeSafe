@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "createdAt": "2026-07-29T07:25:24.728Z",
+  "updatedAt": "2026-07-29T07:25:24.728Z",
+  "briefPath": ".omx/ultragoal/brief.md",
+  "goalsPath": ".omx/ultragoal/goals.json",
+  "ledgerPath": ".omx/ultragoal/ledger.jsonl",
+  "codexGoalMode": "aggregate",
+  "goals": [
+    {
+      "id": "G001-g001-baseline-and-architecture-contr",
+      "title": "G001 Baseline and architecture contracts",
+      "objective": "Lock existing behavior and define validated runtime, presentation, capability, session, record, transport, and API contracts with architecture tests.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G002-g002-product-design-system-and-appli",
+      "title": "G002 Product design system and application shell",
+      "objective": "Build the semantic design foundation and capability-driven product shell without changing workflow authority.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G003-g003-domain-registry-and-neutral-orc",
+      "title": "G003 Domain registry and neutral orchestration",
+      "objective": "Introduce lazy-loaded app-local domain runtime and presentation registries plus a domain-neutral review controller.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G004-g004-network-workflow-parity-migrati",
+      "title": "G004 Network workflow parity migration",
+      "objective": "Migrate the current network experience into the new workbench while preserving replay, gate, simulation, rollback, receipt, and red-team behavior.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G005-g005-terraform-external-diff-workben",
+      "title": "G005 Terraform external-diff workbench",
+      "objective": "Add a first-class Terraform review experience that honestly represents external-diff semantics and never implies simulation or execution.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G006-g006-kubernetes-simulated-state-work",
+      "title": "G006 Kubernetes simulated-state workbench",
+      "objective": "Add a first-class Kubernetes review experience using existing deterministic domain behavior and explicit capability-gated actions.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G007-g007-runtime-modes-intake-queue-and",
+      "title": "G007 Runtime modes intake queue and receipt proof",
+      "objective": "Separate public replay from authenticated self-hosted review, add intake and review queue flows, and render receipt proof claims independently.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G008-g008-policy-coverage-sources-and-fut",
+      "title": "G008 Policy coverage sources and future-domain template",
+      "objective": "Make domain and policy coverage visible and prove a fourth-domain registration path with a generic fallback; production IAM remains a separately specified post-vNext target.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G009-g009-accessibility-responsive-perfor",
+      "title": "G009 Accessibility responsive performance and security hardening",
+      "objective": "Meet WCAG 2.2 AA targets, responsive workbench behavior, bounded bundle budgets, and existing secret and provenance controls.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    },
+    {
+      "id": "G010-g010-cutover-documentation-and-final",
+      "title": "G010 Cutover documentation and final quality gate",
+      "objective": "Cut over the default experience, retire obsolete showcase paths, update documentation, and pass the full regression, build, E2E, corpus, gallery, and security gates.",
+      "status": "pending",
+      "attempt": 0,
+      "createdAt": "2026-07-29T07:25:24.728Z",
+      "updatedAt": "2026-07-29T07:25:24.728Z"
+    }
+  ],
+  "codexObjective": "Complete the durable ultragoal plan in .omx/ultragoal/goals.json, including later accepted/appended stories, under the original brief constraints; use .omx/ultragoal/ledger.jsonl as the audit trail."
+}
