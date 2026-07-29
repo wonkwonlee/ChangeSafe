@@ -149,7 +149,12 @@ export function useReviewController<TInput>(
       if (!mountedRef.current) {
         return;
       }
-      applyCommand(receiveReviewTransport(result.attemptId, result.payload));
+      applyCommand(
+        receiveReviewTransport(
+          attemptId,
+          result.attemptId === attemptId ? result.payload : null,
+        ),
+      );
     } catch {
       if (!mountedRef.current || controller.signal.aborted) {
         return;

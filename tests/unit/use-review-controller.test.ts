@@ -5,6 +5,7 @@ import type {
   ReviewAnalysisResult,
   ReviewSessionEnvelope,
 } from "@/features/domains/review-contract";
+import { receiveReviewTransport } from "@/features/reviews/controller";
 import {
   useReviewController,
   type ReviewTransport,
@@ -25,6 +26,13 @@ const reactHarness = vi.hoisted(() => {
   let effectIndex = 0;
   let effectCleanups: Array<(() => void) | undefined> = [];
 
+  function dispatch(command: unknown) {
+    if (currentReducer === null || currentState === unset) {
+      throw new Error("review reducer is not initialized");
+    }
+    currentState = currentReducer(currentState, command);
+  }
+
   return {
     reset() {
       currentState = unset;
@@ -43,6 +51,7 @@ const reactHarness = vi.hoisted(() => {
         cleanup?.();
       });
     },
+    dispatch,
     useReducer(
       reducer: (state: unknown, command: unknown) => unknown,
       initialArg: unknown,
@@ -52,15 +61,7 @@ const reactHarness = vi.hoisted(() => {
         currentState = initializer ? initializer(initialArg) : initialArg;
       }
       currentReducer = reducer;
-      return [
-        currentState,
-        (command: unknown) => {
-          if (currentReducer === null || currentState === unset) {
-            throw new Error("review reducer is not initialized");
-          }
-          currentState = currentReducer(currentState, command);
-        },
-      ] as const;
+      return [currentState, dispatch] as const;
     },
     useRef(initialValue: unknown) {
       const index = refIndex;
@@ -188,7 +189,7 @@ describe("useReviewController", () => {
     expect(hook.state.workflow.phase).toBe("APPROVED");
   });
 
-  it("passes a stale response attempt through the reducer without replacing the retry", async () => {
+  it("fails the current attempt safely when transport returns a mismatched attempt id", async () => {
     const payload = await validReview();
     const attemptIds = ["attempt-one", "attempt-two"];
     let attemptIndex = 0;
@@ -227,9 +228,73 @@ describe("useReviewController", () => {
     hook = useRenderedController(options);
 
     expect(transport).toHaveBeenCalledTimes(2);
+    expect(hook.state.workflow.phase).toBe("ERROR");
+    expect(hook.state.activeRequest).toBeNull();
+    expect(hook.state.review).toBeNull();
+  });
+
+  it("ignores a genuinely late older transport promise after a retry starts", async () => {
+    const payload = await validReview();
+    let resolveFirst: ((result: ReviewTransportResult) => void) | undefined;
+    let resolveSecond: ((result: ReviewTransportResult) => void) | undefined;
+    const transport = vi
+      .fn<ReviewTransport<typeof payload.input>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+    const attemptIds = ["attempt-one", "attempt-two"];
+    let attemptIndex = 0;
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport,
+      attemptIdFactory: () => {
+        const attemptId = attemptIds[attemptIndex];
+        attemptIndex += 1;
+        if (!attemptId) {
+          throw new Error("unexpected extra attempt");
+        }
+        return attemptId;
+      },
+    };
+    let hook = useRenderedController(options);
+    const firstAnalysis = hook.analyze();
+    hook = useRenderedController(options);
+    expect(hook.state.activeRequest).toEqual({ attemptId: "attempt-one" });
+
+    reactHarness.dispatch(
+      receiveReviewTransport("attempt-one", { malformed: true }),
+    );
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("ERROR");
+
+    const secondAnalysis = hook.analyze();
+    hook = useRenderedController(options);
+    expect(hook.state.activeRequest).toEqual({ attemptId: "attempt-two" });
+
+    resolveFirst?.({ attemptId: "attempt-one", payload });
+    await firstAnalysis;
+    hook = useRenderedController(options);
+
     expect(hook.state.workflow.phase).toBe("ANALYZING");
     expect(hook.state.activeRequest).toEqual({ attemptId: "attempt-two" });
     expect(hook.state.review).toBeNull();
+
+    resolveSecond?.({ attemptId: "attempt-two", payload });
+    await secondAnalysis;
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("APPROVAL_REQUIRED");
   });
 
   it("does not invoke transport when core rejects the current phase", async () => {
