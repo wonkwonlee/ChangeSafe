@@ -184,7 +184,86 @@ describe("v1 review registry and analysis contracts", () => {
           domainId: "network",
           replayAvailable: true,
           expectedContractVersion: REVIEW_CONTRACT_VERSION,
-          receivedContractVersion: REVIEW_CONTRACT_VERSION,
+          receivedContractVersion: "2.0.0",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a claimed risk level that contradicts the canonical findings", () => {
+    expect(
+      ReviewAnalysisResultSchema.safeParse({
+        ...validAnalysis,
+        findings: [
+          {
+            ...finding,
+            status: "BLOCK",
+          },
+        ],
+        riskLevel: "LOW",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("permits replay fallback only for eligible failures with an identified source", () => {
+    expect(
+      ReviewTransportErrorSchema.safeParse({
+        ok: false,
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        error: {
+          code: "ANALYSIS_FAILED",
+          message: "Live analysis failed after the request was validated.",
+          domainId: "network",
+          replayAvailable: true,
+          replaySource: {
+            domainId: "network",
+            contractVersion: REVIEW_CONTRACT_VERSION,
+            sourceId: "scenario-one",
+          },
+          expectedContractVersion: null,
+          receivedContractVersion: null,
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      ReviewTransportErrorSchema.safeParse({
+        ok: false,
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        error: {
+          code: "ANALYSIS_FAILED",
+          message: "Live analysis failed.",
+          domainId: "network",
+          replayAvailable: true,
+          expectedContractVersion: null,
+          receivedContractVersion: null,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    "REQUEST_INVALID",
+    "UNKNOWN_DOMAIN",
+    "CONTRACT_VERSION_MISMATCH",
+    "SOURCE_UNKNOWN",
+    "INPUT_INVALID",
+    "PROPOSAL_INVALID",
+    "INTERNAL",
+  ] as const)("rejects replay availability for %s transport errors", (code) => {
+    expect(
+      ReviewTransportErrorSchema.safeParse({
+        ok: false,
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        error: {
+          code,
+          message: "The request cannot use replay fallback.",
+          domainId: "network",
+          replayAvailable: true,
+          expectedContractVersion:
+            code === "CONTRACT_VERSION_MISMATCH" ? REVIEW_CONTRACT_VERSION : null,
+          receivedContractVersion:
+            code === "CONTRACT_VERSION_MISMATCH" ? "2.0.0" : null,
         },
       }).success,
     ).toBe(false);

@@ -8,6 +8,7 @@ import {
   PolicyFindingSchema,
   RiskLevelSchema,
   StatePathSchema,
+  deriveRiskLevel,
 } from "@changesafe/core";
 
 export const REVIEW_CONTRACT_VERSION = "1.0.0" as const;
@@ -316,6 +317,14 @@ export const ReviewAnalysisResultSchema = z
       });
     }
 
+    if (result.riskLevel !== deriveRiskLevel(result.findings)) {
+      context.addIssue({
+        code: "custom",
+        message: "analysis risk must match the canonical risk derived from findings",
+        path: ["riskLevel"],
+      });
+    }
+
     if (
       result.effectCapability.kind === "sandbox-simulation" &&
       (result.session.domainShape !== "simulated-state" ||
@@ -365,21 +374,74 @@ export const ReviewTransportErrorCodeSchema = z.enum([
   "INTERNAL",
 ]);
 
+const ReviewReplayEligibleErrorCodeSchema = z.enum([
+  "ANALYSIS_UNAVAILABLE",
+  "ANALYSIS_FAILED",
+  "ANALYSIS_INVALID",
+]);
+
+export const ReviewReplaySourceSchema = z.strictObject({
+  domainId: DomainIdSchema,
+  contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
+  sourceId: IdSchema,
+});
+
+const reviewTransportErrorFields = {
+  code: ReviewTransportErrorCodeSchema,
+  message: z.string().min(1).max(500),
+  domainId: DomainIdSchema.nullable(),
+  expectedContractVersion: z.literal(REVIEW_CONTRACT_VERSION).nullable(),
+  receivedContractVersion: z.string().min(1).max(64).nullable(),
+};
+
+const ReviewReplayUnavailableErrorSchema = z.strictObject({
+  ...reviewTransportErrorFields,
+  replayAvailable: z.literal(false),
+});
+
+const ReviewReplayAvailableErrorSchema = z.strictObject({
+  ...reviewTransportErrorFields,
+  code: ReviewReplayEligibleErrorCodeSchema,
+  domainId: DomainIdSchema,
+  replayAvailable: z.literal(true),
+  replaySource: ReviewReplaySourceSchema,
+});
+
+export const ReviewTransportErrorDetailSchema = z.discriminatedUnion(
+  "replayAvailable",
+  [ReviewReplayUnavailableErrorSchema, ReviewReplayAvailableErrorSchema],
+);
+
 export const ReviewTransportErrorSchema = z
   .strictObject({
     ok: z.literal(false),
     contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
-    error: z.strictObject({
-      code: ReviewTransportErrorCodeSchema,
-      message: z.string().min(1).max(500),
-      domainId: DomainIdSchema.nullable(),
-      replayAvailable: z.boolean(),
-      expectedContractVersion: z.literal(REVIEW_CONTRACT_VERSION).nullable(),
-      receivedContractVersion: z.string().min(1).max(64).nullable(),
-    }),
+    error: ReviewTransportErrorDetailSchema,
   })
   .superRefine((result, context) => {
     const { error } = result;
+    if (error.replayAvailable) {
+      if (error.domainId !== error.replaySource.domainId) {
+        context.addIssue({
+          code: "custom",
+          message: "replay source domain must match the validated request domain",
+          path: ["error", "replaySource", "domainId"],
+        });
+      }
+
+      if (
+        error.expectedContractVersion !== null ||
+        error.receivedContractVersion !== null
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "replay-eligible analysis errors cannot include mismatch metadata",
+          path: ["error"],
+        });
+      }
+      return;
+    }
+
     if (error.code === "UNKNOWN_DOMAIN") {
       if (
         error.domainId === null ||
@@ -501,6 +563,10 @@ export type ReviewEffectCapability = z.infer<typeof ReviewEffectCapabilitySchema
 export type ReviewProposalProvenance = z.infer<typeof ReviewProposalProvenanceSchema>;
 export type ReviewAnalysisResult = z.infer<typeof ReviewAnalysisResultSchema>;
 export type ReviewTransportErrorCode = z.infer<typeof ReviewTransportErrorCodeSchema>;
+export type ReviewReplaySource = z.infer<typeof ReviewReplaySourceSchema>;
+export type ReviewTransportErrorDetail = z.infer<
+  typeof ReviewTransportErrorDetailSchema
+>;
 export type ReviewTransportError = z.infer<typeof ReviewTransportErrorSchema>;
 export type ReviewSummaryViewModel = z.infer<typeof ReviewSummaryViewModelSchema>;
 export type ReviewEvidenceItemViewModel = z.infer<
