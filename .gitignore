@@ -56,6 +56,7 @@ next-env.d.ts
 # exceptions below are the only durable, human-authored Markdown allowlist.
 .omc/
 .omx/
+<<<<<<< Updated upstream
 .superpowers/
 
 !/.omc/
@@ -81,8 +82,13 @@ next-env.d.ts
 !/.omx/specs/*.md
 !/.omx/specs/**/*.md
 
+=======
+>>>>>>> Stashed changes
 .worktrees/
 .claude/settings.local.json
+
+# local artifacts (not part of the product)
+/artifacts/
 
 # playwright-mcp browser session artifacts
 /.playwright-mcp/
