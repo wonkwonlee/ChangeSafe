@@ -13,36 +13,25 @@ import {
   defineDomainPresentation,
   type DomainPresentationDefinition,
 } from "./presentation";
-import {
-  IncidentBundleSchema,
-  NetworkChangeProposalSchema,
-  networkDomain,
-  runSimulation,
-} from "@changesafe/domain-network";
-import {
-  TerraformChangeProposalSchema,
-  TerraformInputSchema,
-  terraformDomain,
-} from "@changesafe/domain-terraform";
-import {
-  KubernetesChangeProposalSchema,
-  KubernetesSnapshotSchema,
-  kubernetesDomain,
-  runKubernetesSimulation,
-} from "@changesafe/domain-kubernetes";
 
 export interface DomainRegistryEntry {
   readonly runtime: DomainRuntimeDefinition;
   readonly presentation: DomainPresentationDefinition;
 }
 
+export interface LazyDomainRegistryEntry {
+  readonly metadata: DomainPresentationDefinition;
+  load(): Promise<DomainRegistryEntry>;
+}
+
 export interface DomainRegistryResolution {
   readonly ok: true;
-  readonly entry: DomainRegistryEntry;
+  readonly metadata: DomainPresentationDefinition;
+  load(): Promise<DomainRegistryEntry>;
 }
 
 export interface DomainRegistry {
-  readonly entries: readonly DomainRegistryEntry[];
+  readonly entries: readonly DomainPresentationDefinition[];
   resolve(
     domainId: string,
     contractVersion: string,
@@ -57,28 +46,35 @@ const capabilityKeys: readonly (keyof DomainStaticCapabilities)[] = [
 ];
 
 export function defineDomainRegistry(
-  rawEntries: readonly DomainRegistryEntry[],
+  rawEntries: readonly LazyDomainRegistryEntry[],
 ): DomainRegistry {
   const domainIds = new Set<string>();
-  const entries = Object.freeze(
-    rawEntries.map((entry) => {
-      assertDefinitionsAgree(entry);
-      if (domainIds.has(entry.runtime.domainId)) {
-        throw new Error(`duplicate runtime domain "${entry.runtime.domainId}"`);
-      }
-      domainIds.add(entry.runtime.domainId);
-      return Object.freeze(entry);
-    }),
-  );
+  const entries = rawEntries.map((rawEntry) => {
+    const metadata = defineDomainPresentation(rawEntry.metadata);
+    if (domainIds.has(metadata.domainId)) {
+      throw new Error(`duplicate runtime domain "${metadata.domainId}"`);
+    }
+    domainIds.add(metadata.domainId);
+
+    let loadedEntry: Promise<DomainRegistryEntry> | null = null;
+    const load = () => {
+      loadedEntry ??= rawEntry.load().then((entry) =>
+        validateLoadedEntry(metadata, entry),
+      );
+      return loadedEntry;
+    };
+    return Object.freeze({ metadata, load });
+  });
+  const frozenEntries = Object.freeze(entries);
 
   return Object.freeze({
-    entries,
+    entries: Object.freeze(frozenEntries.map((entry) => entry.metadata)),
     resolve(
       domainId: string,
       contractVersion: string,
     ): DomainRegistryResolution | ReviewContractErrorResult {
-      const entry = entries.find(
-        (candidate) => candidate.runtime.domainId === domainId,
+      const entry = frozenEntries.find(
+        (candidate) => candidate.metadata.domainId === domainId,
       );
       if (!entry) {
         return ReviewContractErrorResultSchema.parse({
@@ -89,20 +85,48 @@ export function defineDomainRegistry(
           },
         });
       }
-      if (contractVersion !== entry.runtime.contractVersion) {
+      if (contractVersion !== entry.metadata.contractVersion) {
         return ReviewContractErrorResultSchema.parse({
           ok: false,
           error: {
             code: "CONTRACT_VERSION_MISMATCH",
             domainId,
-            expectedContractVersion: entry.runtime.contractVersion,
+            expectedContractVersion: entry.metadata.contractVersion,
             receivedContractVersion: contractVersion,
           },
         });
       }
-      return { ok: true, entry };
+      return {
+        ok: true,
+        metadata: entry.metadata,
+        load: entry.load,
+      };
     },
   });
+}
+
+function validateLoadedEntry(
+  metadata: DomainPresentationDefinition,
+  entry: DomainRegistryEntry,
+): DomainRegistryEntry {
+  assertDefinitionsAgree(entry);
+  const { runtime, presentation } = entry;
+  if (
+    runtime.domainId !== metadata.domainId ||
+    runtime.contractVersion !== metadata.contractVersion ||
+    runtime.domainShape !== metadata.domainShape ||
+    presentation.label !== metadata.label ||
+    presentation.description !== metadata.description ||
+    capabilityKeys.some(
+      (capability) =>
+        runtime.capabilities[capability] !== metadata.capabilities[capability],
+    )
+  ) {
+    throw new Error(
+      `loaded definitions disagree with registered metadata for "${metadata.domainId}"`,
+    );
+  }
+  return Object.freeze({ runtime, presentation });
 }
 
 function assertDefinitionsAgree(entry: DomainRegistryEntry): void {
@@ -166,70 +190,102 @@ const kubernetesCapabilities = {
   untrustedContext: true,
 } satisfies DomainStaticCapabilities;
 
-const networkRuntime = defineSimulatedRuntime({
+const networkMetadata = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  domainShape: "simulated-state",
   capabilities: networkCapabilities,
-  inputSchema: IncidentBundleSchema,
-  proposalSchema: NetworkChangeProposalSchema,
-  adapter: networkDomain,
-  simulate: runSimulation,
-});
+  label: "Network",
+  description:
+    "Review declarative network incident proposals against deterministic policies and sandbox simulation.",
+} as const;
 
-const terraformRuntime = defineExternalDiffRuntime({
+const terraformMetadata = {
   domainId: "terraform",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  domainShape: "external-diff",
   capabilities: terraformCapabilities,
-  inputSchema: TerraformInputSchema,
-  proposalSchema: TerraformChangeProposalSchema,
-  adapter: terraformDomain,
-});
+  label: "Terraform",
+  description:
+    "Review supplied Terraform plan diffs without running Terraform or pretending to simulate them.",
+} as const;
 
-const kubernetesRuntime = defineSimulatedRuntime({
+const kubernetesMetadata = {
   domainId: "kubernetes",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  domainShape: "simulated-state",
   capabilities: kubernetesCapabilities,
-  inputSchema: KubernetesSnapshotSchema,
-  proposalSchema: KubernetesChangeProposalSchema,
-  adapter: kubernetesDomain,
-  simulate: runKubernetesSimulation,
-});
+  label: "Kubernetes",
+  description:
+    "Review offline Kubernetes snapshots and proposed manifests through an in-memory sandbox.",
+} as const;
 
 export const DOMAIN_REGISTRY = defineDomainRegistry([
   {
-    runtime: networkRuntime,
-    presentation: defineDomainPresentation({
-      domainId: "network",
-      contractVersion: REVIEW_CONTRACT_VERSION,
-      domainShape: "simulated-state",
-      capabilities: networkCapabilities,
-      label: "Network",
-      description:
-        "Review declarative network incident proposals against deterministic policies and sandbox simulation.",
-    }),
+    metadata: defineDomainPresentation(networkMetadata),
+    async load() {
+      const {
+        IncidentBundleSchema,
+        NetworkChangeProposalSchema,
+        networkDomain,
+        runSimulation,
+      } = await import("@changesafe/domain-network");
+      return {
+        runtime: defineSimulatedRuntime({
+          domainId: "network",
+          contractVersion: REVIEW_CONTRACT_VERSION,
+          capabilities: networkCapabilities,
+          inputSchema: IncidentBundleSchema,
+          proposalSchema: NetworkChangeProposalSchema,
+          adapter: networkDomain,
+          simulate: runSimulation,
+        }),
+        presentation: defineDomainPresentation(networkMetadata),
+      };
+    },
   },
   {
-    runtime: terraformRuntime,
-    presentation: defineDomainPresentation({
-      domainId: "terraform",
-      contractVersion: REVIEW_CONTRACT_VERSION,
-      domainShape: "external-diff",
-      capabilities: terraformCapabilities,
-      label: "Terraform",
-      description:
-        "Review supplied Terraform plan diffs without running Terraform or pretending to simulate them.",
-    }),
+    metadata: defineDomainPresentation(terraformMetadata),
+    async load() {
+      const {
+        TerraformChangeProposalSchema,
+        TerraformInputSchema,
+        terraformDomain,
+      } = await import("@changesafe/domain-terraform");
+      return {
+        runtime: defineExternalDiffRuntime({
+          domainId: "terraform",
+          contractVersion: REVIEW_CONTRACT_VERSION,
+          capabilities: terraformCapabilities,
+          inputSchema: TerraformInputSchema,
+          proposalSchema: TerraformChangeProposalSchema,
+          adapter: terraformDomain,
+        }),
+        presentation: defineDomainPresentation(terraformMetadata),
+      };
+    },
   },
   {
-    runtime: kubernetesRuntime,
-    presentation: defineDomainPresentation({
-      domainId: "kubernetes",
-      contractVersion: REVIEW_CONTRACT_VERSION,
-      domainShape: "simulated-state",
-      capabilities: kubernetesCapabilities,
-      label: "Kubernetes",
-      description:
-        "Review offline Kubernetes snapshots and proposed manifests through an in-memory sandbox.",
-    }),
+    metadata: defineDomainPresentation(kubernetesMetadata),
+    async load() {
+      const {
+        KubernetesChangeProposalSchema,
+        KubernetesSnapshotSchema,
+        kubernetesDomain,
+        runKubernetesSimulation,
+      } = await import("@changesafe/domain-kubernetes");
+      return {
+        runtime: defineSimulatedRuntime({
+          domainId: "kubernetes",
+          contractVersion: REVIEW_CONTRACT_VERSION,
+          capabilities: kubernetesCapabilities,
+          inputSchema: KubernetesSnapshotSchema,
+          proposalSchema: KubernetesChangeProposalSchema,
+          adapter: kubernetesDomain,
+          simulate: runKubernetesSimulation,
+        }),
+        presentation: defineDomainPresentation(kubernetesMetadata),
+      };
+    },
   },
 ]);

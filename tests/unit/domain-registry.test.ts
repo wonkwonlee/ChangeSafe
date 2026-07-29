@@ -67,25 +67,33 @@ const nonDurableTransport = defineTransportCapabilitySource({
 });
 
 describe("closed domain registry", () => {
+  async function loadDomain(domainId: "network" | "terraform" | "kubernetes") {
+    const resolution = DOMAIN_REGISTRY.resolve(
+      domainId,
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) {
+      throw new Error(`expected ${domainId} to resolve`);
+    }
+    expect(resolution.metadata.domainId).toBe(domainId);
+    return resolution.load();
+  }
+
   it.each([
     ["network", "simulated-state", true],
     ["terraform", "external-diff", false],
     ["kubernetes", "simulated-state", true],
   ] as const)(
     "resolves the v1 %s runtime and presentation",
-    (domainId, domainShape, hasSimulation) => {
-      const resolution = DOMAIN_REGISTRY.resolve(
-        domainId,
-        REVIEW_CONTRACT_VERSION,
-      );
+    async (domainId, domainShape, hasSimulation) => {
+      const entry = await loadDomain(domainId);
 
-      expect(resolution.ok).toBe(true);
-      if (!resolution.ok) return;
-      expect(resolution.entry.runtime.domainId).toBe(domainId);
-      expect(resolution.entry.presentation.domainId).toBe(domainId);
-      expect(resolution.entry.runtime.domainShape).toBe(domainShape);
-      expect(resolution.entry.presentation.domainShape).toBe(domainShape);
-      expect("simulate" in resolution.entry.runtime).toBe(hasSimulation);
+      expect(entry.runtime.domainId).toBe(domainId);
+      expect(entry.presentation.domainId).toBe(domainId);
+      expect(entry.runtime.domainShape).toBe(domainShape);
+      expect(entry.presentation.domainShape).toBe(domainShape);
+      expect("simulate" in entry.runtime).toBe(hasSimulation);
     },
   );
 
@@ -111,16 +119,38 @@ describe("closed domain registry", () => {
     });
   });
 
-  it("keeps Terraform external-diff runtime free of simulation behavior", () => {
-    const resolution = DOMAIN_REGISTRY.resolve(
-      "terraform",
-      REVIEW_CONTRACT_VERSION,
-    );
+  it("does not invoke a loader for unknown domains or incompatible versions", () => {
+    let loaderCalls = 0;
+    const metadata = defineDomainPresentation({
+      domainId: "network",
+      contractVersion: REVIEW_CONTRACT_VERSION,
+      domainShape: "simulated-state",
+      capabilities: presentationCapabilities,
+      label: "Network",
+      description: "Declarative network review.",
+    });
+    const registry = defineDomainRegistry([
+      {
+        metadata,
+        async load() {
+          loaderCalls += 1;
+          throw new Error("loader must not run");
+        },
+      },
+    ]);
 
-    expect(resolution.ok).toBe(true);
-    if (!resolution.ok) return;
-    expect(resolution.entry.runtime.domainShape).toBe("external-diff");
-    expect("simulate" in resolution.entry.runtime).toBe(false);
+    expect(registry.resolve("future-domain", REVIEW_CONTRACT_VERSION).ok).toBe(
+      false,
+    );
+    expect(registry.resolve("network", "2.0.0").ok).toBe(false);
+    expect(loaderCalls).toBe(0);
+  });
+
+  it("keeps Terraform external-diff runtime free of simulation behavior", async () => {
+    const entry = await loadDomain("terraform");
+
+    expect(entry.runtime.domainShape).toBe("external-diff");
+    expect("simulate" in entry.runtime).toBe(false);
   });
 
   it.each([
@@ -138,17 +168,12 @@ describe("closed domain registry", () => {
     ["kubernetes", "self-hosted", nonDurableTransport, false],
   ] as const)(
     "composes %s durable decision support for %s sessions from transport",
-    (domainId, runtimeMode, transport, durableDecision) => {
-      const resolution = DOMAIN_REGISTRY.resolve(
-        domainId,
-        REVIEW_CONTRACT_VERSION,
-      );
-      expect(resolution.ok).toBe(true);
-      if (!resolution.ok) return;
+    async (domainId, runtimeMode, transport, durableDecision) => {
+      const entry = await loadDomain(domainId);
 
       expect(
         composeSessionCapabilities(
-          resolution.entry.runtime,
+          entry.runtime,
           runtimeMode,
           transport,
         ),
@@ -225,7 +250,7 @@ describe("closed domain registry", () => {
     expect(adapterAccessed).toBe(false);
   });
 
-  it("rejects sandbox declarations that contradict runtime shape and behavior", () => {
+  it("rejects sandbox declarations that contradict runtime shape and behavior", async () => {
     const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
     type Input = z.infer<typeof InputSchema>;
     const adapter: DomainAdapter<Input, Input> = {
@@ -284,38 +309,40 @@ describe("closed domain registry", () => {
       }),
     ).toThrow(/sandbox/i);
 
-    const terraform = DOMAIN_REGISTRY.resolve(
-      "terraform",
-      REVIEW_CONTRACT_VERSION,
-    );
-    const network = DOMAIN_REGISTRY.resolve(
-      "network",
-      REVIEW_CONTRACT_VERSION,
-    );
-    expect(terraform.ok).toBe(true);
-    expect(network.ok).toBe(true);
-    if (
-      !terraform.ok ||
-      !network.ok ||
-      network.entry.runtime.domainShape !== "simulated-state"
-    ) {
+    const [terraform, network] = await Promise.all([
+      loadDomain("terraform"),
+      loadDomain("network"),
+    ]);
+    if (network.runtime.domainShape !== "simulated-state") {
       return;
     }
     const contradictoryRuntime = {
-      ...terraform.entry.runtime,
-      simulate: network.entry.runtime.simulate,
+      ...terraform.runtime,
+      simulate: network.runtime.simulate,
     };
-    expect(() =>
-      defineDomainRegistry([
-        {
-          runtime: contradictoryRuntime,
-          presentation: terraform.entry.presentation,
+    const contradictoryRegistry = defineDomainRegistry([
+      {
+        metadata: terraform.presentation,
+        async load() {
+          return {
+            runtime: contradictoryRuntime,
+            presentation: terraform.presentation,
+          };
         },
-      ]),
-    ).toThrow(/sandbox|simulate/i);
+      },
+    ]);
+    const contradiction = contradictoryRegistry.resolve(
+      "terraform",
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(contradiction.ok).toBe(true);
+    if (!contradiction.ok) return;
+    await expect(
+      contradiction.load(),
+    ).rejects.toThrow(/sandbox|simulate/i);
   });
 
-  it("copies and freezes capability data so registry definitions cannot drift", () => {
+  it("copies and freezes capability data so registry definitions cannot drift", async () => {
     const mutableCapabilities = {
       ...presentationCapabilities,
     };
@@ -334,17 +361,12 @@ describe("closed domain registry", () => {
       Reflect.set(presentation.capabilities, "structuredDiff", false),
     ).toBe(false);
 
-    const network = DOMAIN_REGISTRY.resolve(
-      "network",
-      REVIEW_CONTRACT_VERSION,
-    );
-    expect(network.ok).toBe(true);
-    if (!network.ok) return;
+    const network = await loadDomain("network");
     expect(
-      Reflect.set(network.entry.runtime.capabilities, "resourceGraph", false),
+      Reflect.set(network.runtime.capabilities, "resourceGraph", false),
     ).toBe(false);
     const composed = composeSessionCapabilities(
-      network.entry.runtime,
+      network.runtime,
       "public-replay",
       durableServerTransport,
     );
@@ -355,13 +377,8 @@ describe("closed domain registry", () => {
     });
   });
 
-  it("rejects runtime and presentation definitions that disagree", () => {
-    const network = DOMAIN_REGISTRY.resolve(
-      "network",
-      REVIEW_CONTRACT_VERSION,
-    );
-    expect(network.ok).toBe(true);
-    if (!network.ok) return;
+  it("rejects runtime and presentation definitions that disagree", async () => {
+    const network = await loadDomain("network");
 
     const wrongDomainPresentation = defineDomainPresentation({
       domainId: "terraform",
@@ -371,14 +388,24 @@ describe("closed domain registry", () => {
       label: "Wrong domain",
       description: "This presentation cannot be paired with Network.",
     });
-    expect(() =>
-      defineDomainRegistry([
-        {
-          runtime: network.entry.runtime,
-          presentation: wrongDomainPresentation,
+    const wrongDomainRegistry = defineDomainRegistry([
+      {
+        metadata: wrongDomainPresentation,
+        async load() {
+          return {
+            runtime: network.runtime,
+            presentation: wrongDomainPresentation,
+          };
         },
-      ]),
-    ).toThrow(/domain/i);
+      },
+    ]);
+    const wrongDomain = wrongDomainRegistry.resolve(
+      "terraform",
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(wrongDomain.ok).toBe(true);
+    if (!wrongDomain.ok) return;
+    await expect(wrongDomain.load()).rejects.toThrow(/domain/i);
 
     const wrongCapabilitiesPresentation = defineDomainPresentation({
       domainId: "network",
@@ -391,14 +418,24 @@ describe("closed domain registry", () => {
       label: "Wrong capabilities",
       description: "This presentation contradicts the Network runtime.",
     });
-    expect(() =>
-      defineDomainRegistry([
-        {
-          runtime: network.entry.runtime,
-          presentation: wrongCapabilitiesPresentation,
+    const wrongCapabilitiesRegistry = defineDomainRegistry([
+      {
+        metadata: wrongCapabilitiesPresentation,
+        async load() {
+          return {
+            runtime: network.runtime,
+            presentation: wrongCapabilitiesPresentation,
+          };
         },
-      ]),
-    ).toThrow(/capabilit/i);
+      },
+    ]);
+    const wrongCapabilities = wrongCapabilitiesRegistry.resolve(
+      "network",
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(wrongCapabilities.ok).toBe(true);
+    if (!wrongCapabilities.ok) return;
+    await expect(wrongCapabilities.load()).rejects.toThrow(/capabilit/i);
   });
 
   it("rejects presentation attempts to carry policy or workflow authority", () => {

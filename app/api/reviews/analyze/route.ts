@@ -107,7 +107,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const evaluation = resolution.entry.runtime.evaluate(
+    const entry = await resolution.load();
+    const evaluation = entry.runtime.evaluate(
       scenario.bundle,
       scenario.fixture.proposal,
     );
@@ -123,9 +124,9 @@ export async function POST(request: Request): Promise<Response> {
       session: {
         domainId,
         contractVersion: REVIEW_CONTRACT_VERSION,
-        domainShape: resolution.entry.runtime.domainShape,
+        domainShape: entry.runtime.domainShape,
         capabilities: composeSessionCapabilities(
-          resolution.entry.runtime,
+          entry.runtime,
           "public-replay",
           publicReplayTransport,
         ),
