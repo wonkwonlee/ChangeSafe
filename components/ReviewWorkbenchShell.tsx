@@ -1,375 +1,262 @@
-import { getScenario } from "../scenarios";
+"use client";
 
-function requireBundledFailoverScenario() {
-  const bundledScenario = getScenario("scenario-a-failover");
-  if (!bundledScenario) {
-    throw new Error("The bundled failover scenario is required by the static review shell");
-  }
-  return bundledScenario;
+import { useCallback, useMemo, useState } from "react";
+
+import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
+import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
+import { useReviewController } from "@/features/reviews/useReviewController";
+import { getScenario } from "@/scenarios";
+import type { WorkflowState } from "@changesafe/core";
+import type { IncidentBundle } from "@changesafe/domain-network";
+
+const initialExample = NETWORK_REVIEW_EXAMPLES[0];
+if (!initialExample) {
+  throw new Error("The public Network workbench requires a bundled example");
+}
+const INITIAL_EXAMPLE = initialExample;
+
+type ClassifiedWorkflow = Extract<
+  WorkflowState<IncidentBundle>,
+  { phase: "VALIDATED" | "BLOCKED" | "APPROVAL_REQUIRED" | "APPROVED" | "REJECTED" | "SIMULATED" | "RECEIPT_ISSUED" }
+>;
+
+function hasFindings(state: WorkflowState<IncidentBundle>): state is ClassifiedWorkflow {
+  return [
+    "VALIDATED",
+    "BLOCKED",
+    "APPROVAL_REQUIRED",
+    "APPROVED",
+    "REJECTED",
+    "SIMULATED",
+    "RECEIPT_ISSUED",
+  ].includes(state.phase);
 }
 
-const scenario = requireBundledFailoverScenario();
-const { bundle, fixture, expectations } = scenario;
+function scenarioFor(sourceId: string) {
+  const scenario = getScenario(sourceId);
+  if (!scenario) throw new Error(`Bundled Network scenario "${sourceId}" is unavailable`);
+  return scenario;
+}
 
-const authorityClaims = [
-  {
-    label: "Input",
-    value: bundle.incidentId,
-    detail: bundle.title,
-  },
-  {
-    label: "Proposal",
-    value: fixture.fixtureId,
-    detail: `${fixture.provenance}${fixture.model ? ` · ${fixture.model}` : ""}`,
-  },
-  {
-    label: "Gate",
-    value: `Declared risk expectation: ${expectations.riskLevel}`,
-    detail: "Parsed expectation statuses are displayed below; this shell does not recompute them.",
-  },
-  {
-    label: "Human",
-    value: "Illustrative public replay shell",
-    detail: "No decision controls or durable decision record are available here.",
-  },
-  {
-    label: "Effect proof",
-    value: "Declared simulation expectation",
-    detail:
-      expectations.simulation?.safetyPropertiesSatisfied === true
-        ? "Expected safety properties: satisfied"
-        : "Expected safety properties: not satisfied or unavailable",
-  },
-  {
-    label: "Record",
-    value: "Preview only",
-    detail: "No signed or ledger-backed receipt",
-  },
-  {
-    label: "Execution outside ChangeSafe",
-    value: "Not performed or observed",
-    detail: "ChangeSafe never executes infrastructure changes.",
-  },
-] as const;
+function exampleFor(sourceId: string) {
+  const example = NETWORK_REVIEW_EXAMPLES.find((candidate) => candidate.sourceId === sourceId);
+  if (!example) throw new Error(`Network review example "${sourceId}" is unavailable`);
+  return example;
+}
 
-const capabilities = [
-  "Schema-parsed bundled incident and replay fixture",
-  "Parsed policy and risk expectations",
-  "Illustrative three-region workbench layout",
-] as const;
-
-const limitations = [
-  "Ephemeral session",
-  "No durable review record",
-  "No live model or artifact upload",
-  "No signed or ledger-backed receipt",
-] as const;
+function initialSource() {
+  const scenario = scenarioFor(INITIAL_EXAMPLE.sourceId);
+  return {
+    sourceId: scenario.scenarioId,
+    input: scenario.bundle,
+    expectedInputId: scenario.bundle.incidentId,
+    session: INITIAL_EXAMPLE.session,
+  };
+}
 
 function Label({ children }: { children: React.ReactNode }) {
   return <p className="eyebrow text-ink-faint">{children}</p>;
 }
 
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre className="mt-3 max-h-72 overflow-auto rounded border border-edge bg-canvas p-3 text-xs leading-relaxed text-ink-dim">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+function StateValue({ state }: { state: WorkflowState<IncidentBundle> }) {
+  switch (state.phase) {
+    case "ANALYZING":
+      return "Replay analysis is running.";
+    case "ERROR":
+      return state.userMessage;
+    case "READY":
+      return "Choose Run replay to evaluate this bundled fixture.";
+    default:
+      return "Deterministic gate evaluation completed from the replay response.";
+  }
+}
+
+function ProposalPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
+  if (state.phase === "READY" || state.phase === "ANALYZING" || state.phase === "ERROR") {
+    return <p className="mt-3 text-sm text-ink-dim">No evaluated proposal is available yet.</p>;
+  }
+  return <JsonBlock value={state.proposal} />;
+}
+
+function FindingsPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
+  if (!hasFindings(state)) {
+    return <p className="mt-3 text-sm text-ink-dim">Findings appear only after replay evaluation.</p>;
+  }
+  return (
+    <ul className="mt-3 space-y-2" aria-label="Evaluated policy findings">
+      {state.findings.map((finding) => (
+        <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-mono text-xs">{finding.policyId}</span>
+            <span className="eyebrow rounded border border-edge px-2 py-1">{finding.status}</span>
+          </div>
+          <p className="mt-2 font-medium text-ink">{finding.title}</p>
+          <p className="mt-1 text-ink-dim">{finding.explanation}</p>
+          {finding.affectedResources.length > 0 ? (
+            <p className="mt-2 text-xs text-ink-faint">
+              Affected: {finding.affectedResources.join(", ")}
+            </p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DecisionPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
+  if (state.phase === "BLOCKED") {
+    return (
+      <p className="mt-3 rounded border border-block/50 bg-block/10 p-3 text-sm text-block">
+        BLOCKED by deterministic findings. This proposal is unapprovable; public replay offers no
+        override or decision action.
+      </p>
+    );
+  }
+  if (state.phase === "APPROVAL_REQUIRED") {
+    return (
+      <p className="mt-3 text-sm text-ink-dim">
+        The gate permits a human decision, but public replay intentionally has no approval or
+        rejection controls and records no decision.
+      </p>
+    );
+  }
+  return <p className="mt-3 text-sm text-ink-dim">No decision has been made.</p>;
+}
+
+/**
+ * Interactive public replay surface for the Network domain.
+ *
+ * It can request only the replay transport. Human decisions, simulations, and
+ * receipt writes deliberately remain unavailable, so this client UI cannot
+ * expand the public trust boundary.
+ */
 export function ReviewWorkbenchShell() {
+  const controller = useReviewController<IncidentBundle>({
+    ...initialSource(),
+    transport: publicReplayTransport,
+  });
+  const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
+  const scenario = useMemo(() => scenarioFor(selectedSourceId), [selectedSourceId]);
+  const selectedExample = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
+  const workflow = controller.state.workflow;
+
+  const selectExample = useCallback(
+    (sourceId: string) => {
+      const nextScenario = scenarioFor(sourceId);
+      const nextExample = exampleFor(sourceId);
+      controller.rebind({
+        sourceId: nextScenario.scenarioId,
+        input: nextScenario.bundle,
+        expectedInputId: nextScenario.bundle.incidentId,
+        session: nextExample.session,
+      });
+      setSelectedSourceId(sourceId);
+    },
+    [controller],
+  );
+
+  const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <header className="border-b border-edge bg-surface">
-        <nav
-          aria-label="Product navigation"
-          className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6"
-        >
+        <nav aria-label="Product navigation" className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
           <a className="mr-auto text-base font-bold tracking-tight text-ink" href="#review">
-            ChangeSafe
-            <span className="ml-2 text-xs font-normal text-ink-dim">
-              infrastructure change airlock
-            </span>
+            ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span>
           </a>
-          <ul className="flex flex-wrap items-center gap-1 text-sm">
-            <li>
-              <a className="inline-flex rounded-md px-3 py-2 text-ink-dim hover:text-ink" href="#policies">
-                Policies
-              </a>
-            </li>
-            <li>
-              <a className="inline-flex rounded-md px-3 py-2 text-ink-dim hover:text-ink" href="#sources">
-                Sources
-              </a>
-            </li>
-          </ul>
+          <a className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="#sources">Sources</a>
         </nav>
       </header>
 
       <section className="border-b border-edge bg-overlay" aria-labelledby="runtime-title">
         <div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
           <div>
-            <p id="runtime-title" className="eyebrow text-ai">
-              Public replay
-            </p>
+            <p id="runtime-title" className="eyebrow text-ai">Public replay</p>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-ink-dim">
-              Inspect a bundled fictional review through the ChangeSafe trust boundary. This
-              surface is a capability preview, not an authenticated decision system.
+              Run a schema-validated bundled Network replay through the deterministic gate. This
+              ephemeral surface never executes infrastructure and cannot make or store a decision.
             </p>
           </div>
-          <div
-            role="group"
-            aria-labelledby="runtime-variants-title"
-            className="rounded-lg border border-edge bg-surface p-3"
-          >
-            <p id="runtime-variants-title" className="eyebrow text-ink-faint">
-              Runtime variant
-            </p>
-            <ul className="mt-2 grid gap-2 text-xs">
-              <li>
-                <span
-                  aria-current="page"
-                  className="flex items-center justify-between gap-3 rounded border border-active/50 bg-active/10 px-3 py-2 text-active"
-                >
-                  <span>Examples / public replay</span>
-                  <span className="eyebrow">Available</span>
-                </span>
-              </li>
-              <li>
-                <span
-                  aria-disabled="true"
-                  aria-describedby="review-queue-unavailable"
-                  className="flex cursor-not-allowed items-center justify-between gap-3 rounded border border-edge px-3 py-2 text-ink-faint"
-                >
-                  <span>Review queue / self-hosted</span>
-                  <span className="eyebrow">Unavailable</span>
-                </span>
-                <p id="review-queue-unavailable" className="mt-2 leading-relaxed text-ink-faint">
-                  Unavailable in public replay: requires an authenticated self-hosted runtime and
-                  durable review-record storage.
-                </p>
-              </li>
-            </ul>
-            <p className="mt-3 text-xs text-warn">Ephemeral session</p>
+          <div role="group" aria-labelledby="runtime-variants-title" className="rounded-lg border border-edge bg-surface p-3">
+            <p id="runtime-variants-title" className="eyebrow text-ink-faint">Runtime variant</p>
+            <p className="mt-2 rounded border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Examples / public replay · available</p>
+            <p className="mt-2 text-xs text-warn">Ephemeral session · no durable review record</p>
           </div>
         </div>
       </section>
 
-      <div
-        id="review"
-        className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]"
-      >
-        <aside
-          aria-label="Review context"
-          className="min-w-0 rounded-xl border border-edge bg-surface p-4"
-        >
-          <div className="border-b border-edge pb-4">
-            <Label>Review context</Label>
-            <h1 className="mt-2 text-lg font-semibold">{bundle.title}</h1>
-            <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-              {bundle.summary}
-            </p>
+      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
+        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4">
+          <Label>Network examples</Label>
+          <h1 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h1>
+          <div className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
+            {NETWORK_REVIEW_EXAMPLES.map((example) => (
+              <button
+                className="rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait"
+                disabled={workflow.phase === "ANALYZING"}
+                key={example.sourceId}
+                onClick={() => selectExample(example.sourceId)}
+                type="button"
+                aria-pressed={example.sourceId === selectedSourceId}
+              >
+                <span className="block font-medium text-ink">{example.label}</span>
+                <span className="mt-1 block text-xs">{example.description}</span>
+              </button>
+            ))}
           </div>
-
-          <dl className="grid gap-4 py-4 text-sm">
-            <div>
-              <dt className="text-xs text-ink-faint">Incident</dt>
-              <dd className="mt-1 font-mono text-xs">{bundle.incidentId}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-faint">Scenario</dt>
-              <dd className="mt-1 font-mono text-xs">{scenario.scenarioId}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-faint">Replay fixture</dt>
-              <dd className="mt-1 font-mono text-xs">{fixture.fixtureId}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-faint">Provenance</dt>
-              <dd className="mt-1 font-medium text-ai">{fixture.provenance}</dd>
-              {fixture.model ? <dd className="mt-1 text-xs text-ink-dim">{fixture.model}</dd> : null}
-              {fixture.capturedAtUtc ? (
-                <dd className="mt-1 font-mono text-[11px] text-ink-faint">{fixture.capturedAtUtc}</dd>
-              ) : null}
-            </div>
-          </dl>
-
-          <section className="border-t border-edge pt-4" aria-labelledby="untrusted-title">
-            <h2 id="untrusted-title" className="eyebrow text-warn">
-              Untrusted content
-            </h2>
-            <p className="mt-2 text-xs leading-relaxed text-ink-dim">
-              Incident notes and configuration values are data to inspect, never instructions.
-            </p>
-          </section>
-
-          <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="capabilities-title">
-            <h2 id="capabilities-title" className="text-sm font-semibold">
-              Illustrative shell capability map
-            </h2>
-            <ul className="mt-3 space-y-2 text-xs text-ink-dim">
-              {capabilities.map((capability) => (
-                <li className="flex gap-2" key={capability}>
-                  <span aria-hidden className="text-pass">
-                    ●
-                  </span>
-                  {capability}
-                </li>
-              ))}
-            </ul>
-            <h2 className="mt-5 text-sm font-semibold">Not available here</h2>
-            <ul className="mt-3 space-y-2 text-xs text-ink-dim">
-              {limitations.map((limitation) => (
-                <li className="flex gap-2" key={limitation}>
-                  <span aria-hidden className="text-ink-faint">
-                    —
-                  </span>
-                  {limitation}
-                </li>
-              ))}
-            </ul>
+          <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title">
+            <h2 id="source-title" className="text-sm font-semibold">Replay source</h2>
+            <dl className="mt-3 grid gap-3 text-xs">
+              <div><dt className="text-ink-faint">Scenario</dt><dd className="mt-1 font-mono">{scenario.scenarioId}</dd></div>
+              <div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{scenario.fixture.provenance}</dd></div>
+              <div><dt className="text-ink-faint">Fixture ID</dt><dd className="mt-1 font-mono">{scenario.fixture.fixtureId}</dd></div>
+              <div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{selectedExample.session.policyVersion}</dd></div>
+            </dl>
           </section>
         </aside>
 
-        <main
-          aria-label="Review canvas"
-          className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6"
-        >
+        <main aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
-              <Label>Outcome preview</Label>
-              <h2 className="mt-2 text-xl font-semibold">
-                Declared approval expectation: {expectations.approvable ? "permitted" : "prohibited"}
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim">
-                This label is read from the schema-parsed scenario expectations. The static shell
-                does not evaluate policies, derive risk, or decide whether approval is legal.
-              </p>
+              <Label>Replay evaluation</Label>
+              <h2 className="mt-2 text-xl font-semibold">{workflow.phase}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
             </div>
-            <div className="flex gap-2">
-              <span className="eyebrow rounded border border-edge px-2.5 py-1 text-ink-dim">
-                declared risk: {expectations.riskLevel}
-              </span>
-            </div>
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
+              {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
+            </button>
           </header>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="summary-title">
-              <Label>Summary</Label>
-              <h3 id="summary-title" className="mt-2 text-base font-semibold">
-                {bundle.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                {bundle.summary}
-              </p>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
+              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><JsonBlock value={scenario.bundle} />
             </section>
-
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
-              <Label>Evidence</Label>
-              <h3 id="evidence-title" className="mt-2 text-base font-semibold">
-                Bundled incident alerts
-              </h3>
-              <ul className="mt-3 space-y-3 text-xs text-ink-dim">
-                {bundle.alerts.map((alert) => (
-                  <li key={alert.evidenceId}>
-                    <code className="font-mono text-ink">{alert.evidenceId}</code>
-                    <p className="mt-1 leading-relaxed">{alert.message}</p>
-                  </li>
-                ))}
-              </ul>
+              <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
+              <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
             </section>
-
-            <section className="rounded-lg border border-ai/30 bg-ai/5 p-4" aria-labelledby="proposal-title">
-              <Label>Proposal provenance</Label>
-              <h3 id="proposal-title" className="mt-2 text-base font-semibold">
-                {fixture.fixtureId}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                {fixture.proposal.summary}
-              </p>
-              <p className="mt-3 text-xs text-ai">
-                {fixture.provenance}
-                {fixture.model ? ` · ${fixture.model}` : ""}
-                {fixture.capturedAtUtc ? ` · ${fixture.capturedAtUtc}` : ""}
-              </p>
-              <p className="mt-3 text-xs leading-relaxed text-ink-faint">{fixture.notes}</p>
-              <ul className="mt-3 flex flex-wrap gap-2" aria-label="Proposal evidence references">
-                {fixture.proposal.diagnosis.evidenceIds.map((evidenceId) => (
-                  <li className="rounded border border-edge px-2 py-1 font-mono text-[11px]" key={evidenceId}>
-                    {evidenceId}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="effect-title">
-              <Label>Effect proof</Label>
-              <h3 id="effect-title" className="mt-2 text-base font-semibold">
-                Declared simulation expectation
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                Expected safety properties:{" "}
-                {expectations.simulation?.safetyPropertiesSatisfied === true
-                  ? "satisfied"
-                  : "not satisfied or unavailable"}
-              </p>
-              <ul className="mt-3 space-y-2 text-xs text-ink-faint">
-                {bundle.expectedSafetyProperties.map((property) => (
-                  <li key={property.id}>
-                    <code className="font-mono text-ink-dim">{property.id}</code> · {property.description}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><JsonBlock value={scenario.bundle.topology} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
           </div>
-
-          <section id="policies" className="mt-4 rounded-lg border border-edge bg-overlay p-4" aria-labelledby="policy-title">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <Label>Deterministic gate</Label>
-                <h3 id="policy-title" className="mt-2 text-base font-semibold">
-                  Parsed fixture expectations
-                </h3>
-              </div>
-              <span className="eyebrow rounded border border-edge px-2.5 py-1 text-ink-dim">
-                {expectations.riskLevel}
-              </span>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-ink-dim">
-              These declared statuses are schema-parsed bundled expectations. This presentation
-              does not evaluate policies or derive a verdict.
-            </p>
-            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-              {Object.entries(expectations.policies).map(([policyId, status]) => (
-                <li className="flex items-center justify-between gap-3 rounded border border-edge px-3 py-2" key={policyId}>
-                  <code className="font-mono text-[11px] text-ink-dim">{policyId}</code>
-                  <span className="eyebrow text-pass">{status}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
         </main>
 
-        <aside
-          aria-label="Review authority"
-          className="min-w-0 rounded-xl border border-edge bg-surface p-4"
-        >
-          <Label>Authority Spine</Label>
-          <h2 className="mt-2 text-lg font-semibold">Who can claim what</h2>
-          <ol aria-label="Authority Spine" className="mt-5">
-            {authorityClaims.map((claim, index) => (
-              <li className="relative grid grid-cols-[28px_minmax(0,1fr)] gap-3 pb-5" key={claim.label}>
-                <div className="relative flex justify-center">
-                  <span
-                    aria-hidden
-                    className="z-10 flex h-7 w-7 items-center justify-center rounded-full border border-edge-strong bg-overlay font-mono text-[11px] text-ink-dim"
-                  >
-                    {index + 1}
-                  </span>
-                  {index < authorityClaims.length - 1 ? (
-                    <span aria-hidden className="absolute top-7 h-full w-px bg-edge" />
-                  ) : null}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold">{claim.label}</h3>
-                  <p className="mt-1 text-xs font-medium text-ink-dim">{claim.value}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-faint">{claim.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+        <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4">
+          <Label>Airlock status</Label>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Not run. Public replay cannot approve a proposal, so no sandbox simulation is requested.</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Execution outside ChangeSafe</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never executes infrastructure changes.</p></section>
         </aside>
       </div>
     </div>

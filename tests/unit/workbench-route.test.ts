@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import WorkbenchPage, { metadata } from "../../app/workbench/page";
 
 describe("/workbench route", () => {
-  it("renders the static review workbench with honest public-replay metadata", () => {
+  it("renders the interactive public-replay workbench with honest metadata", () => {
     const markup = renderToStaticMarkup(createElement(WorkbenchPage));
 
     expect(markup).toContain('<nav aria-label="Product navigation"');
