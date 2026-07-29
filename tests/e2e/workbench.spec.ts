@@ -3,15 +3,37 @@ import { expect, test, type Page } from "@playwright/test";
 const forbiddenControlName =
   /\b(?:approve|approval|reject|decision|execute|execution)\b/i;
 
-function observeFetchAndXhrRequests(page: Page): string[] {
-  const requests: string[] = [];
-  page.on("request", (request) => {
+interface DataRequestMetadata {
+  resourceType: "fetch" | "xhr";
+  method: string;
+  origin: string;
+  pathname: string;
+}
+
+async function interceptFetchAndXhrRequests(
+  page: Page,
+): Promise<DataRequestMetadata[]> {
+  const requests: DataRequestMetadata[] = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
     const resourceType = request.resourceType();
     if (resourceType === "fetch" || resourceType === "xhr") {
-      requests.push(`${resourceType} ${request.method()} ${request.url()}`);
+      const url = new URL(request.url());
+      requests.push({
+        resourceType,
+        method: request.method(),
+        origin: url.origin,
+        pathname: url.pathname,
+      });
     }
+    await route.continue();
   });
   return requests;
+}
+
+async function expectWorkbenchReady(page: Page): Promise<void> {
+  await expect(page.getByRole("group", { name: "Runtime variant" })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Review canvas" })).toBeVisible();
 }
 
 async function expectNoDecisionOrExecutionControls(page: Page): Promise<void> {
@@ -22,10 +44,10 @@ async function expectNoDecisionOrExecutionControls(page: Page): Promise<void> {
 }
 
 test("public workbench exposes its static desktop capability boundary", async ({ page }) => {
-  const dataRequests = observeFetchAndXhrRequests(page);
+  const dataRequests = await interceptFetchAndXhrRequests(page);
 
   await page.goto("/workbench");
-  await page.waitForLoadState("networkidle");
+  await expectWorkbenchReady(page);
 
   await expect(page).toHaveTitle("ChangeSafe Workbench — Public Replay");
   await expect(page.getByText("Public replay", { exact: true })).toBeVisible();
@@ -54,17 +76,17 @@ test("public workbench exposes its static desktop capability boundary", async ({
       { exact: true },
     ),
   ).toBeVisible();
-  expect(dataRequests).toEqual([]);
+  expect(dataRequests, "static workbench must not issue fetch/XHR requests").toEqual([]);
 });
 
 test.describe("mobile workbench", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("stacks the three review regions into one column", async ({ page }) => {
-    const dataRequests = observeFetchAndXhrRequests(page);
+    const dataRequests = await interceptFetchAndXhrRequests(page);
 
     await page.goto("/workbench");
-    await page.waitForLoadState("networkidle");
+    await expectWorkbenchReady(page);
 
     const mobileColumnCount = await page.locator("#review").evaluate((element) => {
       return getComputedStyle(element).gridTemplateColumns.split(/\s+/).filter(Boolean).length;
@@ -85,6 +107,6 @@ test.describe("mobile workbench", () => {
     expect(contextBox.y).toBeLessThan(canvasBox.y);
     expect(canvasBox.y).toBeLessThan(authorityBox.y);
     await expectNoDecisionOrExecutionControls(page);
-    expect(dataRequests).toEqual([]);
+    expect(dataRequests, "static workbench must not issue fetch/XHR requests").toEqual([]);
   });
 });
