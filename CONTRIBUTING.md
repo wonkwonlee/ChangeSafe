@@ -167,7 +167,7 @@ stored in this repository and a leaked secret is not a way to publish.
 [tp]: https://docs.npmjs.com/trusted-publishers
 
 Each package trusts this repository through its own npm settings, at
-*Settings → Trusted Publisher* on npmjs.com. All four use the same values:
+*Settings → Trusted Publisher* on npmjs.com. All five use the same values:
 
 | Field | Value |
 | --- | --- |
@@ -198,7 +198,7 @@ configured immediately afterwards. Such a version has no provenance
 attestation — say so in its release notes rather than letting the standing
 "published with provenance" sentence stand.
 
-Four packages publish as a set — `@changesafe/core`, the two domains, then
+Five packages publish as a set — `@changesafe/core`, the three domains, then
 `changesafe` — in dependency order, because a domain that reached the
 registry before core would be uninstallable until core caught up.
 
