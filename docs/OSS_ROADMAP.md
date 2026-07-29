@@ -329,7 +329,11 @@ filesystem and the demo's "no signup" promise is worth keeping.
 
 Still open and genuinely community-shaped: a docs site (pending the §7
 tooling decision), integration conversations with k8sgpt-style diagnosers,
-and published cross-model reports, which need someone's API budget.
+published cross-model reports (need someone's API budget), and a
+Batfish-backed `domain-network` reachability oracle — swapping the toy
+link/route model behind `MGMT_REACHABILITY` for a real one, rather than
+maintaining a competing network simulator. No design work has started; it's
+listed here so the README's "on the roadmap" claim points at something real.
 
 ## 4. Sequencing rationale
 

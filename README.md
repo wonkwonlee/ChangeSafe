@@ -393,6 +393,35 @@ These do not change:
   score.
 - ChangeSafe never executes an infrastructure change.
 
+## Related work
+
+ChangeSafe sits next to three categories of existing tooling, not on top of
+them. Naming the overlap precisely is more useful than a vague "we're
+different":
+
+- **Network verification — Batfish, Forward Networks.** These do
+  production-grade reachability analysis: multi-vendor config parsing,
+  BGP/ECMP modeling, header-space analysis across real topologies.
+  `domain-network`'s reachability model is deliberately synthetic (see
+  Limitations above) and makes no claim to replace them. The honest long-term
+  shape is Batfish-as-oracle behind `MGMT_REACHABILITY` — the deterministic
+  gate consumes a real reachability verdict instead of computing a toy one —
+  not a competing simulator. That's an open roadmap item
+  ([docs/OSS_ROADMAP.md](docs/OSS_ROADMAP.md)), not a claim already earned.
+- **MCP gateways and agent-execution guardrails — Microsoft's Agent
+  Governance Toolkit, Portkey, and similar.** These operate at the transport
+  layer: which tool an agent may call, with what identity, under what rate
+  limit. They generally don't parse what a Terraform plan destroys or
+  whether a network patch severs management access — that needs a domain
+  model of the change itself, which is what `core` plus the domain adapters
+  provide. The layers compose rather than compete: a gateway can require
+  "call the ChangeSafe gate before this tool executes"; ChangeSafe decides
+  whether that specific change is safe.
+- **Policy-as-code — OPA, Sentinel, Conftest, Itential's governed change
+  management.** Direct comparison in
+  [docs/LAUNCH.md](docs/LAUNCH.md#answers-to-the-questions-that-will-come-up).
+  Short version: if one of these already covers your case, use it.
+
 ## Contributing
 
 Scenarios, policies, and domains are all open. Start with
