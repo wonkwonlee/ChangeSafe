@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createReceipt,
+  type ChangeReceipt,
+  type ReceiptInput,
+} from "@changesafe/core";
 
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import type {
@@ -13,6 +18,7 @@ import {
   type UseReviewControllerOptions,
   type UseReviewControllerResult,
 } from "@/features/reviews/useReviewController";
+import type { ReviewControllerState } from "@/features/reviews/controller";
 import { ReviewAnalyzeSuccessV1Schema } from "@/lib/domain/api";
 
 const reactHarness = vi.hoisted(() => {
@@ -138,6 +144,33 @@ function useRenderedController<TInput>(
 ): UseReviewControllerResult<TInput> {
   reactHarness.beginRender();
   return useReviewController(options);
+}
+
+async function rejectedReceipt<TInput>(
+  state: ReviewControllerState<TInput>,
+  overrides: Partial<ReceiptInput> = {},
+): Promise<ChangeReceipt> {
+  if (state.workflow.phase !== "REJECTED") {
+    throw new Error(`expected REJECTED, received ${state.workflow.phase}`);
+  }
+  return createReceipt({
+    sourceId: state.workflow.sourceId,
+    inputId: state.expectedInputId,
+    input: state.workflow.input,
+    proposal: state.workflow.proposal,
+    appVersion: "test",
+    policyVersion: "test-v1",
+    mode: state.workflow.mode,
+    model: state.review?.provenance.model ?? null,
+    fixtureProvenance: state.workflow.provenance,
+    findings: state.workflow.findings,
+    riskLevel: state.workflow.riskLevel,
+    decision: "rejected",
+    simulation: null,
+    receiptId: "receipt-rejected",
+    createdAtUtc: "2026-07-29T12:00:00Z",
+    ...overrides,
+  });
 }
 
 beforeEach(() => {
@@ -356,5 +389,216 @@ describe("useReviewController", () => {
     hook = useRenderedController(options);
 
     expect(hook.state.workflow.phase).toBe("ANALYZING");
+  });
+
+  it("aborts every pending request before atomically rebinding the review", async () => {
+    const payload = await validReview();
+    const pending: Array<{
+      signal: AbortSignal;
+      resolve(result: ReviewTransportResult): void;
+    }> = [];
+    const transport = vi.fn<ReviewTransport<typeof payload.input>>(
+      (request) =>
+        new Promise((resolve) => {
+          pending.push({ signal: request.signal, resolve });
+        }),
+    );
+    const attemptIds = ["attempt-one", "attempt-two"];
+    let attemptIndex = 0;
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport,
+      attemptIdFactory: () => attemptIds[attemptIndex++] ?? "unexpected",
+    };
+    let hook = useRenderedController(options);
+    const firstAnalysis = hook.analyze();
+    reactHarness.dispatch(
+      receiveReviewTransport("attempt-one", { malformed: true }),
+    );
+    hook = useRenderedController(options);
+    const secondAnalysis = hook.analyze();
+    const replacement = {
+      sourceId: "scenario-replacement",
+      input: {
+        incidentId: "incident-replacement",
+        alert: "Replacement incident",
+      },
+      expectedInputId: "incident-replacement",
+      session: payload.session,
+    };
+
+    hook.rebind(replacement);
+    hook = useRenderedController(options);
+
+    expect(pending).toHaveLength(2);
+    expect(pending.every(({ signal }) => signal.aborted)).toBe(true);
+    expect(hook.state).toMatchObject({
+      expectedInputId: "incident-replacement",
+      workflow: {
+        phase: "READY",
+        sourceId: "scenario-replacement",
+        input: replacement.input,
+      },
+      review: null,
+      transportError: null,
+      activeRequest: null,
+    });
+
+    pending[0]?.resolve({ attemptId: "attempt-one", payload });
+    pending[1]?.resolve({ attemptId: "attempt-two", payload });
+    await Promise.all([firstAnalysis, secondAnalysis]);
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("READY");
+  });
+
+  it("routes rejection and receipt issuance through the pure controller", async () => {
+    const payload = await validReview();
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport: vi.fn<ReviewTransport<typeof payload.input>>(
+        async (request) => ({ attemptId: request.attemptId, payload }),
+      ),
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+    await hook.analyze();
+    hook = useRenderedController(options);
+
+    hook.reject();
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("REJECTED");
+
+    await hook.recordReceipt(await rejectedReceipt(hook.state));
+    hook = useRenderedController(options);
+    expect(hook.state.workflow).toMatchObject({
+      phase: "RECEIPT_ISSUED",
+      decision: "rejected",
+    });
+  });
+
+  it("fails safely when async receipt validation finds a workflow mismatch", async () => {
+    const payload = await validReview();
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport: vi.fn<ReviewTransport<typeof payload.input>>(
+        async (request) => ({ attemptId: request.attemptId, payload }),
+      ),
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+    await hook.analyze();
+    hook = useRenderedController(options);
+    hook.reject();
+    hook = useRenderedController(options);
+
+    await hook.recordReceipt(
+      await rejectedReceipt(hook.state, { sourceId: "scenario-forged" }),
+    );
+    hook = useRenderedController(options);
+
+    expect(hook.state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review receipt could not be verified safely.",
+    });
+    expect("receipt" in hook.state.workflow).toBe(false);
+  });
+
+  it("does not install an async receipt result after rebind", async () => {
+    const payload = await validReview();
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport: vi.fn<ReviewTransport<typeof payload.input>>(
+        async (request) => ({ attemptId: request.attemptId, payload }),
+      ),
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+    await hook.analyze();
+    hook = useRenderedController(options);
+    hook.reject();
+    hook = useRenderedController(options);
+    const receipt = await rejectedReceipt(hook.state);
+
+    const pendingReceipt = hook.recordReceipt(receipt);
+    hook.rebind({
+      sourceId: "scenario-replacement",
+      input: {
+        incidentId: "incident-replacement",
+        alert: "Replacement incident",
+      },
+      expectedInputId: "incident-replacement",
+      session: payload.session,
+    });
+    await pendingReceipt;
+    hook = useRenderedController(options);
+
+    expect(hook.state.workflow).toMatchObject({
+      phase: "READY",
+      sourceId: "scenario-replacement",
+    });
+    expect("receipt" in hook.state.workflow).toBe(false);
+  });
+
+  it("exposes validated transport error and replay metadata", async () => {
+    const liveSession: ReviewSessionEnvelope = {
+      ...session,
+      source: "live-model",
+      analysisMode: "live",
+      provenance: "live-model",
+    };
+    const transport = vi.fn<ReviewTransport<typeof input>>(
+      async (request) => ({
+        attemptId: request.attemptId,
+        payload: {
+          ok: false,
+          contractVersion: "1.0.0",
+          error: {
+            code: "ANALYSIS_UNAVAILABLE",
+            message: "Live analysis is unavailable. Replay remains available.",
+            domainId: "network",
+            replayAvailable: true,
+            replaySource: {
+              domainId: "network",
+              contractVersion: "1.0.0",
+              sourceId: "scenario-one",
+            },
+            expectedContractVersion: null,
+            receivedContractVersion: null,
+          },
+        },
+      }),
+    );
+    const options = {
+      sourceId: "scenario-one",
+      input,
+      expectedInputId: input.incidentId,
+      session: liveSession,
+      transport,
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+
+    await hook.analyze();
+    hook = useRenderedController(options);
+
+    expect(hook.transportError).toMatchObject({
+      code: "ANALYSIS_UNAVAILABLE",
+      replayAvailable: true,
+      replaySource: {
+        sourceId: "scenario-one",
+      },
+    });
   });
 });

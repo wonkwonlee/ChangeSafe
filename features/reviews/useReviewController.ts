@@ -12,14 +12,20 @@ import {
   approveReview,
   completeReviewSimulation,
   initialReviewControllerState,
+  rebindReview,
   receiveReviewTransport,
+  recordReviewReceipt,
+  rejectReview,
   reviewControllerReducer,
   startReview,
   type InitialReviewControllerInput,
   type ReviewControllerCommand,
   type ReviewControllerState,
 } from "./controller";
-import type { ReviewSessionEnvelope } from "../domains/review-contract";
+import type {
+  ReviewSessionEnvelope,
+  ReviewTransportErrorDetail,
+} from "../domains/review-contract";
 
 export interface ReviewTransportRequest<TInput> {
   readonly attemptId: string;
@@ -49,9 +55,13 @@ export interface UseReviewControllerOptions<TInput>
 
 export interface UseReviewControllerResult<TInput> {
   readonly state: ReviewControllerState<TInput>;
+  readonly transportError: ReviewTransportErrorDetail | null;
   analyze(): Promise<void>;
+  rebind(source: InitialReviewControllerInput<TInput>): void;
   approve(): void;
+  reject(): void;
   completeSimulation(simulation: unknown): void;
+  recordReceipt(receipt: unknown): Promise<void>;
 }
 
 let nextAttemptSequence = 0n;
@@ -63,7 +73,7 @@ function createAttemptId(): string {
 
 function reducer<TInput>(
   state: ReviewControllerState<TInput>,
-  command: ReviewControllerCommand,
+  command: ReviewControllerCommand<TInput>,
 ): ReviewControllerState<TInput> {
   return reviewControllerReducer(state, command);
 }
@@ -110,7 +120,7 @@ export function useReviewController<TInput>(
   }, []);
 
   const applyCommand = useCallback(
-    (command: ReviewControllerCommand) => {
+    (command: ReviewControllerCommand<TInput>) => {
       const nextState = reviewControllerReducer(
         stateRef.current,
         command,
@@ -169,6 +179,21 @@ export function useReviewController<TInput>(
     applyCommand(approveReview());
   }, [applyCommand]);
 
+  const rebind = useCallback(
+    (source: InitialReviewControllerInput<TInput>) => {
+      controllersRef.current.forEach((controller) => {
+        controller.abort();
+      });
+      controllersRef.current.clear();
+      applyCommand(rebindReview(source));
+    },
+    [applyCommand],
+  );
+
+  const reject = useCallback(() => {
+    applyCommand(rejectReview());
+  }, [applyCommand]);
+
   const completeSimulation = useCallback(
     (simulation: unknown) => {
       applyCommand(completeReviewSimulation(simulation));
@@ -176,10 +201,25 @@ export function useReviewController<TInput>(
     [applyCommand],
   );
 
+  const recordReceipt = useCallback(
+    async (receipt: unknown) => {
+      const command = await recordReviewReceipt(stateRef.current, receipt);
+      if (!mountedRef.current) {
+        return;
+      }
+      applyCommand(command);
+    },
+    [applyCommand],
+  );
+
   return {
     state,
+    transportError: state.transportError,
     analyze,
+    rebind,
     approve,
+    reject,
     completeSimulation,
+    recordReceipt,
   };
 }

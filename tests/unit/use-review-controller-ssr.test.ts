@@ -38,10 +38,22 @@ it("initializes during server rendering without generating attempts or invoking 
       transport,
       attemptIdFactory,
     });
-    return createElement("span", null, controller.state.workflow.phase);
+    return createElement(
+      "span",
+      null,
+      [
+        controller.state.workflow.phase,
+        typeof controller.rebind,
+        typeof controller.reject,
+        typeof controller.recordReceipt,
+        controller.transportError === null ? "no-error" : "error",
+      ].join(":"),
+    );
   }
 
-  expect(renderToString(createElement(Probe))).toContain("READY");
+  expect(renderToString(createElement(Probe))).toContain(
+    "READY:function:function:function:no-error",
+  );
   expect(attemptIdFactory).not.toHaveBeenCalled();
   expect(transport).not.toHaveBeenCalled();
 });
