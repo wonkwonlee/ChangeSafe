@@ -2,7 +2,10 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
-import type { ReviewSessionEnvelope } from "@/features/domains/review-contract";
+import {
+  REVIEW_CONTRACT_VERSION,
+  type ReviewSessionEnvelope,
+} from "@/features/domains/review-contract";
 import {
   useReviewController,
   type ReviewTransport,
@@ -14,7 +17,7 @@ it("initializes during server rendering without generating attempts or invoking 
   const attemptIdFactory = vi.fn(() => "attempt-one");
   const session: ReviewSessionEnvelope = {
     domainId: "network",
-    contractVersion: "1.0.0",
+    contractVersion: REVIEW_CONTRACT_VERSION,
     policyVersion: "test-network-v1",
     domainShape: "simulated-state",
     capabilities: {

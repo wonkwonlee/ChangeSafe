@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { POLICY_VERSION } from "@changesafe/domain-network";
 
 import { POST as legacyPost } from "@/app/api/analyze/route";
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
@@ -7,6 +8,7 @@ import {
   ReviewAnalyzeErrorV1Schema,
   ReviewAnalyzeSuccessV1Schema,
 } from "@/lib/domain/api";
+import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
 
 function request(body: unknown): Request {
   return new Request("http://localhost/api/reviews/analyze", {
@@ -23,7 +25,7 @@ function v1Request(
   return {
     apiVersion: "v1",
     domainId: "network",
-    contractVersion: "1.0.0",
+    contractVersion: REVIEW_CONTRACT_VERSION,
     sourceId,
     analysisMode: "replay",
     ...overrides,
@@ -64,6 +66,7 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
         domainId: "network",
         sourceId,
         session: {
+          policyVersion: POLICY_VERSION,
           source: expectedSource,
           analysisMode: "replay",
           runtimeMode: "public-replay",
@@ -91,7 +94,7 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
 
   it("returns a safe contract-version mismatch envelope", async () => {
     const response = await reviewPost(
-      request(v1Request("scenario-a-failover", { contractVersion: "2.0.0" })),
+      request(v1Request("scenario-a-failover", { contractVersion: "1.0.0" })),
     );
     const payload = ReviewAnalyzeErrorV1Schema.parse(await response.json());
 
@@ -102,8 +105,8 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
         error: {
           code: "CONTRACT_VERSION_MISMATCH",
           domainId: "network",
-          expectedContractVersion: "1.0.0",
-          receivedContractVersion: "2.0.0",
+          expectedContractVersion: REVIEW_CONTRACT_VERSION,
+          receivedContractVersion: "1.0.0",
         },
       },
     });
@@ -144,7 +147,7 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
       replayAvailable: true,
       replaySource: {
         domainId: "network",
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         sourceId: "scenario-a-failover",
       },
     });

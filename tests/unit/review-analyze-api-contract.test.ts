@@ -5,9 +5,10 @@ import {
   ReviewAnalyzeRequestV1Schema,
   ReviewAnalyzeSuccessV1Schema,
 } from "@/lib/domain/api";
+import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
 
 const apiVersion = "v1";
-const contractVersion = "1.0.0";
+const contractVersion = REVIEW_CONTRACT_VERSION;
 
 const request = {
   apiVersion,
@@ -119,7 +120,7 @@ describe("v1 review analyze API contracts", () => {
   it.each([
     ["unknown domain", { ...request, domainId: "future-domain" }],
     ["API version mismatch", { ...request, apiVersion: "v2" }],
-    ["contract version mismatch", { ...request, contractVersion: "2.0.0" }],
+    ["legacy contract version", { ...request, contractVersion: "1.0.0" }],
     ["unknown key", { ...request, appVersion: "0.2.0" }],
     [
       "client classification claim",

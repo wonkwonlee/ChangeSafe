@@ -164,7 +164,7 @@ describe("v1 review registry and analysis contracts", () => {
     expect(
       ReviewAnalysisResultSchema.safeParse({
         ...validAnalysis,
-        contractVersion: "2.0.0",
+        contractVersion: "1.0.0",
       }).success,
     ).toBe(false);
     expect(
@@ -186,7 +186,7 @@ describe("v1 review registry and analysis contracts", () => {
           domainId: "network",
           replayAvailable: true,
           expectedContractVersion: REVIEW_CONTRACT_VERSION,
-          receivedContractVersion: "2.0.0",
+          receivedContractVersion: "1.0.0",
         },
       }).success,
     ).toBe(false);
@@ -265,7 +265,7 @@ describe("v1 review registry and analysis contracts", () => {
           expectedContractVersion:
             code === "CONTRACT_VERSION_MISMATCH" ? REVIEW_CONTRACT_VERSION : null,
           receivedContractVersion:
-            code === "CONTRACT_VERSION_MISMATCH" ? "2.0.0" : null,
+            code === "CONTRACT_VERSION_MISMATCH" ? "1.0.0" : null,
         },
       }).success,
     ).toBe(false);

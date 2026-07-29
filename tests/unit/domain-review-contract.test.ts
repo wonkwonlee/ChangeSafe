@@ -112,7 +112,7 @@ describe("ReviewSessionEnvelopeSchema", () => {
     expect(
       ReviewSessionEnvelopeSchema.safeParse({
         ...networkSession,
-        contractVersion: "2.0.0",
+        contractVersion: "1.0.0",
       }).success,
     ).toBe(false);
   });
@@ -189,7 +189,7 @@ describe("ReviewContractErrorResultSchema", () => {
         code: "CONTRACT_VERSION_MISMATCH",
         domainId: "network",
         expectedContractVersion: REVIEW_CONTRACT_VERSION,
-        receivedContractVersion: "2.0.0",
+        receivedContractVersion: "1.0.0",
       },
     },
   ])("accepts a safe typed contract failure", (result) => {
@@ -203,8 +203,8 @@ describe("ReviewContractErrorResultSchema", () => {
         error: {
           code: "CONTRACT_VERSION_MISMATCH",
           domainId: "network",
-          expectedContractVersion: "1.0.0",
-          receivedContractVersion: "1.0.0",
+          expectedContractVersion: REVIEW_CONTRACT_VERSION,
+          receivedContractVersion: REVIEW_CONTRACT_VERSION,
         },
       }).success,
     ).toBe(false);

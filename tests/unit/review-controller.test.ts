@@ -699,7 +699,7 @@ describe("pure review controller", () => {
         ...buildAnalysis(networkSession, "PASS", {
           kind: "sandbox-simulation" as const,
         }),
-        contractVersion: "2.0.0",
+        contractVersion: "1.0.0",
       },
     ],
     [

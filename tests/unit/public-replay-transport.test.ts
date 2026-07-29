@@ -8,6 +8,7 @@ import {
   ReviewAnalyzeSuccessV1Schema,
   type ReviewAnalyzeSuccessV1,
 } from "@/features/domains/review-api-contract";
+import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
 
 type FetchImplementation = (
   input: RequestInfo | URL,
@@ -22,7 +23,7 @@ async function validSuccessWrapper(): Promise<ReviewAnalyzeSuccessV1> {
       body: JSON.stringify({
         apiVersion: "v1",
         domainId: "network",
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         sourceId: "scenario-a-failover",
         analysisMode: "replay",
       }),
@@ -73,7 +74,7 @@ describe("publicReplayTransport", () => {
       body: JSON.stringify({
         apiVersion: "v1",
         domainId: "network",
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         sourceId: "scenario-a-failover",
         analysisMode: "replay",
       }),
@@ -88,7 +89,7 @@ describe("publicReplayTransport", () => {
       apiVersion: "v1",
       result: {
         ok: false,
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         error: {
           code: "ANALYSIS_UNAVAILABLE",
           message: "Replay remains available.",
@@ -96,7 +97,7 @@ describe("publicReplayTransport", () => {
           replayAvailable: true,
           replaySource: {
             domainId: "network",
-            contractVersion: "1.0.0",
+            contractVersion: REVIEW_CONTRACT_VERSION,
             sourceId: "scenario-a-failover",
           },
           expectedContractVersion: null,
@@ -117,7 +118,7 @@ describe("publicReplayTransport", () => {
       attemptId: "attempt-local",
       payload: {
         ok: false,
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         error: {
           code: "ANALYSIS_UNAVAILABLE",
           message: "Replay remains available.",
@@ -125,7 +126,7 @@ describe("publicReplayTransport", () => {
           replayAvailable: true,
           replaySource: {
             domainId: "network",
-            contractVersion: "1.0.0",
+            contractVersion: REVIEW_CONTRACT_VERSION,
             sourceId: "scenario-a-failover",
           },
           expectedContractVersion: null,

@@ -108,13 +108,13 @@ describe("closed domain registry", () => {
       },
     });
 
-    expect(DOMAIN_REGISTRY.resolve("network", "2.0.0")).toEqual({
+    expect(DOMAIN_REGISTRY.resolve("network", "1.0.0")).toEqual({
       ok: false,
       error: {
         code: "CONTRACT_VERSION_MISMATCH",
         domainId: "network",
         expectedContractVersion: REVIEW_CONTRACT_VERSION,
-        receivedContractVersion: "2.0.0",
+        receivedContractVersion: "1.0.0",
       },
     });
   });
@@ -142,7 +142,7 @@ describe("closed domain registry", () => {
     expect(registry.resolve("future-domain", REVIEW_CONTRACT_VERSION).ok).toBe(
       false,
     );
-    expect(registry.resolve("network", "2.0.0").ok).toBe(false);
+    expect(registry.resolve("network", "1.0.0").ok).toBe(false);
     expect(loaderCalls).toBe(0);
   });
 

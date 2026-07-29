@@ -11,7 +11,16 @@ import {
   deriveRiskLevel,
 } from "@changesafe/core";
 
-export const REVIEW_CONTRACT_VERSION = "1.0.0" as const;
+/**
+ * Version 2 makes `policyVersion` mandatory on every session envelope.
+ *
+ * This is intentionally a contract-major transition: a missing policy
+ * version cannot be safely backfilled after evaluation, because receipts
+ * must bind to the exact deterministic policy set that produced findings.
+ * The HTTP `apiVersion: "v1"` wrapper remains stable; clients select this
+ * review-contract version explicitly in its request body.
+ */
+export const REVIEW_CONTRACT_VERSION = "2.0.0" as const;
 
 export const DomainIdSchema = z
   .string()

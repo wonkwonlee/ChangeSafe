@@ -8,6 +8,10 @@ import {
   ReviewTransportErrorSchema,
 } from "./review-contract";
 
+/**
+ * Transport-envelope version. It is independent from REVIEW_CONTRACT_VERSION:
+ * the V1 endpoint carries an explicit review-contract version in its body.
+ */
 export const REVIEW_ANALYZE_API_VERSION = "v1" as const;
 
 export const ReviewAnalyzeDomainIdV1Schema = z.enum([

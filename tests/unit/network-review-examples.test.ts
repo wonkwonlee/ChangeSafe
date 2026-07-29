@@ -4,6 +4,7 @@ import type { FixtureProvenance } from "@changesafe/core";
 
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import { ReviewExampleDescriptorSchema } from "@/features/domains/review-contract";
+import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
 import { SCENARIOS } from "@/scenarios";
 
 function expectedOrigin(provenance: FixtureProvenance) {
@@ -33,10 +34,10 @@ describe("Network review examples", () => {
       );
       expect(descriptor).toMatchObject({
         domainId: "network",
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         session: {
           domainId: "network",
-          contractVersion: "1.0.0",
+          contractVersion: REVIEW_CONTRACT_VERSION,
           domainShape: "simulated-state",
           runtimeMode: "public-replay",
           analysisMode: "replay",

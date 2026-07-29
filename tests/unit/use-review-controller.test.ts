@@ -10,6 +10,7 @@ import type {
   ReviewAnalysisResult,
   ReviewSessionEnvelope,
 } from "@/features/domains/review-contract";
+import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
 import { receiveReviewTransport } from "@/features/reviews/controller";
 import {
   useReviewController,
@@ -107,7 +108,7 @@ const input = {
 
 const session: ReviewSessionEnvelope = {
   domainId: "network",
-  contractVersion: "1.0.0",
+  contractVersion: REVIEW_CONTRACT_VERSION,
   policyVersion: "test-network-v1",
   domainShape: "simulated-state",
   capabilities: {
@@ -131,7 +132,7 @@ async function validReview(): Promise<ReviewAnalysisResult> {
       body: JSON.stringify({
         apiVersion: "v1",
         domainId: "network",
-        contractVersion: "1.0.0",
+        contractVersion: REVIEW_CONTRACT_VERSION,
         sourceId: "scenario-a-failover",
         analysisMode: "replay",
       }),
@@ -160,7 +161,7 @@ async function rejectedReceipt<TInput>(
     input: state.workflow.input,
     proposal: state.workflow.proposal,
     appVersion: "test",
-    policyVersion: "test-v1",
+    policyVersion: state.session.policyVersion,
     mode: state.workflow.mode,
     model: state.review?.provenance.model ?? null,
     fixtureProvenance: state.workflow.provenance,
@@ -607,7 +608,7 @@ describe("useReviewController", () => {
         attemptId: request.attemptId,
         payload: {
           ok: false,
-          contractVersion: "1.0.0",
+          contractVersion: REVIEW_CONTRACT_VERSION,
           error: {
             code: "ANALYSIS_UNAVAILABLE",
             message: "Live analysis is unavailable. Replay remains available.",
@@ -615,7 +616,7 @@ describe("useReviewController", () => {
             replayAvailable: true,
             replaySource: {
               domainId: "network",
-              contractVersion: "1.0.0",
+              contractVersion: REVIEW_CONTRACT_VERSION,
               sourceId: "scenario-one",
             },
             expectedContractVersion: null,
