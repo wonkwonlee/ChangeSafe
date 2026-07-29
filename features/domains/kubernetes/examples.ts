@@ -1,4 +1,4 @@
-import { POLICY_VERSION } from "@changesafe/domain-kubernetes";
+import { POLICY_VERSION } from "@changesafe/domain-kubernetes/offline";
 
 import { DOMAIN_REGISTRY } from "../registry";
 import {

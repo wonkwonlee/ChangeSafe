@@ -8,6 +8,10 @@ const fixtureModule = path.join(
   repositoryRoot,
   "features/domains/kubernetes/fixtures.ts",
 );
+const exampleModule = path.join(
+  repositoryRoot,
+  "features/domains/kubernetes/examples.ts",
+);
 const offlineModule = path.join(
   repositoryRoot,
   "packages/domain-kubernetes/src/offline.ts",
@@ -74,12 +78,15 @@ async function reachableModules(entryPath: string): Promise<ReadonlySet<string>>
 }
 
 describe("Kubernetes typed-fixture parser boundary", () => {
-  it("keeps app fixtures on the parser-free offline entry point", async () => {
-    const fixtureSource = await readFile(fixtureModule, "utf8");
-    const reachable = await reachableModules(fixtureModule);
+  it.each([
+    ["fixture", fixtureModule],
+    ["example descriptor", exampleModule],
+  ])("keeps the app-facing Kubernetes %s graph parser-free", async (_name, entryModule) => {
+    const source = await readFile(entryModule, "utf8");
+    const reachable = await reachableModules(entryModule);
 
-    expect(fixtureSource).toContain('from "@changesafe/domain-kubernetes/offline"');
-    expect(fixtureSource).not.toContain('from "@changesafe/domain-kubernetes"');
+    expect(source).toContain('from "@changesafe/domain-kubernetes/offline"');
+    expect(source).not.toContain('from "@changesafe/domain-kubernetes"');
     expect(reachable).toContain(offlineModule);
     expect(reachable).not.toContain(yamlParserModule);
   });

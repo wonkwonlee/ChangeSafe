@@ -7,3 +7,4 @@ export { KubernetesChangeProposalSchema } from "./schemas";
 export type { KubernetesChangeProposal, KubernetesSnapshot } from "./schemas";
 export { normalizeSnapshot } from "./normalize";
 export { deriveManifestProposal } from "./manifest-proposal";
+export { KUBERNETES_POLICY_VERSION, POLICY_VERSION } from "./version";
