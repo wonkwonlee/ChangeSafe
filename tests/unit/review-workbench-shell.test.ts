@@ -110,4 +110,44 @@ describe("ReviewWorkbenchShell", () => {
       expect(source, boundary).not.toMatch(pattern);
     }
   });
+
+  it("declares a one-column mobile layout and an explicit three-region desktop grid", () => {
+    const source = readFileSync("components/ReviewWorkbenchShell.tsx", "utf8");
+    const markup = renderShell();
+    const desktopGrid =
+      "xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]";
+
+    expect(source).toContain('id="review"');
+    expect(source).toContain("grid-cols-1");
+    expect(source).toContain(desktopGrid);
+    expect(markup).toContain(`grid-cols-1`);
+    expect(markup).toContain(desktopGrid);
+
+    const context = markup.indexOf('aria-label="Review context"');
+    const canvas = markup.indexOf('aria-label="Review canvas"');
+    const authority = markup.indexOf('aria-label="Review authority"');
+    expect(context).toBeGreaterThan(-1);
+    expect(canvas).toBeGreaterThan(context);
+    expect(authority).toBeGreaterThan(canvas);
+  });
+
+  it("keeps one page heading and never skips a semantic heading level", () => {
+    const markup = renderShell();
+    const headingLevels = [...markup.matchAll(/<h([1-6])\b/g)].map((match) =>
+      Number(match[1]),
+    );
+
+    expect(headingLevels[0]).toBe(1);
+    expect(headingLevels.filter((level) => level === 1)).toHaveLength(1);
+    for (let index = 1; index < headingLevels.length; index += 1) {
+      const previous = headingLevels[index - 1];
+      const current = headingLevels[index];
+      if (previous === undefined || current === undefined) {
+        throw new Error("Expected every rendered heading to have a semantic level");
+      }
+      expect(current, `heading ${index + 1} must not skip a level`).toBeLessThanOrEqual(
+        previous + 1,
+      );
+    }
+  });
 });
