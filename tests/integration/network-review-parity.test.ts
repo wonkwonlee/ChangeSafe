@@ -6,6 +6,7 @@ import {
   evaluatePolicies,
   hashCanonical,
   verifyReceiptHash,
+  type FixtureProvenance,
 } from "@changesafe/core";
 import {
   networkDomain,
@@ -58,6 +59,16 @@ function expectedReceiptInput(
 ) {
   if (state.review === null) throw new Error("completed review required for a receipt");
 
+  // Keep expected receipt provenance independent from the transport/controller
+  // result under test. The fixture is the sole source of replay authorship.
+  const expected = evaluatePolicies(
+    networkDomain,
+    scenario.bundle,
+    scenario.fixture.proposal,
+  );
+  const fixtureProvenance = scenario.fixture.provenance;
+  const model = scenario.fixture.model;
+
   switch (state.workflow.phase) {
     case "BLOCKED":
       return {
@@ -66,12 +77,12 @@ function expectedReceiptInput(
         input: scenario.bundle,
         appVersion: APP_VERSION,
         policyVersion: state.session.policyVersion,
-        proposal: state.workflow.proposal,
-        mode: state.workflow.mode,
-        model: state.review.provenance.model,
-        fixtureProvenance: state.workflow.provenance,
-        findings: state.workflow.findings,
-        riskLevel: state.workflow.riskLevel,
+        proposal: scenario.fixture.proposal,
+        mode: "replay" as const,
+        model,
+        fixtureProvenance,
+        findings: expected.findings,
+        riskLevel: expected.riskLevel,
         decision: "blocked" as const,
         simulation: null,
         createdAtUtc: CREATED_AT,
@@ -84,12 +95,12 @@ function expectedReceiptInput(
         input: scenario.bundle,
         appVersion: APP_VERSION,
         policyVersion: state.session.policyVersion,
-        proposal: state.workflow.proposal,
-        mode: state.workflow.mode,
-        model: state.review.provenance.model,
-        fixtureProvenance: state.workflow.provenance,
-        findings: state.workflow.findings,
-        riskLevel: state.workflow.riskLevel,
+        proposal: scenario.fixture.proposal,
+        mode: "replay" as const,
+        model,
+        fixtureProvenance,
+        findings: expected.findings,
+        riskLevel: expected.riskLevel,
         decision: "approved" as const,
         simulation: state.workflow.simulation,
         createdAtUtc: CREATED_AT,
@@ -100,12 +111,35 @@ function expectedReceiptInput(
   }
 }
 
+function expectedReplayClassification(
+  provenance: FixtureProvenance,
+): "captured-replay" | "authored-synthetic" | "authored-red-team" {
+  switch (provenance) {
+    case "captured":
+      return "captured-replay";
+    case "authored_synthetic":
+      return "authored-synthetic";
+    case "authored_red_team":
+      return "authored-red-team";
+  }
+}
+
 describe("Network public replay parity", () => {
   it.each(SCENARIOS.map((scenario) => [scenario.scenarioId, scenario] as const))(
     "%s preserves the fixture's exact deterministic outcome through the V1 workbench path",
     async (_scenarioId, scenario) => {
       const example = exampleFor(scenario);
       const result = await replayResult(scenario);
+      // Assert the public result before it can enter the controller. The
+      // fixture, rather than any route or controller output, is authoritative
+      // for replay provenance and model attribution.
+      expect(result.provenance).toEqual({
+        classification: expectedReplayClassification(scenario.fixture.provenance),
+        model: scenario.fixture.model,
+        provider: null,
+        fixtureId: scenario.fixture.fixtureId,
+        notes: scenario.fixture.notes,
+      });
       const expected = evaluatePolicies(
         networkDomain,
         scenario.bundle,
