@@ -21,11 +21,11 @@ export const SAFE_REVIEW_ERROR_MESSAGE =
 
 export interface ActiveReviewRequest {
   readonly attemptId: string;
-  readonly expectedInputId: string;
 }
 
 export interface ReviewControllerState<TInput> {
   readonly session: ReviewSessionEnvelope;
+  readonly expectedInputId: string;
   readonly workflow: WorkflowState<TInput>;
   readonly review: ReviewAnalysisResult | null;
   readonly activeRequest: ActiveReviewRequest | null;
@@ -35,7 +35,6 @@ export type ReviewControllerCommand =
   | {
       readonly type: "START_REVIEW";
       readonly attemptId: string;
-      readonly expectedInputId: string;
     }
   | {
       readonly type: "REVIEW_TRANSPORT_RECEIVED";
@@ -48,6 +47,7 @@ export type ReviewControllerCommand =
 export interface InitialReviewControllerInput<TInput> {
   readonly sourceId: string;
   readonly input: TInput;
+  readonly expectedInputId: string;
   readonly session: ReviewSessionEnvelope;
 }
 
@@ -55,20 +55,19 @@ export function initialReviewControllerState<TInput>(
   source: InitialReviewControllerInput<TInput>,
 ): ReviewControllerState<TInput> {
   const sourceId = IdSchema.parse(source.sourceId);
+  const expectedInputId = IdSchema.parse(source.expectedInputId);
   const session = ReviewSessionEnvelopeSchema.parse(source.session);
   return {
     session,
+    expectedInputId,
     workflow: initialState(sourceId, source.input),
     review: null,
     activeRequest: null,
   };
 }
 
-export function startReview(
-  attemptId: string,
-  expectedInputId: string,
-): ReviewControllerCommand {
-  return { type: "START_REVIEW", attemptId, expectedInputId };
+export function startReview(attemptId: string): ReviewControllerCommand {
+  return { type: "START_REVIEW", attemptId };
 }
 
 export function receiveReviewTransport(
@@ -96,7 +95,6 @@ export function reviewControllerReducer<TInput>(
     case "START_REVIEW": {
       const activeRequest = {
         attemptId: IdSchema.parse(command.attemptId),
-        expectedInputId: IdSchema.parse(command.expectedInputId),
       };
       return {
         ...state,
@@ -120,7 +118,7 @@ export function reviewControllerReducer<TInput>(
       return receiveTransport(
         state,
         command.payload,
-        state.activeRequest.expectedInputId,
+        state.expectedInputId,
       );
     }
 

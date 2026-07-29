@@ -164,11 +164,12 @@ function analyzing(
   const ready = initialReviewControllerState({
     sourceId: "scenario-one",
     input,
+    expectedInputId: input.incidentId,
     session,
   });
   return reviewControllerReducer(
     ready,
-    startReview(attemptId, input.incidentId),
+    startReview(attemptId),
   );
 }
 
@@ -177,14 +178,20 @@ describe("pure review controller", () => {
     const ready = initialReviewControllerState({
       sourceId: "scenario-one",
       input,
+      expectedInputId: input.incidentId,
       session: networkSession,
     });
 
     expect(() =>
-      reviewControllerReducer(ready, startReview("INVALID", input.incidentId)),
+      reviewControllerReducer(ready, startReview("INVALID")),
     ).toThrow();
     expect(() =>
-      reviewControllerReducer(ready, startReview(FIRST_ATTEMPT_ID, "INVALID")),
+      initialReviewControllerState({
+        sourceId: "scenario-one",
+        input,
+        expectedInputId: "INVALID",
+        session: networkSession,
+      }),
     ).toThrow();
     expect(() =>
       reviewControllerReducer(
@@ -320,7 +327,7 @@ describe("pure review controller", () => {
     );
     state = reviewControllerReducer(
       state,
-      startReview(SECOND_ATTEMPT_ID, input.incidentId),
+      startReview(SECOND_ATTEMPT_ID),
     );
     const retrying = state;
 
@@ -338,7 +345,6 @@ describe("pure review controller", () => {
     expect(state.workflow.phase).toBe("ANALYZING");
     expect(state.activeRequest).toEqual({
       attemptId: SECOND_ATTEMPT_ID,
-      expectedInputId: input.incidentId,
     });
 
     state = reviewControllerReducer(
@@ -352,6 +358,43 @@ describe("pure review controller", () => {
     );
 
     expect(state.workflow.phase).toBe("APPROVAL_REQUIRED");
+    expect(state.activeRequest).toBeNull();
+  });
+
+  it("does not let a retry replace the initialized input identity", () => {
+    let state = reviewControllerReducer(
+      analyzing(),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, {
+        ...buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+        findings: undefined,
+      }),
+    );
+    state = reviewControllerReducer(
+      state,
+      Reflect.apply(startReview, undefined, [
+        SECOND_ATTEMPT_ID,
+        "incident-other",
+      ]),
+    );
+    state = reviewControllerReducer(
+      state,
+      receiveReviewTransport(SECOND_ATTEMPT_ID, {
+        ...buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+        inputId: "incident-other",
+      }),
+    );
+
+    expect(state.expectedInputId).toBe(input.incidentId);
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review analysis could not be loaded safely.",
+    });
+    expect("proposal" in state.workflow).toBe(false);
+    expect(state.review).toBeNull();
     expect(state.activeRequest).toBeNull();
   });
 
