@@ -21,6 +21,9 @@ const input = {
   alert: "Link instability",
 };
 
+const FIRST_ATTEMPT_ID = "attempt-one";
+const SECOND_ATTEMPT_ID = "attempt-two";
+
 const networkSession: ReviewSessionEnvelope = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
@@ -154,20 +157,53 @@ function buildAnalysis(
   };
 }
 
-function analyzing(session: ReviewSessionEnvelope = networkSession) {
+function analyzing(
+  session: ReviewSessionEnvelope = networkSession,
+  attemptId = FIRST_ATTEMPT_ID,
+) {
   const ready = initialReviewControllerState({
     sourceId: "scenario-one",
     input,
     session,
   });
-  return reviewControllerReducer(ready, startReview());
+  return reviewControllerReducer(
+    ready,
+    startReview(attemptId, input.incidentId),
+  );
 }
 
 describe("pure review controller", () => {
+  it("validates review correlation identifiers at reducer boundaries", () => {
+    const ready = initialReviewControllerState({
+      sourceId: "scenario-one",
+      input,
+      session: networkSession,
+    });
+
+    expect(() =>
+      reviewControllerReducer(ready, startReview("INVALID", input.incidentId)),
+    ).toThrow();
+    expect(() =>
+      reviewControllerReducer(ready, startReview(FIRST_ATTEMPT_ID, "INVALID")),
+    ).toThrow();
+    expect(() =>
+      reviewControllerReducer(
+        analyzing(),
+        receiveReviewTransport(
+          "INVALID",
+          buildAnalysis(networkSession, "PASS", {
+            kind: "sandbox-simulation",
+          }),
+        ),
+      ),
+    ).toThrow();
+  });
+
   it("drives safe findings through core CLASSIFY to APPROVAL_REQUIRED", () => {
     const state = reviewControllerReducer(
       analyzing(),
       receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
         buildAnalysis(networkSession, "PASS", {
           kind: "sandbox-simulation",
         }),
@@ -175,12 +211,14 @@ describe("pure review controller", () => {
     );
 
     expect(state.workflow.phase).toBe("APPROVAL_REQUIRED");
+    expect(state.activeRequest).toBeNull();
   });
 
   it("drives BLOCK findings through core CLASSIFY to BLOCKED", () => {
     const state = reviewControllerReducer(
       analyzing(),
       receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
         buildAnalysis(networkSession, "BLOCK", {
           kind: "sandbox-simulation",
         }),
@@ -195,6 +233,7 @@ describe("pure review controller", () => {
     const blocked = reviewControllerReducer(
       analyzing(),
       receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
         buildAnalysis(networkSession, "BLOCK", {
           kind: "sandbox-simulation",
         }),
@@ -237,7 +276,7 @@ describe("pure review controller", () => {
   ])("drops a partial proposal from %s transport into a safe error", (_label, payload) => {
     const state = reviewControllerReducer(
       analyzing(),
-      receiveReviewTransport(payload),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, payload),
     );
 
     expect(state.workflow).toMatchObject({
@@ -246,12 +285,81 @@ describe("pure review controller", () => {
     });
     expect("proposal" in state.workflow).toBe(false);
     expect(state.review).toBeNull();
+    expect(state.activeRequest).toBeNull();
+  });
+
+  it("fails safely when transport input identity does not match the active request", () => {
+    const state = reviewControllerReducer(
+      analyzing(),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, {
+        ...buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+        inputId: "incident-other",
+      }),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review analysis could not be loaded safely.",
+    });
+    expect("proposal" in state.workflow).toBe(false);
+    expect(state.review).toBeNull();
+    expect(state.activeRequest).toBeNull();
+  });
+
+  it("ignores a stale same-source result after a retry", () => {
+    let state = reviewControllerReducer(
+      analyzing(),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, {
+        ...buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+        findings: undefined,
+      }),
+    );
+    state = reviewControllerReducer(
+      state,
+      startReview(SECOND_ATTEMPT_ID, input.incidentId),
+    );
+    const retrying = state;
+
+    state = reviewControllerReducer(
+      state,
+      receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
+        buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+      ),
+    );
+
+    expect(state).toBe(retrying);
+    expect(state.workflow.phase).toBe("ANALYZING");
+    expect(state.activeRequest).toEqual({
+      attemptId: SECOND_ATTEMPT_ID,
+      expectedInputId: input.incidentId,
+    });
+
+    state = reviewControllerReducer(
+      state,
+      receiveReviewTransport(
+        SECOND_ATTEMPT_ID,
+        buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+      ),
+    );
+
+    expect(state.workflow.phase).toBe("APPROVAL_REQUIRED");
+    expect(state.activeRequest).toBeNull();
   });
 
   it("completes real sandbox simulation only for simulated-state reviews", () => {
     let state = reviewControllerReducer(
       analyzing(),
       receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
         buildAnalysis(networkSession, "PASS", {
           kind: "sandbox-simulation",
         }),
@@ -269,10 +377,36 @@ describe("pure review controller", () => {
     expect(state.workflow.phase).toBe("SIMULATED");
   });
 
+  it("routes malformed simulation through core error cleanup", () => {
+    let state = reviewControllerReducer(
+      analyzing(),
+      receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
+        buildAnalysis(networkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+      ),
+    );
+    state = reviewControllerReducer(state, approveReview());
+    state = reviewControllerReducer(
+      state,
+      completeReviewSimulation({ status: "completed" }),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review analysis could not be loaded safely.",
+    });
+    expect("proposal" in state.workflow).toBe(false);
+    expect(state.review).toBeNull();
+    expect(state.activeRequest).toBeNull();
+  });
+
   it("never fabricates simulation for an external-diff review", () => {
     let state = reviewControllerReducer(
       analyzing(terraformSession),
       receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
         buildAnalysis(terraformSession, "PASS", {
           kind: "external-diff",
         }),

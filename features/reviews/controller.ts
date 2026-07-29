@@ -19,15 +19,29 @@ import {
 export const SAFE_REVIEW_ERROR_MESSAGE =
   "Review analysis could not be loaded safely.";
 
+export interface ActiveReviewRequest {
+  readonly attemptId: string;
+  readonly expectedInputId: string;
+}
+
 export interface ReviewControllerState<TInput> {
   readonly session: ReviewSessionEnvelope;
   readonly workflow: WorkflowState<TInput>;
   readonly review: ReviewAnalysisResult | null;
+  readonly activeRequest: ActiveReviewRequest | null;
 }
 
 export type ReviewControllerCommand =
-  | { readonly type: "START_REVIEW" }
-  | { readonly type: "REVIEW_TRANSPORT_RECEIVED"; readonly payload: unknown }
+  | {
+      readonly type: "START_REVIEW";
+      readonly attemptId: string;
+      readonly expectedInputId: string;
+    }
+  | {
+      readonly type: "REVIEW_TRANSPORT_RECEIVED";
+      readonly attemptId: string;
+      readonly payload: unknown;
+    }
   | { readonly type: "APPROVE_REVIEW" }
   | { readonly type: "SIMULATION_COMPLETED"; readonly simulation: unknown };
 
@@ -46,17 +60,22 @@ export function initialReviewControllerState<TInput>(
     session,
     workflow: initialState(sourceId, source.input),
     review: null,
+    activeRequest: null,
   };
 }
 
-export function startReview(): ReviewControllerCommand {
-  return { type: "START_REVIEW" };
+export function startReview(
+  attemptId: string,
+  expectedInputId: string,
+): ReviewControllerCommand {
+  return { type: "START_REVIEW", attemptId, expectedInputId };
 }
 
 export function receiveReviewTransport(
+  attemptId: string,
   payload: unknown,
 ): ReviewControllerCommand {
-  return { type: "REVIEW_TRANSPORT_RECEIVED", payload };
+  return { type: "REVIEW_TRANSPORT_RECEIVED", attemptId, payload };
 }
 
 export function approveReview(): ReviewControllerCommand {
@@ -74,18 +93,36 @@ export function reviewControllerReducer<TInput>(
   command: ReviewControllerCommand,
 ): ReviewControllerState<TInput> {
   switch (command.type) {
-    case "START_REVIEW":
+    case "START_REVIEW": {
+      const activeRequest = {
+        attemptId: IdSchema.parse(command.attemptId),
+        expectedInputId: IdSchema.parse(command.expectedInputId),
+      };
       return {
         ...state,
         review: null,
+        activeRequest,
         workflow: transition(state.workflow, {
           type: "START_ANALYSIS",
           mode: state.session.analysisMode,
         }),
       };
+    }
 
-    case "REVIEW_TRANSPORT_RECEIVED":
-      return receiveTransport(state, command.payload);
+    case "REVIEW_TRANSPORT_RECEIVED": {
+      const attemptId = IdSchema.parse(command.attemptId);
+      if (
+        state.activeRequest === null ||
+        attemptId !== state.activeRequest.attemptId
+      ) {
+        return state;
+      }
+      return receiveTransport(
+        state,
+        command.payload,
+        state.activeRequest.expectedInputId,
+      );
+    }
 
     case "APPROVE_REVIEW":
       return {
@@ -102,12 +139,16 @@ export function reviewControllerReducer<TInput>(
           `${effectKind} reviews have no sandbox simulation`,
         );
       }
-      const simulation = SimulationResultSchema.parse(command.simulation);
+      const parsed = SimulationResultSchema.safeParse(command.simulation);
+      if (!parsed.success) {
+        return failSafely(state);
+      }
       return {
         ...state,
+        activeRequest: null,
         workflow: transition(state.workflow, {
           type: "SIMULATION_COMPLETED",
-          simulation,
+          simulation: parsed.data,
         }),
       };
     }
@@ -131,6 +172,7 @@ export function reviewCanSimulate<TInput>(
 function receiveTransport<TInput>(
   state: ReviewControllerState<TInput>,
   payload: unknown,
+  expectedInputId: string,
 ): ReviewControllerState<TInput> {
   const parsed = ReviewAnalysisResultSchema.safeParse(payload);
   if (!parsed.success) {
@@ -140,6 +182,7 @@ function receiveTransport<TInput>(
   const review = parsed.data;
   try {
     if (
+      review.inputId !== expectedInputId ||
       review.sourceId !== state.workflow.sourceId ||
       !canonicallyEqual(review.session, state.session) ||
       !canonicallyEqual(review.input, state.workflow.input)
@@ -162,7 +205,7 @@ function receiveTransport<TInput>(
     riskLevel: review.riskLevel,
   });
   workflow = transition(workflow, { type: "CLASSIFY" });
-  return { ...state, workflow, review };
+  return { ...state, workflow, review, activeRequest: null };
 }
 
 function failSafely<TInput>(
@@ -171,6 +214,7 @@ function failSafely<TInput>(
   return {
     ...state,
     review: null,
+    activeRequest: null,
     workflow: transition(state.workflow, {
       type: "FAIL",
       userMessage: SAFE_REVIEW_ERROR_MESSAGE,
