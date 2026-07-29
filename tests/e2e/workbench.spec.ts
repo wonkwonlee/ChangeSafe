@@ -60,6 +60,15 @@ test("public workbench exposes its static desktop capability boundary", async ({
   });
   expect(desktopColumnCount).toBe(3);
 
+  await expect(page.locator(".min-h-screen.bg-canvas").first()).toHaveScreenshot(
+    "workbench-desktop.png",
+    {
+      animations: "disabled",
+      mask: [page.locator("nextjs-portal")],
+      maskColor: "#101418",
+    },
+  );
+
   await expectNoDecisionOrExecutionControls(page);
 
   const queueVariant = page.locator(
