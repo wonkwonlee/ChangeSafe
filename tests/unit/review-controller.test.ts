@@ -247,7 +247,7 @@ async function buildBoundReceipt(
     input: workflow.input,
     proposal: workflow.proposal,
     appVersion: "test",
-    policyVersion: "test-v1",
+    policyVersion: state.session.policyVersion,
     mode: workflow.mode,
     model: state.review?.provenance.model ?? null,
     fixtureProvenance: workflow.provenance,
@@ -583,6 +583,8 @@ describe("pure review controller", () => {
       })],
     ["risk", async (receipt: ChangeReceipt) =>
       rehashReceipt(receipt, { riskLevel: "MEDIUM" })],
+    ["policy version", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { policyVersion: "test-network-v2" })],
     ["mode", async (receipt: ChangeReceipt) =>
       rehashReceipt(receipt, { mode: "offline" })],
     ["provenance", async (receipt: ChangeReceipt) =>

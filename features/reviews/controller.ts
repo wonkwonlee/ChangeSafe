@@ -444,6 +444,7 @@ async function receiptMatchesWorkflow<TInput>(
     receipt.proposalSha256 === proposalSha256 &&
     canonicallyEqual(receipt.findings, workflow.findings) &&
     receipt.riskLevel === workflow.riskLevel &&
+    receipt.policyVersion === state.session.policyVersion &&
     receipt.mode === workflow.mode &&
     receipt.fixtureProvenance === workflow.provenance &&
     receipt.model === (state.review?.provenance.model ?? null) &&
