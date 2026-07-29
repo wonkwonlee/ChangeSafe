@@ -5,7 +5,7 @@ import {
   ReviewAnalyzeErrorV1Schema,
   ReviewAnalyzeRequestV1Schema,
   ReviewAnalyzeSuccessV1Schema,
-} from "../../lib/domain/api";
+} from "../domains/review-api-contract";
 import type {
   ReviewTransportRequest,
   ReviewTransportResult,

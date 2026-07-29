@@ -19,7 +19,7 @@ import {
   ReviewAnalyzeErrorV1Schema,
   ReviewAnalyzeRequestV1Schema,
   ReviewAnalyzeSuccessV1Schema,
-} from "@/lib/domain/api";
+} from "@/features/domains/review-api-contract";
 import { getScenario } from "@/scenarios";
 
 export const runtime = "nodejs";

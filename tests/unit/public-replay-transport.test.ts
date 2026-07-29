@@ -7,7 +7,7 @@ import {
   ReviewAnalyzeErrorV1Schema,
   ReviewAnalyzeSuccessV1Schema,
   type ReviewAnalyzeSuccessV1,
-} from "@/lib/domain/api";
+} from "@/features/domains/review-api-contract";
 
 type FetchImplementation = (
   input: RequestInfo | URL,
