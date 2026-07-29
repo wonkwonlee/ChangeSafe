@@ -90,6 +90,8 @@ packages/domain-network/   @changesafe/domain-network — incident/topology
 packages/domain-terraform/ @changesafe/domain-terraform — external-diff
                            domain over `terraform show -json`; never runs
                            Terraform
+packages/domain-kubernetes/ @changesafe/domain-kubernetes — offline Kubernetes
+                           state domain and namespace-scoped read-only collector
 packages/ai/               @changesafe/ai — provider-agnostic adapters
                            (OpenAI, Anthropic, Ollama) on plain `fetch`,
                            hardened prompt, portable JSON Schema derivation,
@@ -101,7 +103,8 @@ packages/server/           @changesafe/server — authenticated self-hosted
                            recomputed server-side, signed receipts, ledger
                            append before response
 packages/cli/              changesafe — gate, analyze, eval, verify, keygen,
-                           ledger, serve, scenario; ships pre-bundled
+                           ledger, serve, scenario, and Kubernetes collect;
+                           ships pre-bundled
 app/                       Next.js showcase console (api/analyze, api/status)
 components/                console UI + client workflow hook
 lib/ai/                    app-level live + replay analysis entry points

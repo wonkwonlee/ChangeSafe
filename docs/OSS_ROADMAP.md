@@ -399,9 +399,10 @@ schema changes follow semver + documented migrations.
 3. Docs-site tooling (Starlight vs Nextra) remains an open owner decision
    after the P7 first pass; README plus the generated scenario gallery suffice
    until there is enough documentation to justify a dedicated site.
-4. Third domain after terraform: Kubernetes is delivered in v0.3.0 as the
-   offline simulated-state domain and namespace-scoped read-only collector;
-   future domains can follow the same adapter boundary.
+4. Third domain after terraform: Kubernetes was delivered in v0.3.0 as the
+   offline simulated-state domain and namespace-scoped read-only collector,
+   then patched in v0.3.1 for valid direct Node ESM imports; future domains
+   can follow the same adapter boundary.
    (most visceral lockout demo) — decide after P4 feedback.
 
 ## 8. Success metrics (12 weeks post-launch)
