@@ -127,15 +127,24 @@ const UnknownDomainErrorResultSchema = z.strictObject({
   }),
 });
 
-const ContractVersionMismatchErrorResultSchema = z.strictObject({
-  ok: z.literal(false),
-  error: z.strictObject({
-    code: z.literal("CONTRACT_VERSION_MISMATCH"),
-    domainId: DomainIdSchema,
-    expectedContractVersion: z.literal(REVIEW_CONTRACT_VERSION),
-    receivedContractVersion: z.string().min(1).max(64),
-  }),
-});
+const ContractVersionMismatchErrorResultSchema = z
+  .strictObject({
+    ok: z.literal(false),
+    error: z.strictObject({
+      code: z.literal("CONTRACT_VERSION_MISMATCH"),
+      domainId: DomainIdSchema,
+      expectedContractVersion: z.literal(REVIEW_CONTRACT_VERSION),
+      receivedContractVersion: z.string().min(1).max(64),
+    }),
+  })
+  .refine(
+    (result) =>
+      result.error.receivedContractVersion !== result.error.expectedContractVersion,
+    {
+      message: "received contract version must differ from the expected version",
+      path: ["error", "receivedContractVersion"],
+    },
+  );
 
 export const ReviewContractErrorResultSchema = z.union([
   UnknownDomainErrorResultSchema,

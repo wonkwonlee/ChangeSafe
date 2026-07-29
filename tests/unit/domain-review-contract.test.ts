@@ -192,4 +192,18 @@ describe("ReviewContractErrorResultSchema", () => {
   ])("accepts a safe typed contract failure", (result) => {
     expect(ReviewContractErrorResultSchema.safeParse(result).success).toBe(true);
   });
+
+  it("rejects a contract mismatch error when received and expected versions are equal", () => {
+    expect(
+      ReviewContractErrorResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: "CONTRACT_VERSION_MISMATCH",
+          domainId: "network",
+          expectedContractVersion: "1.0.0",
+          receivedContractVersion: "1.0.0",
+        },
+      }).success,
+    ).toBe(false);
+  });
 });
