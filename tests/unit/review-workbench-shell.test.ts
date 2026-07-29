@@ -66,8 +66,9 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).toContain("Unavailable");
     expect(markup).toContain('id="review-queue-unavailable"');
     expect(markup).toContain(
-      "Unavailable in public replay: requires an authenticated self-hosted runtime and durable decision storage.",
+      "Unavailable in public replay: requires an authenticated self-hosted runtime and durable review-record storage.",
     );
+    expect(markup).not.toContain("durable decision storage");
     expect(markup).not.toMatch(/<(?:button|input|select)\b/);
   });
 

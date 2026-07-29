@@ -138,7 +138,7 @@ export function ReviewWorkbenchShell() {
                 </span>
                 <p id="review-queue-unavailable" className="mt-2 leading-relaxed text-ink-faint">
                   Unavailable in public replay: requires an authenticated self-hosted runtime and
-                  durable decision storage.
+                  durable review-record storage.
                 </p>
               </li>
             </ul>
