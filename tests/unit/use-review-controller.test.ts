@@ -454,6 +454,49 @@ describe("useReviewController", () => {
     expect(hook.state.workflow.phase).toBe("READY");
   });
 
+  it("preserves a pending request when replacement validation fails", async () => {
+    const payload = await validReview();
+    let resolveTransport: ((result: ReviewTransportResult) => void) | undefined;
+    let signal: AbortSignal | undefined;
+    const transport = vi.fn<ReviewTransport<typeof payload.input>>(
+      (request) =>
+        new Promise((resolve) => {
+          signal = request.signal;
+          resolveTransport = resolve;
+        }),
+    );
+    const options = {
+      sourceId: "scenario-a-failover",
+      input: payload.input,
+      expectedInputId: payload.inputId,
+      session: payload.session,
+      transport,
+      attemptIdFactory: () => "attempt-one",
+    };
+    let hook = useRenderedController(options);
+    const analysis = hook.analyze();
+    hook = useRenderedController(options);
+
+    expect(() =>
+      hook.rebind({
+        sourceId: "INVALID",
+        input: { incidentId: "replacement" },
+        expectedInputId: "replacement",
+        session: payload.session,
+      }),
+    ).toThrow();
+    hook = useRenderedController(options);
+
+    expect(signal?.aborted).toBe(false);
+    expect(hook.state.workflow.phase).toBe("ANALYZING");
+    expect(hook.state.activeRequest).toEqual({ attemptId: "attempt-one" });
+
+    resolveTransport?.({ attemptId: "attempt-one", payload });
+    await analysis;
+    hook = useRenderedController(options);
+    expect(hook.state.workflow.phase).toBe("APPROVAL_REQUIRED");
+  });
+
   it("routes rejection and receipt issuance through the pure controller", async () => {
     const payload = await validReview();
     const options = {

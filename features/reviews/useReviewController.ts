@@ -181,11 +181,15 @@ export function useReviewController<TInput>(
 
   const rebind = useCallback(
     (source: InitialReviewControllerInput<TInput>) => {
+      const command = rebindReview(source);
+      // The reducer is pure: validate the complete replacement before an
+      // invalid rebind can cancel work that still belongs to the active review.
+      reviewControllerReducer(stateRef.current, command);
       controllersRef.current.forEach((controller) => {
         controller.abort();
       });
       controllersRef.current.clear();
-      applyCommand(rebindReview(source));
+      applyCommand(command);
     },
     [applyCommand],
   );
