@@ -159,15 +159,16 @@ git tag -f v0 v0.1.1 && git push -f origin v0   # the one tag that moves
 
 ### Publishing to npm
 
-Publishing is automatic: `.github/workflows/publish.yml` runs when a GitHub
-release is *published*. There is no npm token — the workflow authenticates
-over OIDC using npm's [trusted publishing][tp], so nothing long-lived is
-stored in this repository and a leaked secret is not a way to publish.
+Publishing is intended to be automatic: `.github/workflows/publish.yml` runs
+when a GitHub release is *published*. There is no npm token — once each npm
+package has its trusted publisher configured, the workflow authenticates over
+OIDC using npm's [trusted publishing][tp], so nothing long-lived is stored in
+this repository and a leaked secret is not a way to publish.
 
 [tp]: https://docs.npmjs.com/trusted-publishers
 
-Each package trusts this repository through its own npm settings, at
-*Settings → Trusted Publisher* on npmjs.com. All five use the same values:
+Each package must trust this repository through its own npm settings, at
+*Settings → Trusted Publisher* on npmjs.com. The intended values are:
 
 | Field | Value |
 | --- | --- |
@@ -191,16 +192,18 @@ workflow and asserted by `tests/integration/runtime-contract.test.ts`:
   suite, and the install smoke test, so the gate still runs on the runtime
   this repository claims to support.
 
-A brand-new package name cannot be configured before it exists, so the first
-version of any package is published by hand (`npm publish -w <package>
---access public` from the tagged commit) and its trusted publisher is
-configured immediately afterwards. Such a version has no provenance
-attestation — say so in its release notes rather than letting the standing
-"published with provenance" sentence stand.
+A brand-new package name cannot be configured before it exists, so its first
+version may need a manual bootstrap (`npm publish -w <package> --access
+public` from the tagged commit). Configure trusted publishing before the next
+release. The v0.3.0 Kubernetes bootstrap and v0.3.1 remediation were both
+published manually; all five v0.3.x packages therefore lack npm provenance
+attestations, and the release notes state that explicitly.
 
-Five packages publish as a set — `@changesafe/core`, the three domains, then
-`changesafe` — in dependency order, because a domain that reached the
-registry before core would be uninstallable until core caught up.
+Five packages publish as a set — `@changesafe/core`,
+`@changesafe/domain-network`, `@changesafe/domain-terraform`,
+`@changesafe/domain-kubernetes`, then `changesafe` — in dependency order,
+because a domain that reached the registry before core would be uninstallable
+until core caught up.
 
 It refuses to publish rather than guessing:
 

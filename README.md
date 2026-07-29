@@ -410,6 +410,10 @@ historical record of that work.
 
 MIT — see [LICENSE](LICENSE).
 
-## Kubernetes (v0.3.0)
+## Kubernetes (v0.3.1)
 
 ChangeSafe can gate supported Kubernetes Deployment, StatefulSet, DaemonSet, and Service upserts against an offline snapshot. See [docs/KUBERNETES.md](docs/KUBERNETES.md). The optional collector is read-only and namespace-scoped; the gate never contacts or mutates a cluster.
+
+Use `@changesafe/domain-kubernetes@0.3.1` or later. The initially published
+`0.3.0` library package is deprecated because its direct Node ESM imports were
+invalid; the bundled CLI was unaffected. See the [v0.3.1 release notes](docs/RELEASE_NOTES_v0.3.1.md).

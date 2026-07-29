@@ -1,4 +1,8 @@
-# Kubernetes (v0.3.0)
+# Kubernetes (v0.3.1)
+
+Use `@changesafe/domain-kubernetes@0.3.1` or later. The `0.3.0` library
+publication is deprecated because its direct Node ESM imports were invalid;
+the bundled CLI was unaffected. See the [v0.3.1 release notes](RELEASE_NOTES_v0.3.1.md).
 
 ChangeSafe reviews Kubernetes changes offline. The only networked step is the optional, namespace-scoped collector:
 

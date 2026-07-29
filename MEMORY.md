@@ -28,6 +28,24 @@ domain decisions.
 - Read `docs/OSS_ROADMAP.md` before starting multi-file work and follow the
   repository contract in `AGENTS.md`.
 
+## Current release status (2026-07-29)
+
+- Kubernetes shipped in v0.3.0 and was patched in v0.3.1. The v0.3.1 tag and
+  GitHub Release are published; use `@changesafe/domain-kubernetes@0.3.1` or
+  later.
+- The npm `@changesafe/domain-kubernetes@0.3.0` publication is deprecated:
+  its direct Node ESM imports were invalid. The bundled `changesafe@0.3.0`
+  CLI was unaffected.
+- The five public v0.3.1 packages are on npm. The v0.3.0 bootstrap and v0.3.1
+  remediation were manually published, so those v0.3.x packages do not have
+  npm provenance attestations. Future releases should use the configured npm
+  trusted-publishing workflow and verify provenance before announcement.
+- v0.3.1 was validated by the full CI gate, including lint, typecheck, unit and
+  integration tests, build, Playwright, scenario corpus/gallery, secret scans,
+  and Kubernetes offline/read-only checks. A registry smoke also verified the
+  CLI version, direct Kubernetes package import, schema parsing, and a clean
+  Kubernetes gate.
+
 ## Verification baseline
 
 Default validation is offline and does not spend API credit:
