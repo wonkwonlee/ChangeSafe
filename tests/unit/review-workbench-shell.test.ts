@@ -14,8 +14,24 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).toContain('<aside aria-label="Review context"');
     expect(markup).toContain('<aside aria-label="Review authority"');
     expect(markup).toContain("Run replay");
+    expect(markup).toContain('<ul class="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">');
+    expect((markup.match(/<li>/g) ?? [])).toHaveLength(NETWORK_REVIEW_EXAMPLES.length);
     expect((markup.match(/aria-pressed=/g) ?? [])).toHaveLength(NETWORK_REVIEW_EXAMPLES.length);
     for (const example of NETWORK_REVIEW_EXAMPLES) expect(markup).toContain(example.label);
+  });
+
+  it("announces only trusted replay lifecycle copy and marks an active replay busy", () => {
+    const markup = renderToStaticMarkup(createElement(ReviewWorkbenchShell));
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('aria-live="polite"');
+    expect(markup).toContain('aria-atomic="true"');
+    expect(markup).toContain("Replay is ready to evaluate.");
+    expect(markup).toContain('aria-busy="false"');
+
+    const source = readFileSync("components/ReviewWorkbenchShell.tsx", "utf8");
+    expect(source).toContain('aria-busy={workflow.phase === "ANALYZING"}');
+    expect(source).toContain("Replay could not be evaluated. Choose Run replay to try again.");
+    expect(source).not.toContain("<p aria-atomic=\"true\" aria-live=\"polite\" className=\"sr-only\" role=\"status\">\n                <StateValue");
   });
 
   it("shows bundled input truth while keeping unevaluated output distinct from declared expectations", () => {

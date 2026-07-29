@@ -79,6 +79,26 @@ function StateValue({ state }: { state: WorkflowState<IncidentBundle> }) {
   }
 }
 
+/**
+ * Keep live announcements limited to trusted, fixed lifecycle copy. Scenario
+ * fixtures and replay error detail are untrusted data and must never become
+ * instructions through an assistive-technology announcement.
+ */
+function ReplayStatus({ state }: { state: WorkflowState<IncidentBundle> }) {
+  switch (state.phase) {
+    case "ANALYZING":
+      return "Replay analysis is running.";
+    case "ERROR":
+      return "Replay could not be evaluated. Choose Run replay to try again.";
+    case "READY":
+      return "Replay is ready to evaluate.";
+    case "BLOCKED":
+      return "Replay evaluated. Deterministic findings blocked this proposal.";
+    default:
+      return "Replay evaluated through the deterministic gate.";
+  }
+}
+
 function ProposalPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
   if (state.phase === "READY" || state.phase === "ANALYZING" || state.phase === "ERROR") {
     return <p className="mt-3 text-sm text-ink-dim">No evaluated proposal is available yet.</p>;
@@ -197,21 +217,22 @@ export function ReviewWorkbenchShell() {
         <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4">
           <Label>Network examples</Label>
           <h1 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h1>
-          <div className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
+          <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
             {NETWORK_REVIEW_EXAMPLES.map((example) => (
-              <button
-                className="rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait"
-                disabled={workflow.phase === "ANALYZING"}
-                key={example.sourceId}
-                onClick={() => selectExample(example.sourceId)}
-                type="button"
-                aria-pressed={example.sourceId === selectedSourceId}
-              >
-                <span className="block font-medium text-ink">{example.label}</span>
-                <span className="mt-1 block text-xs">{example.description}</span>
-              </button>
+              <li key={example.sourceId}>
+                <button
+                  className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait"
+                  disabled={workflow.phase === "ANALYZING"}
+                  onClick={() => selectExample(example.sourceId)}
+                  type="button"
+                  aria-pressed={example.sourceId === selectedSourceId}
+                >
+                  <span className="block font-medium text-ink">{example.label}</span>
+                  <span className="mt-1 block text-xs">{example.description}</span>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
           <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title">
             <h2 id="source-title" className="text-sm font-semibold">Replay source</h2>
             <dl className="mt-3 grid gap-3 text-xs">
@@ -229,8 +250,11 @@ export function ReviewWorkbenchShell() {
               <Label>Replay evaluation</Label>
               <h2 className="mt-2 text-xl font-semibold">{workflow.phase}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
+              <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
+                <ReplayStatus state={workflow} />
+              </p>
             </div>
-            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
+            <button aria-busy={workflow.phase === "ANALYZING"} className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
               {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
             </button>
           </header>
