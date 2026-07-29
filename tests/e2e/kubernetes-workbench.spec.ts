@@ -36,6 +36,10 @@ test("Kubernetes public workbench evaluates an offline manifest without cluster 
   await expect(page.getByText(/No cluster is contacted/)).toBeVisible();
   await expect(page.getByText("Fixture provenance").locator("..")).toContainText("authored-synthetic");
   await expect(page.getByRole("button", { name: "Run replay" })).toBeVisible();
+  // Unsupported content is intentionally not a selectable replay. It is
+  // rejected by the V1 route before evaluation, so the public surface must
+  // not make it look like an evaluable Kubernetes manifest.
+  await expect(page.getByRole("button", { name: /Unsupported Secret manifest/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "APPROVAL_REQUIRED" })).toBeVisible();
