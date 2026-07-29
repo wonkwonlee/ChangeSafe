@@ -4,9 +4,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useWorkflow } from "@/components/useWorkflow";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
-import { legacyNetworkAnalysisTransport } from "@/features/domains/network/useNetworkWorkflow";
+import { createNetworkReviewReceipt } from "@/features/domains/network/receipt";
+import {
+  legacyNetworkAnalysisTransport,
+  legacyNetworkReviewSession,
+} from "@/features/domains/network/useNetworkWorkflow";
+import {
+  approveReview,
+  completeReviewSimulation,
+  initialReviewControllerState,
+  receiveReviewTransport,
+  recordReviewReceipt,
+  reviewControllerReducer,
+  startReview,
+} from "@/features/reviews/controller";
 import type { ReviewTransportRequest } from "@/features/reviews/useReviewController";
 import { getScenario } from "@/scenarios";
+import { runSimulation } from "@changesafe/domain-network";
 
 function scenarioOrThrow() {
   const scenario = getScenario("scenario-a-failover");
@@ -35,13 +49,8 @@ function requestFor(
     input: scenario.bundle,
     session:
       mode === "replay"
-        ? replay.session
-        : {
-            ...replay.session,
-            source: "live-model",
-            analysisMode: "live",
-            provenance: "live-model",
-          },
+        ? legacyNetworkReviewSession(replay.session, "replay")
+        : legacyNetworkReviewSession(replay.session, "live"),
     signal: new AbortController().signal,
   };
 }
@@ -99,7 +108,11 @@ describe("Network workflow compatibility facade", () => {
       ok: true,
       sourceId: scenario.scenarioId,
       inputId: scenario.bundle.incidentId,
-      session: { analysisMode: "replay", runtimeMode: "public-replay" },
+      session: {
+        analysisMode: "replay",
+        runtimeMode: "legacy-local",
+        capabilities: { durableDecision: false },
+      },
       effectCapability: { kind: "sandbox-simulation" },
     });
   });
@@ -443,5 +456,122 @@ describe("Network workflow compatibility facade", () => {
         receivedContractVersion: null,
       },
     });
+  });
+
+  it("keeps the legacy local lifecycle while public replay stays decision-free and blocked", async () => {
+    const safeScenario = scenarioOrThrow();
+    const safeReplay = NETWORK_REVIEW_EXAMPLES.find(
+      (example) => example.sourceId === safeScenario.scenarioId,
+    );
+    if (!safeReplay) throw new Error("missing safe Network review example");
+    const safeResponse = {
+      mode: "replay" as const,
+      model: safeScenario.fixture.model,
+      provider: null,
+      provenance: safeScenario.fixture.provenance,
+      fixtureId: safeScenario.fixture.fixtureId,
+      fixtureNotes: safeScenario.fixture.notes,
+      proposal: safeScenario.fixture.proposal,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(safeResponse)));
+
+    const legacyRequest = requestFor("replay");
+    const legacyResult = await legacyNetworkAnalysisTransport(legacyRequest);
+    let legacy = initialReviewControllerState({
+      sourceId: legacyRequest.sourceId,
+      input: legacyRequest.input,
+      expectedInputId: legacyRequest.expectedInputId,
+      session: legacyRequest.session,
+    });
+    legacy = reviewControllerReducer(legacy, startReview(legacyRequest.attemptId));
+    legacy = reviewControllerReducer(
+      legacy,
+      receiveReviewTransport(legacyRequest.attemptId, legacyResult.payload),
+    );
+    expect(legacy.workflow.phase).toBe("APPROVAL_REQUIRED");
+    legacy = reviewControllerReducer(legacy, approveReview());
+    expect(legacy.workflow.phase).toBe("APPROVED");
+    if (legacy.workflow.phase !== "APPROVED") throw new Error("safe review did not approve");
+    legacy = reviewControllerReducer(
+      legacy,
+      completeReviewSimulation(
+        runSimulation(legacy.workflow.input, legacy.workflow.proposal),
+      ),
+    );
+    expect(legacy.workflow.phase).toBe("SIMULATED");
+    const receipt = await createNetworkReviewReceipt(legacy, { appVersion: "test" });
+    legacy = reviewControllerReducer(
+      legacy,
+      await recordReviewReceipt(legacy, receipt),
+    );
+    expect(legacy.workflow.phase).toBe("RECEIPT_ISSUED");
+
+    const publicRequest = {
+      ...legacyRequest,
+      attemptId: "attempt-public-replay",
+      session: safeReplay.session,
+    };
+    const publicResult = await legacyNetworkAnalysisTransport(publicRequest);
+    let publicReplay = initialReviewControllerState({
+      sourceId: publicRequest.sourceId,
+      input: publicRequest.input,
+      expectedInputId: publicRequest.expectedInputId,
+      session: publicRequest.session,
+    });
+    publicReplay = reviewControllerReducer(
+      publicReplay,
+      startReview(publicRequest.attemptId),
+    );
+    publicReplay = reviewControllerReducer(
+      publicReplay,
+      receiveReviewTransport(publicRequest.attemptId, publicResult.payload),
+    );
+    expect(publicReplay.workflow.phase).toBe("APPROVAL_REQUIRED");
+    expect(reviewControllerReducer(publicReplay, approveReview())).toBe(publicReplay);
+    await expect(recordReviewReceipt(publicReplay, receipt)).rejects.toThrow(
+      /public replay.*receipt/i,
+    );
+
+    const blockedScenario = scenarioByIdOrThrow("scenario-b-route-leak");
+    const blockedReplay = NETWORK_REVIEW_EXAMPLES.find(
+      (example) => example.sourceId === blockedScenario.scenarioId,
+    );
+    if (!blockedReplay) throw new Error("missing blocked Network review example");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: blockedScenario.fixture.model,
+          provider: null,
+          provenance: blockedScenario.fixture.provenance,
+          fixtureId: blockedScenario.fixture.fixtureId,
+          fixtureNotes: blockedScenario.fixture.notes,
+          proposal: blockedScenario.fixture.proposal,
+        }),
+      ),
+    );
+    const blockedRequest = {
+      ...publicRequest,
+      attemptId: "attempt-public-blocked",
+      sourceId: blockedScenario.scenarioId,
+      expectedInputId: blockedScenario.bundle.incidentId,
+      input: blockedScenario.bundle,
+      session: blockedReplay.session,
+    };
+    const blockedResult = await legacyNetworkAnalysisTransport(blockedRequest);
+    let blocked = initialReviewControllerState({
+      sourceId: blockedScenario.scenarioId,
+      input: blockedScenario.bundle,
+      expectedInputId: blockedScenario.bundle.incidentId,
+      session: blockedReplay.session,
+    });
+    blocked = reviewControllerReducer(blocked, startReview(blockedRequest.attemptId));
+    blocked = reviewControllerReducer(
+      blocked,
+      receiveReviewTransport(blockedRequest.attemptId, blockedResult.payload),
+    );
+    expect(blocked.workflow.phase).toBe("BLOCKED");
+    expect(reviewControllerReducer(blocked, approveReview())).toBe(blocked);
   });
 });

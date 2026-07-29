@@ -132,11 +132,13 @@ export async function recordReviewReceipt<TInput>(
   state: ReviewControllerState<TInput>,
   receipt: unknown,
 ): Promise<ReviewControllerCommand<TInput>> {
-  if (!reviewCanMakeDurableDecision(state.session)) {
+  if (!reviewCanUseReviewLifecycle(state.session)) {
     throw new IllegalTransitionError(
       state.workflow.phase,
       "RECEIPT_CREATED",
-      "public replay reviews cannot create durable decisions or receipts",
+      state.session.runtimeMode === "public-replay"
+        ? "public replay reviews cannot create durable decisions or receipts"
+        : "this review session cannot create a receipt",
     );
   }
 
@@ -223,7 +225,7 @@ export function reviewControllerReducer<TInput>(
     }
 
     case "APPROVE_REVIEW":
-      if (!reviewCanMakeDurableDecision(state.session)) {
+      if (!reviewCanUseReviewLifecycle(state.session)) {
         return state;
       }
       return {
@@ -232,7 +234,7 @@ export function reviewControllerReducer<TInput>(
       };
 
     case "REJECT_REVIEW":
-      if (!reviewCanMakeDurableDecision(state.session)) {
+      if (!reviewCanUseReviewLifecycle(state.session)) {
         return state;
       }
       return {
@@ -241,7 +243,7 @@ export function reviewControllerReducer<TInput>(
       };
 
     case "SIMULATION_COMPLETED": {
-      if (!reviewCanMakeDurableDecision(state.session)) {
+      if (!reviewCanUseReviewLifecycle(state.session)) {
         return state;
       }
       if (state.review?.effectCapability.kind !== "sandbox-simulation") {
@@ -268,7 +270,7 @@ export function reviewControllerReducer<TInput>(
 
     case "RECEIPT_CREATED":
       if (
-        !reviewCanMakeDurableDecision(state.session) ||
+        !reviewCanUseReviewLifecycle(state.session) ||
         command[verifiedReceiptCommandBrand] !== true ||
         command.expectedWorkflow !== state.workflow
       ) {
@@ -284,7 +286,7 @@ export function reviewControllerReducer<TInput>(
 
     case "RECEIPT_REJECTED":
       if (
-        !reviewCanMakeDurableDecision(state.session) ||
+        !reviewCanUseReviewLifecycle(state.session) ||
         command[verifiedReceiptCommandBrand] !== true ||
         command.expectedWorkflow !== state.workflow
       ) {
@@ -303,7 +305,7 @@ export function reviewCanSimulate<TInput>(
   state: ReviewControllerState<TInput>,
 ): boolean {
   return (
-    reviewCanMakeDurableDecision(state.session) &&
+    reviewCanUseReviewLifecycle(state.session) &&
     state.workflow.phase === "APPROVED" &&
     state.review?.effectCapability.kind === "sandbox-simulation"
   );
@@ -314,13 +316,11 @@ export function reviewCanSimulate<TInput>(
  * workflow reducer so a caller cannot gain decision authority by rendering a
  * different UI or by dispatching controller commands directly.
  */
-function reviewCanMakeDurableDecision(
+function reviewCanUseReviewLifecycle(
   session: ReviewSessionEnvelope,
 ): boolean {
-  return (
-    session.runtimeMode === "self-hosted" &&
-    session.capabilities.durableDecision
-  );
+  if (session.runtimeMode === "legacy-local") return true;
+  return session.runtimeMode === "self-hosted" && session.capabilities.durableDecision;
 }
 
 function receiveTransport<TInput>(

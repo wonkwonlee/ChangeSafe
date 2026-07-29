@@ -24,11 +24,16 @@ import {
 import { NETWORK_REVIEW_EXAMPLES } from "./examples";
 import { createNetworkReviewReceipt } from "./receipt";
 import {
+  ReviewSessionEnvelopeSchema,
   ReviewAnalysisResultSchema,
   type ReviewSessionEnvelope,
   type ReviewTransportError,
   type ReviewProvenance,
 } from "../review-contract";
+import {
+  composeSessionCapabilities,
+  defineTransportCapabilitySource,
+} from "../runtime";
 import {
   approveReview,
   completeReviewSimulation,
@@ -87,7 +92,7 @@ export function useNetworkWorkflow() {
     sourceId: FIRST_SCENARIO.scenarioId,
     input: FIRST_SCENARIO.bundle,
     expectedInputId: FIRST_SCENARIO.bundle.incidentId,
-    session: firstExample.session,
+    session: legacyNetworkReviewSession(firstExample.session, "replay"),
     transport: legacyNetworkAnalysisTransport,
   });
   const [liveAvailable, setLiveAvailable] = useState<boolean | null>(null);
@@ -123,7 +128,7 @@ export function useNetworkWorkflow() {
         sourceId: scenario.scenarioId,
         input: scenario.bundle,
         expectedInputId: scenario.bundle.incidentId,
-        session: example.session,
+        session: legacyNetworkReviewSession(example.session, "replay"),
       });
     },
     [controller],
@@ -144,7 +149,7 @@ export function useNetworkWorkflow() {
         sourceId: scenario.scenarioId,
         input: scenario.bundle,
         expectedInputId: scenario.bundle.incidentId,
-        session: sessionForMode(example.session, mode),
+        session: legacyNetworkReviewSession(example.session, mode),
       });
       await controller.analyze();
     },
@@ -248,17 +253,38 @@ function exampleFor(scenarioId: string) {
   return example;
 }
 
-function sessionForMode(
+/**
+ * The legacy `/api/analyze` console is a browser-local compatibility path,
+ * not the authenticated self-hosted decision server. Keep its historical
+ * local approval/simulation/receipt lifecycle explicit without elevating a
+ * public Vercel deployment to `self-hosted` authority.
+ */
+export function legacyNetworkReviewSession(
   replaySession: ReviewSessionEnvelope,
   mode: AnalysisMode,
 ): ReviewSessionEnvelope {
-  if (mode === "replay") return replaySession;
-  return {
-    ...replaySession,
-    source: "live-model",
-    analysisMode: "live",
-    provenance: "live-model",
+  const staticCapabilities = {
+    sandboxSimulation: replaySession.capabilities.sandboxSimulation,
+    resourceGraph: replaySession.capabilities.resourceGraph,
+    structuredDiff: replaySession.capabilities.structuredDiff,
+    untrustedContext: replaySession.capabilities.untrustedContext,
   };
+  return ReviewSessionEnvelopeSchema.parse({
+    ...replaySession,
+    capabilities: composeSessionCapabilities(
+      { capabilities: staticCapabilities },
+      "legacy-local",
+      defineTransportCapabilitySource({ durableDecision: false }),
+    ),
+    runtimeMode: "legacy-local",
+    ...(mode === "live"
+      ? {
+          source: "live-model",
+          analysisMode: "live",
+          provenance: "live-model",
+        }
+      : {}),
+  });
 }
 
 export const legacyNetworkAnalysisTransport: ReviewTransport<IncidentBundle> = async (
