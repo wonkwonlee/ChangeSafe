@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import {
   ChangeProposalSchema,
@@ -16,7 +16,9 @@ import {
   composeSessionCapabilities,
   defineExternalDiffRuntime,
   defineSimulatedRuntime,
+  defineTransportCapabilitySource,
   type DomainStaticCapabilities,
+  type TransportCapabilitySource,
 } from "@/features/domains/runtime";
 
 const validProposal = ChangeProposalSchema.parse({
@@ -55,6 +57,14 @@ const presentationCapabilities: DomainStaticCapabilities = {
   structuredDiff: true,
   untrustedContext: true,
 };
+
+const durableServerTransport = defineTransportCapabilitySource({
+  durableDecision: true,
+});
+
+const nonDurableTransport = defineTransportCapabilitySource({
+  durableDecision: false,
+});
 
 describe("closed domain registry", () => {
   it.each([
@@ -114,15 +124,21 @@ describe("closed domain registry", () => {
   });
 
   it.each([
-    ["network", "public-replay", false],
-    ["network", "self-hosted", false],
-    ["terraform", "public-replay", false],
-    ["terraform", "self-hosted", true],
-    ["kubernetes", "public-replay", false],
-    ["kubernetes", "self-hosted", false],
+    ["network", "public-replay", durableServerTransport, false],
+    ["network", "public-replay", nonDurableTransport, false],
+    ["network", "self-hosted", durableServerTransport, true],
+    ["network", "self-hosted", nonDurableTransport, false],
+    ["terraform", "public-replay", durableServerTransport, false],
+    ["terraform", "public-replay", nonDurableTransport, false],
+    ["terraform", "self-hosted", durableServerTransport, true],
+    ["terraform", "self-hosted", nonDurableTransport, false],
+    ["kubernetes", "public-replay", durableServerTransport, false],
+    ["kubernetes", "public-replay", nonDurableTransport, false],
+    ["kubernetes", "self-hosted", durableServerTransport, true],
+    ["kubernetes", "self-hosted", nonDurableTransport, false],
   ] as const)(
-    "composes %s durable decision support for %s sessions",
-    (domainId, runtimeMode, durableDecision) => {
+    "composes %s durable decision support for %s sessions from transport",
+    (domainId, runtimeMode, transport, durableDecision) => {
       const resolution = DOMAIN_REGISTRY.resolve(
         domainId,
         REVIEW_CONTRACT_VERSION,
@@ -131,7 +147,11 @@ describe("closed domain registry", () => {
       if (!resolution.ok) return;
 
       expect(
-        composeSessionCapabilities(resolution.entry.runtime, runtimeMode),
+        composeSessionCapabilities(
+          resolution.entry.runtime,
+          runtimeMode,
+          transport,
+        ),
       ).toMatchObject({
         sandboxSimulation: domainId !== "terraform",
         durableDecision,
@@ -187,7 +207,6 @@ describe("closed domain registry", () => {
       domainId: "test-domain",
       contractVersion: REVIEW_CONTRACT_VERSION,
       capabilities: presentationCapabilities,
-      selfHostedDurableDecision: false,
       inputSchema: InputSchema,
       proposalSchema: ChangeProposalSchema,
       adapter,
@@ -222,7 +241,6 @@ describe("closed domain registry", () => {
     const baseConfig = {
       domainId: "test-domain",
       contractVersion: REVIEW_CONTRACT_VERSION,
-      selfHostedDurableDecision: false,
       inputSchema: InputSchema,
       proposalSchema: ChangeProposalSchema,
       adapter,
@@ -261,7 +279,6 @@ describe("closed domain registry", () => {
           ...presentationCapabilities,
           sandboxSimulation: false,
         },
-        selfHostedDurableDecision: false,
         label: "Contradictory Network",
         description: "A simulated-state presentation must expose simulation.",
       }),
@@ -307,7 +324,6 @@ describe("closed domain registry", () => {
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "simulated-state",
       capabilities: mutableCapabilities,
-      selfHostedDurableDecision: false,
       label: "Network",
       description: "Declarative network review.",
     });
@@ -330,6 +346,7 @@ describe("closed domain registry", () => {
     const composed = composeSessionCapabilities(
       network.entry.runtime,
       "public-replay",
+      durableServerTransport,
     );
     expect(Reflect.set(composed, "durableDecision", true)).toBe(false);
     expect(composed).toMatchObject({
@@ -351,7 +368,6 @@ describe("closed domain registry", () => {
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "simulated-state",
       capabilities: presentationCapabilities,
-      selfHostedDurableDecision: false,
       label: "Wrong domain",
       description: "This presentation cannot be paired with Network.",
     });
@@ -372,7 +388,6 @@ describe("closed domain registry", () => {
         ...presentationCapabilities,
         structuredDiff: false,
       },
-      selfHostedDurableDecision: false,
       label: "Wrong capabilities",
       description: "This presentation contradicts the Network runtime.",
     });
@@ -393,10 +408,44 @@ describe("closed domain registry", () => {
         contractVersion: REVIEW_CONTRACT_VERSION,
         domainShape: "simulated-state",
         capabilities: presentationCapabilities,
-        selfHostedDurableDecision: false,
         label: "Network",
         description: "Declarative network review.",
         riskLevel: "LOW",
+      }),
+    ).toThrow();
+  });
+
+  it("keeps durable decision authority out of presentation metadata", () => {
+    const presentation = defineDomainPresentation({
+      domainId: "network",
+      contractVersion: REVIEW_CONTRACT_VERSION,
+      domainShape: "simulated-state",
+      capabilities: presentationCapabilities,
+      label: "Network",
+      description: "Declarative network review.",
+    });
+
+    expectTypeOf(presentation).not.toMatchTypeOf<TransportCapabilitySource>();
+    expect(() =>
+      defineDomainPresentation({
+        domainId: "network",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        domainShape: "simulated-state",
+        capabilities: presentationCapabilities,
+        durableDecision: true,
+        label: "Network",
+        description: "Presentation cannot grant durable decisions.",
+      }),
+    ).toThrow();
+    expect(() =>
+      defineDomainPresentation({
+        domainId: "network",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        domainShape: "simulated-state",
+        capabilities: presentationCapabilities,
+        selfHostedDurableDecision: true,
+        label: "Network",
+        description: "Presentation cannot grant durable decisions.",
       }),
     ).toThrow();
   });

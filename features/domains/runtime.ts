@@ -25,16 +25,38 @@ export type DomainStaticCapabilities = Readonly<
   z.infer<typeof DomainStaticCapabilitiesSchema>
 >;
 
+const transportCapabilityBrand: unique symbol = Symbol(
+  "changesafe.transport-capabilities",
+);
+
+export interface TransportCapabilitySource {
+  readonly durableDecision: boolean;
+  readonly [transportCapabilityBrand]: true;
+}
+
+const TransportCapabilitySourceSchema = z.strictObject({
+  durableDecision: z.boolean(),
+});
+
+export function defineTransportCapabilitySource(
+  rawSource: unknown,
+): TransportCapabilitySource {
+  const parsed = TransportCapabilitySourceSchema.parse(rawSource);
+  const source: TransportCapabilitySource = {
+    durableDecision: parsed.durableDecision,
+    [transportCapabilityBrand]: true,
+  };
+  return Object.freeze(source);
+}
+
 const RuntimeMetadataSchema = z.strictObject({
   domainId: DomainIdSchema,
   contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
   capabilities: DomainStaticCapabilitiesSchema,
-  selfHostedDurableDecision: z.boolean(),
 });
 
 export interface RuntimeCapabilitySource {
   readonly capabilities: DomainStaticCapabilities;
-  readonly selfHostedDurableDecision: boolean;
 }
 
 interface RuntimeDefinitionBase extends RuntimeCapabilitySource {
@@ -64,7 +86,6 @@ interface RuntimeConfig<
   readonly domainId: DomainId;
   readonly contractVersion: typeof REVIEW_CONTRACT_VERSION;
   readonly capabilities: DomainStaticCapabilities;
-  readonly selfHostedDurableDecision: boolean;
   readonly inputSchema: z.ZodType<TInput>;
   readonly proposalSchema: z.ZodType<TProposal>;
   readonly adapter: DomainAdapter<TInput, TState>;
@@ -121,12 +142,15 @@ export function defineExternalDiffRuntime<
 export function composeSessionCapabilities(
   source: RuntimeCapabilitySource,
   rawRuntimeMode: ReviewRuntimeMode,
+  transport: TransportCapabilitySource,
 ): Readonly<ReviewCapabilities> {
   const runtimeMode = ReviewRuntimeModeSchema.parse(rawRuntimeMode);
+  if (transport[transportCapabilityBrand] !== true) {
+    throw new Error("session capabilities require a validated transport capability source");
+  }
   const capabilities = ReviewCapabilitiesSchema.parse({
     ...source.capabilities,
-    durableDecision:
-      runtimeMode === "self-hosted" && source.selfHostedDurableDecision,
+    durableDecision: runtimeMode === "self-hosted" && transport.durableDecision,
   });
   return Object.freeze({ ...capabilities });
 }
@@ -143,7 +167,6 @@ function validateRuntimeMetadata<
     domainId: config.domainId,
     contractVersion: config.contractVersion,
     capabilities: config.capabilities,
-    selfHostedDurableDecision: config.selfHostedDurableDecision,
   });
   if (metadata.domainId !== config.adapter.domainId) {
     throw new Error(

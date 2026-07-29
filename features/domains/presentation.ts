@@ -17,7 +17,6 @@ export const DomainPresentationDefinitionSchema = z
     contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
     domainShape: DomainShapeSchema,
     capabilities: PresentationStaticCapabilitiesSchema,
-    selfHostedDurableDecision: z.boolean(),
     label: z.string().min(1).max(160),
     description: z.string().min(1).max(1000),
   })

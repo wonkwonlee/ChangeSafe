@@ -143,14 +143,6 @@ function assertDefinitionsAgree(entry: DomainRegistryEntry): void {
       `runtime and presentation capabilities disagree for "${runtime.domainId}"`,
     );
   }
-  if (
-    runtime.selfHostedDurableDecision !==
-    presentation.selfHostedDurableDecision
-  ) {
-    throw new Error(
-      `runtime and presentation durable decision support disagree for "${runtime.domainId}"`,
-    );
-  }
 }
 
 const networkCapabilities = {
@@ -178,7 +170,6 @@ const networkRuntime = defineSimulatedRuntime({
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
   capabilities: networkCapabilities,
-  selfHostedDurableDecision: false,
   inputSchema: IncidentBundleSchema,
   proposalSchema: NetworkChangeProposalSchema,
   adapter: networkDomain,
@@ -189,7 +180,6 @@ const terraformRuntime = defineExternalDiffRuntime({
   domainId: "terraform",
   contractVersion: REVIEW_CONTRACT_VERSION,
   capabilities: terraformCapabilities,
-  selfHostedDurableDecision: true,
   inputSchema: TerraformInputSchema,
   proposalSchema: TerraformChangeProposalSchema,
   adapter: terraformDomain,
@@ -199,7 +189,6 @@ const kubernetesRuntime = defineSimulatedRuntime({
   domainId: "kubernetes",
   contractVersion: REVIEW_CONTRACT_VERSION,
   capabilities: kubernetesCapabilities,
-  selfHostedDurableDecision: false,
   inputSchema: KubernetesSnapshotSchema,
   proposalSchema: KubernetesChangeProposalSchema,
   adapter: kubernetesDomain,
@@ -214,7 +203,6 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "simulated-state",
       capabilities: networkCapabilities,
-      selfHostedDurableDecision: false,
       label: "Network",
       description:
         "Review declarative network incident proposals against deterministic policies and sandbox simulation.",
@@ -227,7 +215,6 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "external-diff",
       capabilities: terraformCapabilities,
-      selfHostedDurableDecision: true,
       label: "Terraform",
       description:
         "Review supplied Terraform plan diffs without running Terraform or pretending to simulate them.",
@@ -240,7 +227,6 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "simulated-state",
       capabilities: kubernetesCapabilities,
-      selfHostedDurableDecision: false,
       label: "Kubernetes",
       description:
         "Review offline Kubernetes snapshots and proposed manifests through an in-memory sandbox.",
