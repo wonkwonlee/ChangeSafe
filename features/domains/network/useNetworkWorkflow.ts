@@ -347,12 +347,14 @@ function validateLegacySuccess(
   if (request.session.analysisMode === "replay") {
     const scenario = getScenario(request.sourceId);
     // A replay response is only safe for the fixture that the session bound
-    // before the request began. Provenance describes a class of fixture, not
-    // its identity: accepting another captured or authored fixture here could
-    // produce an approvable decision for the wrong incident.
+    // before the request began. Compare the core fixture provenance directly
+    // as well as the review-session classification: the latter is a display
+    // projection and must never become the authority for receipt provenance.
+    // Fixture id, model, provider, and notes bind the remaining replay claims.
     if (
       !scenario ||
       success.fixtureId !== scenario.fixture.fixtureId ||
+      success.provenance !== scenario.fixture.provenance ||
       success.model !== scenario.fixture.model ||
       success.provider !== null ||
       success.fixtureNotes !== scenario.fixture.notes

@@ -175,6 +175,55 @@ describe("Network workflow compatibility facade", () => {
     });
   });
 
+  it("binds replay provenance to the requested fixture, not only the session classification", async () => {
+    const requested = scenarioByIdOrThrow("scenario-b-route-leak");
+    const replay = NETWORK_REVIEW_EXAMPLES.find(
+      (example) => example.sourceId === requested.scenarioId,
+    );
+    if (!replay) throw new Error("missing Network review example");
+    const synthetic = scenarioByIdOrThrow("scenario-c-route-flap");
+    // This deliberately malformed caller session is internally coherent with
+    // the response. The transport must still compare against the immutable
+    // scenario fixture selected before analysis began.
+    const session = {
+      ...replay.session,
+      provenance: "authored-synthetic" as const,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: synthetic.fixture.model,
+          provider: null,
+          provenance: synthetic.fixture.provenance,
+          fixtureId: requested.fixture.fixtureId,
+          fixtureNotes: requested.fixture.notes,
+          proposal: requested.fixture.proposal,
+        }),
+      ),
+    );
+
+    const result = await legacyNetworkAnalysisTransport({
+      ...requestFor("replay"),
+      sourceId: requested.scenarioId,
+      expectedInputId: requested.bundle.incidentId,
+      input: requested.bundle,
+      session,
+    });
+
+    expect(result.payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture identity did not match the requested scenario.",
+        replayAvailable: false,
+      },
+    });
+    expect(result.payload).not.toHaveProperty("proposal");
+    expect(result.payload).not.toHaveProperty("receipt");
+  });
+
   it("fails closed when a different captured fixture claims the same provenance class", async () => {
     const scenario = scenarioOrThrow();
     vi.stubGlobal(
@@ -204,9 +253,9 @@ describe("Network workflow compatibility facade", () => {
     });
   });
 
-  it("fails closed when another authored fixture has the same provenance class", async () => {
-    const requested = scenarioByIdOrThrow("scenario-c-route-flap");
-    const otherAuthored = scenarioByIdOrThrow("scenario-d-egress-imbalance");
+  it("fails closed when another authored red-team fixture has the same provenance class", async () => {
+    const requested = scenarioByIdOrThrow("scenario-b-route-leak");
+    const otherAuthored = scenarioByIdOrThrow("scenario-e-rollback-trap");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -240,6 +289,76 @@ describe("Network workflow compatibility facade", () => {
         code: "ANALYSIS_INVALID",
         message: "Replay fixture identity did not match the requested scenario.",
         replayAvailable: false,
+      },
+    });
+  });
+
+  it.each([
+    ["model", "other-model"],
+    ["provider", "openai"],
+    ["fixture notes", "other fixture notes"],
+  ] as const)(
+    "fails closed when a replay response has mismatched %s without producing a review result",
+    async (field, replacement) => {
+      const scenario = scenarioOrThrow();
+      const response = {
+        mode: "replay" as const,
+        model: scenario.fixture.model,
+        provider: null as string | null,
+        provenance: scenario.fixture.provenance,
+        fixtureId: scenario.fixture.fixtureId,
+        fixtureNotes: scenario.fixture.notes,
+        proposal: scenario.fixture.proposal,
+      };
+      if (field === "model") response.model = replacement;
+      if (field === "provider") response.provider = replacement;
+      if (field === "fixture notes") response.fixtureNotes = replacement;
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json(response)));
+
+      const result = await legacyNetworkAnalysisTransport(requestFor("replay"));
+
+      expect(result.payload).toMatchObject({
+        ok: false,
+        error: {
+          code: "ANALYSIS_INVALID",
+          message: "Replay fixture identity did not match the requested scenario.",
+          replayAvailable: false,
+        },
+      });
+      expect(result.payload).not.toHaveProperty("proposal");
+      expect(result.payload).not.toHaveProperty("receipt");
+    },
+  );
+
+  it("accepts the required null replay provider and rejects a provider claim", async () => {
+    const scenario = scenarioOrThrow();
+    const replayResponse = {
+      mode: "replay" as const,
+      model: scenario.fixture.model,
+      provider: null as string | null,
+      provenance: scenario.fixture.provenance,
+      fixtureId: scenario.fixture.fixtureId,
+      fixtureNotes: scenario.fixture.notes,
+      proposal: scenario.fixture.proposal,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(Response.json(replayResponse))
+        .mockResolvedValueOnce(
+          Response.json({ ...replayResponse, provider: "openai" }),
+        ),
+    );
+
+    const accepted = await legacyNetworkAnalysisTransport(requestFor("replay"));
+    const rejected = await legacyNetworkAnalysisTransport(requestFor("replay"));
+
+    expect(accepted.payload).toMatchObject({ ok: true });
+    expect(rejected.payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture identity did not match the requested scenario.",
       },
     });
   });
