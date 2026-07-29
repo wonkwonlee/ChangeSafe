@@ -1,4 +1,5 @@
 import {
+  ChangeReceiptSchema,
   IdSchema,
   IllegalTransitionError,
   SimulationResultSchema,
@@ -12,8 +13,10 @@ import {
 import {
   ReviewAnalysisResultSchema,
   ReviewSessionEnvelopeSchema,
+  ReviewTransportErrorSchema,
   type ReviewAnalysisResult,
   type ReviewSessionEnvelope,
+  type ReviewTransportErrorDetail,
 } from "../domains/review-contract";
 
 export const SAFE_REVIEW_ERROR_MESSAGE =
@@ -28,10 +31,11 @@ export interface ReviewControllerState<TInput> {
   readonly expectedInputId: string;
   readonly workflow: WorkflowState<TInput>;
   readonly review: ReviewAnalysisResult | null;
+  readonly transportError: ReviewTransportErrorDetail | null;
   readonly activeRequest: ActiveReviewRequest | null;
 }
 
-export type ReviewControllerCommand =
+export type ReviewControllerCommand<TInput = never> =
   | {
       readonly type: "START_REVIEW";
       readonly attemptId: string;
@@ -41,8 +45,14 @@ export type ReviewControllerCommand =
       readonly attemptId: string;
       readonly payload: unknown;
     }
+  | {
+      readonly type: "REBIND_REVIEW";
+      readonly source: InitialReviewControllerInput<TInput>;
+    }
   | { readonly type: "APPROVE_REVIEW" }
-  | { readonly type: "SIMULATION_COMPLETED"; readonly simulation: unknown };
+  | { readonly type: "REJECT_REVIEW" }
+  | { readonly type: "SIMULATION_COMPLETED"; readonly simulation: unknown }
+  | { readonly type: "RECEIPT_CREATED"; readonly receipt: unknown };
 
 export interface InitialReviewControllerInput<TInput> {
   readonly sourceId: string;
@@ -62,6 +72,7 @@ export function initialReviewControllerState<TInput>(
     expectedInputId,
     workflow: initialState(sourceId, source.input),
     review: null,
+    transportError: null,
     activeRequest: null,
   };
 }
@@ -77,8 +88,18 @@ export function receiveReviewTransport(
   return { type: "REVIEW_TRANSPORT_RECEIVED", attemptId, payload };
 }
 
+export function rebindReview<TInput>(
+  source: InitialReviewControllerInput<TInput>,
+): ReviewControllerCommand<TInput> {
+  return { type: "REBIND_REVIEW", source };
+}
+
 export function approveReview(): ReviewControllerCommand {
   return { type: "APPROVE_REVIEW" };
+}
+
+export function rejectReview(): ReviewControllerCommand {
+  return { type: "REJECT_REVIEW" };
 }
 
 export function completeReviewSimulation(
@@ -87,9 +108,13 @@ export function completeReviewSimulation(
   return { type: "SIMULATION_COMPLETED", simulation };
 }
 
+export function recordReviewReceipt(receipt: unknown): ReviewControllerCommand {
+  return { type: "RECEIPT_CREATED", receipt };
+}
+
 export function reviewControllerReducer<TInput>(
   state: ReviewControllerState<TInput>,
-  command: ReviewControllerCommand,
+  command: ReviewControllerCommand<TInput>,
 ): ReviewControllerState<TInput> {
   switch (command.type) {
     case "START_REVIEW": {
@@ -99,6 +124,7 @@ export function reviewControllerReducer<TInput>(
       return {
         ...state,
         review: null,
+        transportError: null,
         activeRequest,
         workflow: transition(state.workflow, {
           type: "START_ANALYSIS",
@@ -122,10 +148,34 @@ export function reviewControllerReducer<TInput>(
       );
     }
 
+    case "REBIND_REVIEW": {
+      const sourceId = IdSchema.parse(command.source.sourceId);
+      const expectedInputId = IdSchema.parse(command.source.expectedInputId);
+      const session = ReviewSessionEnvelopeSchema.parse(command.source.session);
+      return {
+        session,
+        expectedInputId,
+        workflow: transition(state.workflow, {
+          type: "RESET",
+          sourceId,
+          input: command.source.input,
+        }),
+        review: null,
+        transportError: null,
+        activeRequest: null,
+      };
+    }
+
     case "APPROVE_REVIEW":
       return {
         ...state,
         workflow: transition(state.workflow, { type: "APPROVE" }),
+      };
+
+    case "REJECT_REVIEW":
+      return {
+        ...state,
+        workflow: transition(state.workflow, { type: "REJECT" }),
       };
 
     case "SIMULATION_COMPLETED": {
@@ -151,6 +201,15 @@ export function reviewControllerReducer<TInput>(
       };
     }
 
+    case "RECEIPT_CREATED":
+      return {
+        ...state,
+        workflow: transition(state.workflow, {
+          type: "RECEIPT_CREATED",
+          receipt: ChangeReceiptSchema.parse(command.receipt),
+        }),
+      };
+
     default: {
       const exhaustive: never = command;
       return exhaustive;
@@ -174,6 +233,13 @@ function receiveTransport<TInput>(
 ): ReviewControllerState<TInput> {
   const parsed = ReviewAnalysisResultSchema.safeParse(payload);
   if (!parsed.success) {
+    const transportError = ReviewTransportErrorSchema.safeParse(payload);
+    if (
+      transportError.success &&
+      transportErrorMatchesState(state, transportError.data.error)
+    ) {
+      return failWithTransportError(state, transportError.data.error);
+    }
     return failSafely(state);
   }
 
@@ -203,7 +269,44 @@ function receiveTransport<TInput>(
     riskLevel: review.riskLevel,
   });
   workflow = transition(workflow, { type: "CLASSIFY" });
-  return { ...state, workflow, review, activeRequest: null };
+  return {
+    ...state,
+    workflow,
+    review,
+    transportError: null,
+    activeRequest: null,
+  };
+}
+
+function transportErrorMatchesState<TInput>(
+  state: ReviewControllerState<TInput>,
+  error: ReviewTransportErrorDetail,
+): boolean {
+  if (error.domainId !== null && error.domainId !== state.session.domainId) {
+    return false;
+  }
+  return (
+    !error.replayAvailable ||
+    (error.replaySource.domainId === state.session.domainId &&
+      error.replaySource.contractVersion === state.session.contractVersion &&
+      error.replaySource.sourceId === state.workflow.sourceId)
+  );
+}
+
+function failWithTransportError<TInput>(
+  state: ReviewControllerState<TInput>,
+  transportError: ReviewTransportErrorDetail,
+): ReviewControllerState<TInput> {
+  return {
+    ...state,
+    review: null,
+    transportError,
+    activeRequest: null,
+    workflow: transition(state.workflow, {
+      type: "FAIL",
+      userMessage: transportError.message,
+    }),
+  };
 }
 
 function failSafely<TInput>(
@@ -212,6 +315,7 @@ function failSafely<TInput>(
   return {
     ...state,
     review: null,
+    transportError: null,
     activeRequest: null,
     workflow: transition(state.workflow, {
       type: "FAIL",

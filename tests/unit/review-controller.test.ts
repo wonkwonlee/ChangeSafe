@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { IllegalTransitionError } from "@changesafe/core";
+import {
+  IllegalTransitionError,
+  type SimulationResult,
+} from "@changesafe/core";
 
 import {
   REVIEW_CONTRACT_VERSION,
   type ReviewEffectCapability,
   type ReviewSessionEnvelope,
 } from "@/features/domains/review-contract";
+import { buildReceipt } from "@/tests/helpers/fixtures";
 import {
   approveReview,
   completeReviewSimulation,
   initialReviewControllerState,
+  rebindReview,
   receiveReviewTransport,
+  recordReviewReceipt,
+  rejectReview,
   reviewCanSimulate,
   reviewControllerReducer,
   startReview,
@@ -58,6 +65,13 @@ const terraformSession: ReviewSessionEnvelope = {
   provenance: "uploaded-offline-artifact",
 };
 
+const liveNetworkSession: ReviewSessionEnvelope = {
+  ...networkSession,
+  source: "live-model",
+  analysisMode: "live",
+  provenance: "live-model",
+};
+
 const proposal = {
   proposalId: "proposal-one",
   summary: "Replace one declarative value.",
@@ -88,7 +102,7 @@ const proposal = {
   verificationSteps: [],
 };
 
-const simulation = {
+const simulation: SimulationResult = {
   status: "completed",
   changedResourceIds: ["resource:resource-one"],
   diff: [
@@ -107,7 +121,7 @@ const simulation = {
     },
   ],
   summary: "One declarative operation was applied to a sandboxed clone.",
-} as const;
+};
 
 function buildAnalysis(
   session: ReviewSessionEnvelope,
@@ -161,15 +175,45 @@ function analyzing(
   session: ReviewSessionEnvelope = networkSession,
   attemptId = FIRST_ATTEMPT_ID,
 ) {
-  const ready = initialReviewControllerState({
+  return reviewControllerReducer(
+    readyState(session),
+    startReview(attemptId),
+  );
+}
+
+function readyState(session: ReviewSessionEnvelope = networkSession) {
+  return initialReviewControllerState({
     sourceId: "scenario-one",
     input,
     expectedInputId: input.incidentId,
     session,
   });
+}
+
+function decisionState(status: "PASS" | "BLOCK") {
   return reviewControllerReducer(
-    ready,
-    startReview(attemptId),
+    analyzing(),
+    receiveReviewTransport(
+      FIRST_ATTEMPT_ID,
+      buildAnalysis(networkSession, status, {
+        kind: "sandbox-simulation",
+      }),
+    ),
+  );
+}
+
+function approvedState() {
+  return reviewControllerReducer(decisionState("PASS"), approveReview());
+}
+
+function rejectedState() {
+  return reviewControllerReducer(decisionState("PASS"), rejectReview());
+}
+
+function simulatedState() {
+  return reviewControllerReducer(
+    approvedState(),
+    completeReviewSimulation(simulation),
   );
 }
 
@@ -236,6 +280,152 @@ describe("pure review controller", () => {
     expect(reviewCanSimulate(state)).toBe(false);
   });
 
+  it("retains a validated transport error and its replay metadata", () => {
+    const state = reviewControllerReducer(
+      analyzing(liveNetworkSession),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, {
+        ok: false,
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        error: {
+          code: "ANALYSIS_UNAVAILABLE",
+          message: "Live analysis is unavailable. Replay remains available.",
+          domainId: "network",
+          replayAvailable: true,
+          replaySource: {
+            domainId: "network",
+            contractVersion: REVIEW_CONTRACT_VERSION,
+            sourceId: "scenario-one",
+          },
+          expectedContractVersion: null,
+          receivedContractVersion: null,
+        },
+      }),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Live analysis is unavailable. Replay remains available.",
+    });
+    expect(state.transportError).toMatchObject({
+      code: "ANALYSIS_UNAVAILABLE",
+      replayAvailable: true,
+      replaySource: {
+        sourceId: "scenario-one",
+      },
+    });
+    expect(state.review).toBeNull();
+    expect(state.activeRequest).toBeNull();
+  });
+
+  it("uses the generic safe error for malformed transport errors", () => {
+    const state = reviewControllerReducer(
+      analyzing(liveNetworkSession),
+      receiveReviewTransport(FIRST_ATTEMPT_ID, {
+        ok: false,
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        error: {
+          code: "ANALYSIS_UNAVAILABLE",
+          message: "Unvalidated message",
+          domainId: "network",
+          replayAvailable: true,
+        },
+      }),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review analysis could not be loaded safely.",
+    });
+    expect(state.transportError).toBeNull();
+  });
+
+  it("atomically rebinds source identity and ignores the prior request", () => {
+    const previous = analyzing(networkSession, FIRST_ATTEMPT_ID);
+    const replacementInput = {
+      incidentId: "incident-two",
+      alert: "Route instability",
+    };
+    const rebound = reviewControllerReducer(
+      previous,
+      rebindReview({
+        sourceId: "scenario-two",
+        input: replacementInput,
+        expectedInputId: replacementInput.incidentId,
+        session: networkSession,
+      }),
+    );
+
+    expect(rebound).toMatchObject({
+      session: networkSession,
+      expectedInputId: "incident-two",
+      workflow: {
+        phase: "READY",
+        sourceId: "scenario-two",
+        input: replacementInput,
+      },
+      review: null,
+      transportError: null,
+      activeRequest: null,
+    });
+    expect(
+      reviewControllerReducer(
+        rebound,
+        receiveReviewTransport(
+          FIRST_ATTEMPT_ID,
+          buildAnalysis(networkSession, "PASS", {
+            kind: "sandbox-simulation",
+          }),
+        ),
+      ),
+    ).toBe(rebound);
+  });
+
+  it.each([
+    ["READY", readyState],
+    ["ANALYZING", () => analyzing()],
+    [
+      "ERROR",
+      () =>
+        reviewControllerReducer(
+          analyzing(),
+          receiveReviewTransport(FIRST_ATTEMPT_ID, { malformed: true }),
+        ),
+    ],
+    ["APPROVAL_REQUIRED", () => decisionState("PASS")],
+    ["BLOCKED", () => decisionState("BLOCK")],
+    ["REJECTED", rejectedState],
+    ["APPROVED", approvedState],
+    ["SIMULATED", simulatedState],
+    [
+      "RECEIPT_ISSUED",
+      () =>
+        reviewControllerReducer(
+          decisionState("BLOCK"),
+          recordReviewReceipt(buildReceipt({ decision: "blocked" })),
+        ),
+    ],
+  ] as const)("rebinds %s through core RESET", (_phase, buildState) => {
+    const replacementInput = {
+      incidentId: "incident-two",
+      alert: "Route instability",
+    };
+    const state = reviewControllerReducer(
+      buildState(),
+      rebindReview({
+        sourceId: "scenario-two",
+        input: replacementInput,
+        expectedInputId: replacementInput.incidentId,
+        session: networkSession,
+      }),
+    );
+
+    expect(state.workflow).toEqual({
+      phase: "READY",
+      sourceId: "scenario-two",
+      input: replacementInput,
+    });
+  });
+
   it("lets core reject illegal approval of a blocked review", () => {
     const blocked = reviewControllerReducer(
       analyzing(),
@@ -250,6 +440,56 @@ describe("pure review controller", () => {
     expect(() => reviewControllerReducer(blocked, approveReview())).toThrow(
       IllegalTransitionError,
     );
+  });
+
+  it("delegates rejection to the core workflow", () => {
+    const state = reviewControllerReducer(
+      decisionState("PASS"),
+      rejectReview(),
+    );
+
+    expect(state.workflow.phase).toBe("REJECTED");
+  });
+
+  it.each([
+    [
+      "BLOCKED",
+      () => decisionState("BLOCK"),
+      buildReceipt({ decision: "blocked" }),
+    ],
+    [
+      "REJECTED",
+      rejectedState,
+      buildReceipt({ decision: "rejected" }),
+    ],
+    [
+      "SIMULATED",
+      simulatedState,
+      buildReceipt({ decision: "approved", simulation }),
+    ],
+  ] as const)("records a receipt from %s", (_phase, buildState, receipt) => {
+    const state = reviewControllerReducer(
+      buildState(),
+      recordReviewReceipt(receipt),
+    );
+
+    expect(state.workflow.phase).toBe("RECEIPT_ISSUED");
+    if (state.workflow.phase === "RECEIPT_ISSUED") {
+      expect(state.workflow.receipt).toEqual(receipt);
+    }
+  });
+
+  it.each([
+    ["READY", readyState],
+    ["APPROVAL_REQUIRED", () => decisionState("PASS")],
+    ["APPROVED", approvedState],
+  ] as const)("lets core reject a receipt from %s", (_phase, buildState) => {
+    expect(() =>
+      reviewControllerReducer(
+        buildState(),
+        recordReviewReceipt(buildReceipt({ decision: "blocked" })),
+      ),
+    ).toThrow(IllegalTransitionError);
   });
 
   it.each([
