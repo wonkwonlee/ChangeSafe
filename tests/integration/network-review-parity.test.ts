@@ -1,28 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  IllegalTransitionError,
-  createReceipt,
   evaluatePolicies,
   hashCanonical,
-  verifyReceiptHash,
   type FixtureProvenance,
 } from "@changesafe/core";
-import {
-  networkDomain,
-  runSimulation,
-  type IncidentBundle,
-} from "@changesafe/domain-network";
+import { networkDomain, type IncidentBundle } from "@changesafe/domain-network";
 
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
-import { createNetworkReviewReceipt } from "@/features/domains/network/receipt";
 import { REVIEW_ANALYZE_API_VERSION, ReviewAnalyzeSuccessV1Schema } from "@/features/domains/review-api-contract";
-import { approveReview, completeReviewSimulation, initialReviewControllerState, receiveReviewTransport, recordReviewReceipt, reviewControllerReducer, startReview } from "@/features/reviews/controller";
+import { approveReview, completeReviewSimulation, initialReviewControllerState, receiveReviewTransport, recordReviewReceipt, rejectReview, reviewControllerReducer, startReview } from "@/features/reviews/controller";
 import { SCENARIOS, type ScenarioDefinition } from "@/scenarios";
-
-const APP_VERSION = "parity-test";
-const CREATED_AT = "2026-07-29T00:00:00.000Z";
 
 function exampleFor(scenario: ScenarioDefinition) {
   const example = NETWORK_REVIEW_EXAMPLES.find(
@@ -53,64 +42,6 @@ async function replayResult(scenario: ScenarioDefinition) {
   return ReviewAnalyzeSuccessV1Schema.parse(await response.json()).result;
 }
 
-function expectedReceiptInput(
-  state: ReturnType<typeof initialReviewControllerState<IncidentBundle>>,
-  scenario: ScenarioDefinition,
-) {
-  if (state.review === null) throw new Error("completed review required for a receipt");
-
-  // Keep expected receipt provenance independent from the transport/controller
-  // result under test. The fixture is the sole source of replay authorship.
-  const expected = evaluatePolicies(
-    networkDomain,
-    scenario.bundle,
-    scenario.fixture.proposal,
-  );
-  const fixtureProvenance = scenario.fixture.provenance;
-  const model = scenario.fixture.model;
-
-  switch (state.workflow.phase) {
-    case "BLOCKED":
-      return {
-        sourceId: scenario.scenarioId,
-        inputId: scenario.bundle.incidentId,
-        input: scenario.bundle,
-        appVersion: APP_VERSION,
-        policyVersion: state.session.policyVersion,
-        proposal: scenario.fixture.proposal,
-        mode: "replay" as const,
-        model,
-        fixtureProvenance,
-        findings: expected.findings,
-        riskLevel: expected.riskLevel,
-        decision: "blocked" as const,
-        simulation: null,
-        createdAtUtc: CREATED_AT,
-        receiptId: `rcpt-parity-${scenario.scenarioId}`,
-      };
-    case "SIMULATED":
-      return {
-        sourceId: scenario.scenarioId,
-        inputId: scenario.bundle.incidentId,
-        input: scenario.bundle,
-        appVersion: APP_VERSION,
-        policyVersion: state.session.policyVersion,
-        proposal: scenario.fixture.proposal,
-        mode: "replay" as const,
-        model,
-        fixtureProvenance,
-        findings: expected.findings,
-        riskLevel: expected.riskLevel,
-        decision: "approved" as const,
-        simulation: state.workflow.simulation,
-        createdAtUtc: CREATED_AT,
-        receiptId: `rcpt-parity-${scenario.scenarioId}`,
-      };
-    default:
-      throw new Error(`receipt parity cannot continue from ${state.workflow.phase}`);
-  }
-}
-
 function expectedReplayClassification(
   provenance: FixtureProvenance,
 ): "captured-replay" | "authored-synthetic" | "authored-red-team" {
@@ -126,7 +57,7 @@ function expectedReplayClassification(
 
 describe("Network public replay parity", () => {
   it.each(SCENARIOS.map((scenario) => [scenario.scenarioId, scenario] as const))(
-    "%s preserves the fixture's exact deterministic outcome through the V1 workbench path",
+    "%s preserves the fixture's exact deterministic outcome while the V1 public controller remains decision-free",
     async (_scenarioId, scenario) => {
       const example = exampleFor(scenario);
       const result = await replayResult(scenario);
@@ -177,49 +108,22 @@ describe("Network public replay parity", () => {
         receiveReviewTransport(attemptId, result),
       );
 
-      if (!scenario.expectations.approvable) {
-        expect(state.workflow.phase).toBe("BLOCKED");
-        expect(() => reviewControllerReducer(state, approveReview())).toThrow(
-          IllegalTransitionError,
-        );
-
-        // This is the legacy durable-record compatibility path, not a public
-        // workbench action. The generated record must remain byte-for-byte
-        // identical to a receipt built from the fixture-derived core result.
-        const receipt = await createNetworkReviewReceipt(state, {
-          appVersion: APP_VERSION,
-          createdAtUtc: CREATED_AT,
-          receiptId: `rcpt-parity-${scenario.scenarioId}`,
-        });
-        expect(receipt).toEqual(await createReceipt(expectedReceiptInput(state, scenario)));
-        expect(await verifyReceiptHash(receipt)).toBe(true);
-        state = reviewControllerReducer(state, await recordReviewReceipt(state, receipt));
-        expect(state.workflow.phase).toBe("RECEIPT_ISSUED");
-        return;
-      }
-
-      expect(state.workflow.phase).toBe("APPROVAL_REQUIRED");
+      expect(state.workflow.phase).toBe(
+        scenario.expectations.approvable ? "APPROVAL_REQUIRED" : "BLOCKED",
+      );
+      const reviewed = state;
       state = reviewControllerReducer(state, approveReview());
-      if (state.workflow.phase !== "APPROVED") {
-        throw new Error("approvable fixture did not reach APPROVED");
-      }
+      expect(state).toBe(reviewed);
+      state = reviewControllerReducer(state, rejectReview());
+      expect(state).toBe(reviewed);
       state = reviewControllerReducer(
         state,
-        completeReviewSimulation(
-          runSimulation(state.workflow.input, state.workflow.proposal),
-        ),
+        completeReviewSimulation({ status: "completed" }),
       );
-      expect(state.workflow.phase).toBe("SIMULATED");
-
-      const receipt = await createNetworkReviewReceipt(state, {
-        appVersion: APP_VERSION,
-        createdAtUtc: CREATED_AT,
-        receiptId: `rcpt-parity-${scenario.scenarioId}`,
-      });
-      expect(receipt).toEqual(await createReceipt(expectedReceiptInput(state, scenario)));
-      expect(await verifyReceiptHash(receipt)).toBe(true);
-      state = reviewControllerReducer(state, await recordReviewReceipt(state, receipt));
-      expect(state.workflow.phase).toBe("RECEIPT_ISSUED");
+      expect(state).toBe(reviewed);
+      await expect(recordReviewReceipt(state, {})).rejects.toThrow(
+        /public replay.*receipt/i,
+      );
     },
   );
 });

@@ -46,12 +46,21 @@ const networkSession: ReviewSessionEnvelope = {
     resourceGraph: true,
     structuredDiff: true,
     untrustedContext: true,
-    durableDecision: false,
+    durableDecision: true,
   },
-  runtimeMode: "public-replay",
+  runtimeMode: "self-hosted",
   source: "bundled-replay",
   analysisMode: "replay",
   provenance: "captured-replay",
+};
+
+const publicReplayNetworkSession: ReviewSessionEnvelope = {
+  ...networkSession,
+  capabilities: {
+    ...networkSession.capabilities,
+    durableDecision: false,
+  },
+  runtimeMode: "public-replay",
 };
 
 const terraformSession: ReviewSessionEnvelope = {
@@ -512,6 +521,38 @@ describe("pure review controller", () => {
     );
 
     expect(state.workflow.phase).toBe("REJECTED");
+  });
+
+  it("keeps public replay evidence-only across every durable controller command", async () => {
+    let state = reviewControllerReducer(
+      analyzing(publicReplayNetworkSession),
+      receiveReviewTransport(
+        FIRST_ATTEMPT_ID,
+        buildAnalysis(publicReplayNetworkSession, "PASS", {
+          kind: "sandbox-simulation",
+        }),
+      ),
+    );
+
+    expect(state.workflow.phase).toBe("APPROVAL_REQUIRED");
+    const reviewed = state;
+    state = reviewControllerReducer(state, approveReview());
+    expect(state).toBe(reviewed);
+    state = reviewControllerReducer(state, rejectReview());
+    expect(state).toBe(reviewed);
+    state = reviewControllerReducer(
+      state,
+      completeReviewSimulation(simulation),
+    );
+    expect(state).toBe(reviewed);
+    expect(reviewCanSimulate(state)).toBe(false);
+
+    await expect(
+      recordReviewReceipt(
+        state,
+        buildReceipt({ decision: "rejected" }),
+      ),
+    ).rejects.toThrow(/public replay.*receipt/i);
   });
 
   it.each([

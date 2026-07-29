@@ -132,6 +132,14 @@ export async function recordReviewReceipt<TInput>(
   state: ReviewControllerState<TInput>,
   receipt: unknown,
 ): Promise<ReviewControllerCommand<TInput>> {
+  if (!reviewCanMakeDurableDecision(state.session)) {
+    throw new IllegalTransitionError(
+      state.workflow.phase,
+      "RECEIPT_CREATED",
+      "public replay reviews cannot create durable decisions or receipts",
+    );
+  }
+
   if (!isReceiptPhase(state.workflow)) {
     throw new IllegalTransitionError(
       state.workflow.phase,
@@ -215,18 +223,27 @@ export function reviewControllerReducer<TInput>(
     }
 
     case "APPROVE_REVIEW":
+      if (!reviewCanMakeDurableDecision(state.session)) {
+        return state;
+      }
       return {
         ...state,
         workflow: transition(state.workflow, { type: "APPROVE" }),
       };
 
     case "REJECT_REVIEW":
+      if (!reviewCanMakeDurableDecision(state.session)) {
+        return state;
+      }
       return {
         ...state,
         workflow: transition(state.workflow, { type: "REJECT" }),
       };
 
     case "SIMULATION_COMPLETED": {
+      if (!reviewCanMakeDurableDecision(state.session)) {
+        return state;
+      }
       if (state.review?.effectCapability.kind !== "sandbox-simulation") {
         const effectKind = state.review?.effectCapability.kind ?? "unavailable";
         throw new IllegalTransitionError(
@@ -251,6 +268,7 @@ export function reviewControllerReducer<TInput>(
 
     case "RECEIPT_CREATED":
       if (
+        !reviewCanMakeDurableDecision(state.session) ||
         command[verifiedReceiptCommandBrand] !== true ||
         command.expectedWorkflow !== state.workflow
       ) {
@@ -266,6 +284,7 @@ export function reviewControllerReducer<TInput>(
 
     case "RECEIPT_REJECTED":
       if (
+        !reviewCanMakeDurableDecision(state.session) ||
         command[verifiedReceiptCommandBrand] !== true ||
         command.expectedWorkflow !== state.workflow
       ) {
@@ -284,8 +303,23 @@ export function reviewCanSimulate<TInput>(
   state: ReviewControllerState<TInput>,
 ): boolean {
   return (
+    reviewCanMakeDurableDecision(state.session) &&
     state.workflow.phase === "APPROVED" &&
     state.review?.effectCapability.kind === "sandbox-simulation"
+  );
+}
+
+/**
+ * Public replay is deliberately evidence-only. This guard sits above the
+ * workflow reducer so a caller cannot gain decision authority by rendering a
+ * different UI or by dispatching controller commands directly.
+ */
+function reviewCanMakeDurableDecision(
+  session: ReviewSessionEnvelope,
+): boolean {
+  return (
+    session.runtimeMode === "self-hosted" &&
+    session.capabilities.durableDecision
   );
 }
 

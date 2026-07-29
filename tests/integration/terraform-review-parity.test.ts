@@ -19,8 +19,12 @@ import {
   ReviewAnalyzeSuccessV1Schema,
 } from "@/features/domains/review-api-contract";
 import {
+  approveReview,
+  completeReviewSimulation,
   initialReviewControllerState,
   receiveReviewTransport,
+  recordReviewReceipt,
+  rejectReview,
   reviewCanSimulate,
   reviewControllerReducer,
   startReview,
@@ -64,7 +68,7 @@ describe("Terraform public replay parity", () => {
       [fixture.sourceId, fixture] as const,
     ),
   )(
-    "%s preserves the supplied external diff's deterministic outcome without public authority",
+    "%s preserves the supplied external diff's deterministic outcome while the public controller remains decision-free",
     async (_sourceId, fixture) => {
       const example = exampleFor(fixture);
       const input = inputFor(fixture);
@@ -126,6 +130,20 @@ describe("Terraform public replay parity", () => {
       expect(state.review?.effectCapability).toEqual({ kind: "external-diff" });
       expect(reviewCanSimulate(state)).toBe(false);
       expect(["APPROVAL_REQUIRED", "BLOCKED"]).toContain(state.workflow.phase);
+
+      const reviewed = state;
+      state = reviewControllerReducer(state, approveReview());
+      expect(state).toBe(reviewed);
+      state = reviewControllerReducer(state, rejectReview());
+      expect(state).toBe(reviewed);
+      state = reviewControllerReducer(
+        state,
+        completeReviewSimulation({ status: "completed" }),
+      );
+      expect(state).toBe(reviewed);
+      await expect(recordReviewReceipt(state, {})).rejects.toThrow(
+        /public replay.*receipt/i,
+      );
     },
   );
 });
