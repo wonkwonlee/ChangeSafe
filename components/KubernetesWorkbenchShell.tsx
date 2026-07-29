@@ -85,7 +85,11 @@ function resourceLabelEntries(resource: KubernetesResource): readonly [string, s
   return Object.entries(resource.metadata.labels ?? {});
 }
 
-function selectorRelationships(snapshot: KubernetesSnapshot) {
+function workloadPodLabels(resource: KubernetesResource): Readonly<Record<string, string>> {
+  return "podLabels" in resource.spec ? resource.spec.podLabels ?? {} : {};
+}
+
+export function selectorRelationships(snapshot: KubernetesSnapshot) {
   const workloads = snapshot.resources.filter(
     (resource) => resource.identity.kind === "Deployment" || resource.identity.kind === "StatefulSet" || resource.identity.kind === "DaemonSet",
   );
@@ -97,7 +101,8 @@ function selectorRelationships(snapshot: KubernetesSnapshot) {
     .map((service) => {
       const selector = service.spec.selector ?? {};
       const matches = workloads.filter((workload) =>
-        Object.entries(selector).every(([key, value]) => workload.metadata.labels?.[key] === value),
+        workload.identity.namespace === service.identity.namespace &&
+        Object.entries(selector).every(([key, value]) => workloadPodLabels(workload)[key] === value),
       );
       return { service, selector, matches };
     });

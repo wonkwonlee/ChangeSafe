@@ -3,8 +3,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { KubernetesWorkbenchShell } from "../../components/KubernetesWorkbenchShell";
+import { KubernetesWorkbenchShell, selectorRelationships } from "../../components/KubernetesWorkbenchShell";
 import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/examples";
+import {
+  KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+} from "@/features/domains/kubernetes/fixtures";
+import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes/offline";
 
 describe("KubernetesWorkbenchShell", () => {
   it("renders every supported offline replay without declaring an outcome", () => {
@@ -33,5 +37,32 @@ describe("KubernetesWorkbenchShell", () => {
     expect(source).not.toMatch(/\b(?:approve|reject|recordReceipt|completeSimulation)\s*\(/);
     expect(source).not.toContain("useNetworkWorkflow");
     expect(source).toContain('aria-busy={workflow.phase === "ANALYZING"}');
+  });
+
+  it("matches Service selectors against workload Pod-template labels, not workload metadata labels", () => {
+    const workload = KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.find(
+      (resource) => resource.identity.kind === "Deployment",
+    );
+    if (!workload || !("podLabels" in workload.spec)) {
+      throw new Error("The public Kubernetes fixture must include a Deployment workload");
+    }
+
+    const divergentSnapshot = KubernetesSnapshotSchema.parse({
+      ...KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+      resources: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.map((resource) =>
+        resource.resourceId === workload.resourceId
+          ? {
+            ...resource,
+            metadata: { ...resource.metadata, labels: { app: "web" } },
+            spec: { ...resource.spec, podLabels: { app: "different-workload" } },
+          }
+          : resource,
+      ),
+    });
+
+    const webService = selectorRelationships(divergentSnapshot).find(
+      ({ service }) => service.identity.name === "web",
+    );
+    expect(webService?.matches).toEqual([]);
   });
 });
