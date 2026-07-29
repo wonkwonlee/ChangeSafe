@@ -62,6 +62,12 @@ interface PublicReplayInput {
   readonly effectCapability: "sandbox-simulation" | "external-diff";
 }
 
+interface UnsupportedPublicReplaySource {
+  readonly kind: "unsupported";
+}
+
+type PublicReplayResolution = PublicReplayInput | UnsupportedPublicReplaySource | null;
+
 export async function POST(request: Request): Promise<Response> {
   const body = await readBoundedJson(request);
   if (!body.ok) {
@@ -95,9 +101,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const { domainId, sourceId, analysisMode } = parsedRequest.data;
-  let replay: PublicReplayInput | null;
+  let replayResolution: PublicReplayResolution;
   try {
-    replay = await resolvePublicReplay(domainId, sourceId);
+    replayResolution = await resolvePublicReplay(domainId, sourceId);
   } catch {
     return transportError(500, {
       code: "INTERNAL",
@@ -109,9 +115,13 @@ export async function POST(request: Request): Promise<Response> {
       receivedContractVersion: null,
     });
   }
-  if (!replay) {
+  if (!replayResolution) {
     return sourceUnknown(domainId);
   }
+  if (isUnsupportedReplaySource(replayResolution)) {
+    return unsupportedSource(domainId);
+  }
+  const replay = replayResolution;
 
   if (analysisMode !== "replay") {
     return transportError(503, {
@@ -195,7 +205,7 @@ export async function POST(request: Request): Promise<Response> {
 async function resolvePublicReplay(
   domainId: string,
   sourceId: string,
-): Promise<PublicReplayInput | null> {
+): Promise<PublicReplayResolution> {
   if (domainId === "network") {
     const scenario = getScenario(sourceId);
     if (!scenario) {
@@ -213,6 +223,35 @@ async function resolvePublicReplay(
         model: scenario.fixture.model,
         fixtureId: scenario.fixture.fixtureId,
         notes: scenario.fixture.notes,
+      },
+      effectCapability: "sandbox-simulation",
+    };
+  }
+
+  if (domainId === "kubernetes") {
+    const {
+      KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+      KUBERNETES_PUBLIC_REPLAY_SOURCES,
+    } = await import("@/features/domains/kubernetes/fixtures");
+    const source = KUBERNETES_PUBLIC_REPLAY_SOURCES.find(
+      (candidate) => candidate.sourceId === sourceId,
+    );
+    if (!source) {
+      return null;
+    }
+    if (source.kind === "unsupported") {
+      return { kind: "unsupported" };
+    }
+    return {
+      inputId: source.inputId,
+      input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+      proposal: source.proposal,
+      source: "authored-fixture",
+      provenance: source.provenance,
+      proposalProvenance: {
+        model: null,
+        fixtureId: source.sourceId,
+        notes: null,
       },
       effectCapability: "sandbox-simulation",
     };
@@ -248,6 +287,12 @@ async function resolvePublicReplay(
     },
     effectCapability: "external-diff",
   };
+}
+
+function isUnsupportedReplaySource(
+  resolution: PublicReplayResolution,
+): resolution is UnsupportedPublicReplaySource {
+  return resolution !== null && "kind" in resolution && resolution.kind === "unsupported";
 }
 
 async function readBoundedJson(request: Request): Promise<BodyResult> {
@@ -348,6 +393,23 @@ function sourceUnknown(domainId: string): Response {
   return transportError(404, {
     code: "SOURCE_UNKNOWN",
     message: "No validated bundled replay source matches the request.",
+    domainId,
+    replayAvailable: false,
+    expectedContractVersion: null,
+    receivedContractVersion: null,
+  });
+}
+
+/**
+ * An allowlisted source can still be intentionally unsupported by a domain.
+ * Reject before runtime loading/evaluation so no proposal, finding, or effect
+ * result is ever created for content outside the offline contract.
+ */
+function unsupportedSource(domainId: string): Response {
+  return transportError(400, {
+    code: "INPUT_INVALID",
+    message:
+      "The selected replay source is outside this domain's supported offline contract.",
     domainId,
     replayAvailable: false,
     expectedContractVersion: null,
