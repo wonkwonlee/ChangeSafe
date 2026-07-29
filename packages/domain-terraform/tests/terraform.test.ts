@@ -12,6 +12,7 @@ import {
 
 import { createTerraformDomain, terraformDomain } from "../src/adapter";
 import { deriveProposal, normalizePlan } from "../src/normalize";
+import { INJECTED_PULL_REQUEST_BODY } from "../../../features/domains/terraform/injected-pr-body";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 
@@ -148,7 +149,7 @@ describe("the terraform gate", () => {
     const context = [
       {
         kind: "pull request body",
-        text: readFileSync(path.join(FIXTURES, "injected-pr-body.txt"), "utf8"),
+        text: INJECTED_PULL_REQUEST_BODY,
       },
     ];
     const { findings, riskLevel } = gate("protected-and-injected", { context });

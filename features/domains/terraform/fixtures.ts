@@ -1,9 +1,10 @@
 import destroysDatabasePlan from "../../../packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json";
-import injectedPullRequestBody from "../../../packages/domain-terraform/tests/fixtures/injected-pr-body.txt";
 import protectedAndInjectedPlan from "../../../packages/domain-terraform/tests/fixtures/protected-and-injected.tfplan.json";
 import safeScaleUpPlan from "../../../packages/domain-terraform/tests/fixtures/safe-scale-up.tfplan.json";
 
 import type { NormalizeOptions } from "@changesafe/domain-terraform";
+
+import { INJECTED_PULL_REQUEST_BODY } from "./injected-pr-body";
 
 /**
  * Fictional Terraform plans used by the public replay workbench.
@@ -61,7 +62,7 @@ export const TERRAFORM_PUBLIC_REPLAY_FIXTURES: readonly TerraformPublicReplayFix
       context: Object.freeze([
         Object.freeze({
           kind: "pull request body",
-          text: injectedPullRequestBody,
+          text: INJECTED_PULL_REQUEST_BODY,
         }),
       ]),
     }),
