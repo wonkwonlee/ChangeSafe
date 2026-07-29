@@ -1,20 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
 
-function observeApiRequests(page: Page): string[] {
+const forbiddenControlName =
+  /\b(?:approve|approval|reject|decision|execute|execution)\b/i;
+
+function observeFetchAndXhrRequests(page: Page): string[] {
   const requests: string[] = [];
   page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (url.pathname.startsWith("/api/")) {
-      requests.push(`${request.method()} ${url.pathname}`);
+    const resourceType = request.resourceType();
+    if (resourceType === "fetch" || resourceType === "xhr") {
+      requests.push(`${resourceType} ${request.method()} ${request.url()}`);
     }
   });
   return requests;
 }
 
+async function expectNoDecisionOrExecutionControls(page: Page): Promise<void> {
+  await expect(page.getByRole("button", { name: forbiddenControlName })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: forbiddenControlName })).toHaveCount(0);
+  await expect(page.getByRole("form", { name: forbiddenControlName })).toHaveCount(0);
+  await expect(page.locator("form")).toHaveCount(0);
+}
+
 test("public workbench exposes its static desktop capability boundary", async ({ page }) => {
-  const apiRequests = observeApiRequests(page);
+  const dataRequests = observeFetchAndXhrRequests(page);
 
   await page.goto("/workbench");
+  await page.waitForLoadState("networkidle");
 
   await expect(page).toHaveTitle("ChangeSafe Workbench — Public Replay");
   await expect(page.getByText("Public replay", { exact: true })).toBeVisible();
@@ -27,10 +38,14 @@ test("public workbench exposes its static desktop capability boundary", async ({
   });
   expect(desktopColumnCount).toBe(3);
 
-  await expect(page.getByRole("button", { name: /approve|reject|execute/i })).toHaveCount(0);
-  await expect(page.getByRole("button")).toHaveCount(0);
+  await expectNoDecisionOrExecutionControls(page);
 
-  const queueVariant = page.getByText("Review queue / self-hosted", { exact: true }).locator("..");
+  const queueVariant = page.locator(
+    '[aria-disabled="true"][aria-describedby="review-queue-unavailable"]',
+  );
+  await expect(queueVariant).toHaveCount(1);
+  await expect(queueVariant).toContainText("Review queue / self-hosted");
+  await expect(queueVariant).toContainText("Unavailable");
   await expect(queueVariant).toHaveAttribute("aria-disabled", "true");
   await expect(queueVariant).toHaveAttribute("aria-describedby", "review-queue-unavailable");
   await expect(
@@ -39,16 +54,17 @@ test("public workbench exposes its static desktop capability boundary", async ({
       { exact: true },
     ),
   ).toBeVisible();
-  expect(apiRequests).toEqual([]);
+  expect(dataRequests).toEqual([]);
 });
 
 test.describe("mobile workbench", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("stacks the three review regions into one column", async ({ page }) => {
-    const apiRequests = observeApiRequests(page);
+    const dataRequests = observeFetchAndXhrRequests(page);
 
     await page.goto("/workbench");
+    await page.waitForLoadState("networkidle");
 
     const mobileColumnCount = await page.locator("#review").evaluate((element) => {
       return getComputedStyle(element).gridTemplateColumns.split(/\s+/).filter(Boolean).length;
@@ -68,6 +84,7 @@ test.describe("mobile workbench", () => {
 
     expect(contextBox.y).toBeLessThan(canvasBox.y);
     expect(canvasBox.y).toBeLessThan(authorityBox.y);
-    expect(apiRequests).toEqual([]);
+    await expectNoDecisionOrExecutionControls(page);
+    expect(dataRequests).toEqual([]);
   });
 });
