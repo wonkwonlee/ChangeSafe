@@ -11,20 +11,35 @@ import {
   REVIEW_CONTRACT_VERSION,
   DomainIdSchema,
   ReviewCapabilitiesSchema,
+  ReviewRuntimeModeSchema,
   type DomainId,
   type ReviewCapabilities,
+  type ReviewRuntimeMode,
 } from "./review-contract";
+
+export const DomainStaticCapabilitiesSchema = ReviewCapabilitiesSchema.omit({
+  durableDecision: true,
+});
+
+export type DomainStaticCapabilities = Readonly<
+  z.infer<typeof DomainStaticCapabilitiesSchema>
+>;
 
 const RuntimeMetadataSchema = z.strictObject({
   domainId: DomainIdSchema,
   contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
-  capabilities: ReviewCapabilitiesSchema,
+  capabilities: DomainStaticCapabilitiesSchema,
+  selfHostedDurableDecision: z.boolean(),
 });
 
-interface RuntimeDefinitionBase {
+export interface RuntimeCapabilitySource {
+  readonly capabilities: DomainStaticCapabilities;
+  readonly selfHostedDurableDecision: boolean;
+}
+
+interface RuntimeDefinitionBase extends RuntimeCapabilitySource {
   readonly domainId: DomainId;
   readonly contractVersion: typeof REVIEW_CONTRACT_VERSION;
-  readonly capabilities: ReviewCapabilities;
   evaluate(rawInput: unknown, rawProposal: unknown): PolicyEvaluation;
 }
 
@@ -48,7 +63,8 @@ interface RuntimeConfig<
 > {
   readonly domainId: DomainId;
   readonly contractVersion: typeof REVIEW_CONTRACT_VERSION;
-  readonly capabilities: ReviewCapabilities;
+  readonly capabilities: DomainStaticCapabilities;
+  readonly selfHostedDurableDecision: boolean;
   readonly inputSchema: z.ZodType<TInput>;
   readonly proposalSchema: z.ZodType<TProposal>;
   readonly adapter: DomainAdapter<TInput, TState>;
@@ -102,6 +118,19 @@ export function defineExternalDiffRuntime<
   });
 }
 
+export function composeSessionCapabilities(
+  source: RuntimeCapabilitySource,
+  rawRuntimeMode: ReviewRuntimeMode,
+): Readonly<ReviewCapabilities> {
+  const runtimeMode = ReviewRuntimeModeSchema.parse(rawRuntimeMode);
+  const capabilities = ReviewCapabilitiesSchema.parse({
+    ...source.capabilities,
+    durableDecision:
+      runtimeMode === "self-hosted" && source.selfHostedDurableDecision,
+  });
+  return Object.freeze({ ...capabilities });
+}
+
 function validateRuntimeMetadata<
   TInput,
   TState,
@@ -114,16 +143,25 @@ function validateRuntimeMetadata<
     domainId: config.domainId,
     contractVersion: config.contractVersion,
     capabilities: config.capabilities,
+    selfHostedDurableDecision: config.selfHostedDurableDecision,
   });
   if (metadata.domainId !== config.adapter.domainId) {
     throw new Error(
       `runtime domain "${metadata.domainId}" does not match adapter domain "${config.adapter.domainId}"`,
     );
   }
-  if (domainShape === "external-diff" && metadata.capabilities.sandboxSimulation) {
-    throw new Error("external-diff runtimes cannot advertise sandbox simulation");
+  if (
+    metadata.capabilities.sandboxSimulation !==
+    (domainShape === "simulated-state")
+  ) {
+    throw new Error(
+      `${domainShape} runtimes must advertise exactly their sandbox simulation behavior`,
+    );
   }
-  return metadata;
+  return {
+    ...metadata,
+    capabilities: Object.freeze({ ...metadata.capabilities }),
+  };
 }
 
 function parseBoundary<

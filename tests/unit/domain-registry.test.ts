@@ -6,14 +6,18 @@ import {
 } from "@changesafe/core";
 import {
   REVIEW_CONTRACT_VERSION,
-  type ReviewCapabilities,
 } from "@/features/domains/review-contract";
 import {
   DOMAIN_REGISTRY,
   defineDomainRegistry,
 } from "@/features/domains/registry";
 import { defineDomainPresentation } from "@/features/domains/presentation";
-import { defineSimulatedRuntime } from "@/features/domains/runtime";
+import {
+  composeSessionCapabilities,
+  defineExternalDiffRuntime,
+  defineSimulatedRuntime,
+  type DomainStaticCapabilities,
+} from "@/features/domains/runtime";
 
 const validProposal = ChangeProposalSchema.parse({
   proposalId: "proposal-one",
@@ -45,12 +49,11 @@ const validProposal = ChangeProposalSchema.parse({
   verificationSteps: [],
 });
 
-const presentationCapabilities: ReviewCapabilities = {
+const presentationCapabilities: DomainStaticCapabilities = {
   sandboxSimulation: true,
   resourceGraph: true,
   structuredDiff: true,
   untrustedContext: true,
-  durableDecision: false,
 };
 
 describe("closed domain registry", () => {
@@ -110,6 +113,32 @@ describe("closed domain registry", () => {
     expect("simulate" in resolution.entry.runtime).toBe(false);
   });
 
+  it.each([
+    ["network", "public-replay", false],
+    ["network", "self-hosted", false],
+    ["terraform", "public-replay", false],
+    ["terraform", "self-hosted", true],
+    ["kubernetes", "public-replay", false],
+    ["kubernetes", "self-hosted", false],
+  ] as const)(
+    "composes %s durable decision support for %s sessions",
+    (domainId, runtimeMode, durableDecision) => {
+      const resolution = DOMAIN_REGISTRY.resolve(
+        domainId,
+        REVIEW_CONTRACT_VERSION,
+      );
+      expect(resolution.ok).toBe(true);
+      if (!resolution.ok) return;
+
+      expect(
+        composeSessionCapabilities(resolution.entry.runtime, runtimeMode),
+      ).toMatchObject({
+        sandboxSimulation: domainId !== "terraform",
+        durableDecision,
+      });
+    },
+  );
+
   it("validates raw inputs before any adapter or policy access", () => {
     const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
     type Input = z.infer<typeof InputSchema>;
@@ -158,6 +187,7 @@ describe("closed domain registry", () => {
       domainId: "test-domain",
       contractVersion: REVIEW_CONTRACT_VERSION,
       capabilities: presentationCapabilities,
+      selfHostedDurableDecision: false,
       inputSchema: InputSchema,
       proposalSchema: ChangeProposalSchema,
       adapter,
@@ -176,6 +206,138 @@ describe("closed domain registry", () => {
     expect(adapterAccessed).toBe(false);
   });
 
+  it("rejects sandbox declarations that contradict runtime shape and behavior", () => {
+    const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
+    type Input = z.infer<typeof InputSchema>;
+    const adapter: DomainAdapter<Input, Input> = {
+      domainId: "test-domain",
+      policyVersion: "test-v1",
+      stateOf: (input) => input,
+      applyOperations: (state) => ({ nextState: state, diff: [] }),
+      blastRadiusUnit: () => null,
+      untrustedTexts: () => [],
+      knownEvidenceIds: () => new Set(),
+      policies: [],
+    };
+    const baseConfig = {
+      domainId: "test-domain",
+      contractVersion: REVIEW_CONTRACT_VERSION,
+      selfHostedDurableDecision: false,
+      inputSchema: InputSchema,
+      proposalSchema: ChangeProposalSchema,
+      adapter,
+    };
+
+    expect(() =>
+      defineSimulatedRuntime({
+        ...baseConfig,
+        capabilities: {
+          ...presentationCapabilities,
+          sandboxSimulation: false,
+        },
+        simulate: () => ({
+          status: "completed",
+          changedResourceIds: [],
+          diff: [],
+          safetyProperties: [],
+          summary: "No real infrastructure was contacted.",
+        }),
+      }),
+    ).toThrow(/sandbox/i);
+
+    expect(() =>
+      defineExternalDiffRuntime({
+        ...baseConfig,
+        capabilities: presentationCapabilities,
+      }),
+    ).toThrow(/sandbox/i);
+
+    expect(() =>
+      defineDomainPresentation({
+        domainId: "network",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        domainShape: "simulated-state",
+        capabilities: {
+          ...presentationCapabilities,
+          sandboxSimulation: false,
+        },
+        selfHostedDurableDecision: false,
+        label: "Contradictory Network",
+        description: "A simulated-state presentation must expose simulation.",
+      }),
+    ).toThrow(/sandbox/i);
+
+    const terraform = DOMAIN_REGISTRY.resolve(
+      "terraform",
+      REVIEW_CONTRACT_VERSION,
+    );
+    const network = DOMAIN_REGISTRY.resolve(
+      "network",
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(terraform.ok).toBe(true);
+    expect(network.ok).toBe(true);
+    if (
+      !terraform.ok ||
+      !network.ok ||
+      network.entry.runtime.domainShape !== "simulated-state"
+    ) {
+      return;
+    }
+    const contradictoryRuntime = {
+      ...terraform.entry.runtime,
+      simulate: network.entry.runtime.simulate,
+    };
+    expect(() =>
+      defineDomainRegistry([
+        {
+          runtime: contradictoryRuntime,
+          presentation: terraform.entry.presentation,
+        },
+      ]),
+    ).toThrow(/sandbox|simulate/i);
+  });
+
+  it("copies and freezes capability data so registry definitions cannot drift", () => {
+    const mutableCapabilities = {
+      ...presentationCapabilities,
+    };
+    const presentation = defineDomainPresentation({
+      domainId: "network",
+      contractVersion: REVIEW_CONTRACT_VERSION,
+      domainShape: "simulated-state",
+      capabilities: mutableCapabilities,
+      selfHostedDurableDecision: false,
+      label: "Network",
+      description: "Declarative network review.",
+    });
+    mutableCapabilities.structuredDiff = false;
+
+    expect(presentation.capabilities.structuredDiff).toBe(true);
+    expect(
+      Reflect.set(presentation.capabilities, "structuredDiff", false),
+    ).toBe(false);
+
+    const network = DOMAIN_REGISTRY.resolve(
+      "network",
+      REVIEW_CONTRACT_VERSION,
+    );
+    expect(network.ok).toBe(true);
+    if (!network.ok) return;
+    expect(
+      Reflect.set(network.entry.runtime.capabilities, "resourceGraph", false),
+    ).toBe(false);
+    const composed = composeSessionCapabilities(
+      network.entry.runtime,
+      "public-replay",
+    );
+    expect(Reflect.set(composed, "durableDecision", true)).toBe(false);
+    expect(composed).toMatchObject({
+      resourceGraph: true,
+      durableDecision: false,
+    });
+  });
+
   it("rejects runtime and presentation definitions that disagree", () => {
     const network = DOMAIN_REGISTRY.resolve(
       "network",
@@ -189,6 +351,7 @@ describe("closed domain registry", () => {
       contractVersion: REVIEW_CONTRACT_VERSION,
       domainShape: "simulated-state",
       capabilities: presentationCapabilities,
+      selfHostedDurableDecision: false,
       label: "Wrong domain",
       description: "This presentation cannot be paired with Network.",
     });
@@ -209,6 +372,7 @@ describe("closed domain registry", () => {
         ...presentationCapabilities,
         structuredDiff: false,
       },
+      selfHostedDurableDecision: false,
       label: "Wrong capabilities",
       description: "This presentation contradicts the Network runtime.",
     });
@@ -229,6 +393,7 @@ describe("closed domain registry", () => {
         contractVersion: REVIEW_CONTRACT_VERSION,
         domainShape: "simulated-state",
         capabilities: presentationCapabilities,
+        selfHostedDurableDecision: false,
         label: "Network",
         description: "Declarative network review.",
         riskLevel: "LOW",
