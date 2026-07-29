@@ -1,5 +1,10 @@
 # ChangeSafe v0.3.0
 
+> **Packaging notice:** the first manual publication of
+> `@changesafe/domain-kubernetes@0.3.0` contains extensionless ESM imports and
+> cannot be imported directly by Node. Use `0.3.1` or later. The bundled
+> `changesafe@0.3.0` CLI is unaffected.
+
 ## Kubernetes offline gate
 
 - Added the publishable `@changesafe/domain-kubernetes` package.

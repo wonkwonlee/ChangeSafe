@@ -271,7 +271,7 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.3.0
+  uses: wonkwonlee/ChangeSafe@v0.3.1
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed

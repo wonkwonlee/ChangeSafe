@@ -84,6 +84,9 @@ describe.runIf(built)("the published packages", () => {
     cpSync(path.join(root, "node_modules/zod"), path.join(modules, "zod"), {
       recursive: true,
     });
+    cpSync(path.join(root, "node_modules/yaml"), path.join(modules, "yaml"), {
+      recursive: true,
+    });
     writeFileSync(
       path.join(consumer, "package.json"),
       JSON.stringify({ name: "changesafe-consumer", private: true, type: "module" }, null, 2),
@@ -101,6 +104,7 @@ describe.runIf(built)("the published packages", () => {
       import { evaluatePolicies, hasBlockingFinding } from "@changesafe/core";
       import { networkDomain, IncidentBundleSchema } from "@changesafe/domain-network";
       import { createTerraformDomain } from "@changesafe/domain-terraform";
+      import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes";
 
       const bundle = IncidentBundleSchema.parse(
         JSON.parse(readFileSync(${JSON.stringify(path.join(root, "scenarios/scenario-b-route-leak/incident.json"))}, "utf8")),
@@ -115,6 +119,19 @@ describe.runIf(built)("the published packages", () => {
         riskLevel,
         policies: findings.map((finding) => finding.policyId),
         terraformDomainId: createTerraformDomain().domainId,
+        kubernetesSnapshotVersion: KubernetesSnapshotSchema.parse({
+          snapshotVersion: "changesafe-kubernetes-snapshot/v1",
+          snapshotId: "snapshot-package-smoke",
+          evidenceId: "ev-package-smoke",
+          provenance: {
+            source: "authored",
+            collectedAtUtc: "2026-07-29T00:00:00.000Z",
+            contextFingerprint: "package-smoke",
+            namespaces: ["default"],
+            serverVersion: null,
+          },
+          resources: [],
+        }).snapshotVersion,
       }));
       `,
     );
@@ -125,6 +142,7 @@ describe.runIf(built)("the published packages", () => {
       riskLevel: string;
       policies: string[];
       terraformDomainId: string;
+      kubernetesSnapshotVersion: string;
     };
 
     // The red-team scenario must still be refused when the gate is reached
@@ -135,6 +153,9 @@ describe.runIf(built)("the published packages", () => {
     // A cross-package import resolved: the domain found core through
     // node_modules, not through a workspace alias.
     expect(result.terraformDomainId).toBe("terraform");
+    // The new v0.3 domain must be imported from the packed artifact too. This
+    // catches raw tsc output with extensionless ESM imports before publication.
+    expect(result.kubernetesSnapshotVersion).toBe("changesafe-kubernetes-snapshot/v1");
   });
 
   it("ships types a consumer can compile against", () => {
