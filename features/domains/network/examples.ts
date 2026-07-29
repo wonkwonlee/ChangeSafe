@@ -1,4 +1,5 @@
 import type { FixtureProvenance } from "@changesafe/core";
+import { POLICY_VERSION } from "@changesafe/domain-network";
 
 import { SCENARIOS } from "../../../scenarios";
 import { DOMAIN_REGISTRY } from "../registry";
@@ -39,6 +40,7 @@ export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         session: {
           domainId: networkMetadata.domainId,
           contractVersion: networkMetadata.contractVersion,
+          policyVersion: POLICY_VERSION,
           domainShape: networkMetadata.domainShape,
           capabilities: publicReplayCapabilities,
           runtimeMode: "public-replay",
