@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ReviewWorkbenchShell } from "../../components/ReviewWorkbenchShell";
+import { getScenario } from "../../scenarios";
 
 function renderShell(): string {
   return renderToStaticMarkup(createElement(ReviewWorkbenchShell));
@@ -42,11 +44,70 @@ describe("ReviewWorkbenchShell", () => {
     const markup = renderShell();
 
     expect(markup).toContain("Public replay");
-    expect(markup).toContain("Bundled, validated fixture");
     expect(markup).toContain("Ephemeral session");
     expect(markup).toContain("No durable review record");
     expect(markup).toContain("No signed or ledger-backed receipt");
     expect(markup).not.toMatch(/<(?:button|form|input|select|textarea)\b/);
     expect(markup).not.toMatch(/>\s*(?:Approve|Reject|Execute)\s*</i);
+  });
+
+  it("renders factual review data only from the production-schema-parsed bundled replay", () => {
+    const scenario = getScenario("scenario-a-failover");
+    if (!scenario) throw new Error("Expected bundled failover scenario");
+
+    const markup = renderShell();
+
+    expect(markup).toContain(scenario.bundle.incidentId);
+    expect(markup).toContain(scenario.bundle.title);
+    expect(markup).toContain(scenario.bundle.summary);
+    expect(markup).toContain(scenario.fixture.fixtureId);
+    expect(markup).toContain(scenario.fixture.provenance);
+    expect(markup).toContain(scenario.fixture.model);
+    expect(markup).toContain(scenario.fixture.capturedAtUtc);
+    expect(markup).toContain(scenario.fixture.proposal.summary);
+    expect(markup).toContain(scenario.expectations.riskLevel);
+    expect(markup).toContain(
+      scenario.expectations.approvable
+        ? "Declared approval expectation: permitted"
+        : "Declared approval expectation: prohibited",
+    );
+
+    for (const alert of scenario.bundle.alerts) {
+      expect(markup).toContain(alert.evidenceId);
+      expect(markup).toContain(alert.message);
+    }
+    for (const evidenceId of scenario.fixture.proposal.diagnosis.evidenceIds) {
+      expect(markup).toContain(evidenceId);
+    }
+    for (const [policyId, status] of Object.entries(scenario.expectations.policies)) {
+      expect(markup).toContain(policyId);
+      expect(markup).toContain(`>${status}<`);
+    }
+
+    expect(markup).not.toContain("evt-1042");
+    expect(markup).not.toContain("topo-core-01");
+  });
+
+  it("keeps the static shell isolated from client and decision authority", () => {
+    const source = readFileSync("components/ReviewWorkbenchShell.tsx", "utf8");
+    const forbidden = [
+      ["client component directive", /^\s*["']use client["'];/m],
+      ["React hook", /\buse(?:State|Effect|Reducer|Ref|Memo|Callback|Context|Transition)\s*\(/],
+      ["event handler", /\bon[A-Z][A-Za-z]*\s*=/],
+      [
+        "workflow, state-machine, or policy import",
+        /from\s+["'][^"']*(?:useWorkflow|state-machine|policies?)[^"']*["']/,
+      ],
+      [
+        "workflow, policy, or simulation authority",
+        /\b(?:evaluatePolicies|initialState|transition|runSimulation)\s*\(/,
+      ],
+      ["network request", /\bfetch\s*\(/],
+      ["decision or execution control", /<(?:button|form|input|select|textarea)\b/],
+    ] as const;
+
+    for (const [boundary, pattern] of forbidden) {
+      expect(source, boundary).not.toMatch(pattern);
+    }
   });
 });

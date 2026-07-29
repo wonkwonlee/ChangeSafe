@@ -1,28 +1,44 @@
+import { getScenario } from "../scenarios";
+
+function requireBundledFailoverScenario() {
+  const bundledScenario = getScenario("scenario-a-failover");
+  if (!bundledScenario) {
+    throw new Error("The bundled failover scenario is required by the static review shell");
+  }
+  return bundledScenario;
+}
+
+const scenario = requireBundledFailoverScenario();
+const { bundle, fixture, expectations } = scenario;
+
 const authorityClaims = [
   {
     label: "Input",
-    value: "Bundled, validated fixture",
-    detail: "Fictional network incident data; artifact text remains untrusted.",
+    value: bundle.incidentId,
+    detail: bundle.title,
   },
   {
     label: "Proposal",
-    value: "Captured replay",
-    detail: "Evidence-cited fixture output, not a live model response.",
+    value: fixture.fixtureId,
+    detail: `${fixture.provenance}${fixture.model ? ` · ${fixture.model}` : ""}`,
   },
   {
     label: "Gate",
-    value: "Deterministic preview",
-    detail: "Policy findings and risk are presented as fixture data in this shell.",
+    value: `Declared risk expectation: ${expectations.riskLevel}`,
+    detail: "Parsed expectation statuses are displayed below; this shell does not recompute them.",
   },
   {
     label: "Human",
-    value: "Decision unavailable",
-    detail: "Public replay does not create or persist human decisions.",
+    value: "Illustrative public replay shell",
+    detail: "No decision controls or durable decision record are available here.",
   },
   {
     label: "Effect proof",
-    value: "Sandbox replay",
-    detail: "Effect evidence describes an in-memory synthetic-state simulation.",
+    value: "Declared simulation expectation",
+    detail:
+      expectations.simulation?.safetyPropertiesSatisfied === true
+        ? "Expected safety properties: satisfied"
+        : "Expected safety properties: not satisfied or unavailable",
   },
   {
     label: "Record",
@@ -37,9 +53,9 @@ const authorityClaims = [
 ] as const;
 
 const capabilities = [
-  "Bundled, validated fixture",
-  "Deterministic policy result preview",
-  "Synthetic sandbox effect proof",
+  "Schema-parsed bundled incident and replay fixture",
+  "Parsed policy and risk expectations",
+  "Illustrative three-region workbench layout",
 ] as const;
 
 const limitations = [
@@ -129,28 +145,32 @@ export function ReviewWorkbenchShell() {
         >
           <div className="border-b border-edge pb-4">
             <Label>Review context</Label>
-            <h1 className="mt-2 text-lg font-semibold">Network replay example</h1>
+            <h1 className="mt-2 text-lg font-semibold">{bundle.title}</h1>
             <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-              A fictional management-path change prepared for deterministic review.
+              {bundle.summary}
             </p>
           </div>
 
           <dl className="grid gap-4 py-4 text-sm">
             <div>
-              <dt className="text-xs text-ink-faint">Domain</dt>
-              <dd className="mt-1 font-medium">Network</dd>
+              <dt className="text-xs text-ink-faint">Incident</dt>
+              <dd className="mt-1 font-mono text-xs">{bundle.incidentId}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-faint">Source</dt>
-              <dd className="mt-1 font-medium">Bundled example</dd>
+              <dt className="text-xs text-ink-faint">Scenario</dt>
+              <dd className="mt-1 font-mono text-xs">{scenario.scenarioId}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-faint">Replay fixture</dt>
+              <dd className="mt-1 font-mono text-xs">{fixture.fixtureId}</dd>
             </div>
             <div>
               <dt className="text-xs text-ink-faint">Provenance</dt>
-              <dd className="mt-1 font-medium text-ai">Captured replay fixture</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-faint">Runtime</dt>
-              <dd className="mt-1 font-medium">Public replay</dd>
+              <dd className="mt-1 font-medium text-ai">{fixture.provenance}</dd>
+              {fixture.model ? <dd className="mt-1 text-xs text-ink-dim">{fixture.model}</dd> : null}
+              {fixture.capturedAtUtc ? (
+                <dd className="mt-1 font-mono text-[11px] text-ink-faint">{fixture.capturedAtUtc}</dd>
+              ) : null}
             </div>
           </dl>
 
@@ -165,7 +185,7 @@ export function ReviewWorkbenchShell() {
 
           <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="capabilities-title">
             <h2 id="capabilities-title" className="text-sm font-semibold">
-              Available here
+              Illustrative shell capability map
             </h2>
             <ul className="mt-3 space-y-2 text-xs text-ink-dim">
               {capabilities.map((capability) => (
@@ -198,18 +218,17 @@ export function ReviewWorkbenchShell() {
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Outcome preview</Label>
-              <h2 className="mt-2 text-xl font-semibold">Change is eligible for human review</h2>
+              <h2 className="mt-2 text-xl font-semibold">
+                Declared approval expectation: {expectations.approvable ? "permitted" : "prohibited"}
+              </h2>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim">
-                The static fixture shows no blocking finding. Human authority is described here,
-                but decision actions require a self-hosted authenticated runtime.
+                This label is read from the schema-parsed scenario expectations. The static shell
+                does not evaluate policies, derive risk, or decide whether approval is legal.
               </p>
             </div>
             <div className="flex gap-2">
-              <span className="eyebrow rounded border border-pass/50 bg-pass/10 px-2.5 py-1 text-pass">
-                7 pass
-              </span>
               <span className="eyebrow rounded border border-edge px-2.5 py-1 text-ink-dim">
-                risk: low
+                declared risk: {expectations.riskLevel}
               </span>
             </div>
           </header>
@@ -218,45 +237,69 @@ export function ReviewWorkbenchShell() {
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="summary-title">
               <Label>Summary</Label>
               <h3 id="summary-title" className="mt-2 text-base font-semibold">
-                Preserve management reachability
+                {bundle.title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                The replayed proposal changes one fictional route while retaining a protected
-                management path and a complete rollback operation.
+                {bundle.summary}
               </p>
             </section>
 
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
               <Label>Evidence</Label>
               <h3 id="evidence-title" className="mt-2 text-base font-semibold">
-                Two cited observations
+                Bundled incident alerts
               </h3>
-              <ul className="mt-3 space-y-2 font-mono text-xs text-ink-dim">
-                <li>evt-1042 · route degradation detected</li>
-                <li>topo-core-01 · alternate management path present</li>
+              <ul className="mt-3 space-y-3 text-xs text-ink-dim">
+                {bundle.alerts.map((alert) => (
+                  <li key={alert.evidenceId}>
+                    <code className="font-mono text-ink">{alert.evidenceId}</code>
+                    <p className="mt-1 leading-relaxed">{alert.message}</p>
+                  </li>
+                ))}
               </ul>
             </section>
 
             <section className="rounded-lg border border-ai/30 bg-ai/5 p-4" aria-labelledby="proposal-title">
               <Label>Proposal provenance</Label>
               <h3 id="proposal-title" className="mt-2 text-base font-semibold">
-                Captured model replay
+                {fixture.fixtureId}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                Declarative operations are displayed as untrusted proposal data until the
-                deterministic gate validates them.
+                {fixture.proposal.summary}
               </p>
+              <p className="mt-3 text-xs text-ai">
+                {fixture.provenance}
+                {fixture.model ? ` · ${fixture.model}` : ""}
+                {fixture.capturedAtUtc ? ` · ${fixture.capturedAtUtc}` : ""}
+              </p>
+              <p className="mt-3 text-xs leading-relaxed text-ink-faint">{fixture.notes}</p>
+              <ul className="mt-3 flex flex-wrap gap-2" aria-label="Proposal evidence references">
+                {fixture.proposal.diagnosis.evidenceIds.map((evidenceId) => (
+                  <li className="rounded border border-edge px-2 py-1 font-mono text-[11px]" key={evidenceId}>
+                    {evidenceId}
+                  </li>
+                ))}
+              </ul>
             </section>
 
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="effect-title">
               <Label>Effect proof</Label>
               <h3 id="effect-title" className="mt-2 text-base font-semibold">
-                Synthetic state restored
+                Declared simulation expectation
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-dim">
-                Fixture evidence reports transactional simulation and canonical rollback equality.
-                No real system was contacted.
+                Expected safety properties:{" "}
+                {expectations.simulation?.safetyPropertiesSatisfied === true
+                  ? "satisfied"
+                  : "not satisfied or unavailable"}
               </p>
+              <ul className="mt-3 space-y-2 text-xs text-ink-faint">
+                {bundle.expectedSafetyProperties.map((property) => (
+                  <li key={property.id}>
+                    <code className="font-mono text-ink-dim">{property.id}</code> · {property.description}
+                  </li>
+                ))}
+              </ul>
             </section>
           </div>
 
@@ -265,17 +308,25 @@ export function ReviewWorkbenchShell() {
               <div>
                 <Label>Deterministic gate</Label>
                 <h3 id="policy-title" className="mt-2 text-base font-semibold">
-                  Frozen policy result preview
+                  Parsed fixture expectations
                 </h3>
               </div>
-              <span className="eyebrow rounded border border-pass/50 px-2.5 py-1 text-pass">
-                no blocks
+              <span className="eyebrow rounded border border-edge px-2.5 py-1 text-ink-dim">
+                {expectations.riskLevel}
               </span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-ink-dim">
-              Policy findings, risk, and legal workflow transitions come from deterministic code
-              in the working product. This static shell does not recompute them.
+              These declared statuses are schema-parsed bundled expectations. This presentation
+              does not evaluate policies or derive a verdict.
             </p>
+            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              {Object.entries(expectations.policies).map(([policyId, status]) => (
+                <li className="flex items-center justify-between gap-3 rounded border border-edge px-3 py-2" key={policyId}>
+                  <code className="font-mono text-[11px] text-ink-dim">{policyId}</code>
+                  <span className="eyebrow text-pass">{status}</span>
+                </li>
+              ))}
+            </ul>
           </section>
         </main>
 
