@@ -51,6 +51,26 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).not.toMatch(/>\s*(?:Approve|Reject|Execute)\s*</i);
   });
 
+  it("exposes honest public and self-hosted runtime variants without enabling selection", () => {
+    const markup = renderShell();
+
+    expect(markup).toContain('role="group" aria-labelledby="runtime-variants-title"');
+    expect(markup).toContain('id="runtime-variants-title"');
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain("Examples / public replay");
+    expect(markup).toContain("Available");
+    expect(markup).toContain(
+      'aria-disabled="true" aria-describedby="review-queue-unavailable"',
+    );
+    expect(markup).toContain("Review queue / self-hosted");
+    expect(markup).toContain("Unavailable");
+    expect(markup).toContain('id="review-queue-unavailable"');
+    expect(markup).toContain(
+      "Unavailable in public replay: requires an authenticated self-hosted runtime and durable decision storage.",
+    );
+    expect(markup).not.toMatch(/<(?:button|input|select)\b/);
+  });
+
   it("renders factual review data only from the production-schema-parsed bundled replay", () => {
     const scenario = getScenario("scenario-a-failover");
     if (!scenario) throw new Error("Expected bundled failover scenario");

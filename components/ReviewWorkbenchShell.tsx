@@ -85,26 +85,6 @@ export function ReviewWorkbenchShell() {
           </a>
           <ul className="flex flex-wrap items-center gap-1 text-sm">
             <li>
-              <a
-                aria-current="page"
-                className="inline-flex rounded-md bg-active/10 px-3 py-2 font-medium text-active"
-                href="#review"
-              >
-                Examples
-              </a>
-            </li>
-            <li>
-              <span
-                aria-disabled="true"
-                className="inline-flex cursor-not-allowed items-center gap-2 rounded-md px-3 py-2 text-ink-faint"
-              >
-                Review queue
-                <span className="eyebrow rounded-full border border-edge px-2 py-0.5">
-                  self-hosted
-                </span>
-              </span>
-            </li>
-            <li>
               <a className="inline-flex rounded-md px-3 py-2 text-ink-dim hover:text-ink" href="#policies">
                 Policies
               </a>
@@ -119,7 +99,7 @@ export function ReviewWorkbenchShell() {
       </header>
 
       <section className="border-b border-edge bg-overlay" aria-labelledby="runtime-title">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-start justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
           <div>
             <p id="runtime-title" className="eyebrow text-ai">
               Public replay
@@ -129,8 +109,40 @@ export function ReviewWorkbenchShell() {
               surface is a capability preview, not an authenticated decision system.
             </p>
           </div>
-          <div className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-xs text-warn">
-            Ephemeral session
+          <div
+            role="group"
+            aria-labelledby="runtime-variants-title"
+            className="rounded-lg border border-edge bg-surface p-3"
+          >
+            <p id="runtime-variants-title" className="eyebrow text-ink-faint">
+              Runtime variant
+            </p>
+            <ul className="mt-2 grid gap-2 text-xs">
+              <li>
+                <span
+                  aria-current="page"
+                  className="flex items-center justify-between gap-3 rounded border border-active/50 bg-active/10 px-3 py-2 text-active"
+                >
+                  <span>Examples / public replay</span>
+                  <span className="eyebrow">Available</span>
+                </span>
+              </li>
+              <li>
+                <span
+                  aria-disabled="true"
+                  aria-describedby="review-queue-unavailable"
+                  className="flex cursor-not-allowed items-center justify-between gap-3 rounded border border-edge px-3 py-2 text-ink-faint"
+                >
+                  <span>Review queue / self-hosted</span>
+                  <span className="eyebrow">Unavailable</span>
+                </span>
+                <p id="review-queue-unavailable" className="mt-2 leading-relaxed text-ink-faint">
+                  Unavailable in public replay: requires an authenticated self-hosted runtime and
+                  durable decision storage.
+                </p>
+              </li>
+            </ul>
+            <p className="mt-3 text-xs text-warn">Ephemeral session</p>
           </div>
         </div>
       </section>
