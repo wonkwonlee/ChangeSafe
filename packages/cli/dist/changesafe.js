@@ -14688,8 +14688,8 @@ var DiffEntrySchema = external_exports.strictObject({
 });
 var SimulationResultSchema = external_exports.strictObject({
   status: external_exports.literal("completed"),
-  changedResourceIds: external_exports.array(external_exports.string().min(1).max(256)).min(1).max(64),
-  diff: external_exports.array(DiffEntrySchema).min(1).max(64),
+  changedResourceIds: external_exports.array(external_exports.string().min(1).max(256)).min(1).max(5e3),
+  diff: external_exports.array(DiffEntrySchema).min(1).max(5e3),
   safetyProperties: external_exports.array(
     external_exports.strictObject({
       propertyId: IdSchema,

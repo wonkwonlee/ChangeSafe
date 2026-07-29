@@ -1,0 +1,24 @@
+{
+  // Emit configuration for the published package. The repository's tsconfig
+  // only type-checks (`noEmit`), and its `paths` point at workspace source.
+  // This one produces what an installer gets: ESM plus declarations, from src
+  // alone.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "declaration": true,
+    // No maps: they would point at `src`, which the package does not ship.
+    "declarationMap": false,
+    "sourceMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "incremental": false,
+    "tsBuildInfoFile": null,
+    // Resolve `@changesafe/*` through node_modules, as an installed package
+    // would, instead of emitting a sibling workspace package into this output.
+    "paths": {}
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["tests/**/*"]
+}
