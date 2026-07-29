@@ -13,6 +13,7 @@ import {
 const networkSession = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-network-v1",
   domainShape: "simulated-state",
   capabilities: {
     sandboxSimulation: true,
@@ -30,6 +31,7 @@ const networkSession = {
 const terraformSession = {
   ...networkSession,
   domainId: "terraform",
+  policyVersion: "test-terraform-v1",
   domainShape: "external-diff",
   capabilities: {
     ...networkSession.capabilities,

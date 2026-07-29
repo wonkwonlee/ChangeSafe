@@ -39,6 +39,7 @@ const SECOND_ATTEMPT_ID = "attempt-two";
 const networkSession: ReviewSessionEnvelope = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-network-v1",
   domainShape: "simulated-state",
   capabilities: {
     sandboxSimulation: true,
@@ -56,6 +57,7 @@ const networkSession: ReviewSessionEnvelope = {
 const terraformSession: ReviewSessionEnvelope = {
   domainId: "terraform",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-terraform-v1",
   domainShape: "external-diff",
   capabilities: {
     sandboxSimulation: false,

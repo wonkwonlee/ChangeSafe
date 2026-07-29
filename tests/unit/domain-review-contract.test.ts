@@ -8,6 +8,7 @@ import {
 const networkSession = {
   domainId: "network",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-network-v1",
   domainShape: "simulated-state",
   capabilities: {
     sandboxSimulation: true,
@@ -25,6 +26,7 @@ const networkSession = {
 const terraformSession = {
   domainId: "terraform",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-terraform-v1",
   domainShape: "external-diff",
   capabilities: {
     sandboxSimulation: false,
@@ -42,6 +44,7 @@ const terraformSession = {
 const kubernetesSession = {
   domainId: "kubernetes",
   contractVersion: REVIEW_CONTRACT_VERSION,
+  policyVersion: "test-kubernetes-v1",
   domainShape: "external-diff",
   capabilities: {
     sandboxSimulation: false,

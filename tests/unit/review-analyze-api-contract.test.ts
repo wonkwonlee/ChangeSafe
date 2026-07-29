@@ -20,6 +20,7 @@ const request = {
 const networkSession = {
   domainId: "network",
   contractVersion,
+  policyVersion: "test-network-v1",
   domainShape: "simulated-state",
   capabilities: {
     sandboxSimulation: true,

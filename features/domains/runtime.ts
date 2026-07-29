@@ -62,6 +62,8 @@ export interface RuntimeCapabilitySource {
 interface RuntimeDefinitionBase extends RuntimeCapabilitySource {
   readonly domainId: DomainId;
   readonly contractVersion: typeof REVIEW_CONTRACT_VERSION;
+  /** The exact deterministic policy set used by this runtime. */
+  readonly policyVersion: string;
   evaluate(rawInput: unknown, rawProposal: unknown): PolicyEvaluation;
 }
 
@@ -173,6 +175,9 @@ function validateRuntimeMetadata<
       `runtime domain "${metadata.domainId}" does not match adapter domain "${config.adapter.domainId}"`,
     );
   }
+  const policyVersion = z.string().min(1).max(32).parse(
+    config.adapter.policyVersion,
+  );
   if (
     metadata.capabilities.sandboxSimulation !==
     (domainShape === "simulated-state")
@@ -183,6 +188,7 @@ function validateRuntimeMetadata<
   }
   return {
     ...metadata,
+    policyVersion,
     capabilities: Object.freeze({ ...metadata.capabilities }),
   };
 }

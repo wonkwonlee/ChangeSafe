@@ -54,6 +54,8 @@ export const ReviewProvenanceSchema = z.enum([
 const ReviewSessionEnvelopeBaseSchema = z.strictObject({
   domainId: DomainIdSchema,
   contractVersion: z.literal(REVIEW_CONTRACT_VERSION),
+  /** Exact deterministic policy set that evaluated this review. */
+  policyVersion: z.string().min(1).max(32),
   domainShape: DomainShapeSchema,
   capabilities: ReviewCapabilitiesSchema,
   runtimeMode: ReviewRuntimeModeSchema,

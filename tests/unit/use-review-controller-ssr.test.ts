@@ -15,6 +15,7 @@ it("initializes during server rendering without generating attempts or invoking 
   const session: ReviewSessionEnvelope = {
     domainId: "network",
     contractVersion: "1.0.0",
+    policyVersion: "test-network-v1",
     domainShape: "simulated-state",
     capabilities: {
       sandboxSimulation: true,

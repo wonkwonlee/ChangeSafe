@@ -124,6 +124,7 @@ export async function POST(request: Request): Promise<Response> {
       session: {
         domainId,
         contractVersion: REVIEW_CONTRACT_VERSION,
+        policyVersion: entry.runtime.policyVersion,
         domainShape: entry.runtime.domainShape,
         capabilities: composeSessionCapabilities(
           entry.runtime,
