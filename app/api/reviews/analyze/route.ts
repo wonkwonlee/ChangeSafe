@@ -20,6 +20,7 @@ import {
   ReviewAnalyzeRequestV1Schema,
   ReviewAnalyzeSuccessV1Schema,
 } from "@/features/domains/review-api-contract";
+import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
 import { getScenario } from "@/scenarios";
 
 export const runtime = "nodejs";
@@ -46,6 +47,20 @@ interface RejectedBody {
 }
 
 type BodyResult = ParsedBody | RejectedBody;
+
+interface PublicReplayInput {
+  readonly inputId: string;
+  readonly input: unknown;
+  readonly proposal: unknown;
+  readonly source: "bundled-replay" | "authored-fixture";
+  readonly provenance: ReviewProvenance;
+  readonly proposalProvenance: {
+    readonly model: string | null;
+    readonly fixtureId: string;
+    readonly notes: string | null;
+  };
+  readonly effectCapability: "sandbox-simulation" | "external-diff";
+}
 
 export async function POST(request: Request): Promise<Response> {
   const body = await readBoundedJson(request);
@@ -80,12 +95,21 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const { domainId, sourceId, analysisMode } = parsedRequest.data;
-  if (domainId !== "network") {
-    return sourceUnknown(domainId);
+  let replay: PublicReplayInput | null;
+  try {
+    replay = await resolvePublicReplay(domainId, sourceId);
+  } catch {
+    return transportError(500, {
+      code: "INTERNAL",
+      message:
+        "Review analysis failed safely. No proposal or policy result was accepted.",
+      domainId,
+      replayAvailable: false,
+      expectedContractVersion: null,
+      receivedContractVersion: null,
+    });
   }
-
-  const scenario = getScenario(sourceId);
-  if (!scenario) {
+  if (!replay) {
     return sourceUnknown(domainId);
   }
 
@@ -109,14 +133,9 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const entry = await resolution.load();
     const evaluation = entry.runtime.evaluate(
-      scenario.bundle,
-      scenario.fixture.proposal,
+      replay.input,
+      replay.proposal,
     );
-    const provenance = reviewProvenance(scenario.fixture.provenance);
-    const source =
-      provenance === "captured-replay"
-        ? "bundled-replay"
-        : "authored-fixture";
     const result = ReviewAnalysisResultSchema.parse({
       ok: true,
       contractVersion: REVIEW_CONTRACT_VERSION,
@@ -132,25 +151,25 @@ export async function POST(request: Request): Promise<Response> {
           publicReplayTransport,
         ),
         runtimeMode: "public-replay",
-        source,
+        source: replay.source,
         analysisMode,
-        provenance,
+        provenance: replay.provenance,
       },
       sourceId,
-      inputId: scenario.bundle.incidentId,
-      input: scenario.bundle,
-      proposal: scenario.fixture.proposal,
+      inputId: replay.inputId,
+      input: replay.input,
+      proposal: replay.proposal,
       findings: evaluation.findings,
       riskLevel: evaluation.riskLevel,
       provenance: {
-        classification: provenance,
-        model: scenario.fixture.model,
+        classification: replay.provenance,
+        model: replay.proposalProvenance.model,
         provider: null,
-        fixtureId: scenario.fixture.fixtureId,
-        notes: scenario.fixture.notes,
+        fixtureId: replay.proposalProvenance.fixtureId,
+        notes: replay.proposalProvenance.notes,
       },
       effectCapability: {
-        kind: "sandbox-simulation",
+        kind: replay.effectCapability,
       },
     });
 
@@ -171,6 +190,64 @@ export async function POST(request: Request): Promise<Response> {
       receivedContractVersion: null,
     });
   }
+}
+
+async function resolvePublicReplay(
+  domainId: string,
+  sourceId: string,
+): Promise<PublicReplayInput | null> {
+  if (domainId === "network") {
+    const scenario = getScenario(sourceId);
+    if (!scenario) {
+      return null;
+    }
+    const provenance = reviewProvenance(scenario.fixture.provenance);
+    return {
+      inputId: scenario.bundle.incidentId,
+      input: scenario.bundle,
+      proposal: scenario.fixture.proposal,
+      source:
+        provenance === "captured-replay" ? "bundled-replay" : "authored-fixture",
+      provenance,
+      proposalProvenance: {
+        model: scenario.fixture.model,
+        fixtureId: scenario.fixture.fixtureId,
+        notes: scenario.fixture.notes,
+      },
+      effectCapability: "sandbox-simulation",
+    };
+  }
+
+  if (domainId !== "terraform") {
+    return null;
+  }
+
+  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES.find(
+    (candidate) => candidate.sourceId === sourceId,
+  );
+  if (!fixture) {
+    return null;
+  }
+  const { deriveProposal, normalizePlan } = await import(
+    "@changesafe/domain-terraform"
+  );
+  const input = normalizePlan(fixture.plan, {
+    planId: fixture.inputId,
+    context: [...fixture.context],
+  });
+  return {
+    inputId: input.planId,
+    input,
+    proposal: deriveProposal(input),
+    source: "authored-fixture",
+    provenance: fixture.provenance,
+    proposalProvenance: {
+      model: null,
+      fixtureId: fixture.sourceId,
+      notes: null,
+    },
+    effectCapability: "external-diff",
+  };
 }
 
 async function readBoundedJson(request: Request): Promise<BodyResult> {
