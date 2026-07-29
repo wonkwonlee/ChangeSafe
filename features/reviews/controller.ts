@@ -446,6 +446,8 @@ async function receiptMatchesWorkflow<TInput>(
     receipt.riskLevel === workflow.riskLevel &&
     receipt.mode === workflow.mode &&
     receipt.fixtureProvenance === workflow.provenance &&
+    receipt.model === (state.review?.provenance.model ?? null) &&
+    receipt.approver === null &&
     receipt.decision === expectedDecision &&
     canonicallyEqual(receipt.simulation, expectedSimulation) &&
     receiptHashValid

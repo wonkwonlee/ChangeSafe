@@ -585,6 +585,8 @@ describe("pure review controller", () => {
       rehashReceipt(receipt, { mode: "offline" })],
     ["provenance", async (receipt: ChangeReceipt) =>
       rehashReceipt(receipt, { fixtureProvenance: "authored_synthetic" })],
+    ["model", async (receipt: ChangeReceipt) =>
+      rehashReceipt(receipt, { model: "gpt-5.5" })],
     ["simulation", async (receipt: ChangeReceipt) =>
       rehashReceipt(receipt, {
         simulation: receipt.simulation
@@ -613,6 +615,31 @@ describe("pure review controller", () => {
       expect(state.review).toBeNull();
     },
   );
+
+  it("fails a public replay receipt with a forged approver", async () => {
+    const simulated = simulatedState();
+    const receipt = await rehashReceipt(
+      await buildBoundReceipt(simulated),
+      {
+        approver: {
+          subject: "forged-user",
+          issuer: "https://identity.example",
+          email: "forged@example.com",
+        },
+      },
+    );
+    const state = reviewControllerReducer(
+      simulated,
+      await recordReviewReceipt(simulated, receipt),
+    );
+
+    expect(state.workflow).toMatchObject({
+      phase: "ERROR",
+      userMessage: "Review receipt could not be verified safely.",
+    });
+    expect("receipt" in state.workflow).toBe(false);
+    expect(state.review).toBeNull();
+  });
 
   it("fails a blocked receipt whose decision was rebound to rejection", async () => {
     const blocked = decisionState("BLOCK");
