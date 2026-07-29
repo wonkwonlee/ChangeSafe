@@ -344,6 +344,26 @@ function validateLegacySuccess(
     );
   }
 
+  if (request.session.analysisMode === "replay") {
+    const scenario = getScenario(request.sourceId);
+    // A replay response is only safe for the fixture that the session bound
+    // before the request began. Provenance describes a class of fixture, not
+    // its identity: accepting another captured or authored fixture here could
+    // produce an approvable decision for the wrong incident.
+    if (
+      !scenario ||
+      success.fixtureId !== scenario.fixture.fixtureId ||
+      success.model !== scenario.fixture.model ||
+      success.provider !== null ||
+      success.fixtureNotes !== scenario.fixture.notes
+    ) {
+      return invalidLegacySuccess(
+        request,
+        "Replay fixture identity did not match the requested scenario.",
+      );
+    }
+  }
+
   return null;
 }
 

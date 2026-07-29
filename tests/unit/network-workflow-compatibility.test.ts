@@ -14,6 +14,12 @@ function scenarioOrThrow() {
   return scenario;
 }
 
+function scenarioByIdOrThrow(scenarioId: string) {
+  const scenario = getScenario(scenarioId);
+  if (!scenario) throw new Error(`missing bundled Network scenario ${scenarioId}`);
+  return scenario;
+}
+
 function requestFor(
   mode: "replay" | "live",
 ): ReviewTransportRequest<ReturnType<typeof scenarioOrThrow>["bundle"]> {
@@ -165,6 +171,75 @@ describe("Network workflow compatibility facade", () => {
         replayAvailable: false,
         expectedContractVersion: null,
         receivedContractVersion: null,
+      },
+    });
+  });
+
+  it("fails closed when a different captured fixture claims the same provenance class", async () => {
+    const scenario = scenarioOrThrow();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: scenario.fixture.model,
+          provider: null,
+          provenance: scenario.fixture.provenance,
+          fixtureId: "fix-other-captured-fixture",
+          fixtureNotes: scenario.fixture.notes,
+          proposal: scenario.fixture.proposal,
+        }),
+      ),
+    );
+
+    const result = await legacyNetworkAnalysisTransport(requestFor("replay"));
+
+    expect(result.payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture identity did not match the requested scenario.",
+        replayAvailable: false,
+      },
+    });
+  });
+
+  it("fails closed when another authored fixture has the same provenance class", async () => {
+    const requested = scenarioByIdOrThrow("scenario-c-route-flap");
+    const otherAuthored = scenarioByIdOrThrow("scenario-d-egress-imbalance");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: otherAuthored.fixture.model,
+          provider: null,
+          provenance: otherAuthored.fixture.provenance,
+          fixtureId: otherAuthored.fixture.fixtureId,
+          fixtureNotes: otherAuthored.fixture.notes,
+          proposal: otherAuthored.fixture.proposal,
+        }),
+      ),
+    );
+
+    const replay = NETWORK_REVIEW_EXAMPLES.find(
+      (example) => example.sourceId === requested.scenarioId,
+    );
+    if (!replay) throw new Error("missing Network review example");
+    const result = await legacyNetworkAnalysisTransport({
+      ...requestFor("replay"),
+      sourceId: requested.scenarioId,
+      expectedInputId: requested.bundle.incidentId,
+      input: requested.bundle,
+      session: replay.session,
+    });
+
+    expect(result.payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture identity did not match the requested scenario.",
+        replayAvailable: false,
       },
     });
   });
