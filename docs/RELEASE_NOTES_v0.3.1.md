@@ -14,3 +14,8 @@ collector behavior unchanged.
 
 Use `@changesafe/domain-kubernetes@0.3.1` or later. The broken `0.3.0`
 library version is deprecated on npm.
+
+The five public v0.3.1 packages were published manually from tag `v0.3.1`
+(commit `da6dbfa6c23dda272cb1d1a9973111f8500d7e2a`) so the immutable broken
+version could be remediated immediately. They do not carry npm provenance
+attestations.

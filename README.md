@@ -335,7 +335,9 @@ there is no `--auto-approve`. Full usage: [packages/cli/README.md](packages/cli/
 
 ## Packages
 
-All four are on npm, published with provenance:
+Five public packages are on npm. Automated releases use npm trusted
+publishing and attach provenance; the manually published v0.3.0 and v0.3.1
+bootstrap/remediation versions do not carry npm provenance attestations.
 
 ```bash
 npm i @changesafe/core @changesafe/domain-terraform   # embed the gate
@@ -347,7 +349,8 @@ npm i -g changesafe                                    # or just npx changesafe
 | [`@changesafe/core`](packages/core/README.md) | The domain-agnostic gate: proposal contract, universal policies, risk derivation, workflow state machine, receipts, and the `DomainAdapter` contract. Depends on zod alone. |
 | `@changesafe/domain-network` | The network domain: declarative device state, allowlisted transactional patch engine, deterministic reachability, sandboxed simulation, network policies. |
 | `@changesafe/domain-terraform` | The Terraform domain: normalizes `terraform show -json` and polices destruction, protection, and reversibility. Read-only; never runs Terraform. |
-| [`changesafe`](packages/cli/README.md) | The CLI: `gate`, `verify`, `scenario`. Ships pre-bundled to run under plain Node. |
+| `@changesafe/domain-kubernetes` | The Kubernetes domain: normalizes offline snapshots and proposed manifests, then applies deterministic workload, selector, protection, image, and privilege policies. |
+| [`changesafe`](packages/cli/README.md) | The CLI: `gate`, `verify`, `scenario`, and read-only Kubernetes collection. Ships pre-bundled to run under plain Node. |
 
 A domain teaches core what a change *is* in its world; core's universal
 policies then work unchanged. `packages/core/tests/standalone-domain.test.ts`
