@@ -293,6 +293,50 @@ describe("Network workflow compatibility facade", () => {
     });
   });
 
+  it("fails closed when another authored synthetic fixture has the same provenance class", async () => {
+    const requested = scenarioByIdOrThrow("scenario-c-route-flap");
+    const otherSynthetic = scenarioByIdOrThrow("scenario-d-egress-imbalance");
+    expect(requested.fixture.provenance).toBe("authored_synthetic");
+    expect(otherSynthetic.fixture.provenance).toBe("authored_synthetic");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: otherSynthetic.fixture.model,
+          provider: null,
+          provenance: otherSynthetic.fixture.provenance,
+          fixtureId: otherSynthetic.fixture.fixtureId,
+          fixtureNotes: otherSynthetic.fixture.notes,
+          proposal: otherSynthetic.fixture.proposal,
+        }),
+      ),
+    );
+
+    const replay = NETWORK_REVIEW_EXAMPLES.find(
+      (example) => example.sourceId === requested.scenarioId,
+    );
+    if (!replay) throw new Error("missing Network review example");
+    const result = await legacyNetworkAnalysisTransport({
+      ...requestFor("replay"),
+      sourceId: requested.scenarioId,
+      expectedInputId: requested.bundle.incidentId,
+      input: requested.bundle,
+      session: replay.session,
+    });
+
+    expect(result.payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture identity did not match the requested scenario.",
+        replayAvailable: false,
+      },
+    });
+    expect(result.payload).not.toHaveProperty("proposal");
+    expect(result.payload).not.toHaveProperty("receipt");
+  });
+
   it.each([
     ["model", "other-model"],
     ["provider", "openai"],
