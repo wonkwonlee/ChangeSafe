@@ -6,6 +6,7 @@ import {
   hasBlockingFinding,
   initialState,
   transition,
+  type SimulationResult,
   type WorkflowState,
 } from "@changesafe/core";
 import { networkDomain, runSimulation } from "@changesafe/domain-network";
@@ -30,24 +31,28 @@ function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
   return transition(state, { type: "CLASSIFY" });
 }
 
-function approvalIsLegal(state: WorkflowState): boolean {
+function attemptApproval(
+  state: WorkflowState,
+): { legal: boolean; state: WorkflowState } {
   try {
-    transition(state, { type: "APPROVE" });
-    return true;
+    return {
+      legal: true,
+      state: transition(state, { type: "APPROVE" }),
+    };
   } catch (error) {
-    if (error instanceof IllegalTransitionError) return false;
+    if (error instanceof IllegalTransitionError) {
+      return { legal: false, state };
+    }
     throw error;
   }
 }
 
-function simulationIsEligible(
+function simulationTransitionIsLegal(
   state: WorkflowState,
-  scenario: ScenarioDefinition,
+  simulation: SimulationResult,
 ): boolean {
   try {
-    const approved = transition(state, { type: "APPROVE" });
-    const simulation = runSimulation(scenario.bundle, scenario.fixture.proposal);
-    transition(approved, { type: "SIMULATION_COMPLETED", simulation });
+    transition(state, { type: "SIMULATION_COMPLETED", simulation });
     return true;
   } catch (error) {
     if (error instanceof IllegalTransitionError) return false;
@@ -72,14 +77,23 @@ describe("current network regression manifest", () => {
         scenario.fixture.proposal,
       );
       const decisionState = advanceToDecision(scenario);
+      const safeDonor = getScenario("scenario-a-failover");
+      if (!safeDonor) throw new Error("safe simulation donor missing");
+      const knownValidSimulation = runSimulation(
+        safeDonor.bundle,
+        safeDonor.fixture.proposal,
+      );
+      const approvalAttempt = attemptApproval(decisionState);
 
       expect(scenario.fixture.provenance).toBe(expected.provenance);
       expect(hasBlockingFinding(findings) ? "BLOCK" : "PASS").toBe(
         expected.gateOutcome,
       );
       expect(riskLevel).toBe(expected.riskLevel);
-      expect(approvalIsLegal(decisionState)).toBe(expected.approvalLegal);
-      expect(simulationIsEligible(decisionState, scenario)).toBe(
+      expect(approvalAttempt.legal).toBe(expected.approvalLegal);
+      expect(
+        simulationTransitionIsLegal(approvalAttempt.state, knownValidSimulation),
+      ).toBe(
         expected.simulationEligible,
       );
     },
