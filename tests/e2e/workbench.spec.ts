@@ -50,6 +50,17 @@ test("public workbench evaluates a selected bundled replay without creating deci
   ]);
 });
 
+test("public workbench renders a safe replay result without granting its available human decision", async ({ page }) => {
+  await page.goto("/workbench");
+
+  await page.getByRole("button", { name: "Run replay" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "APPROVAL_REQUIRED" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Risk" }).locator("..")).toContainText("LOW");
+  await expect(page.getByText(/gate permits a human decision, but public replay intentionally has no approval/i)).toBeVisible();
+  await expect(page.getByText("Not run. Public replay cannot approve a proposal")).toBeVisible();
+  await expectNoDecisionOrExecutionControls(page);
+});
+
 test.describe("mobile workbench", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
