@@ -12,6 +12,14 @@ const exampleModule = path.join(
   repositoryRoot,
   "features/domains/kubernetes/examples.ts",
 );
+const registryModule = path.join(
+  repositoryRoot,
+  "features/domains/registry.ts",
+);
+const kubernetesRootModule = path.join(
+  repositoryRoot,
+  "packages/domain-kubernetes/src/index.ts",
+);
 const offlineModule = path.join(
   repositoryRoot,
   "packages/domain-kubernetes/src/offline.ts",
@@ -38,6 +46,12 @@ function importedSpecifiers(sourcePath: string, source: string): readonly string
     ) {
       specifiers.push(node.moduleSpecifier.text);
     }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [argument] = node.arguments;
+      if (argument && ts.isStringLiteralLike(argument)) {
+        specifiers.push(argument.text);
+      }
+    }
     ts.forEachChild(node, visit);
   }
 
@@ -48,6 +62,9 @@ function importedSpecifiers(sourcePath: string, source: string): readonly string
 function resolveInternalSpecifier(fromPath: string, specifier: string): string | null {
   if (specifier === "@changesafe/domain-kubernetes/offline") {
     return offlineModule;
+  }
+  if (specifier === "@changesafe/domain-kubernetes") {
+    return kubernetesRootModule;
   }
   if (!specifier.startsWith(".")) {
     return null;
@@ -81,12 +98,13 @@ describe("Kubernetes typed-fixture parser boundary", () => {
   it.each([
     ["fixture", fixtureModule],
     ["example descriptor", exampleModule],
+    ["registry Kubernetes runtime loader", registryModule],
   ])("keeps the app-facing Kubernetes %s graph parser-free", async (_name, entryModule) => {
     const source = await readFile(entryModule, "utf8");
     const reachable = await reachableModules(entryModule);
 
-    expect(source).toContain('from "@changesafe/domain-kubernetes/offline"');
-    expect(source).not.toContain('from "@changesafe/domain-kubernetes"');
+    expect(source).toContain("@changesafe/domain-kubernetes/offline");
+    expect(source).not.toContain('"@changesafe/domain-kubernetes"');
     expect(reachable).toContain(offlineModule);
     expect(reachable).not.toContain(yamlParserModule);
   });

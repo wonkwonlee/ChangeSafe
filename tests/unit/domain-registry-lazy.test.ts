@@ -3,21 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const domainModules = [
   "@changesafe/domain-network",
   "@changesafe/domain-terraform",
-  "@changesafe/domain-kubernetes",
+  "@changesafe/domain-kubernetes/offline",
 ] as const;
 
 describe("lazy domain registry loading", () => {
   afterEach(() => {
     vi.doUnmock("@changesafe/domain-network");
     vi.doUnmock("@changesafe/domain-terraform");
-    vi.doUnmock("@changesafe/domain-kubernetes");
+    vi.doUnmock("@changesafe/domain-kubernetes/offline");
     vi.resetModules();
   });
 
   it.each([
     ["network", "@changesafe/domain-network"],
     ["terraform", "@changesafe/domain-terraform"],
-    ["kubernetes", "@changesafe/domain-kubernetes"],
+    ["kubernetes", "@changesafe/domain-kubernetes/offline"],
   ] as const)(
     "imports only the %s runtime after its validated resolution is loaded",
     async (domainId, expectedModule) => {

@@ -273,7 +273,7 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
         KubernetesSnapshotSchema,
         kubernetesDomain,
         runKubernetesSimulation,
-      } = await import("@changesafe/domain-kubernetes");
+      } = await import("@changesafe/domain-kubernetes/offline");
       return {
         runtime: defineSimulatedRuntime({
           domainId: "kubernetes",
