@@ -25866,7 +25866,7 @@ import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
 // src/version.ts
-var CLI_PACKAGE_VERSION = "0.3.0";
+var CLI_PACKAGE_VERSION = "0.3.1";
 var CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
 var SERVER_APP_VERSION = `changesafe-server-${CLI_PACKAGE_VERSION}`;
 

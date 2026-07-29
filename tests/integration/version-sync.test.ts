@@ -26,8 +26,8 @@ import { TERRAFORM_POLICY_VERSION } from "@changesafe/domain-terraform";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
-const TARGET_VERSION = "0.3.0";
-const TARGET_INTERNAL_RANGE = "^0.3.0";
+const TARGET_VERSION = "0.3.1";
+const TARGET_INTERNAL_RANGE = "^0.3.1";
 
 const ManifestSchema = z.object({
   name: z.string().min(1),
@@ -77,7 +77,7 @@ function internalRanges(manifest: z.infer<typeof ManifestSchema>) {
   }).filter(([name]) => name.startsWith("@changesafe/"));
 }
 
-describe("v0.3.0 workspace release identity", () => {
+describe("v0.3.1 workspace release identity", () => {
   it("moves every root and workspace manifest together", () => {
     for (const relative of MANIFEST_PATHS) {
       expect(readManifest(relative).version, `${relative}/package.json version`).toBe(
