@@ -13,6 +13,7 @@ import {
   evaluatePolicies,
   toDomainError,
   type AnalysisMode,
+  type FixtureProvenance,
 } from "@changesafe/core";
 import {
   networkDomain,
@@ -26,6 +27,7 @@ import {
   ReviewAnalysisResultSchema,
   type ReviewSessionEnvelope,
   type ReviewTransportError,
+  type ReviewProvenance,
 } from "../review-contract";
 import {
   approveReview,
@@ -281,6 +283,13 @@ export const legacyNetworkAnalysisTransport: ReviewTransport<IncidentBundle> = a
   }
 
   const success = AnalyzeSuccessSchema.parse(payload);
+  const validationError = validateLegacySuccess(request, success);
+  if (validationError) {
+    return {
+      attemptId: request.attemptId,
+      payload: validationError,
+    };
+  }
   const evaluation = evaluatePolicies(networkDomain, request.input, success.proposal);
   return {
     attemptId: request.attemptId,
@@ -306,6 +315,86 @@ export const legacyNetworkAnalysisTransport: ReviewTransport<IncidentBundle> = a
     }),
   };
 };
+
+/**
+ * The legacy endpoint predates the review contract, so its response must not
+ * be allowed to redefine the mode or provenance of an already-bound session.
+ * Returning a transport error keeps the controller in its normal fail-closed
+ * lifecycle instead of producing an approvable review from mismatched data.
+ */
+function validateLegacySuccess(
+  request: Parameters<ReviewTransport<IncidentBundle>>[0],
+  success: ReturnType<typeof AnalyzeSuccessSchema.parse>,
+): ReviewTransportError | null {
+  if (success.mode !== request.session.analysisMode) {
+    return invalidLegacySuccess(
+      request,
+      "Analysis response mode did not match the active review session.",
+    );
+  }
+
+  if (
+    request.session.analysisMode === "replay" &&
+    (!success.provenance ||
+      replayProvenance(success.provenance) !== request.session.provenance)
+  ) {
+    return invalidLegacySuccess(
+      request,
+      "Replay fixture provenance did not match the active review session.",
+    );
+  }
+
+  return null;
+}
+
+function replayProvenance(provenance: FixtureProvenance): ReviewProvenance {
+  switch (provenance) {
+    case "captured":
+      return "captured-replay";
+    case "authored_synthetic":
+      return "authored-synthetic";
+    case "authored_red_team":
+      return "authored-red-team";
+  }
+}
+
+function invalidLegacySuccess(
+  request: Parameters<ReviewTransport<IncidentBundle>>[0],
+  message: string,
+): ReviewTransportError {
+  if (request.session.analysisMode === "live") {
+    return {
+      ok: false,
+      contractVersion: request.session.contractVersion,
+      error: {
+        code: "ANALYSIS_INVALID",
+        message,
+        domainId: "network",
+        replayAvailable: true,
+        replaySource: {
+          domainId: "network",
+          contractVersion: request.session.contractVersion,
+          sourceId: request.sourceId,
+        },
+        expectedContractVersion: null,
+        receivedContractVersion: null,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    contractVersion: request.session.contractVersion,
+    error: {
+      code: "ANALYSIS_INVALID",
+      message,
+      domainId: "network",
+      replayAvailable: false,
+      expectedContractVersion: null,
+      receivedContractVersion: null,
+    },
+  };
+}
 
 function legacyError(
   request: Parameters<ReviewTransport<IncidentBundle>>[0],

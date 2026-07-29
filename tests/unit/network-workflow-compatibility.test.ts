@@ -98,6 +98,77 @@ describe("Network workflow compatibility facade", () => {
     });
   });
 
+  it("fails closed when a legacy success response reports a different analysis mode", async () => {
+    const scenario = scenarioOrThrow();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: scenario.fixture.model,
+          provider: null,
+          provenance: scenario.fixture.provenance,
+          fixtureId: scenario.fixture.fixtureId,
+          fixtureNotes: scenario.fixture.notes,
+          proposal: scenario.fixture.proposal,
+        }),
+      ),
+    );
+
+    const result = await legacyNetworkAnalysisTransport(requestFor("live"));
+
+    expect(result.payload).toEqual({
+      ok: false,
+      contractVersion: "2.0.0",
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Analysis response mode did not match the active review session.",
+        domainId: "network",
+        replayAvailable: true,
+        replaySource: {
+          domainId: "network",
+          contractVersion: "2.0.0",
+          sourceId: "scenario-a-failover",
+        },
+        expectedContractVersion: null,
+        receivedContractVersion: null,
+      },
+    });
+  });
+
+  it("fails closed when replay fixture provenance cannot satisfy the bound session", async () => {
+    const scenario = scenarioOrThrow();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          mode: "replay",
+          model: null,
+          provider: null,
+          provenance: "authored_red_team",
+          fixtureId: scenario.fixture.fixtureId,
+          fixtureNotes: scenario.fixture.notes,
+          proposal: scenario.fixture.proposal,
+        }),
+      ),
+    );
+
+    const result = await legacyNetworkAnalysisTransport(requestFor("replay"));
+
+    expect(result.payload).toEqual({
+      ok: false,
+      contractVersion: "2.0.0",
+      error: {
+        code: "ANALYSIS_INVALID",
+        message: "Replay fixture provenance did not match the active review session.",
+        domainId: "network",
+        replayAvailable: false,
+        expectedContractVersion: null,
+        receivedContractVersion: null,
+      },
+    });
+  });
+
   it("keeps legacy live failures replay-eligible without changing the public V1 transport", async () => {
     vi.stubGlobal(
       "fetch",
