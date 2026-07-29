@@ -108,9 +108,12 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
     context,
   );
 
+  const proposalRaw = proposalPath !== undefined
+    ? domain.readProposalFile?.(proposalPath) ?? readJsonFile(proposalPath, "proposal")
+    : undefined;
   const { proposal, provenance, fixtureId } =
     proposalPath !== undefined
-      ? domain.parseProposal(readJsonFile(proposalPath, "proposal"))
+      ? domain.parseProposal(proposalRaw, input)
       : {
           proposal: domain.deriveProposal?.(input),
           provenance: null,

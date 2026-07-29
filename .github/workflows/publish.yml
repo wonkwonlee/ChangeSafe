@@ -64,7 +64,8 @@ jobs:
           for entry in "cli:changesafe" \
                        "core:@changesafe/core" \
                        "domain-network:@changesafe/domain-network" \
-                       "domain-terraform:@changesafe/domain-terraform"; do
+                       "domain-terraform:@changesafe/domain-terraform" \
+                       "domain-kubernetes:@changesafe/domain-kubernetes"; do
             DIRECTORY="${entry%%:*}"
             NAME="${entry#*:}"
             OWN=$(node -p "require('./packages/$DIRECTORY/package.json').version")
@@ -143,7 +144,7 @@ jobs:
       - name: Publish
         run: |
           set -euo pipefail
-          for package in @changesafe/core @changesafe/domain-network @changesafe/domain-terraform changesafe; do
+          for package in @changesafe/core @changesafe/domain-network @changesafe/domain-terraform @changesafe/domain-kubernetes changesafe; do
             echo "publishing $package"
             npm publish -w "$package" --access public
           done

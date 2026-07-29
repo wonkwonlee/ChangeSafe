@@ -26,8 +26,8 @@ import { TERRAFORM_POLICY_VERSION } from "@changesafe/domain-terraform";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
-const TARGET_VERSION = "0.2.0";
-const TARGET_INTERNAL_RANGE = "^0.2.0";
+const TARGET_VERSION = "0.3.0";
+const TARGET_INTERNAL_RANGE = "^0.3.0";
 
 const ManifestSchema = z.object({
   name: z.string().min(1),
@@ -44,8 +44,10 @@ const MANIFEST_PATHS = [
   "packages/core",
   "packages/domain-network",
   "packages/domain-terraform",
+  "packages/domain-kubernetes",
   "packages/ledger",
   "packages/server",
+  "packages/kubernetes-collector",
 ] as const;
 
 const PUBLISHABLE_PACKAGE_PATHS = [
@@ -53,6 +55,7 @@ const PUBLISHABLE_PACKAGE_PATHS = [
   "packages/core",
   "packages/domain-network",
   "packages/domain-terraform",
+  "packages/domain-kubernetes",
 ] as const;
 
 const DEFERRED_PRIVATE_PACKAGE_PATHS = [
@@ -74,7 +77,7 @@ function internalRanges(manifest: z.infer<typeof ManifestSchema>) {
   }).filter(([name]) => name.startsWith("@changesafe/"));
 }
 
-describe("v0.2.0 workspace release identity", () => {
+describe("v0.3.0 workspace release identity", () => {
   it("moves every root and workspace manifest together", () => {
     for (const relative of MANIFEST_PATHS) {
       expect(readManifest(relative).version, `${relative}/package.json version`).toBe(
@@ -83,7 +86,7 @@ describe("v0.2.0 workspace release identity", () => {
     }
   });
 
-  it("uses the adopted compatible 0.2.x range on every internal edge", () => {
+  it("uses the adopted compatible 0.3.x range on every internal edge", () => {
     for (const relative of MANIFEST_PATHS) {
       for (const [dependency, range] of internalRanges(readManifest(relative))) {
         expect(range, `${relative} -> ${dependency}`).toBe(TARGET_INTERNAL_RANGE);

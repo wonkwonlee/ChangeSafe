@@ -118,6 +118,8 @@ export const KubernetesContainerSchema = z.strictObject({
 const KubernetesWorkloadSpecBaseShape = {
   podLabels: KubernetesLabelMapSchema.optional(),
   containers: z.array(KubernetesContainerSchema).max(256).optional(),
+  initContainers: z.array(KubernetesContainerSchema).max(256).optional(),
+  podRunAsUser: z.number().int().min(0).optional(),
   hostNetwork: z.boolean().optional(),
   hostPID: z.boolean().optional(),
   hostIPC: z.boolean().optional(),

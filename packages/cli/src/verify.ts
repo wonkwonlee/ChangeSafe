@@ -82,6 +82,7 @@ export async function runVerify(options: VerifyOptions, console: Console): Promi
   }
 
   const checks: Check[] = [];
+  let parsedInput: unknown | undefined;
 
   const selfHashOk = await verifyReceiptHash(receipt);
   checks.push({
@@ -112,6 +113,7 @@ export async function runVerify(options: VerifyOptions, console: Console): Promi
   if (options.input) {
     const domain = resolveDomain(options.domain);
     const { input, inputId } = domain.parseInput(readJsonFile(options.input, "input"));
+    parsedInput = input;
     const actual = await hashCanonical(input);
     checks.push({
       name: "input hash",
@@ -125,7 +127,8 @@ export async function runVerify(options: VerifyOptions, console: Console): Promi
 
   if (options.proposal) {
     const domain = resolveDomain(options.domain);
-    const { proposal } = domain.parseProposal(readJsonFile(options.proposal, "proposal"));
+    const proposalRaw = domain.readProposalFile?.(options.proposal) ?? readJsonFile(options.proposal, "proposal");
+    const { proposal } = domain.parseProposal(proposalRaw, parsedInput);
     const actual = await hashCanonical(proposal);
     checks.push({
       name: "proposal hash",

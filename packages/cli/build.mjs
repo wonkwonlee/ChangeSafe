@@ -20,7 +20,14 @@ await build({
   platform: "node",
   target: "node22",
   format: "esm",
-  banner: { js: "#!/usr/bin/env node" },
+  // These acquisition-only modules stay runtime dependencies. Bundling the
+  // Kubernetes client's node-fetch transport into an ESM binary triggers its
+  // legacy dynamic-require shim and would make even offline gate commands
+  // fail during module initialization.
+  external: ["@kubernetes/client-node", "node-fetch", "isomorphic-ws"],
+  banner: {
+    js: '#!/usr/bin/env node\nimport { createRequire as makeRuntimeRequire } from "node:module"; const require = makeRuntimeRequire(import.meta.url);',
+  },
   // zod is bundled too: one file, no install-time resolution surprises.
   logLevel: "warning",
 });

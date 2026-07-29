@@ -65,3 +65,10 @@ incident content and the deterministic decision path.
   browser — but that user is the approver; there is no second party to
   deceive, no persistence, and no execution surface. The receipt hash makes
   post-hoc tampering with a downloaded record detectable.
+
+## Kubernetes-specific threats
+
+- **Compromised kubeconfig or over-broad RBAC:** collection requires explicit namespaces, rejects `exec` and `auth-provider` credential plugins, and the documented Role grants only `get/list` on supported kinds.
+- **Malicious metadata or stale/tampered snapshots:** all boundaries use strict Zod validation, untrusted text is scanned as data, and receipts hash the normalized snapshot and proposal. A receipt does not establish freshness.
+- **Response exhaustion or partial writes:** collection enforces a hard resource cap, performs sequential reads, and writes through a sibling temporary file with fsync followed by rename; failures do not replace an existing snapshot.
+- **Context confusion:** snapshots retain only a SHA-256 context fingerprint, not raw server details, and the reviewed namespaces are recorded.

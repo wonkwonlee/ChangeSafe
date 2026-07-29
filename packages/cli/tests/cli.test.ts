@@ -245,7 +245,7 @@ describe("changesafe gate", () => {
     await expect(main(["gate", "--scenario", "/nope/not/here"], capture)).rejects.toThrow(
       /cannot read/,
     );
-    await expect(main(["gate", "--domain", "kubernetes"], capture)).rejects.toThrow(
+    await expect(main(["gate", "--domain", "iam"], capture)).rejects.toThrow(
       /unknown domain/,
     );
     await expect(main(["gate", "--input", path.join(SAFE, "incident.json")], capture)).rejects.toThrow(

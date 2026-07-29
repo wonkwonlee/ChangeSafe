@@ -3,7 +3,7 @@ import type { PolicyFinding } from "@changesafe/core";
 import { existingAndProposed, isFinding, isWorkload, postChangeState, type KubernetesPolicyContext } from "./common";
 
 function isMutableImage(image: string): boolean {
-  if (image.includes("@sha256:")) return false;
+  if (image.includes("@sha256:")) return !/@sha256:[a-f0-9]{64}$/.test(image);
   const finalSegment = image.slice(image.lastIndexOf("/") + 1);
   const colon = finalSegment.lastIndexOf(":");
   return colon < 0 || finalSegment.slice(colon + 1) === "latest";
