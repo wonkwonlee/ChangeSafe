@@ -1,5 +1,8 @@
 import { canonicalize, evaluatePolicies } from "@changesafe/core";
-import { kubernetesDomain } from "@changesafe/domain-kubernetes";
+import {
+  deriveManifestProposal,
+  kubernetesDomain,
+} from "@changesafe/domain-kubernetes";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -74,6 +77,11 @@ describe("Kubernetes review examples", () => {
       expect.objectContaining({ policyId: "K8S_SERVICE_SELECTOR", status: "BLOCK" }),
     );
     for (const fixture of KUBERNETES_PUBLIC_REPLAY_FIXTURES) {
+      const freshlyDerived = deriveManifestProposal(
+        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+        { documents: [...fixture.manifestDocuments] },
+      );
+      expect(canonicalize(freshlyDerived.proposal)).toBe(canonicalize(fixture.proposal));
       expect(canonicalize(resolveKubernetesPublicReplayFixture(fixture.sourceId).proposal)).toBe(
         outcomes.find((outcome) => outcome.sourceId === fixture.sourceId)?.canonicalProposal,
       );
