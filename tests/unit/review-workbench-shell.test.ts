@@ -10,7 +10,7 @@ import { SCENARIOS } from "../../scenarios";
 describe("ReviewWorkbenchShell", () => {
   it("renders every bundled Network replay as an accessible interactive selector", () => {
     const markup = renderToStaticMarkup(createElement(ReviewWorkbenchShell));
-    expect(markup).toContain('<main aria-label="Review canvas"');
+    expect(markup).toContain('<main aria-busy="false" aria-label="Review canvas"');
     expect(markup).toContain('<aside aria-label="Review context"');
     expect(markup).toContain('<aside aria-label="Review authority"');
     expect(markup).toContain("Run replay");
@@ -26,10 +26,11 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('aria-atomic="true"');
     expect(markup).toContain("Replay is ready to evaluate.");
-    expect(markup).toContain('aria-busy="false"');
+    expect(markup).toContain('<main aria-busy="false" aria-label="Review canvas"');
 
     const source = readFileSync("components/ReviewWorkbenchShell.tsx", "utf8");
-    expect(source).toContain('aria-busy={workflow.phase === "ANALYZING"}');
+    expect(source).toContain('<main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas"');
+    expect(source).not.toContain('<button aria-busy={workflow.phase === "ANALYZING"}');
     expect(source).toContain("Replay could not be evaluated. Choose Run replay to try again.");
     expect(source).not.toContain("<p aria-atomic=\"true\" aria-live=\"polite\" className=\"sr-only\" role=\"status\">\n                <StateValue");
   });

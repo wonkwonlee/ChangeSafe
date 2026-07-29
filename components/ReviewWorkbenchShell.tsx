@@ -244,7 +244,7 @@ export function ReviewWorkbenchShell() {
           </section>
         </aside>
 
-        <main aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6">
+        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
@@ -254,7 +254,7 @@ export function ReviewWorkbenchShell() {
                 <ReplayStatus state={workflow} />
               </p>
             </div>
-            <button aria-busy={workflow.phase === "ANALYZING"} className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
               {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
             </button>
           </header>
