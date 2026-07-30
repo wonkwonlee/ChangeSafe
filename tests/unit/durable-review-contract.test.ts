@@ -1,14 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDurableReviewIntake,
   DurableReviewIntakeSchema,
   DurableReviewRecordSchema,
   ReceiptProofSchema,
+  verifyDurableReviewIntake,
+  verifyReceiptProof,
 } from "@/features/reviews/durable-review-contract";
+import { SCENARIOS } from "@/scenarios";
+import { normalizePlan } from "@changesafe/domain-terraform";
+import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
+import { hashCanonical } from "@changesafe/core";
 
 const sha = (character: string) => character.repeat(64);
 
-function intake(domainId: "network" | "terraform") {
+function content(domainId: "network" | "terraform") {
+  if (domainId === "network") return SCENARIOS[0]!.bundle;
+  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!;
+  return normalizePlan(fixture.plan, { planId: fixture.inputId, context: [...fixture.context] });
+}
+
+async function intake(domainId: "network" | "terraform") {
+  const input = content(domainId);
   return {
     domainId,
     source: {
@@ -23,8 +37,8 @@ function intake(domainId: "network" | "terraform") {
     },
     input: {
       inputId: `${domainId}-input`,
-      inputSha256: sha("a"),
-      content: { domainId, revision: 1 },
+      inputSha256: await hashCanonical(input),
+      content: input,
     },
   } as const;
 }
@@ -49,8 +63,8 @@ function session(domainId: "network" | "terraform") {
   } as const;
 }
 
-function record(domainId: "network" | "terraform") {
-  const acceptedIntake = intake(domainId);
+async function record(domainId: "network" | "terraform") {
+  const acceptedIntake = await intake(domainId);
   return {
     recordVersion: "1",
     reviewId: `${domainId}-review`,
@@ -74,28 +88,30 @@ function record(domainId: "network" | "terraform") {
 describe("durable self-hosted review contracts", () => {
   it.each(["network", "terraform"] as const)(
     "accepts a self-hosted %s offline intake and durable record",
-    (domainId) => {
-      expect(DurableReviewIntakeSchema.parse(intake(domainId))).toMatchObject({ domainId });
-      expect(DurableReviewRecordSchema.parse(record(domainId))).toMatchObject({
+    async (domainId) => {
+      const acceptedIntake = await intake(domainId);
+      expect(await verifyDurableReviewIntake(acceptedIntake)).toMatchObject({ domainId });
+      expect(DurableReviewRecordSchema.parse(await record(domainId))).toMatchObject({
         reviewId: `${domainId}-review`,
         storage: { kind: "append-only-ledger" },
       });
     },
   );
 
-  it("rejects Kubernetes, public replay, and legacy-local durable record claims", () => {
+  it("rejects Kubernetes, public replay, and legacy-local durable record claims", async () => {
+    const networkIntake = await intake("network");
     expect(
       DurableReviewIntakeSchema.safeParse({
-        ...intake("network"),
+        ...networkIntake,
         domainId: "kubernetes",
-        source: { ...intake("network").source, domainId: "kubernetes" },
+        source: { ...networkIntake.source, domainId: "kubernetes" },
       }).success,
     ).toBe(false);
 
     for (const runtimeMode of ["public-replay", "legacy-local"] as const) {
       expect(
         DurableReviewRecordSchema.safeParse({
-          ...record("network"),
+          ...(await record("network")),
           session: {
             ...session("network"),
             runtimeMode,
@@ -106,25 +122,25 @@ describe("durable self-hosted review contracts", () => {
     }
   });
 
-  it("rejects receipt bindings that contradict the immutable intake or session", () => {
+  it("rejects receipt bindings that contradict the immutable intake or session", async () => {
+    const terraformRecord = await record("terraform");
     expect(
       DurableReviewRecordSchema.safeParse({
-        ...record("terraform"),
-        receipt: { ...record("terraform").receipt, inputSha256: sha("d") },
+        ...terraformRecord,
+        receipt: { ...terraformRecord.receipt, inputSha256: sha("d") },
       }).success,
     ).toBe(false);
     expect(
       DurableReviewRecordSchema.safeParse({
-        ...record("terraform"),
-        receipt: { ...record("terraform").receipt, policyVersion: "other-policy" },
+        ...terraformRecord,
+        receipt: { ...terraformRecord.receipt, policyVersion: "other-policy" },
       }).success,
     ).toBe(false);
   });
 
-  it("keeps integrity, signature, OOB verification, and ledger inclusion distinct", () => {
-    const acceptedRecord = record("network");
-    expect(
-      ReceiptProofSchema.parse({
+  it("keeps integrity, signature, OOB verification, and ledger inclusion distinct", async () => {
+    const acceptedRecord = DurableReviewRecordSchema.parse(await record("network"));
+    const proof = ReceiptProofSchema.parse({
         reviewId: acceptedRecord.reviewId,
         receiptId: acceptedRecord.receipt.receiptId,
         receiptSha256: acceptedRecord.receipt.receiptSha256,
@@ -141,8 +157,8 @@ describe("durable self-hosted review contracts", () => {
           chainSha256: sha("e"),
           checkedAtUtc: "2026-07-30T00:02:00.000Z",
         },
-      }),
-    ).toMatchObject({ outOfBandVerification: { status: "valid" } });
+      });
+    expect(verifyReceiptProof(acceptedRecord, proof)).toMatchObject({ outOfBandVerification: { status: "valid" } });
 
     expect(
       ReceiptProofSchema.safeParse({
@@ -159,5 +175,51 @@ describe("durable self-hosted review contracts", () => {
         ledgerInclusion: { status: "not-checked", sequence: null, chainSha256: null, checkedAtUtc: null },
       }).success,
     ).toBe(false);
+  });
+
+  it("requires a domain-valid canonical input and binds source provenance exactly", async () => {
+    const accepted = await intake("network");
+    await expect(verifyDurableReviewIntake({
+      ...accepted,
+      input: { ...accepted.input, inputSha256: sha("f") },
+    })).rejects.toThrow(/inputSha256/);
+    expect(DurableReviewIntakeSchema.safeParse({
+      ...accepted,
+      input: { ...accepted.input, content: content("terraform") },
+    }).success).toBe(false);
+    const durableRecord = await record("network");
+    expect(DurableReviewRecordSchema.safeParse({
+      ...durableRecord,
+      session: { ...durableRecord.session, source: "read-only-collector", provenance: "read-only-collector" },
+    }).success).toBe(false);
+    const built = await createDurableReviewIntake({
+      domainId: "network",
+      source: {
+        domainId: "network",
+        sourceId: "network-source",
+        sourceKind: "network-incident-bundle",
+        origin: "uploaded-offline-artifact",
+        collectedAtUtc: "2026-07-30T00:00:00.000Z",
+      },
+      input: { inputId: "network-input", content: content("network") },
+    });
+    expect(built.input.inputSha256).toBe(accepted.input.inputSha256);
+  });
+
+  it("binds receipt proofs to their immutable record and distinguishes OOB key states", async () => {
+    const acceptedRecord = DurableReviewRecordSchema.parse(await record("network"));
+    const base = {
+      reviewId: acceptedRecord.reviewId,
+      receiptId: acceptedRecord.receipt.receiptId,
+      receiptSha256: acceptedRecord.receipt.receiptSha256,
+      contentIntegrity: { status: "not-checked" as const, checkedAtUtc: null },
+      signature: { present: true as const, publicKeyId: "d".repeat(32) },
+      ledgerInclusion: { status: "not-checked" as const, sequence: null, chainSha256: null, checkedAtUtc: null },
+    };
+    expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "invalid", trustedPublicKeyId: "d".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(true);
+    expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "invalid", trustedPublicKeyId: "e".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(false);
+    expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "key-mismatch", trustedPublicKeyId: "e".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(true);
+    expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "key-mismatch", trustedPublicKeyId: "d".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(false);
+    expect(() => verifyReceiptProof(acceptedRecord, { ...base, reviewId: "other-review", outOfBandVerification: { status: "not-checked", trustedPublicKeyId: null, checkedAtUtc: null } })).toThrow(/immutable durable review/);
   });
 });

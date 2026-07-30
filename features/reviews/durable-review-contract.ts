@@ -4,7 +4,10 @@ import {
   JsonValueSchema,
   Sha256HexSchema,
   TimestampSchema,
+  hashCanonical,
 } from "@changesafe/core";
+import { IncidentBundleSchema } from "@changesafe/domain-network";
+import { TerraformInputSchema } from "@changesafe/domain-terraform";
 
 import {
   REVIEW_CONTRACT_VERSION,
@@ -56,7 +59,49 @@ export const DurableReviewIntakeSchema = z
         message: "durable intake source domain must match the intake domain",
       });
     }
+    // This is a *structural* intake schema.  The async verification helper
+    // below also recomputes the canonical content hash before an intake can
+    // be accepted by a self-hosted service.
+    const domainSchema =
+      intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+    const content = domainSchema.safeParse(intake.input.content);
+    if (!content.success) {
+      context.addIssue({
+        code: "custom",
+        path: ["input", "content"],
+        message: `durable ${intake.domainId} intake content must satisfy its domain schema`,
+      });
+    }
   });
+
+/**
+ * Validated, hash-bound intake.  Do not treat `DurableReviewIntakeSchema.parse`
+ * as acceptance: Zod can validate structure but cannot prove a caller-supplied
+ * content hash.  This function is the only acceptance boundary for intake.
+ */
+export async function verifyDurableReviewIntake(
+  raw: unknown,
+): Promise<DurableReviewIntake> {
+  const intake = DurableReviewIntakeSchema.parse(raw);
+  const inputSha256 = await hashCanonical(intake.input.content);
+  if (inputSha256 !== intake.input.inputSha256) {
+    throw new Error("durable intake inputSha256 does not match canonical input content");
+  }
+  return intake;
+}
+
+/** Construct an intake with its canonical content hash, never trusting a caller hash. */
+export async function createDurableReviewIntake(
+  raw: Omit<DurableReviewIntake, "input"> & {
+    input: Omit<DurableReviewIntake["input"], "inputSha256">;
+  },
+): Promise<DurableReviewIntake> {
+  const content = raw.input.content;
+  return verifyDurableReviewIntake({
+    ...raw,
+    input: { ...raw.input, inputSha256: await hashCanonical(content) },
+  });
+}
 
 const DurableReceiptBindingSchema = z.strictObject({
   receiptId: IdSchema,
@@ -110,6 +155,27 @@ export const DurableReviewRecordSchema = z
         code: "custom",
         path: ["intake", "domainId"],
         message: "record session and intake must name the same domain",
+      });
+    }
+    if (record.session.source !== record.intake.source.origin) {
+      context.addIssue({
+        code: "custom",
+        path: ["session", "source"],
+        message: "durable session source must bind exactly to the intake origin",
+      });
+    }
+    if (record.session.provenance !== record.intake.source.origin) {
+      context.addIssue({
+        code: "custom",
+        path: ["session", "provenance"],
+        message: "durable session provenance must bind exactly to the intake origin",
+      });
+    }
+    if (record.session.analysisMode !== "offline") {
+      context.addIssue({
+        code: "custom",
+        path: ["session", "analysisMode"],
+        message: "durable offline intake records must use offline analysis mode",
       });
     }
     if (record.receipt.sourceId !== record.intake.source.sourceId) {
@@ -194,14 +260,50 @@ export const ReceiptProofSchema = z
         message: "a receipt without a signature cannot claim out-of-band verification",
       });
     }
-    if (proof.signature.present && proof.outOfBandVerification.status === "valid" && proof.outOfBandVerification.trustedPublicKeyId !== proof.signature.publicKeyId) {
+    if (
+      proof.signature.present &&
+      (proof.outOfBandVerification.status === "valid" ||
+        proof.outOfBandVerification.status === "invalid") &&
+      proof.outOfBandVerification.trustedPublicKeyId !== proof.signature.publicKeyId
+    ) {
       context.addIssue({
         code: "custom",
         path: ["outOfBandVerification", "trustedPublicKeyId"],
-        message: "a valid out-of-band verification must name the signing key",
+        message: "a valid or invalid out-of-band verification must name the signing key",
+      });
+    }
+    if (
+      proof.signature.present &&
+      proof.outOfBandVerification.status === "key-mismatch" &&
+      proof.outOfBandVerification.trustedPublicKeyId === proof.signature.publicKeyId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["outOfBandVerification", "trustedPublicKeyId"],
+        message: "a key mismatch must name a trusted key different from the signing key",
       });
     }
   });
+
+/**
+ * Validate a proof against the immutable receipt binding in its review record.
+ * Parsing a proof alone validates its claim shape, not which durable review it
+ * belongs to.
+ */
+export function verifyReceiptProof(
+  record: DurableReviewRecord,
+  raw: unknown,
+): ReceiptProof {
+  const proof = ReceiptProofSchema.parse(raw);
+  if (
+    proof.reviewId !== record.reviewId ||
+    proof.receiptId !== record.receipt.receiptId ||
+    proof.receiptSha256 !== record.receipt.receiptSha256
+  ) {
+    throw new Error("receipt proof does not match the immutable durable review receipt binding");
+  }
+  return proof;
+}
 
 export type DurableReviewIntake = z.infer<typeof DurableReviewIntakeSchema>;
 export type DurableReviewRecord = z.infer<typeof DurableReviewRecordSchema>;
