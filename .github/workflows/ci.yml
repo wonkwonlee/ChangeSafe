@@ -148,7 +148,7 @@ jobs:
         run: node packages/cli/dist/changesafe.js scenario gallery --check
 
   no-secret-leak:
-    name: Secrets never reach the client bundle
+    name: Client bundle budget and security boundaries
     runs-on: ubuntu-latest
     env:
       # A canary, not a credential. Building with a key set means the client
@@ -173,24 +173,5 @@ jobs:
           test "$(npm --version)" = "10.9.8"
       - run: npm ci
       - run: npm run build
-      - name: Assert no secret material in client chunks
-        run: |
-          for canary in "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY"; do
-            if grep -rIqF "$canary" .next/static; then
-              echo "::error::A provider credential value reached the client bundle"
-              exit 1
-            fi
-          done
-          if grep -rIq "untrusted_incident_data" .next/static; then
-            echo "::error::Server prompt content appears in the client bundle"
-            exit 1
-          fi
-          # Provider adapters are server-only. Their endpoints appearing in a
-          # client chunk means something imported @changesafe/ai from the
-          # browser, which would put a credential one refactor away from the
-          # wire.
-          if grep -rIqE "api\.openai\.com|api\.anthropic\.com|11434" .next/static; then
-            echo "::error::A provider adapter reached the client bundle"
-            exit 1
-          fi
-          echo "No secret material in client chunks."
+      - name: Verify public route budgets and client security boundaries
+        run: npm run verify:client-bundles

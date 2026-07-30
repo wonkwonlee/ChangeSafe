@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "verify:client-bundles": "node scripts/verify-public-client-bundles.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
