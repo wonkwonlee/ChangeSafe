@@ -234,8 +234,75 @@ describe("public client bundle verifier", () => {
         secretCanaries: [],
       }),
     ).toThrow(
-      "public client bundle verification failed: server-only client content reached an initial chunk",
+      "public client bundle verification failed: server-only client content reached an emitted chunk",
     );
+  });
+
+  it.each([
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.promptMarkers.map((marker) => [
+      "prompt",
+      marker,
+    ] as const),
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.providerEndpointMarkers.map((marker) => [
+      "provider endpoint",
+      marker,
+    ] as const),
+  ])("rejects a %s marker from an unreferenced emitted chunk", (_kind, marker) => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(buildRoot, "static/chunks/lazy.js", marker);
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/initial.js",
+    ]);
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+      }),
+    ).toThrow(
+      "public client bundle verification failed: server-only client content reached an emitted chunk",
+    );
+  });
+
+  it("rejects a credential canary from an unreferenced emitted chunk without echoing it", () => {
+    const secret = "sk-ant-lazy-chunk-must-not-print";
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(buildRoot, "static/chunks/lazy.js", secret);
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/initial.js",
+    ]);
+
+    let message = "";
+    try {
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+        secretCanaries: [{ label: "ANTHROPIC_API_KEY", value: secret }],
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe(
+      "public client bundle verification failed: a provider credential canary reached a client chunk",
+    );
+    expect(message).not.toContain(secret);
   });
 
   it.each(
@@ -336,6 +403,72 @@ describe("public client bundle verifier", () => {
     );
   });
 
+  it("rejects an unreferenced emitted JavaScript symlink that escapes the static root", () => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(buildRoot, "../outside.js", "outside static");
+    symlinkSync(
+      path.join(buildRoot, "../outside.js"),
+      path.join(buildRoot, "static/chunks/escaped.js"),
+    );
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/initial.js",
+    ]);
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+      }),
+    ).toThrow(
+      "public client bundle verification failed: emitted client chunk escapes the static directory",
+    );
+  });
+
+  it("rejects an emitted JavaScript directory symlink that escapes the static root", () => {
+    const buildRoot = temporaryBuild();
+    const providerMarker =
+      CLIENT_BUNDLE_MARKER_CONTRACTS.providerEndpointMarkers[0];
+    if (!providerMarker) throw new Error("Expected a provider endpoint marker");
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(
+      buildRoot,
+      "../outside-chunks/lazy.js",
+      providerMarker,
+    );
+    symlinkSync(
+      path.join(buildRoot, "../outside-chunks"),
+      path.join(buildRoot, "static/lazy"),
+      "dir",
+    );
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/initial.js",
+    ]);
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+      }),
+    ).toThrow(
+      "public client bundle verification failed: emitted client chunk escapes the static directory",
+    );
+  });
+
   it("rejects a route HTML path that traverses outside the build root", () => {
     const buildRoot = temporaryBuild();
     writeBuildFile(buildRoot, "static/chunks/app.js", "client");
@@ -398,5 +531,45 @@ void import("@changesafe/ai");
         ]),
       }),
     ).not.toThrow();
+  });
+
+  it.each([
+    "@changesafe/ai",
+    "@changesafe/ai/providers/anthropic",
+  ])("rejects a client component dynamic dependency on %s", (specifier) => {
+    const componentPath = path.resolve(
+      "components/ReviewWorkbenchShell.tsx",
+    );
+    const original = readFileSync(componentPath, "utf8");
+
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [componentPath, `${original}\nvoid import("${specifier}");\n`],
+        ]),
+      }),
+    ).toThrow(
+      "public client bundle verification failed: a client module dynamically imports the AI package",
+    );
+  });
+
+  it("rejects a dynamic AI dependency in a local module inherited by a client graph", () => {
+    const dependencyPath = path.resolve("components/BoundedEvidence.tsx");
+    const original = readFileSync(dependencyPath, "utf8");
+
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [
+            dependencyPath,
+            `${original}\nvoid import("@changesafe/ai/providers/openai");\n`,
+          ],
+        ]),
+      }),
+    ).toThrow(
+      "public client bundle verification failed: a client module dynamically imports the AI package",
+    );
   });
 });

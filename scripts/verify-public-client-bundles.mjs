@@ -1,6 +1,7 @@
 import {
   existsSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   statSync,
 } from "node:fs";
@@ -137,6 +138,55 @@ function resolveClientScript(buildRoot, realStaticRoot, source, route) {
   return realPath;
 }
 
+function emittedJavascriptFiles(realStaticRoot) {
+  const files = new Set();
+  const visitedDirectories = new Set();
+
+  function visit(directory) {
+    let realDirectory;
+    try {
+      realDirectory = realpathSync(directory);
+    } catch {
+      throw failure("emitted client chunk directory is unreadable");
+    }
+    if (!isSameOrDescendant(realStaticRoot, realDirectory)) {
+      throw failure("emitted client chunk escapes the static directory");
+    }
+    if (visitedDirectories.has(realDirectory)) return;
+    visitedDirectories.add(realDirectory);
+
+    let entries;
+    try {
+      entries = readdirSync(realDirectory, { withFileTypes: true });
+    } catch {
+      throw failure("emitted client chunk directory is unreadable");
+    }
+    for (const entry of entries) {
+      const requestedPath = path.join(realDirectory, entry.name);
+      let realPath;
+      let stats;
+      try {
+        realPath = realpathSync(requestedPath);
+        stats = statSync(realPath);
+      } catch {
+        throw failure("emitted client chunk path is unreadable");
+      }
+      if (stats.isDirectory()) {
+        visit(realPath);
+        continue;
+      }
+      if (!stats.isFile() || !entry.name.endsWith(".js")) continue;
+      if (!isStrictDescendant(realStaticRoot, realPath)) {
+        throw failure("emitted client chunk escapes the static directory");
+      }
+      files.add(realPath);
+    }
+  }
+
+  visit(realStaticRoot);
+  return [...files].sort();
+}
+
 function assertNoServerOnlyClientContent(files, secretCanaries) {
   const serverOnlyMarkers = [
     ...CLIENT_BUNDLE_MARKER_CONTRACTS.promptMarkers,
@@ -145,7 +195,7 @@ function assertNoServerOnlyClientContent(files, secretCanaries) {
   for (const filePath of files) {
     const body = readFileSync(filePath, "utf8");
     if (serverOnlyMarkers.some((marker) => body.includes(marker))) {
-      throw failure("server-only client content reached an initial chunk");
+      throw failure("server-only client content reached an emitted chunk");
     }
     if (
       secretCanaries.some(
@@ -157,14 +207,14 @@ function assertNoServerOnlyClientContent(files, secretCanaries) {
   }
 }
 
-function staticModuleSpecifiers(sourceText, filePath) {
+function sourceModuleGraph(sourceText, filePath) {
   const sourceFile = ts.createSourceFile(
     filePath,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
   );
-  const specifiers = [];
+  const references = [];
 
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement)) {
@@ -181,7 +231,10 @@ function staticModuleSpecifiers(sourceText, filePath) {
         !isTypeOnly &&
         ts.isStringLiteralLike(statement.moduleSpecifier)
       ) {
-        specifiers.push(statement.moduleSpecifier.text);
+        references.push({
+          kind: "static",
+          specifier: statement.moduleSpecifier.text,
+        });
       }
       continue;
     }
@@ -200,12 +253,42 @@ function staticModuleSpecifiers(sourceText, filePath) {
         statement.moduleSpecifier &&
         ts.isStringLiteralLike(statement.moduleSpecifier)
       ) {
-        specifiers.push(statement.moduleSpecifier.text);
+        references.push({
+          kind: "static",
+          specifier: statement.moduleSpecifier.text,
+        });
       }
     }
   }
 
-  return specifiers;
+  function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      const [specifier] = node.arguments;
+      if (specifier && ts.isStringLiteralLike(specifier)) {
+        references.push({
+          kind: "dynamic",
+          specifier: specifier.text,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+
+  let clientModule = false;
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isExpressionStatement(statement) ||
+      !ts.isStringLiteral(statement.expression)
+    ) {
+      break;
+    }
+    if (statement.expression.text === "use client") clientModule = true;
+  }
+  return { clientModule, references };
 }
 
 function resolveLocalSource(repositoryRoot, importerPath, specifier) {
@@ -240,52 +323,70 @@ export function inspectPublicClientSourceDependencies({
 }) {
   const realRepositoryRoot = realpathSync(repositoryRoot);
   const pending = entryPaths.map((entryPath) =>
-    path.isAbsolute(entryPath)
-      ? entryPath
-      : path.resolve(realRepositoryRoot, entryPath),
+    ({
+      requestedPath: path.isAbsolute(entryPath)
+        ? entryPath
+        : path.resolve(realRepositoryRoot, entryPath),
+      clientReachable: false,
+    }),
   );
-  const visited = new Set();
+  const visited = new Map();
+  const scannedFiles = new Set();
 
   while (pending.length > 0) {
-    const requestedPath = pending.pop();
-    if (!requestedPath) continue;
+    const work = pending.pop();
+    if (!work) continue;
     let filePath;
     try {
-      filePath = realpathSync(requestedPath);
+      filePath = realpathSync(work.requestedPath);
     } catch {
       throw failure("public route source dependency is unavailable");
     }
-    if (
-      !isSameOrDescendant(realRepositoryRoot, filePath) ||
-      visited.has(filePath)
-    ) {
-      continue;
-    }
-    visited.add(filePath);
+    if (!isSameOrDescendant(realRepositoryRoot, filePath)) continue;
 
     const sourceText =
       sourceOverrides.get(filePath) ??
-      sourceOverrides.get(requestedPath) ??
+      sourceOverrides.get(work.requestedPath) ??
       readFileSync(filePath, "utf8");
-    for (const specifier of staticModuleSpecifiers(sourceText, filePath)) {
-      if (
-        specifier === CLIENT_BUNDLE_MARKER_CONTRACTS.aiPackageRoot ||
-        specifier.startsWith(
+    const graph = sourceModuleGraph(sourceText, filePath);
+    const clientReachable = work.clientReachable || graph.clientModule;
+    const previousClientReachable = visited.get(filePath);
+    if (previousClientReachable === true) continue;
+    if (previousClientReachable === false && !clientReachable) continue;
+    visited.set(filePath, clientReachable);
+    scannedFiles.add(filePath);
+
+    for (const reference of graph.references) {
+      const isAiPackage =
+        reference.specifier === CLIENT_BUNDLE_MARKER_CONTRACTS.aiPackageRoot ||
+        reference.specifier.startsWith(
           `${CLIENT_BUNDLE_MARKER_CONTRACTS.aiPackageRoot}/`,
-        )
-      ) {
+        );
+      if (isAiPackage && reference.kind === "static") {
         throw failure("public route statically imports the AI package");
+      }
+      if (
+        isAiPackage &&
+        reference.kind === "dynamic" &&
+        clientReachable
+      ) {
+        throw failure("a client module dynamically imports the AI package");
       }
       const dependency = resolveLocalSource(
         realRepositoryRoot,
         filePath,
-        specifier,
+        reference.specifier,
       );
-      if (dependency) pending.push(dependency);
+      if (dependency) {
+        pending.push({
+          requestedPath: dependency,
+          clientReachable,
+        });
+      }
     }
   }
 
-  return Object.freeze({ scannedSourceCount: visited.size });
+  return Object.freeze({ scannedSourceCount: scannedFiles.size });
 }
 
 /**
@@ -396,13 +497,14 @@ export function inspectPublicClientBuild({
   });
 
   const resolvedInitialFiles = [...initialFiles].sort();
-  assertNoServerOnlyClientContent(resolvedInitialFiles, secretCanaries);
+  const allEmittedFiles = emittedJavascriptFiles(realStaticRoot);
+  assertNoServerOnlyClientContent(allEmittedFiles, secretCanaries);
 
   return Object.freeze({
     budgetBytes,
     routes: Object.freeze(routeReports),
     initialChunkCount: resolvedInitialFiles.length,
-    scannedChunkCount: resolvedInitialFiles.length,
+    scannedChunkCount: allEmittedFiles.length,
   });
 }
 
@@ -433,7 +535,7 @@ function printReport(report) {
     );
   }
   process.stdout.write(
-    `Client security scan: ${report.scannedChunkCount} resolved initial JavaScript chunks clean.\n`,
+    `Client security scan: ${report.scannedChunkCount} canonical emitted JavaScript chunks clean.\n`,
   );
 }
 
