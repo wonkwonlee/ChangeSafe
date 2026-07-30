@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   acceptDurableReviewRecordForPersistence,
+  acceptPendingDurableReviewRecordForPersistence,
+  bindServerResolutionToPendingReview,
   createDurableReviewIntake,
+  DurableReviewResolutionSchema,
   DurableReviewIntakeSchema,
   DurableReviewRecordSchema,
+  PendingDurableReviewRecordSchema,
   ReceiptProofSchema,
+  type DurableReviewIntake,
   verifyDurableReviewIntake,
   verifyReceiptProof,
 } from "@/features/reviews/durable-review-contract";
@@ -86,6 +91,35 @@ async function record(domainId: "network" | "terraform") {
   } as const;
 }
 
+async function pendingRecord(domainId: "network" | "terraform") {
+  return {
+    recordVersion: "2",
+    reviewId: `${domainId}-review`,
+    createdAtUtc: "2026-07-30T00:01:00.000Z",
+    session: session(domainId),
+    intake: await intake(domainId),
+    storage: { kind: "append-only-review-store" },
+  } as const;
+}
+
+function resolution(domainId: "network" | "terraform", acceptedIntake: DurableReviewIntake) {
+  return {
+    resolutionVersion: "1",
+    reviewId: `${domainId}-review`,
+    resolvedAtUtc: "2026-07-30T00:02:00.000Z",
+    receipt: {
+      receiptId: `${domainId}-receipt`,
+      sourceId: acceptedIntake.source.sourceId,
+      inputId: acceptedIntake.input.inputId,
+      inputSha256: acceptedIntake.input.inputSha256,
+      proposalId: `${domainId}-proposal`,
+      proposalSha256: sha("b"),
+      policyVersion: `${domainId}-policy-v1`,
+      receiptSha256: sha("c"),
+    },
+  } as const;
+}
+
 describe("durable self-hosted review contracts", () => {
   it.each(["network", "terraform"] as const)(
     "accepts a self-hosted %s offline intake and durable record",
@@ -102,6 +136,46 @@ describe("durable self-hosted review contracts", () => {
       });
     },
   );
+
+  it.each(["network", "terraform"] as const)(
+    "creates a receipt-free pending %s review and binds a later server resolution",
+    async (domainId) => {
+      const pending = await pendingRecord(domainId);
+      expect("receipt" in pending).toBe(false);
+      expect(PendingDurableReviewRecordSchema.parse(pending)).toMatchObject({
+        reviewId: `${domainId}-review`,
+        storage: { kind: "append-only-review-store" },
+      });
+      const accepted = await acceptPendingDurableReviewRecordForPersistence(pending);
+      const bound = bindServerResolutionToPendingReview(
+        accepted,
+        resolution(domainId, accepted.intake),
+      );
+      expect(DurableReviewResolutionSchema.parse(bound)).toMatchObject({
+        reviewId: accepted.reviewId,
+        receipt: { inputSha256: accepted.intake.input.inputSha256 },
+      });
+    },
+  );
+
+  it("rejects caller receipt injection into a pending intake and a forged later resolution", async () => {
+    const pending = await pendingRecord("network");
+    expect(
+      PendingDurableReviewRecordSchema.safeParse({
+        ...pending,
+        receipt: (await record("network")).receipt,
+      }).success,
+    ).toBe(false);
+
+    const accepted = await acceptPendingDurableReviewRecordForPersistence(pending);
+    expect(() => bindServerResolutionToPendingReview(accepted, {
+      ...resolution("network", accepted.intake),
+      receipt: {
+        ...resolution("network", accepted.intake).receipt,
+        inputSha256: sha("f"),
+      },
+    })).toThrow(/input hash/);
+  });
 
   it.each(["network", "terraform"] as const)(
     "rejects a forged %s record input and receipt hash before persistence",

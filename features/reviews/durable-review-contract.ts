@@ -114,70 +114,118 @@ const DurableReceiptBindingSchema = z.strictObject({
   receiptSha256: Sha256HexSchema,
 });
 
+const DurableReviewSessionBindingSchema = ReviewSessionEnvelopeSchema.superRefine(
+  (session, context) => {
+    if (session.contractVersion !== REVIEW_CONTRACT_VERSION) {
+      context.addIssue({
+        code: "custom",
+        path: ["contractVersion"],
+        message: "durable records require the current review contract version",
+      });
+    }
+    if (session.runtimeMode !== "self-hosted") {
+      context.addIssue({
+        code: "custom",
+        path: ["runtimeMode"],
+        message: "only authenticated self-hosted sessions may form durable records",
+      });
+    }
+    if (!session.capabilities.durableDecision) {
+      context.addIssue({
+        code: "custom",
+        path: ["capabilities", "durableDecision"],
+        message: "durable records require explicitly advertised durable decision support",
+      });
+    }
+    if (session.analysisMode !== "offline") {
+      context.addIssue({
+        code: "custom",
+        path: ["analysisMode"],
+        message: "durable offline intake records must use offline analysis mode",
+      });
+    }
+  },
+);
+
+function bindPendingRecord(
+  record: {
+    session: z.infer<typeof DurableReviewSessionBindingSchema>;
+    intake: DurableReviewIntake;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (record.session.domainId !== record.intake.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["intake", "domainId"],
+      message: "record session and intake must name the same domain",
+    });
+  }
+  if (record.session.source !== record.intake.source.origin) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "source"],
+      message: "durable session source must bind exactly to the intake origin",
+    });
+  }
+  if (record.session.provenance !== record.intake.source.origin) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "provenance"],
+      message: "durable session provenance must bind exactly to the intake origin",
+    });
+  }
+}
+
 /**
- * Immutable metadata for a review the self-hosted service has durably
- * recorded. It is a contract, not a persistence implementation or an API.
+ * Immutable queue item written at authenticated self-hosted intake time.
+ *
+ * A pending record intentionally contains no receipt, proposal, decision, or
+ * proof claim.  The caller can only submit read-only input; the later server
+ * decision path must append a separately-bound resolution after it has
+ * recomputed the verdict and issued its receipt.
+ */
+export const PendingDurableReviewRecordSchema = z
+  .strictObject({
+    recordVersion: z.literal("2"),
+    reviewId: IdSchema,
+    createdAtUtc: TimestampSchema,
+    session: DurableReviewSessionBindingSchema,
+    intake: DurableReviewIntakeSchema,
+    storage: z.strictObject({ kind: z.literal("append-only-review-store") }),
+  })
+  .superRefine(bindPendingRecord);
+
+/**
+ * Immutable server-side resolution for a previously stored pending review.
+ * This is intentionally an append-only companion record, never a mutable
+ * receipt field on the intake record.
+ */
+export const DurableReviewResolutionSchema = z
+  .strictObject({
+    resolutionVersion: z.literal("1"),
+    reviewId: IdSchema,
+    resolvedAtUtc: TimestampSchema,
+    receipt: DurableReceiptBindingSchema,
+  });
+
+/**
+ * Legacy resolved record shape retained only while the current store is
+ * migrated. New intake endpoints must create PendingDurableReviewRecordSchema
+ * records and later append DurableReviewResolutionSchema separately.
  */
 export const DurableReviewRecordSchema = z
   .strictObject({
     recordVersion: z.literal("1"),
     reviewId: IdSchema,
     createdAtUtc: TimestampSchema,
-    session: ReviewSessionEnvelopeSchema,
+    session: DurableReviewSessionBindingSchema,
     intake: DurableReviewIntakeSchema,
     receipt: DurableReceiptBindingSchema,
     storage: z.strictObject({ kind: z.literal("append-only-ledger") }),
   })
   .superRefine((record, context) => {
-    if (record.session.contractVersion !== REVIEW_CONTRACT_VERSION) {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "contractVersion"],
-        message: "durable records require the current review contract version",
-      });
-    }
-    if (record.session.runtimeMode !== "self-hosted") {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "runtimeMode"],
-        message: "only authenticated self-hosted sessions may form durable records",
-      });
-    }
-    if (!record.session.capabilities.durableDecision) {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "capabilities", "durableDecision"],
-        message: "durable records require explicitly advertised durable decision support",
-      });
-    }
-    if (record.session.domainId !== record.intake.domainId) {
-      context.addIssue({
-        code: "custom",
-        path: ["intake", "domainId"],
-        message: "record session and intake must name the same domain",
-      });
-    }
-    if (record.session.source !== record.intake.source.origin) {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "source"],
-        message: "durable session source must bind exactly to the intake origin",
-      });
-    }
-    if (record.session.provenance !== record.intake.source.origin) {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "provenance"],
-        message: "durable session provenance must bind exactly to the intake origin",
-      });
-    }
-    if (record.session.analysisMode !== "offline") {
-      context.addIssue({
-        code: "custom",
-        path: ["session", "analysisMode"],
-        message: "durable offline intake records must use offline analysis mode",
-      });
-    }
+    bindPendingRecord(record, context);
     if (record.receipt.sourceId !== record.intake.source.sourceId) {
       context.addIssue({
         code: "custom",
@@ -227,6 +275,46 @@ export async function acceptDurableReviewRecordForPersistence(
   // The record schema then binds the verified intake to the authenticated
   // session and every immutable receipt identity/hash field.
   return DurableReviewRecordSchema.parse({ ...candidate, intake });
+}
+
+/**
+ * The POST-intake acceptance boundary. This recomputes the untrusted input
+ * hash before allowing a receipt-free pending record into the review queue.
+ */
+export async function acceptPendingDurableReviewRecordForPersistence(
+  raw: unknown,
+): Promise<PendingDurableReviewRecord> {
+  const candidate = z.object({ intake: z.unknown() }).passthrough().parse(raw);
+  const intake = await verifyDurableReviewIntake(candidate.intake);
+  return PendingDurableReviewRecordSchema.parse({ ...candidate, intake });
+}
+
+/**
+ * Bind a server-issued receipt to an immutable pending record. This helper is
+ * deliberately not an intake parser: its `receipt` argument must come from
+ * the server's recomputed decision/receipt path, never from the POST body.
+ */
+export function bindServerResolutionToPendingReview(
+  pending: PendingDurableReviewRecord,
+  raw: unknown,
+): DurableReviewResolution {
+  const resolution = DurableReviewResolutionSchema.parse(raw);
+  if (resolution.reviewId !== pending.reviewId) {
+    throw new Error("durable resolution does not match the immutable pending review");
+  }
+  if (resolution.receipt.sourceId !== pending.intake.source.sourceId) {
+    throw new Error("durable resolution receipt source does not match the immutable intake");
+  }
+  if (resolution.receipt.inputId !== pending.intake.input.inputId) {
+    throw new Error("durable resolution receipt input does not match the immutable intake");
+  }
+  if (resolution.receipt.inputSha256 !== pending.intake.input.inputSha256) {
+    throw new Error("durable resolution receipt input hash does not match the immutable intake");
+  }
+  if (resolution.receipt.policyVersion !== pending.session.policyVersion) {
+    throw new Error("durable resolution receipt policy version does not match the evaluating session");
+  }
+  return resolution;
 }
 
 const ContentIntegrityClaimSchema = z.strictObject({
@@ -312,14 +400,14 @@ export const ReceiptProofSchema = z
  * belongs to.
  */
 export function verifyReceiptProof(
-  record: DurableReviewRecord,
+  binding: DurableReviewRecord | DurableReviewResolution,
   raw: unknown,
 ): ReceiptProof {
   const proof = ReceiptProofSchema.parse(raw);
   if (
-    proof.reviewId !== record.reviewId ||
-    proof.receiptId !== record.receipt.receiptId ||
-    proof.receiptSha256 !== record.receipt.receiptSha256
+    proof.reviewId !== binding.reviewId ||
+    proof.receiptId !== binding.receipt.receiptId ||
+    proof.receiptSha256 !== binding.receipt.receiptSha256
   ) {
     throw new Error("receipt proof does not match the immutable durable review receipt binding");
   }
@@ -327,5 +415,7 @@ export function verifyReceiptProof(
 }
 
 export type DurableReviewIntake = z.infer<typeof DurableReviewIntakeSchema>;
+export type PendingDurableReviewRecord = z.infer<typeof PendingDurableReviewRecordSchema>;
+export type DurableReviewResolution = z.infer<typeof DurableReviewResolutionSchema>;
 export type DurableReviewRecord = z.infer<typeof DurableReviewRecordSchema>;
 export type ReceiptProof = z.infer<typeof ReceiptProofSchema>;
