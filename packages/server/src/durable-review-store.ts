@@ -46,20 +46,8 @@ const LegacyRowSchema = z.strictObject({
 type PendingRow = z.infer<typeof PendingRowSchema>;
 type ResolutionRow = z.infer<typeof ResolutionRowSchema>;
 type LegacyRow = z.infer<typeof LegacyRowSchema>;
-const OwnerlessPendingRowSchema = PendingRowSchema.omit({
-  owner_tenant_id: true,
-  owner_issuer: true,
-  owner_subject: true,
-  owner_scope: true,
-});
-const OwnerlessResolutionRowSchema = ResolutionRowSchema.omit({
-  owner_tenant_id: true,
-  owner_issuer: true,
-  owner_subject: true,
-  owner_scope: true,
-});
 const MigrationPendingRowSchema = z.strictObject({
-  seq: z.number().int().positive(),
+  seq: z.number().int(),
   review_id: z.string(),
   created_at_utc: z.string(),
   domain_id: z.string(),
@@ -68,7 +56,7 @@ const MigrationPendingRowSchema = z.strictObject({
   record_json: z.string(),
 });
 const MigrationResolutionRowSchema = z.strictObject({
-  seq: z.number().int().positive(),
+  seq: z.number().int(),
   review_id: z.string(),
   resolved_at_utc: z.string(),
   receipt_id: z.string(),
@@ -77,6 +65,29 @@ const MigrationResolutionRowSchema = z.strictObject({
 });
 type OwnerlessPendingRow = z.infer<typeof MigrationPendingRowSchema>;
 type OwnerlessResolutionRow = z.infer<typeof MigrationResolutionRowSchema>;
+const MigrationOwnerfulPendingRowSchema = MigrationPendingRowSchema.extend({
+  owner_tenant_id: z.string(),
+  owner_issuer: z.string(),
+  owner_subject: z.string(),
+  owner_scope: z.string(),
+});
+const MigrationOwnerfulResolutionRowSchema = MigrationResolutionRowSchema.extend({
+  owner_tenant_id: z.string(),
+  owner_issuer: z.string(),
+  owner_subject: z.string(),
+  owner_scope: z.string(),
+});
+const QuarantineRowSchema = z.strictObject({
+  quarantine_id: z.number().int().positive(),
+  row_kind: z.enum(["pending", "resolution"]),
+  old_seq: z.number().int(),
+  review_id: z.string(),
+  row_json: z.string(),
+  reason: z.string(),
+  migration_version: z.string(),
+  source_schema_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  row_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
 
 export interface DurableReviewStoreEntry {
   seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform";
@@ -92,6 +103,26 @@ export interface LegacyDurableReviewStoreEntry {
   sourceId: string; inputId: string; receiptId: string; receiptSha256: string; record: DurableReviewRecord;
 }
 export interface DurableReviewStoreListOptions { limit?: number; domainId?: "network" | "terraform"; sourceId?: string; }
+export interface DurableReviewQuarantineEntry {
+  quarantineId: number;
+  rowKind: "pending" | "resolution";
+  oldSeq: number;
+  reviewId: string;
+  rowJson: string;
+  reason: string;
+  migrationVersion: string;
+  sourceSchemaFingerprint: string;
+  rowSha256: string;
+}
+export interface DurableReviewQuarantineVerification {
+  valid: boolean;
+  entryCount: number;
+  errors: readonly string[];
+}
+export interface DurableReviewStoreOpenOptions {
+  /** Deterministic test seam proving schema changes roll back atomically. */
+  migrationFaultInjection?: "after-trigger-installation";
+}
 const ListOptionsSchema = z.strictObject({ limit: z.number().finite().optional(), domainId: z.enum(["network", "terraform"]).optional(), sourceId: IdSchema.optional() });
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 1000;
@@ -108,14 +139,14 @@ CREATE TABLE IF NOT EXISTS durable_review_records (
 `;
 
 const V2_SCHEMA = `
-CREATE TABLE IF NOT EXISTS durable_review_pending_records (
+CREATE TABLE durable_review_pending_records (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL, created_at_utc TEXT NOT NULL,
   domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
   owner_tenant_id TEXT NOT NULL, owner_issuer TEXT NOT NULL, owner_subject TEXT NOT NULL,
   owner_scope TEXT NOT NULL, record_json TEXT NOT NULL,
   UNIQUE (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
 );
-CREATE TABLE IF NOT EXISTS durable_review_resolutions (
+CREATE TABLE durable_review_resolutions (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL, resolved_at_utc TEXT NOT NULL,
   owner_tenant_id TEXT NOT NULL, owner_issuer TEXT NOT NULL, owner_subject TEXT NOT NULL,
   owner_scope TEXT NOT NULL,
@@ -124,15 +155,45 @@ CREATE TABLE IF NOT EXISTS durable_review_resolutions (
   FOREIGN KEY (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
     REFERENCES durable_review_pending_records(owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
 );
-CREATE INDEX IF NOT EXISTS durable_review_pending_records_created ON durable_review_pending_records (created_at_utc);
-CREATE INDEX IF NOT EXISTS durable_review_pending_records_domain ON durable_review_pending_records (domain_id);
-CREATE INDEX IF NOT EXISTS durable_review_pending_records_source ON durable_review_pending_records (source_id);
-CREATE INDEX IF NOT EXISTS durable_review_pending_records_owner ON durable_review_pending_records
+CREATE INDEX durable_review_pending_records_created ON durable_review_pending_records (created_at_utc);
+CREATE INDEX durable_review_pending_records_domain ON durable_review_pending_records (domain_id);
+CREATE INDEX durable_review_pending_records_source ON durable_review_pending_records (source_id);
+CREATE INDEX durable_review_pending_records_owner ON durable_review_pending_records
   (owner_tenant_id, owner_issuer, owner_subject, owner_scope, seq DESC);
 `;
 
 const V2_MIGRATION_QUARANTINE_SCHEMA = `
-CREATE TABLE IF NOT EXISTS durable_review_v2_migration_quarantine (
+CREATE TABLE durable_review_v2_migration_quarantine (
+  quarantine_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  row_kind TEXT NOT NULL CHECK (row_kind IN ('pending', 'resolution')),
+  old_seq INTEGER NOT NULL,
+  review_id TEXT NOT NULL,
+  row_json TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  migration_version TEXT NOT NULL,
+  source_schema_fingerprint TEXT NOT NULL,
+  row_sha256 TEXT NOT NULL,
+  UNIQUE (source_schema_fingerprint, row_kind, old_seq)
+);
+`;
+
+const HISTORICAL_OWNERLESS_V2_SCHEMA = `
+CREATE TABLE durable_review_pending_records (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
+  domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL, record_json TEXT NOT NULL
+);
+CREATE TABLE durable_review_resolutions (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, resolved_at_utc TEXT NOT NULL,
+  receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, resolution_json TEXT NOT NULL,
+  FOREIGN KEY (review_id) REFERENCES durable_review_pending_records(review_id)
+);
+CREATE INDEX durable_review_pending_records_created ON durable_review_pending_records (created_at_utc);
+CREATE INDEX durable_review_pending_records_domain ON durable_review_pending_records (domain_id);
+CREATE INDEX durable_review_pending_records_source ON durable_review_pending_records (source_id);
+`;
+
+const LEGACY_QUARANTINE_SCHEMA = `
+CREATE TABLE durable_review_v2_migration_quarantine (
   row_kind TEXT NOT NULL CHECK (row_kind IN ('pending', 'resolution')),
   old_seq INTEGER NOT NULL,
   review_id TEXT NOT NULL,
@@ -141,6 +202,8 @@ CREATE TABLE IF NOT EXISTS durable_review_v2_migration_quarantine (
   PRIMARY KEY (row_kind, old_seq)
 );
 `;
+
+const MIGRATION_VERSION = "durable-review-owner-quarantine-v2";
 
 const TABLES = [
   {
@@ -158,6 +221,8 @@ const TABLES = [
 ] as const;
 
 const RESOLUTION_PARENT_BINDING_TRIGGER = "durable_review_resolutions_parent_binding";
+const V2_TABLE_NAMES = ["durable_review_pending_records", "durable_review_resolutions"] as const;
+const QUARANTINE_TABLE_NAME = "durable_review_v2_migration_quarantine";
 
 function triggerSql(table: string, conflict: string): string {
   const names = { update: `${table}_no_update`, delete: `${table}_no_delete`, insert: `${table}_no_conflicting_insert` };
@@ -215,45 +280,192 @@ WHEN NOT json_valid(NEW.resolution_json)
 END;`;
 }
 
+function historicalTriggerSql(table: "durable_review_pending_records" | "durable_review_resolutions"): string {
+  const keys = table === "durable_review_pending_records"
+    ? ["review_id"]
+    : ["review_id", "receipt_id", "receipt_sha256"];
+  const names = { update: `${table}_no_update`, delete: `${table}_no_delete`, insert: `${table}_no_conflicting_insert` };
+  const checks = [...keys.map((key) => `${key} = NEW.${key}`), "(NEW.seq > 0 AND seq = NEW.seq)"].join(" OR ");
+  return `
+CREATE TRIGGER ${names.update} BEFORE UPDATE ON ${table} BEGIN
+ SELECT RAISE(ABORT, '${table} is append-only: rows cannot be updated'); END;
+CREATE TRIGGER ${names.delete} BEFORE DELETE ON ${table} BEGIN
+ SELECT RAISE(ABORT, '${table} is append-only: rows cannot be deleted'); END;
+CREATE TRIGGER ${names.insert} BEFORE INSERT ON ${table}
+WHEN EXISTS (SELECT 1 FROM ${table} WHERE ${checks}) BEGIN
+ SELECT RAISE(ABORT, '${table} is append-only: existing bindings cannot be replaced'); END;`;
+}
+
+function historicalResolutionParentBindingTriggerSql(): string {
+  return `
+CREATE TRIGGER ${RESOLUTION_PARENT_BINDING_TRIGGER} BEFORE INSERT ON durable_review_resolutions
+WHEN NOT json_valid(NEW.resolution_json)
+  OR NOT EXISTS (
+    SELECT 1 FROM durable_review_pending_records AS pending
+    WHERE pending.review_id = NEW.review_id
+      AND json_valid(pending.record_json)
+      AND json_extract(pending.record_json, '$.recordVersion') = '2'
+      AND json_extract(pending.record_json, '$.reviewId') = NEW.review_id
+      AND json_extract(pending.record_json, '$.session.domainId') = pending.domain_id
+      AND json_extract(pending.record_json, '$.intake.domainId') = pending.domain_id
+      AND json_extract(pending.record_json, '$.intake.source.sourceId') = pending.source_id
+      AND json_extract(pending.record_json, '$.intake.input.inputId') = pending.input_id
+      AND json_extract(pending.record_json, '$.session.source') = json_extract(pending.record_json, '$.intake.source.origin')
+      AND json_extract(pending.record_json, '$.session.provenance') = json_extract(pending.record_json, '$.intake.source.origin')
+      AND json_extract(NEW.resolution_json, '$.resolutionVersion') = '1'
+      AND json_extract(NEW.resolution_json, '$.reviewId') = NEW.review_id
+      AND json_extract(NEW.resolution_json, '$.resolvedAtUtc') = NEW.resolved_at_utc
+      AND json_extract(NEW.resolution_json, '$.receipt.receiptId') = NEW.receipt_id
+      AND json_extract(NEW.resolution_json, '$.receipt.receiptSha256') = NEW.receipt_sha256
+      AND json_extract(NEW.resolution_json, '$.receipt.sourceId') = json_extract(pending.record_json, '$.intake.source.sourceId')
+      AND json_extract(NEW.resolution_json, '$.receipt.inputId') = json_extract(pending.record_json, '$.intake.input.inputId')
+      AND json_extract(NEW.resolution_json, '$.receipt.inputSha256') = json_extract(pending.record_json, '$.intake.input.inputSha256')
+      AND json_extract(NEW.resolution_json, '$.receipt.policyVersion') = json_extract(pending.record_json, '$.session.policyVersion')
+  ) BEGIN
+  SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding');
+END;`;
+}
+
+function quarantineTriggerSql(): string {
+  return `
+CREATE TRIGGER durable_review_v2_migration_quarantine_no_update
+BEFORE UPDATE ON durable_review_v2_migration_quarantine BEGIN
+ SELECT RAISE(ABORT, 'durable review migration quarantine is append-only: rows cannot be updated'); END;
+CREATE TRIGGER durable_review_v2_migration_quarantine_no_delete
+BEFORE DELETE ON durable_review_v2_migration_quarantine BEGIN
+ SELECT RAISE(ABORT, 'durable review migration quarantine is append-only: rows cannot be deleted'); END;
+CREATE TRIGGER durable_review_v2_migration_quarantine_no_conflicting_insert
+BEFORE INSERT ON durable_review_v2_migration_quarantine
+WHEN EXISTS (
+  SELECT 1 FROM durable_review_v2_migration_quarantine
+  WHERE quarantine_id = NEW.quarantine_id
+    OR (
+      source_schema_fingerprint = NEW.source_schema_fingerprint
+      AND row_kind = NEW.row_kind
+      AND old_seq = NEW.old_seq
+    )
+) BEGIN
+ SELECT RAISE(ABORT, 'durable review migration quarantine is append-only: evidence cannot be replaced'); END;`;
+}
+
 const nodeRequire = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSync { const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); return new sqlite.DatabaseSync(path); }
-function tableColumns(db: DatabaseSync, table: "durable_review_pending_records" | "durable_review_resolutions"): Set<string> {
-  const rows = z.array(z.object({ name: z.string() }).passthrough()).parse(
-    db.prepare(`PRAGMA table_info(${table})`).all(),
-  );
-  return new Set(rows.map((row) => row.name));
+function normalizeSql(sql: string | null): string | null {
+  return sql?.replace(/\s+/g, " ").trim() ?? null;
 }
-function canonicalInputSha256(record: PendingDurableReviewRecord): string {
-  return createHash("sha256").update(canonicalize(record.intake.input.content)).digest("hex");
+
+function normalizeTableDefinition(sql: string | null): string | null {
+  return normalizeSql(sql)?.replace(/^CREATE TABLE IF NOT EXISTS /i, "CREATE TABLE ") ?? null;
 }
-function ownerlessPendingRecord(row: OwnerlessPendingRow): PendingDurableReviewRecord {
-  OwnerlessPendingRowSchema.parse(row);
-  const record = PendingDurableReviewRecordSchema.parse(JSON.parse(row.record_json));
-  if (
-    row.review_id !== record.reviewId ||
-    row.created_at_utc !== record.createdAtUtc ||
-    row.domain_id !== record.intake.domainId ||
-    row.source_id !== record.intake.source.sourceId ||
-    row.input_id !== record.intake.input.inputId ||
-    canonicalInputSha256(record) !== record.intake.input.inputSha256
-  ) {
-    throw new DomainError("REQUEST_INVALID", "Ownerless durable review columns or content hash do not bind to its immutable record.");
+
+function schemaMetadata(db: DatabaseSync, tableNames: readonly string[]): unknown {
+  const tableSet = new Set(tableNames);
+  const masterRows = z.array(z.strictObject({
+    type: z.enum(["table", "index", "trigger"]),
+    name: z.string(),
+    tbl_name: z.string(),
+    sql: z.string().nullable(),
+  })).parse(
+    db.prepare(
+      `SELECT type, name, tbl_name, sql FROM sqlite_master
+       WHERE type IN ('table', 'index', 'trigger')
+       ORDER BY type, name`,
+    ).all(),
+  ).filter((row) => tableSet.has(row.tbl_name) && !row.name.startsWith("sqlite_autoindex_"));
+
+  return tableNames.map((table) => {
+    const tableSql = masterRows.find((row) => row.type === "table" && row.name === table)?.sql ?? null;
+    const indexes = z.array(z.object({
+      seq: z.number().int(),
+      name: z.string(),
+      unique: z.number().int(),
+      origin: z.string(),
+      partial: z.number().int(),
+    }).passthrough()).parse(db.prepare(`PRAGMA index_list(${table})`).all())
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((index) => ({
+        name: index.name,
+        unique: index.unique,
+        origin: index.origin,
+        partial: index.partial,
+        columns: db.prepare("SELECT * FROM pragma_index_xinfo(?)").all(index.name),
+      }));
+    return {
+      table,
+      exists: tableSql !== null,
+      autoincrement: tableSql ? /\bAUTOINCREMENT\b/i.test(tableSql) : false,
+      definition: normalizeTableDefinition(tableSql),
+      columns: db.prepare(`PRAGMA table_info(${table})`).all(),
+      indexes,
+      foreignKeys: db.prepare(`PRAGMA foreign_key_list(${table})`).all(),
+      triggers: masterRows
+        .filter((row) => row.type === "trigger" && row.tbl_name === table)
+        .map((row) => ({ name: row.name, sql: normalizeSql(row.sql) })),
+    };
+  });
+}
+
+function schemaFingerprint(db: DatabaseSync, tableNames: readonly string[]): string {
+  return createHash("sha256").update(canonicalize(schemaMetadata(db, tableNames))).digest("hex");
+}
+
+function expectedFingerprint(
+  schema: string,
+  tableNames: readonly string[],
+  triggerInstaller?: (db: DatabaseSync) => void,
+): string {
+  const expected = openDatabase(":memory:");
+  try {
+    expected.exec(schema);
+    triggerInstaller?.(expected);
+    return schemaFingerprint(expected, tableNames);
+  } finally {
+    expected.close();
   }
-  return record;
 }
-function ownerlessResolution(row: OwnerlessResolutionRow, pending: PendingDurableReviewRecord): DurableReviewResolution {
-  OwnerlessResolutionRowSchema.parse(row);
-  const resolution = DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json));
-  if (
-    resolution.reviewId !== row.review_id ||
-    resolution.resolvedAtUtc !== row.resolved_at_utc ||
-    resolution.receipt.receiptId !== row.receipt_id ||
-    resolution.receipt.receiptSha256 !== row.receipt_sha256
-  ) {
-    throw new DomainError("REQUEST_INVALID", "Ownerless durable resolution columns do not bind to its immutable resolution.");
-  }
-  return bindServerResolutionToPendingReview(pending, resolution);
+
+function installHistoricalV2Triggers(db: DatabaseSync): void {
+  for (const table of V2_TABLE_NAMES) db.exec(historicalTriggerSql(table));
+  db.exec(historicalResolutionParentBindingTriggerSql());
 }
+
+function installCurrentTriggers(db: DatabaseSync, includeQuarantine: boolean): void {
+  for (const { table, conflict } of TABLES) db.exec(triggerSql(table, conflict));
+  db.exec(resolutionParentBindingTriggerSql());
+  if (includeQuarantine) db.exec(quarantineTriggerSql());
+}
+
+function currentV2Fingerprint(): string {
+  return expectedFingerprint(V2_SCHEMA, V2_TABLE_NAMES, (db) => {
+    for (const { table, conflict } of TABLES.filter(({ table }) => table !== "durable_review_records")) {
+      db.exec(triggerSql(table, conflict));
+    }
+    db.exec(resolutionParentBindingTriggerSql());
+  });
+}
+
+function historicalV2Fingerprint(): string {
+  return expectedFingerprint(HISTORICAL_OWNERLESS_V2_SCHEMA, V2_TABLE_NAMES, installHistoricalV2Triggers);
+}
+
+function currentQuarantineFingerprint(): string {
+  return expectedFingerprint(V2_MIGRATION_QUARANTINE_SCHEMA, [QUARANTINE_TABLE_NAME], (db) => {
+    db.exec(quarantineTriggerSql());
+  });
+}
+
+function legacyQuarantineFingerprint(): string {
+  return expectedFingerprint(LEGACY_QUARANTINE_SCHEMA, [QUARANTINE_TABLE_NAME]);
+}
+
+function emptyV2Fingerprint(): string {
+  return expectedFingerprint("", V2_TABLE_NAMES);
+}
+
+function emptyQuarantineFingerprint(): string {
+  return expectedFingerprint("", [QUARANTINE_TABLE_NAME]);
+}
+
 function dropKnownV2Triggers(db: DatabaseSync): void {
   for (const table of ["durable_review_pending_records", "durable_review_resolutions"] as const) {
     for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
@@ -262,132 +474,194 @@ function dropKnownV2Triggers(db: DatabaseSync): void {
   }
   db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_PARENT_BINDING_TRIGGER}`);
 }
-function quarantineOwnerlessRow(
+function dropKnownQuarantineTriggers(db: DatabaseSync): void {
+  for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
+    db.exec(`DROP TRIGGER IF EXISTS durable_review_v2_migration_quarantine_${suffix}`);
+  }
+}
+
+function quarantineRow(
   db: DatabaseSync,
   rowKind: "pending" | "resolution",
   row: OwnerlessPendingRow | OwnerlessResolutionRow,
-  reason: "pending-record-invalid-or-ownerless" | "resolution-parent-unmigrated" | "resolution-binding-invalid",
+  reason: string,
+  sourceSchemaFingerprint: string,
 ): void {
+  const rowJson = canonicalize(row);
+  const rowSha256 = createHash("sha256").update(rowJson).digest("hex");
   db.prepare(
-    "INSERT INTO durable_review_v2_migration_quarantine (row_kind, old_seq, review_id, row_json, reason) VALUES (?, ?, ?, ?, ?)",
-  ).run(rowKind, row.seq, row.review_id, canonicalize(row), reason);
+    `INSERT INTO durable_review_v2_migration_quarantine
+      (row_kind, old_seq, review_id, row_json, reason, migration_version, source_schema_fingerprint, row_sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(rowKind, row.seq, row.review_id, rowJson, reason, MIGRATION_VERSION, sourceSchemaFingerprint, rowSha256);
 }
-/**
- * b729212 and 8247f70 created v2 tables whose SQL identity was only
- * `review_id`. The latter already wrote a validated owner inside record_json,
- * so those rows can be upgraded without inventing authority. Earlier or
- * malformed rows are retained byte-for-byte in quarantine and never enter an
- * authenticated owner's queue.
- */
-function migrateOwnerlessV2Tables(db: DatabaseSync): void {
-  const pendingColumns = tableColumns(db, "durable_review_pending_records");
-  const resolutionColumns = tableColumns(db, "durable_review_resolutions");
-  const pendingExists = pendingColumns.size > 0;
-  const resolutionExists = resolutionColumns.size > 0;
-  if (!pendingExists && !resolutionExists) return;
-  if (!pendingExists || !resolutionExists) {
-    throw new DomainError("INTERNAL", "Durable review v2 schema is incomplete and cannot be migrated safely.");
+
+function setSequenceHighWater(db: DatabaseSync, table: string, highWater: number): void {
+  if (highWater <= 0) return;
+  db.prepare("DELETE FROM sqlite_sequence WHERE name = ?").run(table);
+  db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(table, highWater);
+}
+
+function rebuildAsQuarantine(
+  db: DatabaseSync,
+  sourceSchemaFingerprint: string,
+  correctiveOwnerfulMigration: boolean,
+): void {
+  const pendingRows = db.prepare("SELECT * FROM durable_review_pending_records ORDER BY seq").all()
+    .map((row) => correctiveOwnerfulMigration
+      ? MigrationOwnerfulPendingRowSchema.parse(row)
+      : MigrationPendingRowSchema.parse(row));
+  const resolutionRows = db.prepare("SELECT * FROM durable_review_resolutions ORDER BY seq").all()
+    .map((row) => correctiveOwnerfulMigration
+      ? MigrationOwnerfulResolutionRowSchema.parse(row)
+      : MigrationResolutionRowSchema.parse(row));
+  const legacyQuarantineRows = correctiveOwnerfulMigration
+    ? z.array(z.strictObject({
+      row_kind: z.enum(["pending", "resolution"]),
+      old_seq: z.number().int(),
+      review_id: z.string(),
+      row_json: z.string(),
+      reason: z.string(),
+    })).parse(db.prepare("SELECT * FROM durable_review_v2_migration_quarantine ORDER BY row_kind, old_seq").all())
+    : [];
+
+  const pendingHighWater = Math.max(
+    0,
+    ...pendingRows.map((row) => row.seq),
+    ...legacyQuarantineRows.filter((row) => row.row_kind === "pending").map((row) => row.old_seq),
+  );
+  const resolutionHighWater = Math.max(
+    0,
+    ...resolutionRows.map((row) => row.seq),
+    ...legacyQuarantineRows.filter((row) => row.row_kind === "resolution").map((row) => row.old_seq),
+  );
+
+  dropKnownV2Triggers(db);
+  for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
+    db.exec(`DROP TRIGGER IF EXISTS durable_review_records_${suffix}`);
   }
-  const pendingHasOwner = pendingColumns.has("owner_tenant_id");
-  const resolutionHasOwner = resolutionColumns.has("owner_tenant_id");
-  if (pendingHasOwner && resolutionHasOwner) return;
-  if (pendingHasOwner || resolutionHasOwner) {
-    throw new DomainError("INTERNAL", "Durable review v2 schema has a partial owner migration and cannot be trusted.");
+  for (const index of [
+    "durable_review_pending_records_created",
+    "durable_review_pending_records_domain",
+    "durable_review_pending_records_source",
+    "durable_review_pending_records_owner",
+  ]) {
+    db.exec(`DROP INDEX IF EXISTS ${index}`);
+  }
+  db.exec("ALTER TABLE durable_review_pending_records RENAME TO durable_review_pending_records_pre_owner_quarantine");
+  db.exec("ALTER TABLE durable_review_resolutions RENAME TO durable_review_resolutions_pre_owner_quarantine");
+  if (correctiveOwnerfulMigration) {
+    dropKnownQuarantineTriggers(db);
+    db.exec("ALTER TABLE durable_review_v2_migration_quarantine RENAME TO durable_review_v2_migration_quarantine_legacy");
+  }
+  db.exec(V2_SCHEMA);
+  db.exec(V2_MIGRATION_QUARANTINE_SCHEMA);
+
+  for (const row of pendingRows) {
+    quarantineRow(
+      db,
+      "pending",
+      row,
+      correctiveOwnerfulMigration
+        ? "corrective-quarantine-of-unattributable-owner-migration"
+        : "historical-ownerless-row-has-no-authenticated-owner-binding",
+      sourceSchemaFingerprint,
+    );
+  }
+  for (const row of resolutionRows) {
+    quarantineRow(
+      db,
+      "resolution",
+      row,
+      correctiveOwnerfulMigration
+        ? "corrective-quarantine-of-unattributable-owner-migration"
+        : "historical-ownerless-row-has-no-authenticated-owner-binding",
+      sourceSchemaFingerprint,
+    );
+  }
+  if (correctiveOwnerfulMigration) {
+    const historicalFingerprint = historicalV2Fingerprint();
+    const insert = db.prepare(
+      `INSERT INTO durable_review_v2_migration_quarantine
+        (row_kind, old_seq, review_id, row_json, reason, migration_version, source_schema_fingerprint, row_sha256)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const row of legacyQuarantineRows) {
+      insert.run(
+        row.row_kind,
+        row.old_seq,
+        row.review_id,
+        row.row_json,
+        `retained-from-prior-quarantine:${row.reason}`,
+        MIGRATION_VERSION,
+        historicalFingerprint,
+        createHash("sha256").update(row.row_json).digest("hex"),
+      );
+    }
   }
 
+  db.exec("DROP TABLE durable_review_resolutions_pre_owner_quarantine");
+  db.exec("DROP TABLE durable_review_pending_records_pre_owner_quarantine");
+  if (correctiveOwnerfulMigration) {
+    db.exec("DROP TABLE durable_review_v2_migration_quarantine_legacy");
+  }
+  setSequenceHighWater(db, "durable_review_pending_records", pendingHighWater);
+  setSequenceHighWater(db, "durable_review_resolutions", resolutionHighWater);
+  installCurrentTriggers(db, true);
+}
+
+function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptions): void {
   db.exec("BEGIN IMMEDIATE");
   try {
-    dropKnownV2Triggers(db);
-    for (const index of [
-      "durable_review_pending_records_created",
-      "durable_review_pending_records_domain",
-      "durable_review_pending_records_source",
-      "durable_review_pending_records_owner",
-    ]) {
-      db.exec(`DROP INDEX IF EXISTS ${index}`);
-    }
-    db.exec("ALTER TABLE durable_review_pending_records RENAME TO durable_review_pending_records_ownerless");
-    db.exec("ALTER TABLE durable_review_resolutions RENAME TO durable_review_resolutions_ownerless");
-    db.exec(V2_SCHEMA);
-    db.exec(V2_MIGRATION_QUARANTINE_SCHEMA);
+    db.exec(LEGACY_SCHEMA);
+    const actualV2 = schemaFingerprint(db, V2_TABLE_NAMES);
+    const actualQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
+    const currentV2 = currentV2Fingerprint();
+    const historicalV2 = historicalV2Fingerprint();
+    const emptyV2 = emptyV2Fingerprint();
+    const currentQuarantine = currentQuarantineFingerprint();
+    const oldQuarantine = legacyQuarantineFingerprint();
+    const noQuarantine = emptyQuarantineFingerprint();
 
-    const migrated = new Map<string, PendingDurableReviewRecord>();
-    const pendingRows = db
-      .prepare("SELECT * FROM durable_review_pending_records_ownerless ORDER BY seq")
-      .all()
-      .map((row) => MigrationPendingRowSchema.parse(row));
-    const insertPending = db.prepare(
-      "INSERT INTO durable_review_pending_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, owner_tenant_id, owner_issuer, owner_subject, owner_scope, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    );
-    for (const row of pendingRows) {
-      let record: PendingDurableReviewRecord;
-      try {
-        record = ownerlessPendingRecord(row);
-      } catch {
-        quarantineOwnerlessRow(db, "pending", row, "pending-record-invalid-or-ownerless");
-        continue;
+    if (actualV2 === emptyV2) {
+      if (actualQuarantine !== noQuarantine) {
+        throw new DomainError("INTERNAL", "Durable review quarantine exists without its exact owning schema.");
       }
-      insertPending.run(
-        row.seq,
-        row.review_id,
-        row.created_at_utc,
-        row.domain_id,
-        row.source_id,
-        row.input_id,
-        ...ownerValues(record.owner),
-        canonicalize(record),
-      );
-      migrated.set(row.review_id, record);
+      db.exec(V2_SCHEMA);
+      installCurrentTriggers(db, false);
+    } else if (actualV2 === historicalV2) {
+      if (actualQuarantine !== noQuarantine) {
+        throw new DomainError("INTERNAL", "Historical durable review schema has an unexpected quarantine surface.");
+      }
+      rebuildAsQuarantine(db, historicalV2, false);
+    } else if (actualV2 === currentV2) {
+      if (actualQuarantine === oldQuarantine) {
+        rebuildAsQuarantine(db, currentV2, true);
+      } else if (actualQuarantine !== noQuarantine && actualQuarantine !== currentQuarantine) {
+        throw new DomainError("INTERNAL", "Durable review quarantine schema fingerprint is unknown or weakened.");
+      }
+    } else {
+      throw new DomainError("INTERNAL", "Durable review schema fingerprint is unknown or weakened.");
     }
 
-    const resolutionRows = db
-      .prepare("SELECT * FROM durable_review_resolutions_ownerless ORDER BY seq")
-      .all()
-      .map((row) => MigrationResolutionRowSchema.parse(row));
-    const insertResolution = db.prepare(
-      "INSERT INTO durable_review_resolutions (seq, review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    );
-    for (const row of resolutionRows) {
-      const pending = migrated.get(row.review_id);
-      if (!pending) {
-        quarantineOwnerlessRow(db, "resolution", row, "resolution-parent-unmigrated");
-        continue;
-      }
-      let resolution: DurableReviewResolution;
-      try {
-        resolution = ownerlessResolution(row, pending);
-      } catch {
-        quarantineOwnerlessRow(db, "resolution", row, "resolution-binding-invalid");
-        continue;
-      }
-      insertResolution.run(
-        row.seq,
-        row.review_id,
-        row.resolved_at_utc,
-        ...ownerValues(pending.owner),
-        row.receipt_id,
-        row.receipt_sha256,
-        canonicalize(resolution),
-      );
+    if (options.migrationFaultInjection === "after-trigger-installation") {
+      throw new DomainError("INTERNAL", "Injected durable review migration failure.");
     }
-
-    db.exec("DROP TABLE durable_review_resolutions_ownerless");
-    db.exec("DROP TABLE durable_review_pending_records_ownerless");
+    if (schemaFingerprint(db, V2_TABLE_NAMES) !== currentV2) {
+      throw new DomainError("INTERNAL", "Durable review migration did not install the exact current schema.");
+    }
+    const finalQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
+    if (finalQuarantine !== noQuarantine && finalQuarantine !== currentQuarantine) {
+      throw new DomainError("INTERNAL", "Durable review migration did not install the exact quarantine schema.");
+    }
+    if (db.prepare("PRAGMA foreign_key_check").all().length > 0) {
+      throw new DomainError("INTERNAL", "Durable review migration failed foreign-key validation.");
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-}
-function upgradeTriggers(db: DatabaseSync): void {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    for (const { table } of TABLES) for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) db.exec(`DROP TRIGGER IF EXISTS ${table}_${suffix}`);
-    db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_PARENT_BINDING_TRIGGER}`);
-    for (const { table, conflict } of TABLES) db.exec(triggerSql(table, conflict));
-    db.exec(resolutionParentBindingTriggerSql());
-    db.exec("COMMIT");
-  } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 function ownerValues(owner: DurableReviewOwner): [string, string, string, string] {
   const valid = DurableReviewOwnerSchema.parse(owner);
@@ -449,14 +723,16 @@ export class DurableReviewStore {
   readonly #db: DatabaseSync;
   #writes: Promise<void> = Promise.resolve();
   private constructor(db: DatabaseSync) { this.#db = db; }
-  static open(path: string): DurableReviewStore {
+  static open(path: string, options: DurableReviewStoreOpenOptions = {}): DurableReviewStore {
     const db = openDatabase(path);
-    db.exec("PRAGMA journal_mode = WAL"); db.exec("PRAGMA synchronous = FULL"); db.exec("PRAGMA foreign_keys = ON"); db.exec("PRAGMA recursive_triggers = ON");
-    db.exec(LEGACY_SCHEMA);
-    migrateOwnerlessV2Tables(db);
-    db.exec(V2_SCHEMA);
-    upgradeTriggers(db);
-    return new DurableReviewStore(db);
+    try {
+      db.exec("PRAGMA journal_mode = WAL"); db.exec("PRAGMA synchronous = FULL"); db.exec("PRAGMA foreign_keys = ON"); db.exec("PRAGMA recursive_triggers = ON");
+      initializeSchema(db, options);
+      return new DurableReviewStore(db);
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
   close(): void { this.#db.close(); }
   /** Number of v2 pending intake records, never historical v1 resolved rows. */
@@ -539,5 +815,74 @@ export class DurableReviewStore {
     if (valid.domainId) { clauses.push("domain_id = ?"); params.push(valid.domainId); } if (valid.sourceId) { clauses.push("source_id = ?"); params.push(valid.sourceId); }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     return this.#db.prepare(`SELECT * FROM durable_review_records ${where} ORDER BY seq DESC LIMIT ${limitOf(valid.limit)}`).all(...params).map((row) => legacyEntry(LegacyRowSchema.parse(row)));
+  }
+
+  /**
+   * Quarantine hashes prove retained SQL values have not changed after
+   * migration. They are integrity evidence only and never assert authorship
+   * or an authenticated owner.
+   */
+  listMigrationQuarantine(): DurableReviewQuarantineEntry[] {
+    const table = this.#db.prepare(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).get(QUARANTINE_TABLE_NAME);
+    if (!table) return [];
+    return this.#db.prepare(
+      "SELECT * FROM durable_review_v2_migration_quarantine ORDER BY quarantine_id",
+    ).all().map((raw) => {
+      const row = QuarantineRowSchema.parse(raw);
+      return {
+        quarantineId: row.quarantine_id,
+        rowKind: row.row_kind,
+        oldSeq: row.old_seq,
+        reviewId: row.review_id,
+        rowJson: row.row_json,
+        reason: row.reason,
+        migrationVersion: row.migration_version,
+        sourceSchemaFingerprint: row.source_schema_fingerprint,
+        rowSha256: row.row_sha256,
+      };
+    });
+  }
+
+  verifyMigrationQuarantine(): DurableReviewQuarantineVerification {
+    const errors: string[] = [];
+    let entries: DurableReviewQuarantineEntry[] = [];
+    try {
+      entries = this.listMigrationQuarantine();
+    } catch (error) {
+      return {
+        valid: false,
+        entryCount: 0,
+        errors: [`Quarantine rows do not match the exact evidence schema: ${error instanceof Error ? error.message : "invalid row"}`],
+      };
+    }
+    const quarantineExists = this.#db.prepare(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).get(QUARANTINE_TABLE_NAME);
+    if (quarantineExists && schemaFingerprint(this.#db, [QUARANTINE_TABLE_NAME]) !== currentQuarantineFingerprint()) {
+      errors.push("Quarantine schema or append-only guards do not match the exact integrity-evidence fingerprint.");
+    }
+    const allowedFingerprints = new Set([historicalV2Fingerprint(), currentV2Fingerprint()]);
+    for (const entry of entries) {
+      try {
+        if (canonicalize(JSON.parse(entry.rowJson)) !== entry.rowJson) {
+          errors.push(`Quarantine entry ${entry.quarantineId} row_json is not canonical.`);
+        }
+      } catch {
+        errors.push(`Quarantine entry ${entry.quarantineId} row_json is not valid JSON.`);
+      }
+      const actual = createHash("sha256").update(entry.rowJson).digest("hex");
+      if (actual !== entry.rowSha256) {
+        errors.push(`Quarantine entry ${entry.quarantineId} digest does not match retained row values.`);
+      }
+      if (entry.migrationVersion !== MIGRATION_VERSION) {
+        errors.push(`Quarantine entry ${entry.quarantineId} has an unsupported migration version.`);
+      }
+      if (!allowedFingerprints.has(entry.sourceSchemaFingerprint)) {
+        errors.push(`Quarantine entry ${entry.quarantineId} has an unknown source schema fingerprint.`);
+      }
+    }
+    return { valid: errors.length === 0, entryCount: entries.length, errors };
   }
 }
