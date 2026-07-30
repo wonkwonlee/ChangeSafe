@@ -1,0 +1,41 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.compute.aws_instance.checkout_worker",
+      "module_address": "module.compute",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "checkout_worker",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "instance_type": "m6i.large",
+          "tags": { "service": "checkout" }
+        },
+        "after": {
+          "instance_type": "m6i.xlarge",
+          "tags": { "service": "checkout" }
+        }
+      }
+    },
+    {
+      "address": "module.compute.aws_cloudwatch_metric_alarm.checkout_cpu_high",
+      "module_address": "module.compute",
+      "mode": "managed",
+      "type": "aws_cloudwatch_metric_alarm",
+      "name": "checkout_cpu_high",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "threshold": 80,
+          "tags": { "service": "checkout" }
+        }
+      }
+    }
+  ]
+}

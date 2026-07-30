@@ -19,7 +19,7 @@ import { OidcVerifier } from "../src/oidc";
 import { FakeIdp } from "./helpers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const scenarios = path.resolve(here, "../../../scenarios");
+const scenarios = path.resolve(here, "../../../scenarios/network");
 
 function scenario(name: string) {
   const read = (file: string) =>

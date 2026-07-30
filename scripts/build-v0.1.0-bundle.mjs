@@ -270,8 +270,8 @@ async function main() {
 
   const [sourceInputText, sourceFixtureText] = await Promise.all(
     [
-      "scenarios/scenario-a-failover/incident.json",
-      "scenarios/scenario-a-failover/replay-fixture.json",
+      "scenarios/network/scenario-a-failover/incident.json",
+      "scenarios/network/scenario-a-failover/replay-fixture.json",
     ].map(async (sourcePath) => {
       const source = await checked("committed scenario", async () =>
         runCommand("git", ["show", `${sourceCommit}:${sourcePath}`], {

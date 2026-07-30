@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2340 — Scale up the checkout worker instance",
+  "summary": "An instance-type bump plus a new CPU alarm for the checkout fleet; nothing is destroyed or replaced."
+}

@@ -28,8 +28,8 @@ import type { Console } from "../src/output";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 const SCENARIOS = path.join(REPO_ROOT, "scenarios");
-const SAFE = path.join(SCENARIOS, "scenario-a-failover");
-const BLOCKED = path.join(SCENARIOS, "scenario-b-route-leak");
+const SAFE = path.join(SCENARIOS, "network", "scenario-a-failover");
+const BLOCKED = path.join(SCENARIOS, "network", "scenario-b-route-leak");
 
 /** Captures output so assertions read the CLI exactly as a user would. */
 function createCapture(): Console & { stdout: string; stderr: string } {
@@ -111,7 +111,7 @@ describe("changesafe gate", () => {
     // canonical hashes as the console — not a second implementation.
     const scenario = getScenario("scenario-b-route-leak");
     if (!scenario) throw new Error("scenario missing");
-    const expected = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
+    const expected = evaluatePolicies(networkDomain, scenario.input as never, scenario.proposal);
 
     const capture = createCapture();
     await main(["gate", "--scenario", BLOCKED, "--format", "json"], capture);
@@ -422,7 +422,10 @@ describe("changesafe verify", () => {
 describe("changesafe scenario", () => {
   it("checks the bundled scenarios against their expectations", async () => {
     const capture = createCapture();
-    const code = await main(["scenario", "check", SCENARIOS, "--format", "json"], capture);
+    const code = await main(
+      ["scenario", "check", path.join(SCENARIOS, "network"), "--format", "json"],
+      capture,
+    );
     expect(code).toBe(0);
     const payload = JSON.parse(capture.stdout);
     expect(payload.ok).toBe(true);

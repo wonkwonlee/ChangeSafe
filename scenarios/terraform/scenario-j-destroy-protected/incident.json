@@ -1,0 +1,24 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.data.aws_db_instance.legacy_reporting",
+      "module_address": "module.data",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "legacy_reporting",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "identifier": "legacy-reporting-db",
+          "engine": "postgres",
+          "allocated_storage": 50,
+          "tags": { "service": "reporting", "changesafe_protected": "true" }
+        },
+        "after": null
+      }
+    }
+  ]
+}

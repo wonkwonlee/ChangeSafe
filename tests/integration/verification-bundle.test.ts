@@ -34,7 +34,7 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const CLI = path.join(ROOT, "packages/cli/dist/changesafe.js");
-const SCENARIO = path.join(ROOT, "scenarios/scenario-a-failover");
+const SCENARIO = path.join(ROOT, "scenarios/network/scenario-a-failover");
 const CREATED_AT = "2026-07-26T12:00:00.000Z";
 /**
  * Proving that cleanup *fails* means making it fail, and the portable way is
@@ -124,7 +124,7 @@ function createBuilderRepository(options?: {
   const script = path.join(root, "scripts", "build-v0.1.0-bundle.mjs");
   const releaseLibrary = path.join(root, "scripts", "lib", "v0.1.0-release.mjs");
   const cli = path.join(root, "packages", "cli", "dist", "changesafe.js");
-  const scenario = path.join(root, "scenarios", "scenario-a-failover");
+  const scenario = path.join(root, "scenarios", "network", "scenario-a-failover");
 
   mkdirSync(path.dirname(releaseLibrary), { recursive: true });
   mkdirSync(path.dirname(cli), { recursive: true });
@@ -883,12 +883,13 @@ process.exit(0);
     const out = path.join(temporaryDirectory(), "v0.1.0");
     const repository = createBuilderRepository({
       cliHook: `  if (args[0] === "gate" && !args.includes("--receipt")) {
-    appendFileSync(path.join(repoRoot, "scenarios", "scenario-a-failover", "replay-fixture.json"), "\\n ");
+    appendFileSync(path.join(repoRoot, "scenarios", "network", "scenario-a-failover", "replay-fixture.json"), "\\n ");
   }`,
     });
     const sourceFixture = path.join(
       repository.root,
       "scenarios",
+      "network",
       "scenario-a-failover",
       "replay-fixture.json",
     );
@@ -902,7 +903,7 @@ process.exit(0);
       "git",
       [
         "show",
-        `${sourceCommit}:scenarios/scenario-a-failover/replay-fixture.json`,
+        `${sourceCommit}:scenarios/network/scenario-a-failover/replay-fixture.json`,
       ],
       { cwd: repository.root, encoding: "utf8" },
     );

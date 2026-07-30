@@ -22425,13 +22425,6 @@ var ScenarioExpectationsSchema = external_exports.strictObject({
       message: "only approvable scenarios reach simulation"
     });
   }
-  if (expectations.approvable && expectations.simulation === null) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["simulation"],
-      message: "approvable scenarios must declare their simulation outcome"
-    });
-  }
   const { adversarial, failureModes } = expectations.corpus;
   if (adversarial && failureModes.length === 0) {
     ctx.addIssue({
@@ -25848,9 +25841,23 @@ var kubernetes = {
     return { input: snapshot, inputId: snapshot.snapshotId };
   },
   readProposalFile(filePath) {
-    return parseManifestDocuments(readTextFile(filePath, "Kubernetes proposal"));
+    const text = readTextFile(filePath, "Kubernetes proposal");
+    try {
+      const parsed = JSON.parse(text);
+      if (hasProposalKey(parsed)) return parsed;
+    } catch {
+    }
+    return parseManifestDocuments(text);
   },
   parseProposal(raw, input) {
+    if (hasProposalKey(raw)) {
+      const fixture = parseOrThrow2(KubernetesReplayFixtureSchema, raw, "replay fixture");
+      return {
+        proposal: fixture.proposal,
+        provenance: fixture.provenance,
+        fixtureId: fixture.fixtureId
+      };
+    }
     const manifestSet = KubernetesManifestSetSchema.parse(raw);
     if (!input) throw new UsageError("Kubernetes proposal parsing requires a snapshot input");
     const derived = deriveManifestProposal(
@@ -25961,7 +25968,9 @@ async function runGate(options, console2) {
   let sourceId = options.sourceId;
   if (options.scenario) {
     inputPath ??= path2.join(options.scenario, "incident.json");
-    proposalPath ??= path2.join(options.scenario, "replay-fixture.json");
+    if (!domain2.derivesProposalFromInput) {
+      proposalPath ??= path2.join(options.scenario, "replay-fixture.json");
+    }
     sourceId ??= path2.basename(path2.resolve(options.scenario));
   }
   if (!inputPath) {
@@ -26382,7 +26391,7 @@ var RISK_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 function runGallery(options, console2) {
   const root = path5.resolve(options.dir);
   if (!existsSync2(root)) throw new UsageError(`scenario directory does not exist: ${root}`);
-  const entries = readdirSync2(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).filter((name) => existsSync2(path5.join(root, name, "expectations.json"))).sort().map((name) => readEntry(path5.join(root, name)));
+  const entries = findScenarioDirs(root).sort().map((dir) => readEntry(dir, root));
   if (entries.length === 0) throw new UsageError(`no scenarios found in ${root}`);
   const markdown = render(entries);
   if (options.format === "json") {
@@ -26421,17 +26430,40 @@ function runGallery(options, console2) {
   console2.out("");
   return EXIT_OK;
 }
-function readEntry(dir) {
+function findScenarioDirs(root) {
+  const topLevel = readdirSync2(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  const leaves = [];
+  for (const name of topLevel) {
+    const full = path5.join(root, name);
+    if (existsSync2(path5.join(full, "expectations.json"))) {
+      leaves.push(full);
+      continue;
+    }
+    const nested = readdirSync2(full, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    for (const nestedName of nested) {
+      const nestedFull = path5.join(full, nestedName);
+      if (existsSync2(path5.join(nestedFull, "expectations.json"))) {
+        leaves.push(nestedFull);
+      }
+    }
+  }
+  return leaves;
+}
+function readEntry(dir, root) {
   const expectations = parseOrThrow2(
     ScenarioExpectationsSchema,
     readJsonFile(path5.join(dir, "expectations.json"), "expectations"),
     "expectations"
   );
   const incident = readJsonFile(path5.join(dir, "incident.json"), "incident bundle");
+  const metaPath = path5.join(dir, "meta.json");
+  const meta3 = existsSync2(metaPath) ? readJsonFile(metaPath, "scenario meta") : {};
+  const domainId = path5.dirname(dir) === root ? "network" : path5.basename(path5.dirname(dir));
   return {
     scenarioId: expectations.scenarioId,
-    title: typeof incident.title === "string" ? incident.title : expectations.scenarioId,
-    summary: typeof incident.summary === "string" ? incident.summary : "",
+    domainId,
+    title: typeof meta3.title === "string" && meta3.title || typeof incident.title === "string" && incident.title || expectations.scenarioId,
+    summary: typeof meta3.summary === "string" && meta3.summary || typeof incident.summary === "string" && incident.summary || "",
     expectations
   };
 }
@@ -26469,14 +26501,14 @@ function render(entries) {
   lines.push("");
   lines.push("## By outcome");
   lines.push("");
-  lines.push("| Scenario | Incident | Risk | Outcome |");
-  lines.push("| --- | --- | --- | --- |");
+  lines.push("| Scenario | Domain | Incident | Risk | Outcome |");
+  lines.push("| --- | --- | --- | --- | --- |");
   const sorted = [...entries].sort(
     (a, b) => RISK_ORDER.indexOf(a.expectations.riskLevel) - RISK_ORDER.indexOf(b.expectations.riskLevel) || a.scenarioId.localeCompare(b.scenarioId)
   );
   for (const entry of sorted) {
     lines.push(
-      `| \`${entry.scenarioId}\` | ${entry.title} | ${entry.expectations.riskLevel} | ${outcome(entry)} |`
+      `| \`${entry.scenarioId}\` | ${entry.domainId} | ${entry.title} | ${entry.expectations.riskLevel} | ${outcome(entry)} |`
     );
   }
   lines.push("");
@@ -26995,7 +27027,7 @@ async function runLedgerVerify(options, console2) {
 // src/scenario.ts
 import { existsSync as existsSync4, mkdirSync, readdirSync as readdirSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import path7 from "node:path";
-var REQUIRED_FILES = ["incident.json", "replay-fixture.json", "expectations.json"];
+var REQUIRED_FILES = ["incident.json", "expectations.json"];
 function runScenarioCheck(options, console2) {
   const domain2 = resolveDomain(options.domain);
   const root = path7.resolve(options.dir);
@@ -27035,11 +27067,18 @@ function checkOne(dir, domain2) {
       return { scenarioId, ok: false, problems: [`missing ${file2}`] };
     }
   }
+  if (!domain2.derivesProposalFromInput && !existsSync4(path7.join(dir, "replay-fixture.json"))) {
+    return { scenarioId, ok: false, problems: ["missing replay-fixture.json"] };
+  }
   try {
     const { input } = domain2.parseInput(readJsonFile(path7.join(dir, "incident.json"), "incident"));
-    const { proposal } = domain2.parseProposal(
-      readJsonFile(path7.join(dir, "replay-fixture.json"), "fixture")
-    );
+    const proposal = domain2.derivesProposalFromInput ? domain2.deriveProposal?.(input) : domain2.parseProposal(
+      readJsonFile(path7.join(dir, "replay-fixture.json"), "fixture"),
+      input
+    ).proposal;
+    if (!proposal) {
+      throw new UsageError(`the ${domain2.id} domain could not derive a proposal from the input`);
+    }
     const expectations = parseOrThrow2(
       ScenarioExpectationsSchema,
       readJsonFile(path7.join(dir, "expectations.json"), "expectations"),
@@ -29873,7 +29912,10 @@ async function main(argv, console2) {
         {
           provider: values.provider,
           model: values.model,
-          dir: values.dir ?? "scenarios",
+          // eval measures a model, and only the network domain has model
+          // analysis (see packages/ai/src/domains.ts) — terraform and
+          // kubernetes proposals are derived mechanically, not proposed.
+          dir: values.dir ?? "scenarios/network",
           runs,
           report: values.report,
           format
@@ -29946,7 +29988,11 @@ async function main(argv, console2) {
       const sub = positionals[1];
       if (sub === "check") {
         return runScenarioCheck(
-          { dir: positionals[2] ?? values.dir ?? "scenarios", domain: values.domain, format },
+          {
+            dir: positionals[2] ?? values.dir ?? `scenarios/${values.domain}`,
+            domain: values.domain,
+            format
+          },
           console2
         );
       }

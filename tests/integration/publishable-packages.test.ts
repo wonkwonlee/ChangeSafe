@@ -107,10 +107,10 @@ describe.runIf(built)("the published packages", () => {
       import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes";
 
       const bundle = IncidentBundleSchema.parse(
-        JSON.parse(readFileSync(${JSON.stringify(path.join(root, "scenarios/scenario-b-route-leak/incident.json"))}, "utf8")),
+        JSON.parse(readFileSync(${JSON.stringify(path.join(root, "scenarios/network/scenario-b-route-leak/incident.json"))}, "utf8")),
       );
       const { proposal } = JSON.parse(
-        readFileSync(${JSON.stringify(path.join(root, "scenarios/scenario-b-route-leak/replay-fixture.json"))}, "utf8"),
+        readFileSync(${JSON.stringify(path.join(root, "scenarios/network/scenario-b-route-leak/replay-fixture.json"))}, "utf8"),
       );
 
       const { findings, riskLevel } = evaluatePolicies(networkDomain, bundle, proposal);

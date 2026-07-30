@@ -226,7 +226,7 @@ weaker verdict.
 
 ```bash
 # Ask a model for a change, then gate it — same engine as `changesafe gate`
-changesafe analyze --scenario scenarios/scenario-a-failover --provider ollama
+changesafe analyze --scenario scenarios/network/scenario-a-failover --provider ollama
 
 # Measure a model against the whole scenario suite (spends API credit)
 changesafe eval --provider anthropic --runs 3
@@ -320,7 +320,7 @@ The engine is a library, and the CLI is the same engine with **no AI
 dependency** — nothing in the gate calls a model.
 
 ```bash
-npx changesafe gate --scenario scenarios/scenario-b-route-leak
+npx changesafe gate --scenario scenarios/network/scenario-b-route-leak
 ```
 
 ```text
@@ -397,9 +397,12 @@ These do not change:
   signed decisions, and durable storage belong to the separate self-hosted
   server boundary, and its browser UI still requires an operator-supplied
   HTTPS gateway/BFF.
-- The benchmark corpus is nine synthetic network scenarios—six adversarial—
-  and should be treated as a coverage instrument, not a statistical safety
-  score.
+- The scenario corpus spans three domains (network, terraform, kubernetes;
+  see [docs/SCENARIOS.md](docs/SCENARIOS.md) for the current count and
+  failure-mode coverage) and should be treated as a coverage instrument, not
+  a statistical safety score. The AI benchmark (`changesafe eval`) measures
+  only the network domain, where model analysis exists — nine synthetic
+  scenarios, six adversarial.
 - ChangeSafe never executes an infrastructure change.
 
 ## Related work

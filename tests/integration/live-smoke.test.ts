@@ -27,7 +27,7 @@ describe.skipIf(!liveEnabled)("live provider smoke (opt-in)", () => {
     const provider = defaultProvider(process.env);
     if (!provider) throw new Error("no provider configured; set CHANGESAFE_PROVIDER or a key");
 
-    const { proposal, model } = await analyzeLive(scenario.bundle);
+    const { proposal, model } = await analyzeLive(scenario.input as never);
     // The provider reports what answered; assert only that it is a real
     // answer, since a provider may resolve an alias to a dated snapshot.
     expect(model).toBeTruthy();
@@ -35,7 +35,7 @@ describe.skipIf(!liveEnabled)("live provider smoke (opt-in)", () => {
     expect(proposal.operations.length).toBeGreaterThan(0);
 
     // The deterministic gate must run cleanly on live output too.
-    const { findings } = evaluatePolicies(networkDomain, scenario.bundle, proposal);
+    const { findings } = evaluatePolicies(networkDomain, scenario.input as never, proposal);
     expect(findings).toHaveLength(7);
 
     if (process.env.CHANGESAFE_CAPTURE_FIXTURE === "1") {
@@ -48,7 +48,7 @@ describe.skipIf(!liveEnabled)("live provider smoke (opt-in)", () => {
           notes: `Captured from a real ${provider.label} call (requested ${resolveModel(provider, process.env)}) by the opt-in live smoke test. Review before promoting to replay-fixture.json.`,
         },
       );
-      const outDir = path.join(process.cwd(), "scenarios", "scenario-a-failover");
+      const outDir = path.join(process.cwd(), "scenarios", "network", "scenario-a-failover");
       mkdirSync(outDir, { recursive: true });
       const outPath = path.join(outDir, "replay-fixture.captured.json");
       writeFileSync(outPath, `${JSON.stringify(capture, null, 2)}\n`);

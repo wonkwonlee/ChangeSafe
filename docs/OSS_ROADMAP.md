@@ -205,7 +205,7 @@ Goal: the gate runs anywhere — terminal and CI — with **no AI dependency**
       the app's for the same scenario, with identical canonical hashes.
 - [x] `packages/cli/README.md`.
 
-Exit gate: **met** — `changesafe gate --scenario scenarios/scenario-a-failover`
+Exit gate: **met** — `changesafe gate --scenario scenarios/network/scenario-a-failover`
 reproduces the console's findings byte-for-byte, and the CLI has its own
 suite.
 
@@ -325,8 +325,10 @@ and ephemeral: it evaluates but does not decide, simulate, or issue receipts.
   has a scenario: injection in an alert body rather than a note, management
   severance and protected-resource violation via interface disable, command
   smuggling plus an invalid patch target, and — the most interesting — a
-  change every policy passes that the sandbox still flags. Nine scenarios,
-  six adversarial, all nine failure modes covered.
+  change every policy passes that the sandbox still flags. Nine network
+  scenarios, six adversarial, all nine failure modes covered. The corpus
+  since grew to 13 scenarios across all three domains (network, terraform,
+  kubernetes) — see the scenario gallery for the current count.
 - **Scenario gallery.** `changesafe scenario gallery` generates
   `docs/SCENARIOS.md` including the failure-mode coverage table with gaps
   named explicitly; CI fails if it drifts from the corpus. Deliberately a
