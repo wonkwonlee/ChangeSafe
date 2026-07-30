@@ -34,8 +34,8 @@ export const CLIENT_BUNDLE_MARKER_CONTRACTS = Object.freeze({
 
 export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
   Object.freeze({
-    route: "/workbench",
-    htmlPath: "server/app/workbench.html",
+    route: "/",
+    htmlPath: "server/app/index.html",
     forbiddenRuntimeMarkers: Object.freeze([
       "DESTRUCTIVE_OP",
       "REVERSIBILITY",
@@ -62,7 +62,7 @@ export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
 ]);
 
 const PUBLIC_ROUTE_ENTRY_PATHS = Object.freeze([
-  "app/workbench/page.tsx",
+  "app/page.tsx",
   "app/workbench/terraform/page.tsx",
   "app/workbench/kubernetes/page.tsx",
   "app/workbench/self-hosted/page.tsx",

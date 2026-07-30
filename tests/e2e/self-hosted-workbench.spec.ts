@@ -15,7 +15,7 @@ test("self-hosted workbench is a separate safe mode when no gateway is configure
   await expect(page).toHaveTitle(
     "ChangeSafe Workbench — Authenticated Self-Hosted",
   );
-  await expect(page.getByRole("navigation", { name: "Runtime navigation" })).toContainText(
+  await expect(page.getByRole("navigation", { name: "Runtime navigation" })).not.toContainText(
     "Legacy local",
   );
   await expect(page.getByRole("navigation", { name: "Runtime navigation" })).toContainText(
@@ -35,4 +35,15 @@ test("self-hosted workbench is a separate safe mode when no gateway is configure
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Add to authenticated queue" })).toBeDisabled();
   expect(requests).toEqual([]);
+});
+
+test("retired compatibility endpoints stay unavailable", async ({ request }) => {
+  await expect((await request.get("/workbench")).status()).toBe(404);
+  await expect(
+    (
+      await request.post("/api/analyze", {
+        data: { scenarioId: "scenario-a-safe-acl", mode: "replay" },
+      })
+    ).status(),
+  ).toBe(404);
 });

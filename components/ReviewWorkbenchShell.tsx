@@ -200,7 +200,7 @@ export function ReviewWorkbenchShell({
           <a className="mr-auto text-base font-bold tracking-tight text-ink" href="#review">
             ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span>
           </a>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Legacy local</Link>
+          <span aria-current="page" className="inline-flex rounded-md border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Network</span>
           <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/terraform">Terraform</Link>
           <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/kubernetes">Kubernetes</Link>
           <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/self-hosted">Authenticated self-hosted</Link>

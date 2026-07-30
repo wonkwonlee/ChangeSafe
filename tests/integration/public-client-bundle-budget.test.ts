@@ -55,10 +55,11 @@ afterEach(() => {
 describe("public client bundle verifier", () => {
   it("covers all public workbench routes and is wired into the post-build CI gate", () => {
     expect(PUBLIC_WORKBENCH_ROUTES.map(({ route }) => route)).toEqual([
-      "/workbench",
+      "/",
       "/workbench/terraform",
       "/workbench/kubernetes",
     ]);
+    expect(PUBLIC_WORKBENCH_ROUTES[0]?.htmlPath).toBe("server/app/index.html");
     for (const route of PUBLIC_WORKBENCH_ROUTES) {
       expect(route.forbiddenRuntimeMarkers.length).toBeGreaterThan(0);
     }
@@ -498,7 +499,7 @@ describe("public client bundle verifier", () => {
     "@changesafe/ai",
     "@changesafe/ai/providers/openai",
   ])("rejects a public route static dependency on %s", (specifier) => {
-    const entryPath = path.resolve("app/workbench/page.tsx");
+    const entryPath = path.resolve("app/page.tsx");
     const original = readFileSync(entryPath, "utf8");
     expect(() =>
       inspectPublicClientSourceDependencies({
@@ -513,7 +514,7 @@ describe("public client bundle verifier", () => {
   });
 
   it("allows type-only and dynamic AI package references outside the static graph", () => {
-    const entryPath = path.resolve("app/workbench/page.tsx");
+    const entryPath = path.resolve("app/page.tsx");
     const original = readFileSync(entryPath, "utf8");
     expect(() =>
       inspectPublicClientSourceDependencies({

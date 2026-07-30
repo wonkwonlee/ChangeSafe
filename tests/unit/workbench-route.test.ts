@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import WorkbenchPage, { metadata } from "../../app/workbench/page";
+import WorkbenchPage, { metadata } from "../../app/page";
 
-describe("/workbench route", () => {
+describe("default / route", () => {
   it("renders the interactive public-replay workbench with honest metadata", async () => {
     const markup = renderToStaticMarkup(await WorkbenchPage());
 

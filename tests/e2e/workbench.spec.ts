@@ -29,7 +29,7 @@ async function expectNoDecisionOrExecutionControls(page: Page): Promise<void> {
 
 test("public workbench evaluates a selected bundled replay without creating decision authority", async ({ page }) => {
   const dataRequests = await interceptFetchAndXhrRequests(page);
-  await page.goto("/workbench");
+  await page.goto("/");
 
   await expect(page).toHaveTitle("ChangeSafe Workbench — Public Replay");
   await expect(page.getByRole("main", { name: "Review canvas" })).toBeVisible();
@@ -58,7 +58,7 @@ test("public workbench evaluates a selected bundled replay without creating deci
 });
 
 test("public workbench renders a safe replay result without granting its available human decision", async ({ page }) => {
-  await page.goto("/workbench");
+  await page.goto("/");
 
   // The default fixture is captured. This is deliberately asserted in the
   // public UI as well as the legacy airlock: provenance is an operator-facing
@@ -74,7 +74,7 @@ test("public workbench renders a safe replay result without granting its availab
 });
 
 test("network topology has a keyboard-operable equivalent table view", async ({ page }) => {
-  await page.goto("/workbench");
+  await page.goto("/");
 
   const redTeamExample = page.getByRole("button", { name: /INC-4977/ });
   await redTeamExample.focus();
@@ -115,7 +115,7 @@ test.describe("mobile workbench", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("stacks interactive review regions into one column", async ({ page }) => {
-    await page.goto("/workbench");
+    await page.goto("/");
     const mobileColumnCount = await page.locator("#review").evaluate((element) => {
       return getComputedStyle(element).gridTemplateColumns.split(/\s+/).filter(Boolean).length;
     });
@@ -130,7 +130,7 @@ test.describe("network workbench accessibility preferences", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 640, height: 720 });
-    await page.goto("/workbench");
+    await page.goto("/");
 
     const hasDocumentOverflow = await page.evaluate(
       () =>
@@ -146,7 +146,7 @@ test.describe("network workbench accessibility preferences", () => {
 
   test("honors reduced-motion preferences", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/workbench");
+    await page.goto("/");
 
     const motionDurations = await page
       .getByRole("button", { name: "Run replay" })

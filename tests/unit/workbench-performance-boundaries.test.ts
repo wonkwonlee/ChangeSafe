@@ -218,7 +218,7 @@ describe("workbench deterministic performance boundaries", () => {
   });
 
   it.each([
-    ["app/workbench/page.tsx", "@/components/ReviewWorkbenchShell"],
+    ["app/page.tsx", "@/components/ReviewWorkbenchShell"],
     [
       "app/workbench/terraform/page.tsx",
       "@/components/TerraformWorkbenchShell",
@@ -247,7 +247,7 @@ describe("workbench deterministic performance boundaries", () => {
     const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
     const originalShell = readFileSync(shellPath, "utf8");
     const graph = collectStaticRuntimeDependencyGraph(
-      "app/workbench/page.tsx",
+      "app/page.tsx",
       new Map([
         [
           shellPath,
@@ -292,7 +292,7 @@ describe("workbench deterministic performance boundaries", () => {
     const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
     const originalShell = readFileSync(shellPath, "utf8");
     const graph = collectStaticRuntimeDependencyGraph(
-      "app/workbench/page.tsx",
+      "app/page.tsx",
       new Map([
         [
           shellPath,
@@ -322,7 +322,7 @@ describe("workbench deterministic performance boundaries", () => {
       const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
       const originalShell = readFileSync(shellPath, "utf8");
       const graph = collectStaticRuntimeDependencyGraph(
-        "app/workbench/page.tsx",
+        "app/page.tsx",
         new Map([
           [shellPath, `${originalShell}\n${injectedImport}\n`],
         ]),
@@ -343,7 +343,7 @@ describe("workbench deterministic performance boundaries", () => {
     const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
     const originalShell = readFileSync(shellPath, "utf8");
     const graph = collectStaticRuntimeDependencyGraph(
-      "app/workbench/page.tsx",
+      "app/page.tsx",
       new Map([
         [
           shellPath,
@@ -366,7 +366,7 @@ void import("@changesafe/domain-kubernetes/offline");
   });
 
   it.each([
-    ["app/workbench/page.tsx", "@changesafe/domain-network"],
+    ["app/page.tsx", "@changesafe/domain-network"],
     ["app/workbench/terraform/page.tsx", "@changesafe/domain-terraform"],
     ["app/workbench/kubernetes/page.tsx", "@changesafe/domain-kubernetes"],
   ] as const)(

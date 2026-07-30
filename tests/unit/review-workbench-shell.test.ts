@@ -33,6 +33,9 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).toContain("Accessible topology tables");
     expect(markup).toContain("<caption>Network nodes</caption>");
     expect(markup).toContain("<caption>Network links</caption>");
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain(">Network</span>");
+    expect(markup).not.toContain("Legacy local");
   });
 
   it("announces only trusted replay lifecycle copy and marks an active replay busy", async () => {

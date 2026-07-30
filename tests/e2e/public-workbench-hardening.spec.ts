@@ -13,7 +13,7 @@ interface PublicWorkbench {
 
 const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
   {
-    path: "/workbench",
+    path: "/",
     mainName: "Review canvas",
     contextName: "Review context",
     authorityName: "Review authority",
@@ -166,7 +166,7 @@ for (const workbench of PUBLIC_WORKBENCHES) {
         page.getByRole("heading", {
           level: 2,
           name:
-            workbench.path === "/workbench"
+            workbench.path === "/"
               ? "Policy results"
               : workbench.path === "/workbench/terraform"
                 ? "Policy, reversibility, and context evidence"

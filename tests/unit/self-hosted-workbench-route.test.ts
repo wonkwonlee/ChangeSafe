@@ -14,8 +14,10 @@ describe("/workbench/self-hosted route", () => {
     try {
       const markup = renderToStaticMarkup(createElement(SelfHostedWorkbenchPage));
       expect(markup).toContain('aria-label="Runtime navigation"');
-      expect(markup).toContain("Legacy local");
       expect(markup).toContain("Public replay");
+      expect(markup).toContain('href="/"');
+      expect(markup).not.toContain("Legacy local");
+      expect(markup).not.toContain('href="/workbench"');
       expect(markup).toContain("Authenticated self-hosted");
       expect(markup).toContain("Self-hosted review is not configured");
       expect(markup).toContain("Kubernetes offline artifact");

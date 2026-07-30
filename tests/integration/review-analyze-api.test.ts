@@ -1,14 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { POLICY_VERSION } from "@changesafe/domain-network";
 
-import { POST as legacyPost } from "@/app/api/analyze/route";
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import {
-  AnalyzeSuccessSchema,
   ReviewAnalyzeErrorV1Schema,
   ReviewAnalyzeSuccessV1Schema,
 } from "@/lib/domain/api";
 import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
+import { getScenario } from "@/scenarios";
 
 function request(body: unknown): Request {
   return new Request("http://localhost/api/reviews/analyze", {
@@ -37,26 +36,17 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
     ["scenario-a-failover", "LOW", false, "bundled-replay"],
     ["scenario-b-route-leak", "CRITICAL", true, "authored-fixture"],
   ] as const)(
-    "matches legacy proposal output and computes the %s deterministic outcome",
+    "returns the bound replay proposal and computes the %s deterministic outcome",
     async (sourceId, expectedRisk, expectedBlock, expectedSource) => {
       vi.stubEnv("OPENAI_API_KEY", "");
-      const [legacyResponse, response] = await Promise.all([
-        legacyPost(
-          new Request("http://localhost/api/analyze", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ scenarioId: sourceId, mode: "replay" }),
-          }),
-        ),
-        reviewPost(request(v1Request(sourceId))),
-      ]);
+      const response = await reviewPost(request(v1Request(sourceId)));
 
-      expect(legacyResponse.status).toBe(200);
       expect(response.status).toBe(200);
-      const legacy = AnalyzeSuccessSchema.parse(await legacyResponse.json());
       const payload = ReviewAnalyzeSuccessV1Schema.parse(await response.json());
+      const scenario = getScenario(sourceId);
+      if (!scenario) throw new Error(`Missing bundled scenario ${sourceId}`);
 
-      expect(payload.result.proposal).toEqual(legacy.proposal);
+      expect(payload.result.proposal).toEqual(scenario.fixture.proposal);
       expect(payload.result.riskLevel).toBe(expectedRisk);
       expect(
         payload.result.findings.some((finding) => finding.status === "BLOCK"),
