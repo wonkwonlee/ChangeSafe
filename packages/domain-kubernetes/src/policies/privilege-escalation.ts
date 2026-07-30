@@ -12,10 +12,11 @@ function privilegeSignals(resource: KubernetesResource): Set<string> {
   if (!isWorkload(resource)) return new Set();
   const signals = new Set<string>();
   const spec = resource.spec;
+  if (spec.podRunAsUser === 0) signals.add("pod:runAsUser=0");
   for (const field of ["hostNetwork", "hostPID", "hostIPC", "hasHostPath"] as const) {
     if (spec[field]) signals.add(field);
   }
-  for (const container of spec.containers ?? []) {
+  for (const container of [...(spec.initContainers ?? []), ...(spec.containers ?? [])]) {
     const security = container.security;
     if (security?.privileged === true) signals.add(`${container.name}:privileged`);
     if (security?.allowPrivilegeEscalation === true) {

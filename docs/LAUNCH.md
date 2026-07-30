@@ -157,6 +157,23 @@ interface. If OPA already solves your problem, use OPA.
 at all — that is the point. The model is an interchangeable proposer, and
 the console shows a live model path for people who want it.
 
+**"Doesn't Batfish/Forward Networks already do the network verification?"**
+For production-grade reachability, yes — multi-vendor parsing, BGP/ECMP,
+real header-space analysis. `domain-network`'s model is intentionally
+synthetic (see the README's Limitations) and isn't trying to replace them.
+The honest long-term shape is Batfish-as-oracle behind `MGMT_REACHABILITY`,
+not a competing simulator — an open roadmap item, not a claim already
+earned.
+
+**"Isn't this what MCP gateways / Microsoft's Agent Governance Toolkit
+already do?"** Those operate at the transport layer — which tool an agent
+may call, with what identity and rate limit — and generally don't parse what
+the change actually does. ChangeSafe operates one layer down: given a
+specific Terraform plan or network patch, does executing it sever management
+access, destroy a protected resource, or ship without a rollback. A gateway
+and ChangeSafe compose rather than compete: the gateway can require the gate
+call before the destructive tool call goes through.
+
 **"What stops someone bypassing it?"** Nothing, if they do not run it. This
 is a check in your pipeline, not a control plane. It reduces the chance that
 a plausible-sounding unsafe change gets waved through; it does not stop a

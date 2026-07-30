@@ -106,6 +106,36 @@ describe("normalizeSnapshot", () => {
     expect(normalized.resources[0]).not.toHaveProperty("metadata.deletionTimestamp");
   });
 
+  it("normalizes pod security and init containers for privilege policies", () => {
+    const rawDeployment = currentSnapshot.resources[0];
+    if (!rawDeployment) throw new Error("fixture must contain a Deployment");
+    const normalized = normalizeSnapshot({
+      ...currentSnapshot,
+      resources: [{
+        ...rawDeployment,
+        spec: {
+          ...rawDeployment.spec,
+          template: {
+            ...rawDeployment.spec.template,
+            spec: {
+              ...rawDeployment.spec.template.spec,
+              securityContext: { runAsUser: 0 },
+              initContainers: [{
+                name: "setup",
+                image: "registry.example.invalid/setup:v1",
+                securityContext: { privileged: true, allowPrivilegeEscalation: false },
+              }],
+            },
+          },
+        },
+      }],
+    });
+    expect(normalized.resources[0]?.spec).toMatchObject({
+      podRunAsUser: 0,
+      initContainers: [{ name: "setup", security: { privileged: true } }],
+    });
+  });
+
   it("normalizes Kubernetes defaults explicitly", () => {
     const normalized = normalizeSnapshot(currentSnapshot);
     const statefulSet = normalized.resources.find(

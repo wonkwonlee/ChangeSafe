@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/domain-kubernetes",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Kubernetes domain contracts for ChangeSafe: offline snapshots and manifest proposals only; never contacts or mutates a cluster.",
   "license": "MIT",
   "type": "module",
@@ -51,7 +51,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@changesafe/core": "^0.2.0",
+    "@changesafe/core": "^0.3.1",
     "yaml": "2.9.0",
     "zod": "^4.4.3"
   },

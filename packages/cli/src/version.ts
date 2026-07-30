@@ -12,7 +12,7 @@
  * a check.
  */
 
-export const CLI_PACKAGE_VERSION = "0.2.0";
+export const CLI_PACKAGE_VERSION = "0.3.1";
 
 export const CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
 

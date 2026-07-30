@@ -329,7 +329,11 @@ filesystem and the demo's "no signup" promise is worth keeping.
 
 Still open and genuinely community-shaped: a docs site (pending the §7
 tooling decision), integration conversations with k8sgpt-style diagnosers,
-and published cross-model reports, which need someone's API budget.
+published cross-model reports (need someone's API budget), and a
+Batfish-backed `domain-network` reachability oracle — swapping the toy
+link/route model behind `MGMT_REACHABILITY` for a real one, rather than
+maintaining a competing network simulator. No design work has started; it's
+listed here so the README's "on the roadmap" claim points at something real.
 
 ## 4. Sequencing rationale
 
@@ -399,7 +403,10 @@ schema changes follow semver + documented migrations.
 3. Docs-site tooling (Starlight vs Nextra) remains an open owner decision
    after the P7 first pass; README plus the generated scenario gallery suffice
    until there is enough documentation to justify a dedicated site.
-4. Third domain after terraform: Kubernetes (largest audience) vs IAM
+4. Third domain after terraform: Kubernetes was delivered in v0.3.0 as the
+   offline simulated-state domain and namespace-scoped read-only collector,
+   then patched in v0.3.1 for valid direct Node ESM imports; future domains
+   can follow the same adapter boundary.
    (most visceral lockout demo) — decide after P4 feedback.
 
 ## 8. Success metrics (12 weeks post-launch)

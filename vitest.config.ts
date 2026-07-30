@@ -32,6 +32,10 @@ export default defineConfig({
         root,
         "packages/domain-kubernetes/src/index.ts",
       ),
+      "@changesafe/kubernetes-collector": path.resolve(
+        root,
+        "packages/kubernetes-collector/src/index.ts",
+      ),
       "changesafe/version": path.resolve(root, "packages/cli/src/version.ts"),
       changesafe: path.resolve(root, "packages/cli/src/main.ts"),
       "@": root,

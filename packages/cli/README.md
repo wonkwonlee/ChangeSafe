@@ -220,3 +220,12 @@ replacing a key invalidates every receipt already signed with it.
 ## License
 
 MIT — see the repository root.
+
+## Kubernetes
+
+```bash
+changesafe kubernetes collect --namespace demo --out current.snapshot.json
+changesafe gate --domain kubernetes --input current.snapshot.json --proposal proposed.yaml
+```
+
+Collection is the only networked command and is read-only. `gate` accepts offline JSON/YAML manifests and never applies them.
