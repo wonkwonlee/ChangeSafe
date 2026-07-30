@@ -42,3 +42,21 @@ test("Case 3 replay run produces the expected CRITICAL/BLOCKED findings", async 
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "BLOCKED" })).toBeVisible();
 });
+
+test("picking a scenario writes it into the URL and survives a reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Suspected route leak/ }).click();
+  await expect(page).toHaveURL(/[?&]scenario=scenario-b-route-leak\b/);
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: /Suspected route leak/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Kubernetes deep link pre-selects a bundled example", async ({ page }) => {
+  await page.goto("/workbench/kubernetes?scenario=kubernetes-selector-red-team");
+  await expect(
+    page.getByRole("button", { name: /Service selector break/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
