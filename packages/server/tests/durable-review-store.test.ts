@@ -69,9 +69,27 @@ describe("DurableReviewStore v2 pending queue", () => {
       try {
         raw.exec("PRAGMA recursive_triggers = OFF");
         expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_pending_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, record_json) VALUES (?, ?, ?, ?, ?, ?, ?)").run(1, "new-review", item.createdAtUtc, "network", "new-source", "new-input", JSON.stringify(item))).toThrow(/append-only/);
-        expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_resolutions (seq, review_id, resolved_at_utc, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?)").run(1, "new-review", bound.resolvedAtUtc, "new-receipt", sha("e"), JSON.stringify(bound.resolution))).toThrow(/append-only/);
+        expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_resolutions (seq, review_id, resolved_at_utc, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?)").run(1, "new-review", bound.resolvedAtUtc, "new-receipt", sha("e"), JSON.stringify(bound.resolution))).toThrow(/append-only|immutable parent binding/);
       } finally { raw.close(); }
       expect(store.get(item.reviewId)?.record).toEqual(item); expect(store.getResolution(item.reviewId)).toEqual(bound);
+    } finally { store.close(); database.remove(); }
+  });
+
+  it("rejects raw resolution rows without an exactly-bound pending intake when foreign keys are off", async () => {
+    const database = temporaryDatabasePath(); const store = DurableReviewStore.open(database.path);
+    try {
+      const item = await pending("review-one"); await store.appendPending(item);
+      const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); const raw = new sqlite.DatabaseSync(database.path);
+      try {
+        raw.exec("PRAGMA foreign_keys = OFF");
+        const insert = raw.prepare("INSERT INTO durable_review_resolutions (review_id, resolved_at_utc, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?)");
+        const orphan = resolution("orphan-review", item);
+        expect(() => insert.run(orphan.reviewId, orphan.resolvedAtUtc, orphan.receipt.receiptId, orphan.receipt.receiptSha256, JSON.stringify(orphan))).toThrow(/immutable parent binding/);
+        const mismatch = resolution(item.reviewId, item);
+        const forged = { ...mismatch, receipt: { ...mismatch.receipt, inputId: "other-input" } };
+        expect(() => insert.run(forged.reviewId, forged.resolvedAtUtc, forged.receipt.receiptId, forged.receipt.receiptSha256, JSON.stringify(forged))).toThrow(/immutable parent binding/);
+      } finally { raw.close(); }
+      expect(store.getResolution(item.reviewId)).toBeNull();
     } finally { store.close(); database.remove(); }
   });
 

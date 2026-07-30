@@ -87,6 +87,8 @@ const TABLES = [
   { table: "durable_review_resolutions", keys: ["review_id", "receipt_id", "receipt_sha256"] },
 ] as const;
 
+const RESOLUTION_PARENT_BINDING_TRIGGER = "durable_review_resolutions_parent_binding";
+
 function triggerSql(table: string, keys: readonly string[]): string {
   const names = { update: `${table}_no_update`, delete: `${table}_no_delete`, insert: `${table}_no_conflicting_insert` };
   const checks = [...keys.map((key) => `${key} = NEW.${key}`), "(NEW.seq > 0 AND seq = NEW.seq)"].join(" OR ");
@@ -100,18 +102,67 @@ WHEN EXISTS (SELECT 1 FROM ${table} WHERE ${checks}) BEGIN
  SELECT RAISE(ABORT, '${table} is append-only: existing bindings cannot be replaced'); END;`;
 }
 
+/**
+ * Foreign keys are connection-local in SQLite, so this guard duplicates the
+ * parent and receipt binding at the schema boundary.  A raw connection with
+ * `foreign_keys = OFF` must not be able to create a durable resolution that
+ * cannot have come from the server's bound resolution path.
+ */
+function resolutionParentBindingTriggerSql(): string {
+  return `
+CREATE TRIGGER ${RESOLUTION_PARENT_BINDING_TRIGGER} BEFORE INSERT ON durable_review_resolutions
+WHEN NOT json_valid(NEW.resolution_json)
+  OR NOT EXISTS (
+    SELECT 1 FROM durable_review_pending_records AS pending
+    WHERE pending.review_id = NEW.review_id
+      AND json_valid(pending.record_json)
+      AND json_extract(pending.record_json, '$.recordVersion') = '2'
+      AND json_extract(pending.record_json, '$.reviewId') = NEW.review_id
+      AND json_extract(pending.record_json, '$.session.domainId') = pending.domain_id
+      AND json_extract(pending.record_json, '$.intake.domainId') = pending.domain_id
+      AND json_extract(pending.record_json, '$.intake.source.sourceId') = pending.source_id
+      AND json_extract(pending.record_json, '$.intake.input.inputId') = pending.input_id
+      AND json_extract(pending.record_json, '$.session.source') = json_extract(pending.record_json, '$.intake.source.origin')
+      AND json_extract(pending.record_json, '$.session.provenance') = json_extract(pending.record_json, '$.intake.source.origin')
+      AND json_extract(NEW.resolution_json, '$.resolutionVersion') = '1'
+      AND json_extract(NEW.resolution_json, '$.reviewId') = NEW.review_id
+      AND json_extract(NEW.resolution_json, '$.resolvedAtUtc') = NEW.resolved_at_utc
+      AND json_extract(NEW.resolution_json, '$.receipt.receiptId') = NEW.receipt_id
+      AND json_extract(NEW.resolution_json, '$.receipt.receiptSha256') = NEW.receipt_sha256
+      AND json_extract(NEW.resolution_json, '$.receipt.sourceId') = json_extract(pending.record_json, '$.intake.source.sourceId')
+      AND json_extract(NEW.resolution_json, '$.receipt.inputId') = json_extract(pending.record_json, '$.intake.input.inputId')
+      AND json_extract(NEW.resolution_json, '$.receipt.inputSha256') = json_extract(pending.record_json, '$.intake.input.inputSha256')
+      AND json_extract(NEW.resolution_json, '$.receipt.policyVersion') = json_extract(pending.record_json, '$.session.policyVersion')
+  ) BEGIN
+  SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding');
+END;`;
+}
+
 const nodeRequire = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSync { const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); return new sqlite.DatabaseSync(path); }
 function upgradeTriggers(db: DatabaseSync): void {
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const { table } of TABLES) for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) db.exec(`DROP TRIGGER IF EXISTS ${table}_${suffix}`);
+    db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_PARENT_BINDING_TRIGGER}`);
     for (const { table, keys } of TABLES) db.exec(triggerSql(table, keys));
+    db.exec(resolutionParentBindingTriggerSql());
     db.exec("COMMIT");
   } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 function pendingEntry(row: PendingRow): DurableReviewStoreEntry { return { seq: row.seq, reviewId: row.review_id, createdAtUtc: row.created_at_utc, domainId: row.domain_id, sourceId: row.source_id, inputId: row.input_id, record: PendingDurableReviewRecordSchema.parse(JSON.parse(row.record_json)) }; }
-function resolutionEntry(row: ResolutionRow): DurableReviewResolutionEntry { return { seq: row.seq, reviewId: row.review_id, resolvedAtUtc: row.resolved_at_utc, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, resolution: DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json)) }; }
+function resolutionEntry(row: ResolutionRow, pending: PendingDurableReviewRecord): DurableReviewResolutionEntry {
+  const resolution = DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json));
+  if (
+    resolution.reviewId !== row.review_id ||
+    resolution.resolvedAtUtc !== row.resolved_at_utc ||
+    resolution.receipt.receiptId !== row.receipt_id ||
+    resolution.receipt.receiptSha256 !== row.receipt_sha256
+  ) throw new DomainError("REQUEST_INVALID", "Stored durable resolution columns do not bind to its immutable resolution.");
+  try { bindServerResolutionToPendingReview(pending, resolution); }
+  catch (error) { throw new DomainError("REQUEST_INVALID", `Stored durable resolution does not bind to its immutable parent: ${error instanceof Error ? error.message : "invalid binding"}`); }
+  return { seq: row.seq, reviewId: row.review_id, resolvedAtUtc: row.resolved_at_utc, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, resolution };
+}
 function legacyEntry(row: LegacyRow): LegacyDurableReviewStoreEntry { return { seq: row.seq, reviewId: row.review_id, createdAtUtc: row.created_at_utc, domainId: row.domain_id, sourceId: row.source_id, inputId: row.input_id, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, record: DurableReviewRecordSchema.parse(JSON.parse(row.record_json)) }; }
 function limitOf(raw: number | undefined): number { return Math.min(Math.max(Math.trunc(raw ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT); }
 
@@ -171,7 +222,13 @@ export class DurableReviewStore {
   }
   #queue<T>(task: () => T): Promise<T> { const result = this.#writes.then(task, task); this.#writes = result.then(() => undefined, () => undefined); return result; }
   get(reviewId: string): DurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_pending_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? pendingEntry(PendingRowSchema.parse(row)) : null; }
-  getResolution(reviewId: string): DurableReviewResolutionEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_resolutions WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? resolutionEntry(ResolutionRowSchema.parse(row)) : null; }
+  getResolution(reviewId: string): DurableReviewResolutionEntry | null {
+    const id = IdSchema.parse(reviewId); const row = this.#db.prepare("SELECT * FROM durable_review_resolutions WHERE review_id = ?").get(id);
+    if (!row) return null;
+    const pending = this.get(id);
+    if (!pending) throw new DomainError("REQUEST_INVALID", `Stored durable resolution ${id} has no immutable pending parent.`);
+    return resolutionEntry(ResolutionRowSchema.parse(row), pending.record);
+  }
   getLegacy(reviewId: string): LegacyDurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? legacyEntry(LegacyRowSchema.parse(row)) : null; }
   list(options: DurableReviewStoreListOptions = {}): DurableReviewStoreEntry[] {
     const valid = ListOptionsSchema.parse(options); const clauses: string[] = []; const params: string[] = [];
