@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 
 /**
@@ -30,7 +30,6 @@ export function useScenarioDeepLink(availableIds: readonly string[]): {
   readonly setScenarioInUrl: (id: string) => void;
 } {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const initialScenarioId = useMemo(
     () => resolveInitialScenarioId(searchParams, availableIds),
@@ -44,7 +43,18 @@ export function useScenarioDeepLink(availableIds: readonly string[]): {
   const setScenarioInUrl = (id: string) => {
     const next = new URLSearchParams(searchParams?.toString() ?? "");
     next.set("scenario", id);
-    router.replace(`?${next.toString()}`, { scroll: false });
+    // Deliberately bypasses next/navigation's router: this page is forced
+    // into dynamic rendering by useSearchParams, so router.replace() (even
+    // with scroll: false) issues a real RSC fetch to re-render the route on
+    // every scenario click. The URL update here is cosmetic bookkeeping
+    // only — making the current selection a copy-able link — and no
+    // server-rendered content depends on it, so a plain History API call
+    // updates the address bar with no network request and no re-render.
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}?${next.toString()}`,
+    );
   };
 
   return { initialScenarioId, setScenarioInUrl };
