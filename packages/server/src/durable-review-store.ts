@@ -272,7 +272,17 @@ WHEN EXISTS (SELECT 1 FROM ${table} WHERE (${conflict}) OR (NEW.seq > 0 AND seq 
  * `foreign_keys = OFF` must not be able to create a durable resolution that
  * cannot have come from the server's bound resolution path.
  */
-function resolutionParentBindingTriggerSql(): string {
+function resolutionParentBindingTriggerSql(bindNetworkProposal = true): string {
+  const proposalBinding = bindNetworkProposal
+    ? `
+      AND (
+        pending.domain_id != 'network'
+        OR (
+          json_extract(NEW.resolution_json, '$.receipt.proposalId') = json_extract(pending.record_json, '$.intake.proposal.proposalId')
+          AND json_extract(NEW.resolution_json, '$.receipt.proposalSha256') = json_extract(pending.record_json, '$.intake.proposal.proposalSha256')
+        )
+      )`
+    : "";
   return `
 CREATE TRIGGER ${RESOLUTION_PARENT_BINDING_TRIGGER} BEFORE INSERT ON durable_review_resolutions
 WHEN NOT json_valid(NEW.resolution_json)
@@ -305,6 +315,7 @@ WHEN NOT json_valid(NEW.resolution_json)
       AND json_extract(NEW.resolution_json, '$.receipt.inputId') = json_extract(pending.record_json, '$.intake.input.inputId')
       AND json_extract(NEW.resolution_json, '$.receipt.inputSha256') = json_extract(pending.record_json, '$.intake.input.inputSha256')
       AND json_extract(NEW.resolution_json, '$.receipt.policyVersion') = json_extract(pending.record_json, '$.session.policyVersion')
+      ${proposalBinding}
   ) BEGIN
   SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding');
 END;`;
@@ -537,6 +548,16 @@ function currentV2Fingerprint(): string {
       db.exec(triggerSql(table, conflict));
     }
     db.exec(resolutionParentBindingTriggerSql());
+  });
+}
+
+/** Exact owner-scoped V2 schema shipped immediately before proposal binding. */
+function priorOwnerfulV2Fingerprint(): string {
+  return expectedFingerprint(V2_SCHEMA, V2_TABLE_NAMES, (db) => {
+    for (const { table, conflict } of TABLES.filter(({ table }) => table !== "durable_review_records")) {
+      db.exec(triggerSql(table, conflict));
+    }
+    db.exec(resolutionParentBindingTriggerSql(false));
   });
 }
 
@@ -814,6 +835,7 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
     const actualV2 = schemaFingerprint(db, V2_TABLE_NAMES);
     const actualQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
     const currentV2 = currentV2Fingerprint();
+    const priorOwnerfulV2 = priorOwnerfulV2Fingerprint();
     const historicalV2 = historicalV2Fingerprint();
     const emptyV2 = emptyV2Fingerprint();
     const currentQuarantine = currentQuarantineFingerprint();
@@ -831,11 +853,14 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
         throw new DomainError("INTERNAL", "Historical durable review schema has an unexpected quarantine surface.");
       }
       rebuildAsQuarantine(db, historicalV2, false);
-    } else if (actualV2 === currentV2) {
+    } else if (actualV2 === currentV2 || actualV2 === priorOwnerfulV2) {
       if (actualQuarantine === oldQuarantine) {
-        rebuildAsQuarantine(db, currentV2, true);
+        rebuildAsQuarantine(db, actualV2, true);
       } else if (actualQuarantine !== noQuarantine && actualQuarantine !== currentQuarantine) {
         throw new DomainError("INTERNAL", "Durable review quarantine schema fingerprint is unknown or weakened.");
+      } else if (actualV2 === priorOwnerfulV2) {
+        dropKnownV2Triggers(db);
+        installCurrentV2Triggers(db, actualQuarantine === currentQuarantine);
       }
     } else {
       throw new DomainError("INTERNAL", "Durable review schema fingerprint is unknown or weakened.");
@@ -962,6 +987,47 @@ export class DurableReviewStore {
     const accepted = bindServerResolutionToPendingReview(pending.record, raw);
     return this.#queue(() => this.#appendResolution(pending.record, accepted));
   }
+
+  /**
+   * Serialize the audit-first decision sequence for one server process.
+   *
+   * `issue` must return only after its signed receipt has reached the receipt
+   * ledger. The review resolution is appended afterwards, so a policy,
+   * signing, or ledger failure leaves the pending item unresolved. SQLite
+   * files cannot share an atomic transaction, therefore a later review-store
+   * failure deliberately leaves the already-auditable ledger receipt intact.
+   */
+  async resolvePending<T>(
+    reviewId: string,
+    owner: DurableReviewOwner,
+    issue: (
+      pending: PendingDurableReviewRecord,
+    ) => Promise<{ outcome: T; resolution: unknown }>,
+  ): Promise<{ outcome: T; resolution: DurableReviewResolutionEntry }> {
+    const id = IdSchema.parse(reviewId);
+    const validOwner = DurableReviewOwnerSchema.parse(owner);
+    return this.#queue(async () => {
+      const pending = this.get(id, validOwner);
+      if (!pending) {
+        throw new DomainError("REQUEST_INVALID", `No pending durable review exists for ${id}.`);
+      }
+      if (this.getResolution(id, validOwner)) {
+        throw new DomainError(
+          "ILLEGAL_TRANSITION",
+          `Review ${id} already has an immutable resolution.`,
+        );
+      }
+      const issued = await issue(pending.record);
+      const accepted = bindServerResolutionToPendingReview(
+        pending.record,
+        issued.resolution,
+      );
+      return {
+        outcome: issued.outcome,
+        resolution: this.#appendResolution(pending.record, accepted),
+      };
+    });
+  }
   #appendResolution(pending: PendingDurableReviewRecord, resolution: DurableReviewResolution): DurableReviewResolutionEntry {
     const existing = this.getResolution(pending.reviewId, pending.owner);
     if (existing) { if (canonicalize(existing.resolution) === canonicalize(resolution)) return existing; throw new DomainError("REQUEST_INVALID", `Review ${pending.reviewId} already records a different immutable resolution.`); }
@@ -984,7 +1050,7 @@ export class DurableReviewStore {
     catch (error) { const raced = this.getLegacy(record.reviewId); if (raced) { if (canonicalize(raced.record) === canonicalize(record)) return raced; throw new DomainError("REQUEST_INVALID", `Review ${record.reviewId} already records different immutable metadata.`); } throw error; }
     const inserted = this.getLegacy(record.reviewId); if (!inserted) throw new DomainError("INTERNAL", "The legacy review store accepted a record but could not read it back."); return inserted;
   }
-  #queue<T>(task: () => T): Promise<T> { const result = this.#writes.then(task, task); this.#writes = result.then(() => undefined, () => undefined); return result; }
+  #queue<T>(task: () => T | Promise<T>): Promise<T> { const result = this.#writes.then(task, task); this.#writes = result.then(() => undefined, () => undefined); return result; }
   /**
    * An owner-scoped read deliberately returns null for another principal's
    * review.  HTTP maps that to the same 404 as a missing id, so review ids do
@@ -1064,7 +1130,11 @@ export class DurableReviewStore {
     if (quarantineExists && schemaFingerprint(this.#db, [QUARANTINE_TABLE_NAME]) !== currentQuarantineFingerprint()) {
       errors.push("Quarantine schema or append-only guards do not match the exact integrity-evidence fingerprint.");
     }
-    const allowedFingerprints = new Set([historicalV2Fingerprint(), currentV2Fingerprint()]);
+    const allowedFingerprints = new Set([
+      historicalV2Fingerprint(),
+      priorOwnerfulV2Fingerprint(),
+      currentV2Fingerprint(),
+    ]);
     for (const entry of entries) {
       try {
         if (canonicalize(JSON.parse(entry.rowJson)) !== entry.rowJson) {

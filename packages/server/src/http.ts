@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 
 import { DomainError, IdSchema, TimestampSchema, isDomainError } from "@changesafe/core";
+import { NetworkChangeProposalSchema } from "@changesafe/domain-network";
 import { TerraformInputSchema } from "@changesafe/domain-terraform";
 import type { Ledger } from "@changesafe/ledger";
 
@@ -58,6 +59,15 @@ const DecisionBodySchema = z.strictObject({
 const ReviewIntakeBodySchema = z.strictObject({
   reviewId: IdSchema,
   intake: DurableReviewIntakeSchema,
+});
+
+/**
+ * The stored pending record owns domain, input, and proposal identity. A human
+ * submits only the final approve/reject intent; Kubernetes or any caller
+ * finding/risk/receipt field is therefore rejected by this strict envelope.
+ */
+const ReviewDecisionBodySchema = z.strictObject({
+  decision: z.enum(["approve", "reject"]),
 });
 
 export interface DecisionServerOptions {
@@ -130,6 +140,15 @@ function assertIntakeInputIdentity(intake: DurableReviewIntake): void {
       "REQUEST_INVALID",
       "The durable intake inputId does not match the validated domain input.",
     );
+  }
+  if (intake.domainId === "network") {
+    const proposal = NetworkChangeProposalSchema.parse(intake.proposal?.content);
+    if (proposal.proposalId !== intake.proposal?.proposalId) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "The durable intake proposalId does not match the validated Network proposal.",
+      );
+    }
   }
 }
 
@@ -297,6 +316,82 @@ async function handle(
       storage: { kind: "append-only-review-store" },
     });
     send(response, 201, { review });
+    return;
+  }
+
+  const reviewDecisionMatch =
+    request.method === "POST"
+      ? /^\/reviews\/([^/]+)\/decisions$/.exec(url.pathname)
+      : null;
+  if (reviewDecisionMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` },
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(reviewDecisionMatch[1]);
+    const owner = durableReviewOwner(identity);
+    // Owner filtering deliberately precedes body parsing and returns the same
+    // response as an absent id, so another principal cannot use validation
+    // differences to probe the queue.
+    if (!options.reviews.get(reviewId, owner)) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." },
+      });
+      return;
+    }
+    const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    const resolvedAtUtc = serverNow(options);
+    const decided = await options.reviews.resolvePending(
+      reviewId,
+      owner,
+      async (pending) => {
+        // Both domain choices come from the validated immutable pending
+        // record. Network re-parses its hash-bound proposal artifact;
+        // Terraform derives its proposal from the stored plan.
+        const outcome = await options.decisions.decideSigned(
+          {
+            domain: pending.intake.domainId,
+            sourceId: pending.intake.source.sourceId,
+            input: pending.intake.input.content,
+            ...(pending.intake.proposal
+              ? { proposal: pending.intake.proposal.content }
+              : {}),
+            decision: body.decision,
+          },
+          approver,
+        );
+        return {
+          outcome,
+          resolution: {
+            resolutionVersion: "1",
+            reviewId,
+            resolvedAtUtc,
+            receipt: {
+              receiptId: outcome.receipt.receiptId,
+              sourceId: outcome.receipt.sourceId,
+              inputId: outcome.receipt.inputId,
+              inputSha256: outcome.receipt.inputSha256,
+              proposalId: outcome.receipt.proposalId,
+              proposalSha256: outcome.receipt.proposalSha256,
+              policyVersion: outcome.receipt.policyVersion,
+              receiptSha256: outcome.receipt.receiptSha256,
+            },
+          },
+        };
+      },
+    );
+    send(response, 201, {
+      receiptId: decided.outcome.receipt.receiptId,
+      decision: decided.outcome.receipt.decision,
+      riskLevel: decided.outcome.receipt.riskLevel,
+      approver: decided.outcome.receipt.approver,
+      ledgerSeq: decided.outcome.ledgerSeq,
+      chainSha256: decided.outcome.chainSha256,
+      record: decided.outcome.record,
+      resolution: decided.resolution,
+    });
     return;
   }
 

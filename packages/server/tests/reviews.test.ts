@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { hashCanonical } from "@changesafe/core";
+import {
+  SignedReceiptSchema,
+  generateSigningKeyPair,
+  hashCanonical,
+  importSigningKeyPair,
+} from "@changesafe/core";
 import { normalizePlan } from "@changesafe/domain-terraform";
 import { Ledger } from "@changesafe/ledger";
 
@@ -22,12 +27,26 @@ const scenarios = path.resolve(here, "../../../scenarios");
 const networkInput = JSON.parse(
   readFileSync(path.join(scenarios, "scenario-a-failover", "incident.json"), "utf8"),
 ) as unknown;
+const networkProposal = (
+  JSON.parse(
+    readFileSync(path.join(scenarios, "scenario-a-failover", "replay-fixture.json"), "utf8"),
+  ) as { proposal: unknown }
+).proposal;
+const blockedNetworkInput = JSON.parse(
+  readFileSync(path.join(scenarios, "scenario-b-route-leak", "incident.json"), "utf8"),
+) as unknown;
+const blockedNetworkProposal = (
+  JSON.parse(
+    readFileSync(path.join(scenarios, "scenario-b-route-leak", "replay-fixture.json"), "utf8"),
+  ) as { proposal: unknown }
+).proposal;
 
 let context: {
   idp: FakeIdp;
   ledger: Ledger;
   reviews: DurableReviewStore;
   baseUrl: string;
+  ledgerOpen: boolean;
   close: () => Promise<void>;
 };
 
@@ -35,6 +54,7 @@ beforeEach(async () => {
   const idp = await FakeIdp.create();
   const ledger = Ledger.open(":memory:");
   const reviews = DurableReviewStore.open(":memory:");
+  const pem = await generateSigningKeyPair();
   let clockTick = 0;
   const server = createDecisionServer({
     ledger,
@@ -43,7 +63,11 @@ beforeEach(async () => {
       { issuer: idp.issuer, audience: "changesafe", jwksUri: `${idp.issuer}/jwks` },
       { fetch: idp.fetch() },
     ),
-    decisions: new DecisionService({ ledger, appVersion: "changesafe-server-test" }),
+    decisions: new DecisionService({
+      ledger,
+      appVersion: "changesafe-server-test",
+      signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
+    }),
     now: () => `2026-07-30T05:00:0${clockTick++}.000Z`,
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -53,10 +77,11 @@ beforeEach(async () => {
     ledger,
     reviews,
     baseUrl: `http://127.0.0.1:${port}`,
+    ledgerOpen: true,
     close: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       reviews.close();
-      ledger.close();
+      if (context.ledgerOpen) ledger.close();
     },
   };
 });
@@ -79,6 +104,37 @@ async function pendingNetworkReview(reviewId = "review-network-one") {
         inputId: "inc-uplink-degraded-4821",
         inputSha256: await hashCanonical(networkInput),
         content: networkInput,
+      },
+      proposal: {
+        proposalId: (networkProposal as { proposalId: string }).proposalId,
+        proposalSha256: await hashCanonical(networkProposal),
+        content: networkProposal,
+      },
+    },
+  };
+}
+
+async function pendingBlockedNetworkReview(reviewId = "review-network-blocked") {
+  return {
+    reviewId,
+    intake: {
+      domainId: "network",
+      source: {
+        domainId: "network",
+        sourceId: "network-source-blocked",
+        sourceKind: "network-incident-bundle",
+        origin: "uploaded-offline-artifact",
+        untrustedArtifactObservedAtUtc: "2026-07-30T03:00:00.000Z",
+      },
+      input: {
+        inputId: "inc-route-leak-4977",
+        inputSha256: await hashCanonical(blockedNetworkInput),
+        content: blockedNetworkInput,
+      },
+      proposal: {
+        proposalId: (blockedNetworkProposal as { proposalId: string }).proposalId,
+        proposalSha256: await hashCanonical(blockedNetworkProposal),
+        content: blockedNetworkProposal,
       },
     },
   };
@@ -112,6 +168,17 @@ async function pendingTerraformReview(reviewId = "review-terraform-one") {
 
 async function postReview(body: unknown, token?: string) {
   return fetch(`${context.baseUrl}/reviews`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function decideReview(reviewId: string, body: unknown, token?: string) {
+  return fetch(`${context.baseUrl}/reviews/${reviewId}/decisions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -264,6 +331,21 @@ describe("durable review intake HTTP API", () => {
     expect(context.ledger.count()).toBe(0);
   });
 
+  it("requires a hash-bound Network proposal before queueing a current review", async () => {
+    const candidate = await pendingNetworkReview("review-network-missing-proposal");
+    const { proposal: _proposal, ...withoutProposal } = candidate.intake;
+    void _proposal;
+
+    const response = await postReview(
+      { ...candidate, intake: withoutProposal },
+      await context.idp.token(),
+    );
+
+    expect(response.status).toBe(422);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
   it("lists bounded pending reviews and reads one by immutable id", async () => {
     const token = await context.idp.token();
     await postReview(await pendingNetworkReview("review-network-one"), token);
@@ -323,5 +405,143 @@ describe("durable review intake HTTP API", () => {
     expect(bobOwnDetail.status).toBe(200);
     expect(((await aliceDetail.json()) as { review: { record: { owner: { subject: string } } } }).review.record.owner.subject).toBe("user-alice");
     expect(((await bobOwnDetail.json()) as { review: { record: { owner: { subject: string } } } }).review.record.owner.subject).toBe("user-bob");
+  });
+});
+
+describe("durable review decision HTTP API", () => {
+  const aliceOwner = () => ({
+    tenantId: context.idp.issuer,
+    issuer: context.idp.issuer,
+    subject: "user-alice",
+    scope: "self-hosted-review",
+  } as const);
+
+  it("recomputes a stored Network proposal, signs and ledgers it, then binds the resolution", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingNetworkReview("review-network-decide"), token)).status).toBe(201);
+
+    const response = await decideReview("review-network-decide", { decision: "approve" }, token);
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      record: unknown;
+      resolution: { receiptId: string; receiptSha256: string };
+      ledgerSeq: number;
+    };
+    const signed = SignedReceiptSchema.parse(body.record);
+    expect(signed.receipt).toMatchObject({
+      sourceId: "network-source-one",
+      inputId: "inc-uplink-degraded-4821",
+      proposalId: (networkProposal as { proposalId: string }).proposalId,
+      decision: "approved",
+      approver: { subject: "user-alice", issuer: context.idp.issuer },
+    });
+    expect(signed.receipt.simulation).not.toBeNull();
+    expect(body.ledgerSeq).toBe(1);
+    expect(body.resolution).toMatchObject({
+      receiptId: signed.receipt.receiptId,
+      receiptSha256: signed.receipt.receiptSha256,
+    });
+    expect(context.ledger.count()).toBe(1);
+    expect(
+      context.reviews.getResolution("review-network-decide", aliceOwner())?.resolution.receipt,
+    ).toMatchObject({
+      receiptId: signed.receipt.receiptId,
+      proposalSha256: signed.receipt.proposalSha256,
+    });
+  });
+
+  it("derives Terraform from the stored plan and accepts only human decision intent", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingTerraformReview("review-terraform-decide"), token)).status).toBe(201);
+
+    const forged = await decideReview(
+      "review-terraform-decide",
+      {
+        decision: "reject",
+        proposal: { proposalId: "caller-proposal" },
+        findings: [],
+        riskLevel: "LOW",
+        receipt: { receiptId: "caller-receipt" },
+      },
+      token,
+    );
+    expect(forged.status).toBe(422);
+    expect(context.ledger.count()).toBe(0);
+
+    const response = await decideReview("review-terraform-decide", { decision: "reject" }, token);
+    const responseBody = await response.text();
+    expect(response.status, responseBody).toBe(201);
+    const body = JSON.parse(responseBody) as { record: unknown };
+    const signed = SignedReceiptSchema.parse(body.record);
+    expect(signed.receipt).toMatchObject({
+      sourceId: "terraform-source-one",
+      decision: "rejected",
+      simulation: null,
+    });
+    expect(context.ledger.count()).toBe(1);
+  });
+
+  it("does not let another owner discover or decide a pending review", async () => {
+    const alice = await context.idp.token();
+    const bob = await context.idp.token({ sub: "user-bob", email: "bob@example.test" });
+    expect((await postReview(await pendingNetworkReview("review-owner-decision"), alice)).status).toBe(201);
+
+    const response = await decideReview("review-owner-decision", { decision: "approve" }, bob);
+
+    expect(response.status).toBe(404);
+    expect(context.ledger.count()).toBe(0);
+    expect(context.reviews.getResolution("review-owner-decision", aliceOwner())).toBeNull();
+  });
+
+  it("refuses BLOCK approval in the state machine without a ledger entry or resolution", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingBlockedNetworkReview(), token)).status).toBe(201);
+
+    const response = await decideReview("review-network-blocked", { decision: "approve" }, token);
+
+    expect(response.status).toBe(409);
+    expect(context.ledger.count()).toBe(0);
+    expect(context.reviews.getResolution("review-network-blocked", aliceOwner())).toBeNull();
+  });
+
+  it("keeps Kubernetes explicitly outside the durable decision contract", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingNetworkReview("review-no-kubernetes"), token)).status).toBe(201);
+
+    const response = await decideReview(
+      "review-no-kubernetes",
+      { decision: "approve", domain: "kubernetes" },
+      token,
+    );
+
+    expect(response.status).toBe(422);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("never binds a durable resolution when the receipt ledger append fails", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingNetworkReview("review-ledger-failure"), token)).status).toBe(201);
+    context.ledger.close();
+    context.ledgerOpen = false;
+
+    const response = await decideReview("review-ledger-failure", { decision: "approve" }, token);
+
+    expect(response.status).toBe(500);
+    expect(context.reviews.getResolution("review-ledger-failure", aliceOwner())).toBeNull();
+  });
+
+  it("serializes concurrent intents so one review produces one ledgered resolution", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingNetworkReview("review-concurrent-decision"), token)).status).toBe(201);
+
+    const responses = await Promise.all([
+      decideReview("review-concurrent-decision", { decision: "reject" }, token),
+      decideReview("review-concurrent-decision", { decision: "reject" }, token),
+    ]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    expect(context.ledger.count()).toBe(1);
+    expect(context.reviews.getResolution("review-concurrent-decision", aliceOwner())).not.toBeNull();
   });
 });

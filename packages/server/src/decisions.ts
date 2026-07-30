@@ -33,6 +33,10 @@ export interface DecisionOutcome {
   chainSha256: string;
 }
 
+export interface SignedDecisionOutcome extends DecisionOutcome {
+  record: SignedReceipt;
+}
+
 export interface DecisionServiceOptions {
   ledger: Ledger;
   appVersion: string;
@@ -61,6 +65,31 @@ export class DecisionService {
 
   constructor(options: DecisionServiceOptions) {
     this.#options = options;
+  }
+
+  /**
+   * Durable review resolutions require authorship proof. Check that capability
+   * before policy evaluation or receipt creation so a missing key can never
+   * append an unsigned ledger record and then fail the durable request.
+   */
+  async decideSigned(
+    request: DecisionRequest,
+    approver: Approver,
+  ): Promise<SignedDecisionOutcome> {
+    if (!this.#options.signingKeyPair) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review decisions require a configured receipt signing key.",
+      );
+    }
+    const outcome = await this.decide(request, approver);
+    if (!("receipt" in outcome.record)) {
+      throw new DomainError(
+        "INTERNAL",
+        "The durable decision path did not produce a signed receipt.",
+      );
+    }
+    return { ...outcome, record: outcome.record };
   }
 
   async decide(request: DecisionRequest, approver: Approver): Promise<DecisionOutcome> {

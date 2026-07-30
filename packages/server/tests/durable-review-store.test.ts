@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { hashCanonical } from "@changesafe/core";
 import { SCENARIOS } from "../../../scenarios";
@@ -24,11 +25,18 @@ async function pending(
   createdAtUtc = "2026-07-30T01:00:00.000Z",
 ) {
   const content = SCENARIOS[0]!.bundle;
+  const proposal = SCENARIOS[0]!.fixture.proposal;
   const inputSha256 = await hashCanonical(content);
+  const proposalSha256 = await hashCanonical(proposal);
   return {
     recordVersion: "2", reviewId, createdAtUtc, owner,
     session: { domainId: "network", contractVersion: "2.0.0", policyVersion: "network-policy-v1", domainShape: "simulated-state", capabilities: { sandboxSimulation: true, resourceGraph: true, structuredDiff: true, untrustedContext: true, durableDecision: true }, runtimeMode: "self-hosted", source: "uploaded-offline-artifact", analysisMode: "offline", provenance: "uploaded-offline-artifact" },
-    intake: { domainId: "network", source: { domainId: "network", sourceId, sourceKind: "network-incident-bundle", origin: "uploaded-offline-artifact", untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z" }, input: { inputId: "network-input", inputSha256, content } },
+    intake: {
+      domainId: "network",
+      source: { domainId: "network", sourceId, sourceKind: "network-incident-bundle", origin: "uploaded-offline-artifact", untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z" },
+      input: { inputId: "network-input", inputSha256, content },
+      proposal: { proposalId: proposal.proposalId, proposalSha256, content: proposal },
+    },
     storage: { kind: "append-only-review-store" },
   } as const;
 }
@@ -37,11 +45,13 @@ async function legacy(reviewId: string) {
   const { owner: _owner, ...withoutOwner } = item;
   void _owner;
   const { untrustedArtifactObservedAtUtc, ...historicalSource } = item.intake.source;
+  const { proposal: _proposal, ...historicalIntake } = item.intake;
+  void _proposal;
   return {
     ...withoutOwner,
     recordVersion: "1",
     intake: {
-      ...item.intake,
+      ...historicalIntake,
       source: { ...historicalSource, collectedAtUtc: untrustedArtifactObservedAtUtc },
     },
     receipt: { receiptId: `${reviewId}-receipt`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha("c") },
@@ -49,7 +59,7 @@ async function legacy(reviewId: string) {
   } as const;
 }
 function resolution(reviewId: string, item: Awaited<ReturnType<typeof pending>>, suffix = "one") {
-  return { resolutionVersion: "1", reviewId, resolvedAtUtc: "2026-07-30T02:00:00.000Z", receipt: { receiptId: `${reviewId}-receipt-${suffix}`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha(suffix === "one" ? "c" : "d") } } as const;
+  return { resolutionVersion: "1", reviewId, resolvedAtUtc: "2026-07-30T02:00:00.000Z", receipt: { receiptId: `${reviewId}-receipt-${suffix}`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: item.intake.proposal.proposalId, proposalSha256: item.intake.proposal.proposalSha256, policyVersion: item.session.policyVersion, receiptSha256: sha(suffix === "one" ? "c" : "d") } } as const;
 }
 
 function installExactHistoricalLegacyV1Guards(db: DatabaseSync): void {
@@ -192,7 +202,91 @@ function installHistoricalOwnerlessV2Triggers(db: DatabaseSync): void {
   `);
 }
 
+function installPriorOwnerfulResolutionBinding(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TRIGGER durable_review_resolutions_parent_binding BEFORE INSERT ON durable_review_resolutions
+    WHEN NOT json_valid(NEW.resolution_json)
+      OR NOT EXISTS (
+        SELECT 1 FROM durable_review_pending_records AS pending
+        WHERE pending.review_id = NEW.review_id
+          AND pending.owner_tenant_id = NEW.owner_tenant_id
+          AND pending.owner_issuer = NEW.owner_issuer
+          AND pending.owner_subject = NEW.owner_subject
+          AND pending.owner_scope = NEW.owner_scope
+          AND json_valid(pending.record_json)
+          AND json_extract(pending.record_json, '$.recordVersion') = '2'
+          AND json_extract(pending.record_json, '$.reviewId') = NEW.review_id
+          AND json_extract(pending.record_json, '$.owner.tenantId') = NEW.owner_tenant_id
+          AND json_extract(pending.record_json, '$.owner.issuer') = NEW.owner_issuer
+          AND json_extract(pending.record_json, '$.owner.subject') = NEW.owner_subject
+          AND json_extract(pending.record_json, '$.owner.scope') = NEW.owner_scope
+          AND json_extract(pending.record_json, '$.session.domainId') = pending.domain_id
+          AND json_extract(pending.record_json, '$.intake.domainId') = pending.domain_id
+          AND json_extract(pending.record_json, '$.intake.source.sourceId') = pending.source_id
+          AND json_extract(pending.record_json, '$.intake.input.inputId') = pending.input_id
+          AND json_extract(pending.record_json, '$.session.source') = json_extract(pending.record_json, '$.intake.source.origin')
+          AND json_extract(pending.record_json, '$.session.provenance') = json_extract(pending.record_json, '$.intake.source.origin')
+          AND json_extract(NEW.resolution_json, '$.resolutionVersion') = '1'
+          AND json_extract(NEW.resolution_json, '$.reviewId') = NEW.review_id
+          AND json_extract(NEW.resolution_json, '$.resolvedAtUtc') = NEW.resolved_at_utc
+          AND json_extract(NEW.resolution_json, '$.receipt.receiptId') = NEW.receipt_id
+          AND json_extract(NEW.resolution_json, '$.receipt.receiptSha256') = NEW.receipt_sha256
+          AND json_extract(NEW.resolution_json, '$.receipt.sourceId') = json_extract(pending.record_json, '$.intake.source.sourceId')
+          AND json_extract(NEW.resolution_json, '$.receipt.inputId') = json_extract(pending.record_json, '$.intake.input.inputId')
+          AND json_extract(NEW.resolution_json, '$.receipt.inputSha256') = json_extract(pending.record_json, '$.intake.input.inputSha256')
+          AND json_extract(NEW.resolution_json, '$.receipt.policyVersion') = json_extract(pending.record_json, '$.session.policyVersion')
+      ) BEGIN
+      SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding');
+    END;
+  `);
+}
+
 describe("DurableReviewStore v2 pending queue", () => {
+  it("upgrades the exact prior owner-scoped proposal-unbound trigger in place", async () => {
+    const database = temporaryDatabasePath();
+    const item = await pending("prior-ownerful-trigger");
+    const first = DurableReviewStore.open(database.path);
+    try {
+      await first.appendPending(item);
+    } finally {
+      first.close();
+    }
+
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const prior = new sqlite.DatabaseSync(database.path);
+    try {
+      prior.exec("DROP TRIGGER durable_review_resolutions_parent_binding");
+      installPriorOwnerfulResolutionBinding(prior);
+    } finally {
+      prior.close();
+    }
+
+    const upgraded = DurableReviewStore.open(database.path);
+    try {
+      expect(upgraded.get(item.reviewId, aliceOwner)?.record).toEqual(item);
+      await expect(
+        upgraded.bindServerResolution(
+          item.reviewId,
+          aliceOwner,
+          resolution(item.reviewId, item),
+        ),
+      ).resolves.toMatchObject({ reviewId: item.reviewId });
+    } finally {
+      upgraded.close();
+    }
+
+    const inspected = new sqlite.DatabaseSync(database.path);
+    try {
+      const row = z.strictObject({ sql: z.string() }).parse(inspected.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'durable_review_resolutions_parent_binding'",
+      ).get());
+      expect(row.sql).toContain("$.intake.proposal.proposalSha256");
+    } finally {
+      inspected.close();
+      database.remove();
+    }
+  });
+
   it("upgrades the exact trigger-protected V1 store before creating V2 and remains reopenable", async () => {
     const database = temporaryDatabasePath();
     const historical = await legacy("historical-v1-review");

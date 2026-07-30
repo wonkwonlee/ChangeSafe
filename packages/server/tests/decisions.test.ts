@@ -110,6 +110,22 @@ describe("authentication", () => {
 });
 
 describe("deciding", () => {
+  it("refuses a durable signed decision before ledgering when no signing key is configured", async () => {
+    const unsigned = new DecisionService({
+      ledger: context.ledger,
+      appVersion: "changesafe-server-test",
+    });
+
+    await expect(
+      unsigned.decideSigned({ ...safeApproval, decision: "approve" }, {
+        subject: "user-alice",
+        issuer: context.idp.issuer,
+        email: "alice@example.test",
+      }),
+    ).rejects.toThrow(/signing key/);
+    expect(context.ledger.count()).toBe(0);
+  });
+
   it("approves a clean change and records who approved it", async () => {
     const response = await decide(safeApproval, await context.idp.token());
     expect(response.status).toBe(201);

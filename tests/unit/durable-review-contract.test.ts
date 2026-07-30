@@ -29,6 +29,7 @@ function content(domainId: "network" | "terraform") {
 
 async function intake(domainId: "network" | "terraform") {
   const input = content(domainId);
+  const proposal = domainId === "network" ? SCENARIOS[0]!.fixture.proposal : null;
   return {
     domainId,
     source: {
@@ -46,6 +47,15 @@ async function intake(domainId: "network" | "terraform") {
       inputSha256: await hashCanonical(input),
       content: input,
     },
+    ...(proposal
+      ? {
+          proposal: {
+            proposalId: proposal.proposalId,
+            proposalSha256: await hashCanonical(proposal),
+            content: proposal,
+          },
+        }
+      : {}),
   } as const;
 }
 
@@ -82,8 +92,8 @@ async function record(domainId: "network" | "terraform") {
       sourceId: acceptedIntake.source.sourceId,
       inputId: acceptedIntake.input.inputId,
       inputSha256: acceptedIntake.input.inputSha256,
-      proposalId: `${domainId}-proposal`,
-      proposalSha256: sha("b"),
+      proposalId: acceptedIntake.proposal?.proposalId ?? `${domainId}-proposal`,
+      proposalSha256: acceptedIntake.proposal?.proposalSha256 ?? sha("b"),
       policyVersion: `${domainId}-policy-v1`,
       receiptSha256: sha("c"),
     },
@@ -113,8 +123,8 @@ function resolution(domainId: "network" | "terraform", acceptedIntake: DurableRe
       sourceId: acceptedIntake.source.sourceId,
       inputId: acceptedIntake.input.inputId,
       inputSha256: acceptedIntake.input.inputSha256,
-      proposalId: `${domainId}-proposal`,
-      proposalSha256: sha("b"),
+      proposalId: acceptedIntake.proposal?.proposalId ?? `${domainId}-proposal`,
+      proposalSha256: acceptedIntake.proposal?.proposalSha256 ?? sha("b"),
       policyVersion: `${domainId}-policy-v1`,
       receiptSha256: sha("c"),
     },
@@ -282,6 +292,19 @@ describe("durable self-hosted review contracts", () => {
       ...accepted,
       input: { ...accepted.input, inputSha256: sha("f") },
     })).rejects.toThrow(/inputSha256/);
+    await expect(verifyDurableReviewIntake({
+      ...accepted,
+      proposal: { ...accepted.proposal!, proposalSha256: sha("f") },
+    })).rejects.toThrow(/proposalSha256/);
+    await expect(createDurableReviewIntake({
+      domainId: "network",
+      source: accepted.source,
+      input: { inputId: accepted.input.inputId, content: accepted.input.content },
+    })).rejects.toThrow(/requires an immutable proposal/);
+    expect(DurableReviewIntakeSchema.safeParse({
+      ...(await intake("terraform")),
+      proposal: accepted.proposal,
+    }).success).toBe(false);
     expect(DurableReviewIntakeSchema.safeParse({
       ...accepted,
       input: { ...accepted.input, content: content("terraform") },
@@ -301,8 +324,13 @@ describe("durable self-hosted review contracts", () => {
         untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z",
       },
       input: { inputId: "network-input", content: content("network") },
+      proposal: {
+        proposalId: SCENARIOS[0]!.fixture.proposal.proposalId,
+        content: SCENARIOS[0]!.fixture.proposal,
+      },
     });
     expect(built.input.inputSha256).toBe(accepted.input.inputSha256);
+    expect(built.proposal?.proposalSha256).toBe(accepted.proposal?.proposalSha256);
   });
 
   it("binds receipt proofs to their immutable record and distinguishes OOB key states", async () => {

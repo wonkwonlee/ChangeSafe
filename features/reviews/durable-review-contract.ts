@@ -6,7 +6,10 @@ import {
   TimestampSchema,
   hashCanonical,
 } from "@changesafe/core";
-import { IncidentBundleSchema } from "@changesafe/domain-network";
+import {
+  IncidentBundleSchema,
+  NetworkChangeProposalSchema,
+} from "@changesafe/domain-network";
 import { TerraformInputSchema } from "@changesafe/domain-terraform";
 
 import {
@@ -66,6 +69,13 @@ const DurableReviewInputEnvelopeSchema = z.strictObject({
   content: JsonValueSchema,
 });
 
+const DurableReviewProposalEnvelopeSchema = z.strictObject({
+  proposalId: IdSchema,
+  proposalSha256: Sha256HexSchema,
+  /** Untrusted proposal artifact; the server parses and evaluates it again at decision time. */
+  content: JsonValueSchema,
+});
+
 /**
  * Intake is deliberately offline/read-only. It records what was submitted,
  * not a claim that a live system was queried or changed.
@@ -75,6 +85,7 @@ export const DurableReviewIntakeSchema = z
     domainId: DurableReviewDomainIdSchema,
     source: DurableReviewSourceSchema,
     input: DurableReviewInputEnvelopeSchema,
+    proposal: DurableReviewProposalEnvelopeSchema.optional(),
   })
   .superRefine((intake, context) => {
     if (intake.domainId !== intake.source.domainId) {
@@ -95,6 +106,34 @@ export const DurableReviewIntakeSchema = z
         code: "custom",
         path: ["input", "content"],
         message: `durable ${intake.domainId} intake content must satisfy its domain schema`,
+      });
+    }
+    if (intake.domainId === "network") {
+      // The field is structurally optional only so exact pending rows written
+      // before proposal-bound decisions remain readable. Current HTTP intake
+      // and the construction helper both require it before a new Network row
+      // can be appended.
+      if (intake.proposal) {
+        const proposal = NetworkChangeProposalSchema.safeParse(intake.proposal.content);
+        if (!proposal.success) {
+          context.addIssue({
+            code: "custom",
+            path: ["proposal", "content"],
+            message: "durable network proposal content must satisfy its domain schema",
+          });
+        } else if (proposal.data.proposalId !== intake.proposal.proposalId) {
+          context.addIssue({
+            code: "custom",
+            path: ["proposal", "proposalId"],
+            message: "durable proposalId must match the validated proposal artifact",
+          });
+        }
+      }
+    } else if (intake.proposal) {
+      context.addIssue({
+        code: "custom",
+        path: ["proposal"],
+        message: "Terraform proposals are derived from the immutable plan and cannot be submitted",
       });
     }
   });
@@ -137,19 +176,37 @@ export async function verifyDurableReviewIntake(
   if (inputSha256 !== intake.input.inputSha256) {
     throw new Error("durable intake inputSha256 does not match canonical input content");
   }
+  if (
+    intake.proposal &&
+    await hashCanonical(intake.proposal.content) !== intake.proposal.proposalSha256
+  ) {
+    throw new Error("durable intake proposalSha256 does not match canonical proposal content");
+  }
   return intake;
 }
 
 /** Construct an intake with its canonical content hash, never trusting a caller hash. */
 export async function createDurableReviewIntake(
-  raw: Omit<DurableReviewIntake, "input"> & {
+  raw: Omit<DurableReviewIntake, "input" | "proposal"> & {
     input: Omit<DurableReviewIntake["input"], "inputSha256">;
+    proposal?: Omit<NonNullable<DurableReviewIntake["proposal"]>, "proposalSha256">;
   },
 ): Promise<DurableReviewIntake> {
+  if (raw.domainId === "network" && !raw.proposal) {
+    throw new Error("durable network intake requires an immutable proposal artifact");
+  }
   const content = raw.input.content;
   return verifyDurableReviewIntake({
     ...raw,
     input: { ...raw.input, inputSha256: await hashCanonical(content) },
+    ...(raw.proposal
+      ? {
+          proposal: {
+            ...raw.proposal,
+            proposalSha256: await hashCanonical(raw.proposal.content),
+          },
+        }
+      : {}),
   });
 }
 
@@ -281,6 +338,7 @@ function bindReceipt(
     intake: {
       source: { sourceId: string };
       input: { inputId: string; inputSha256: string };
+      proposal?: { proposalId: string; proposalSha256: string };
     };
     receipt: z.infer<typeof DurableReceiptBindingSchema>;
   },
@@ -314,15 +372,28 @@ function bindReceipt(
       message: "receipt policy version must bind to the evaluating session",
     });
   }
+  if (
+    record.intake.proposal &&
+    (
+      record.receipt.proposalId !== record.intake.proposal.proposalId ||
+      record.receipt.proposalSha256 !== record.intake.proposal.proposalSha256
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "proposalSha256"],
+      message: "receipt proposal must bind to the immutable intake proposal",
+    });
+  }
 }
 
 /**
  * Immutable queue item written at authenticated self-hosted intake time.
  *
- * A pending record intentionally contains no receipt, proposal, decision, or
- * proof claim.  The caller can only submit read-only input; the later server
- * decision path must append a separately-bound resolution after it has
- * recomputed the verdict and issued its receipt.
+ * A pending record intentionally contains no receipt, decision, or proof
+ * claim. Network's untrusted proposal artifact is hash-bound at intake because
+ * it cannot be derived from an incident; the later server decision path parses
+ * it again and recomputes all policy findings and risk.
  */
 export const PendingDurableReviewRecordSchema = z
   .strictObject({
@@ -452,6 +523,15 @@ export function bindServerResolutionToPendingReview(
   }
   if (resolution.receipt.policyVersion !== pending.session.policyVersion) {
     throw new Error("durable resolution receipt policy version does not match the evaluating session");
+  }
+  if (
+    pending.intake.proposal &&
+    (
+      resolution.receipt.proposalId !== pending.intake.proposal.proposalId ||
+      resolution.receipt.proposalSha256 !== pending.intake.proposal.proposalSha256
+    )
+  ) {
+    throw new Error("durable resolution receipt proposal does not match the immutable intake");
   }
   return resolution;
 }
