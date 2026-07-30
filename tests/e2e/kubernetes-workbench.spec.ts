@@ -51,6 +51,13 @@ test("Kubernetes public workbench evaluates an offline manifest without cluster 
   expect(dataRequests).toEqual([{ resourceType: "fetch", method: "POST", pathname: "/api/reviews/analyze" }]);
 });
 
+test("Kubernetes workbench navigation can switch domains", async ({ page }) => {
+  await page.goto("/workbench/kubernetes");
+  await page.getByRole("link", { name: "Terraform" }).click();
+  await expect(page).toHaveURL(/\/workbench\/terraform$/);
+  await expect(page.getByRole("main", { name: "Terraform review canvas" })).toBeVisible();
+});
+
 test("Kubernetes public workbench preserves selector red-team provenance and blocks it", async ({ page }) => {
   const dataRequests = await interceptDataRequests(page);
   await page.goto("/workbench/kubernetes");
