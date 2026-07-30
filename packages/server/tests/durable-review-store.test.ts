@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -51,6 +52,78 @@ function resolution(reviewId: string, item: Awaited<ReturnType<typeof pending>>,
   return { resolutionVersion: "1", reviewId, resolvedAtUtc: "2026-07-30T02:00:00.000Z", receipt: { receiptId: `${reviewId}-receipt-${suffix}`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha(suffix === "one" ? "c" : "d") } } as const;
 }
 
+function installExactHistoricalLegacyV1Guards(db: DatabaseSync): void {
+  db.exec(`
+    CREATE INDEX durable_review_records_created
+      ON durable_review_records (created_at_utc);
+    CREATE INDEX durable_review_records_domain
+      ON durable_review_records (domain_id);
+    CREATE INDEX durable_review_records_source
+      ON durable_review_records (source_id);
+    CREATE UNIQUE INDEX durable_review_records_receipt_id_unique
+      ON durable_review_records (receipt_id);
+    CREATE UNIQUE INDEX durable_review_records_receipt_sha256_unique
+      ON durable_review_records (receipt_sha256);
+    CREATE TRIGGER durable_review_records_no_update
+    BEFORE UPDATE ON durable_review_records
+    BEGIN
+      SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be updated');
+    END;
+    CREATE TRIGGER durable_review_records_no_delete
+    BEFORE DELETE ON durable_review_records
+    BEGIN
+      SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be deleted');
+    END;
+    CREATE TRIGGER durable_review_records_no_conflicting_insert
+    BEFORE INSERT ON durable_review_records
+    WHEN EXISTS (
+      SELECT 1
+      FROM durable_review_records
+      WHERE review_id = NEW.review_id
+         OR receipt_id = NEW.receipt_id
+         OR receipt_sha256 = NEW.receipt_sha256
+         OR (NEW.seq > 0 AND seq = NEW.seq)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
+    END;
+  `);
+}
+
+function createExactHistoricalLegacyV1Schema(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE durable_review_records (
+      seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id      TEXT NOT NULL UNIQUE,
+      created_at_utc TEXT NOT NULL,
+      domain_id      TEXT NOT NULL,
+      source_id      TEXT NOT NULL,
+      input_id       TEXT NOT NULL,
+      receipt_id     TEXT NOT NULL UNIQUE,
+      receipt_sha256 TEXT NOT NULL UNIQUE,
+      record_json    TEXT NOT NULL
+    );
+  `);
+  installExactHistoricalLegacyV1Guards(db);
+}
+
+function createExactHistoricalLegacy436Schema(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE durable_review_records (
+      seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id      TEXT NOT NULL UNIQUE,
+      created_at_utc TEXT NOT NULL,
+      domain_id      TEXT NOT NULL,
+      source_id      TEXT NOT NULL,
+      input_id       TEXT NOT NULL,
+      receipt_id     TEXT NOT NULL,
+      receipt_sha256 TEXT NOT NULL,
+      record_json    TEXT NOT NULL
+    );
+  `);
+  installExactHistoricalLegacyV1Guards(db);
+}
+
 function createHistoricalOwnerlessV2Schema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE durable_review_records (
@@ -71,6 +144,7 @@ function createHistoricalOwnerlessV2Schema(db: DatabaseSync): void {
     CREATE INDEX durable_review_pending_records_domain ON durable_review_pending_records (domain_id);
     CREATE INDEX durable_review_pending_records_source ON durable_review_pending_records (source_id);
   `);
+  installExactHistoricalLegacyV1Guards(db);
 }
 
 function installHistoricalOwnerlessV2Triggers(db: DatabaseSync): void {
@@ -119,6 +193,166 @@ function installHistoricalOwnerlessV2Triggers(db: DatabaseSync): void {
 }
 
 describe("DurableReviewStore v2 pending queue", () => {
+  it("upgrades the exact trigger-protected V1 store before creating V2 and remains reopenable", async () => {
+    const database = temporaryDatabasePath();
+    const historical = await legacy("historical-v1-review");
+    const current = await pending("current-v2-review");
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const raw = new sqlite.DatabaseSync(database.path);
+    try {
+      createExactHistoricalLegacyV1Schema(raw);
+      raw.prepare(
+        `INSERT INTO durable_review_records
+          (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        historical.reviewId,
+        historical.createdAtUtc,
+        historical.intake.domainId,
+        historical.intake.source.sourceId,
+        historical.intake.input.inputId,
+        historical.receipt.receiptId,
+        historical.receipt.receiptSha256,
+        JSON.stringify(historical),
+      );
+    } finally {
+      raw.close();
+    }
+
+    const first = DurableReviewStore.open(database.path);
+    try {
+      expect(first.getLegacy(historical.reviewId)?.record).toEqual(historical);
+      await expect(first.appendPending(current)).resolves.toMatchObject({ reviewId: current.reviewId });
+    } finally {
+      first.close();
+    }
+
+    const reopened = DurableReviewStore.open(database.path);
+    try {
+      expect(reopened.getLegacy(historical.reviewId)?.record).toEqual(historical);
+      expect(reopened.get(current.reviewId, aliceOwner)?.record).toEqual(current);
+    } finally {
+      reopened.close();
+    }
+
+    const guarded = new sqlite.DatabaseSync(database.path);
+    try {
+      const triggerNames = guarded.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'durable_review_records' ORDER BY name",
+      ).all();
+      expect(triggerNames).toEqual([
+        { name: "durable_review_records_no_conflicting_insert" },
+        { name: "durable_review_records_no_delete" },
+        { name: "durable_review_records_no_update" },
+      ]);
+      expect(() => guarded.prepare(
+        "UPDATE durable_review_records SET source_id = 'changed' WHERE review_id = ?",
+      ).run(historical.reviewId)).toThrow(/append-only/);
+      expect(() => guarded.prepare(
+        "DELETE FROM durable_review_records WHERE review_id = ?",
+      ).run(historical.reviewId)).toThrow(/append-only/);
+      expect(() => guarded.prepare(
+        `INSERT OR REPLACE INTO durable_review_records
+          (seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        1,
+        "replacement-review",
+        historical.createdAtUtc,
+        historical.intake.domainId,
+        "replacement-source",
+        historical.intake.input.inputId,
+        "replacement-receipt",
+        sha("e"),
+        JSON.stringify(historical),
+      )).toThrow(/append-only/);
+    } finally {
+      guarded.close();
+      database.remove();
+    }
+  });
+
+  it("rebuilds the exact upgraded 436 V1 table with current receipt constraints", async () => {
+    const database = temporaryDatabasePath();
+    const historical = await legacy("historical-436-review");
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const raw = new sqlite.DatabaseSync(database.path);
+    try {
+      createExactHistoricalLegacy436Schema(raw);
+      raw.prepare(
+        `INSERT INTO durable_review_records
+          (seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        11,
+        historical.reviewId,
+        historical.createdAtUtc,
+        historical.intake.domainId,
+        historical.intake.source.sourceId,
+        historical.intake.input.inputId,
+        historical.receipt.receiptId,
+        historical.receipt.receiptSha256,
+        JSON.stringify(historical),
+      );
+    } finally {
+      raw.close();
+    }
+
+    const migrated = DurableReviewStore.open(database.path);
+    try {
+      expect(migrated.getLegacy(historical.reviewId)).toMatchObject({
+        seq: 11,
+        record: historical,
+      });
+      const next = await legacy("post-436-review");
+      await expect(migrated.append({
+        ...next,
+        receipt: { ...next.receipt, receiptSha256: sha("d") },
+      })).resolves.toMatchObject({
+        seq: 12,
+      });
+    } finally {
+      migrated.close();
+    }
+
+    const inspected = new sqlite.DatabaseSync(database.path);
+    try {
+      const table = inspected.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_review_records'",
+      ).get();
+      expect(table).toMatchObject({
+        sql: expect.stringMatching(/receipt_id TEXT NOT NULL UNIQUE.*receipt_sha256 TEXT NOT NULL UNIQUE/s),
+      });
+      expect(() => inspected.prepare(
+        "UPDATE durable_review_records SET source_id = 'changed' WHERE review_id = ?",
+      ).run(historical.reviewId)).toThrow(/append-only/);
+    } finally {
+      inspected.close();
+      database.remove();
+    }
+  });
+
+  it("fails closed when a historical V1 append-only trigger was mutated", () => {
+    const database = temporaryDatabasePath();
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const raw = new sqlite.DatabaseSync(database.path);
+    try {
+      createExactHistoricalLegacyV1Schema(raw);
+      raw.exec(`
+        DROP TRIGGER durable_review_records_no_update;
+        CREATE TRIGGER durable_review_records_no_update
+        BEFORE UPDATE ON durable_review_records BEGIN SELECT 1; END;
+      `);
+    } finally {
+      raw.close();
+    }
+
+    expect(() => DurableReviewStore.open(database.path)).toThrow(
+      /legacy schema fingerprint is unknown or weakened/,
+    );
+    database.remove();
+  });
+
   it("accepts a verified receipt-free pending intake exactly once", async () => {
     const store = DurableReviewStore.open(":memory:");
     try { const item = await pending("review-one"); const first = await store.appendPending(item); expect(await store.appendPending(item)).toEqual(first); expect(first).toMatchObject({ seq: 1, reviewId: "review-one" }); expect(store.count()).toBe(1); expect(store.get("review-one", aliceOwner)).toEqual(first); expect(store.getResolution("review-one", aliceOwner)).toBeNull(); } finally { store.close(); }
@@ -576,7 +810,7 @@ describe("DurableReviewStore v2 pending queue", () => {
     }
   });
 
-  it("detects quarantine evidence tampering if a hostile connection first removes the guard", async () => {
+  it("detects quarantine envelope metadata tampering if a hostile connection first removes the guard", async () => {
     const database = temporaryDatabasePath();
     const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
     const historical = await pending("tamper-evidence");
@@ -602,8 +836,8 @@ describe("DurableReviewStore v2 pending queue", () => {
     try {
       hostile.exec("DROP TRIGGER durable_review_v2_migration_quarantine_no_update");
       hostile.prepare(
-        "UPDATE durable_review_v2_migration_quarantine SET row_json = ? WHERE quarantine_id = 1",
-      ).run("{\"tampered\":true}");
+        "UPDATE durable_review_v2_migration_quarantine SET reason = ? WHERE quarantine_id = 1",
+      ).run("tampered-reason");
       expect(store.verifyMigrationQuarantine()).toMatchObject({
         valid: false,
         entryCount: 1,
@@ -619,10 +853,65 @@ describe("DurableReviewStore v2 pending queue", () => {
     }
   });
 
+  it("rejects verification of a raw fabricated quarantine row carrying only a payload hash", async () => {
+    const database = temporaryDatabasePath();
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const historical = await pending("fabrication-source");
+    const raw = new sqlite.DatabaseSync(database.path);
+    try {
+      createHistoricalOwnerlessV2Schema(raw);
+      raw.prepare(
+        "INSERT INTO durable_review_pending_records (review_id, created_at_utc, domain_id, source_id, input_id, record_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(
+        historical.reviewId,
+        historical.createdAtUtc,
+        historical.intake.domainId,
+        historical.intake.source.sourceId,
+        historical.intake.input.inputId,
+        JSON.stringify(historical),
+      );
+      installHistoricalOwnerlessV2Triggers(raw);
+    } finally {
+      raw.close();
+    }
+
+    const store = DurableReviewStore.open(database.path);
+    const hostile = new sqlite.DatabaseSync(database.path);
+    try {
+      const existing = store.listMigrationQuarantine()[0]!;
+      const fabricatedRowJson = "{\"fabricated\":true}";
+      hostile.prepare(
+        `INSERT INTO durable_review_v2_migration_quarantine
+          (row_kind, old_seq, review_id, row_json, reason, migration_version, source_schema_fingerprint, row_sha256)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "pending",
+        999,
+        "fabricated-review",
+        fabricatedRowJson,
+        "historical-ownerless-row-has-no-authenticated-owner-binding",
+        existing.migrationVersion,
+        existing.sourceSchemaFingerprint,
+        createHash("sha256").update(fabricatedRowJson).digest("hex"),
+      );
+      expect(store.verifyMigrationQuarantine()).toMatchObject({
+        valid: false,
+        entryCount: 2,
+        errors: expect.arrayContaining([
+          expect.stringMatching(/digest does not match retained row values/),
+        ]),
+      });
+    } finally {
+      hostile.close();
+      store.close();
+      database.remove();
+    }
+  });
+
   it("preserves legacy v1 resolved rows on upgrade without presenting them as pending v2 queue work", async () => {
     const database = temporaryDatabasePath(); const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); const old = await legacy("old-review");
     const raw = new sqlite.DatabaseSync(database.path);
-    try { raw.exec("CREATE TABLE durable_review_records (seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL, domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL, receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL)"); raw.prepare("INSERT INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(old.reviewId, old.createdAtUtc, old.intake.domainId, old.intake.source.sourceId, old.intake.input.inputId, old.receipt.receiptId, old.receipt.receiptSha256, JSON.stringify(old)); } finally { raw.close(); }
+    try { createExactHistoricalLegacyV1Schema(raw); raw.prepare("INSERT INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(old.reviewId, old.createdAtUtc, old.intake.domainId, old.intake.source.sourceId, old.intake.input.inputId, old.receipt.receiptId, old.receipt.receiptSha256, JSON.stringify(old)); } finally { raw.close(); }
     const store = DurableReviewStore.open(database.path);
     try {
       expect(store.count()).toBe(0);

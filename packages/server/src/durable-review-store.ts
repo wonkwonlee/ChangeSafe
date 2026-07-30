@@ -115,6 +115,7 @@ export interface DurableReviewQuarantineEntry {
   rowSha256: string;
 }
 export interface DurableReviewQuarantineVerification {
+  /** Internal envelope consistency only; this is not an origin/authorship proof. */
   valid: boolean;
   entryCount: number;
   errors: readonly string[];
@@ -136,6 +137,34 @@ CREATE TABLE IF NOT EXISTS durable_review_records (
   domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
   receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL
 );
+`;
+
+// V1 shipped these lookup indexes before the pending/resolution split.  Keep
+// them in the normalized compatibility schema so an exact historical V1
+// database can be upgraded without discarding its read-path shape.
+const LEGACY_INDEX_SCHEMA = `
+CREATE INDEX IF NOT EXISTS durable_review_records_created
+  ON durable_review_records (created_at_utc);
+CREATE INDEX IF NOT EXISTS durable_review_records_domain
+  ON durable_review_records (domain_id);
+CREATE INDEX IF NOT EXISTS durable_review_records_source
+  ON durable_review_records (source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_id_unique
+  ON durable_review_records (receipt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_sha256_unique
+  ON durable_review_records (receipt_sha256);
+`;
+
+// 436b57b created receipt columns without inline UNIQUE constraints. Later V1
+// releases added equivalent named unique indexes, but could not rewrite the
+// already-created table SQL. This exact upgraded shape remains supported.
+const HISTORICAL_LEGACY_436_SCHEMA = `
+CREATE TABLE durable_review_records (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
+  domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
+  receipt_id TEXT NOT NULL, receipt_sha256 TEXT NOT NULL, record_json TEXT NOT NULL
+);
+${LEGACY_INDEX_SCHEMA}
 `;
 
 const V2_SCHEMA = `
@@ -221,6 +250,7 @@ const TABLES = [
 ] as const;
 
 const RESOLUTION_PARENT_BINDING_TRIGGER = "durable_review_resolutions_parent_binding";
+const LEGACY_TABLE_NAME = "durable_review_records";
 const V2_TABLE_NAMES = ["durable_review_pending_records", "durable_review_resolutions"] as const;
 const QUARANTINE_TABLE_NAME = "durable_review_v2_migration_quarantine";
 
@@ -294,6 +324,36 @@ CREATE TRIGGER ${names.delete} BEFORE DELETE ON ${table} BEGIN
 CREATE TRIGGER ${names.insert} BEFORE INSERT ON ${table}
 WHEN EXISTS (SELECT 1 FROM ${table} WHERE ${checks}) BEGIN
  SELECT RAISE(ABORT, '${table} is append-only: existing bindings cannot be replaced'); END;`;
+}
+
+// Exact trigger DDL shipped by the final V1 store.  It is accepted only as a
+// complete fingerprint, then replaced transactionally with the current guard
+// text and retained lookup indexes.
+function historicalLegacyTriggerSql(): string {
+  return `
+CREATE TRIGGER IF NOT EXISTS durable_review_records_no_update
+BEFORE UPDATE ON durable_review_records
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be updated');
+END;
+CREATE TRIGGER IF NOT EXISTS durable_review_records_no_delete
+BEFORE DELETE ON durable_review_records
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be deleted');
+END;
+CREATE TRIGGER durable_review_records_no_conflicting_insert
+BEFORE INSERT ON durable_review_records
+WHEN EXISTS (
+  SELECT 1
+  FROM durable_review_records
+  WHERE review_id = NEW.review_id
+     OR receipt_id = NEW.receipt_id
+     OR receipt_sha256 = NEW.receipt_sha256
+     OR (NEW.seq > 0 AND seq = NEW.seq)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
+END;`;
 }
 
 function historicalResolutionParentBindingTriggerSql(): string {
@@ -429,10 +489,46 @@ function installHistoricalV2Triggers(db: DatabaseSync): void {
   db.exec(historicalResolutionParentBindingTriggerSql());
 }
 
-function installCurrentTriggers(db: DatabaseSync, includeQuarantine: boolean): void {
-  for (const { table, conflict } of TABLES) db.exec(triggerSql(table, conflict));
+function installCurrentLegacyTriggers(db: DatabaseSync): void {
+  const legacy = TABLES.find(({ table }) => table === LEGACY_TABLE_NAME);
+  if (!legacy) throw new DomainError("INTERNAL", "Durable review legacy trigger configuration is missing.");
+  db.exec(triggerSql(legacy.table, legacy.conflict));
+}
+
+function installCurrentV2Triggers(db: DatabaseSync, includeQuarantine: boolean): void {
+  for (const { table, conflict } of TABLES.filter(({ table }) => table !== LEGACY_TABLE_NAME)) {
+    db.exec(triggerSql(table, conflict));
+  }
   db.exec(resolutionParentBindingTriggerSql());
   if (includeQuarantine) db.exec(quarantineTriggerSql());
+}
+
+function normalizedLegacyFingerprint(): string {
+  return expectedFingerprint(`${LEGACY_SCHEMA}${LEGACY_INDEX_SCHEMA}`, [LEGACY_TABLE_NAME], installCurrentLegacyTriggers);
+}
+
+function priorCurrentLegacyFingerprint(): string {
+  return expectedFingerprint(LEGACY_SCHEMA, [LEGACY_TABLE_NAME], installCurrentLegacyTriggers);
+}
+
+function historicalLegacyFingerprint(): string {
+  return expectedFingerprint(
+    `${LEGACY_SCHEMA}${LEGACY_INDEX_SCHEMA}`,
+    [LEGACY_TABLE_NAME],
+    (db) => db.exec(historicalLegacyTriggerSql()),
+  );
+}
+
+function historicalLegacy436Fingerprint(triggerInstaller: (db: DatabaseSync) => void): string {
+  return expectedFingerprint(
+    HISTORICAL_LEGACY_436_SCHEMA,
+    [LEGACY_TABLE_NAME],
+    triggerInstaller,
+  );
+}
+
+function emptyLegacyFingerprint(): string {
+  return expectedFingerprint("", [LEGACY_TABLE_NAME]);
 }
 
 function currentV2Fingerprint(): string {
@@ -466,6 +562,24 @@ function emptyQuarantineFingerprint(): string {
   return expectedFingerprint("", [QUARANTINE_TABLE_NAME]);
 }
 
+function dropKnownLegacyTriggers(db: DatabaseSync): void {
+  for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
+    db.exec(`DROP TRIGGER IF EXISTS durable_review_records_${suffix}`);
+  }
+}
+
+function dropKnownLegacyIndexes(db: DatabaseSync): void {
+  for (const suffix of [
+    "created",
+    "domain",
+    "source",
+    "receipt_id_unique",
+    "receipt_sha256_unique",
+  ]) {
+    db.exec(`DROP INDEX IF EXISTS durable_review_records_${suffix}`);
+  }
+}
+
 function dropKnownV2Triggers(db: DatabaseSync): void {
   for (const table of ["durable_review_pending_records", "durable_review_resolutions"] as const) {
     for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
@@ -480,6 +594,12 @@ function dropKnownQuarantineTriggers(db: DatabaseSync): void {
   }
 }
 
+type QuarantineEvidenceEnvelope = Omit<DurableReviewQuarantineEntry, "quarantineId" | "rowSha256">;
+
+function quarantineEnvelopeSha256(envelope: QuarantineEvidenceEnvelope): string {
+  return createHash("sha256").update(canonicalize(envelope)).digest("hex");
+}
+
 function quarantineRow(
   db: DatabaseSync,
   rowKind: "pending" | "resolution",
@@ -488,7 +608,15 @@ function quarantineRow(
   sourceSchemaFingerprint: string,
 ): void {
   const rowJson = canonicalize(row);
-  const rowSha256 = createHash("sha256").update(rowJson).digest("hex");
+  const rowSha256 = quarantineEnvelopeSha256({
+    rowKind,
+    oldSeq: row.seq,
+    reviewId: row.review_id,
+    rowJson,
+    reason,
+    migrationVersion: MIGRATION_VERSION,
+    sourceSchemaFingerprint,
+  });
   db.prepare(
     `INSERT INTO durable_review_v2_migration_quarantine
       (row_kind, old_seq, review_id, row_json, reason, migration_version, source_schema_fingerprint, row_sha256)
@@ -500,6 +628,38 @@ function setSequenceHighWater(db: DatabaseSync, table: string, highWater: number
   if (highWater <= 0) return;
   db.prepare("DELETE FROM sqlite_sequence WHERE name = ?").run(table);
   db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(table, highWater);
+}
+
+function rebuildHistoricalLegacy436(db: DatabaseSync): void {
+  const duplicateReceiptId = db.prepare(
+    "SELECT receipt_id FROM durable_review_records GROUP BY receipt_id HAVING count(*) > 1 LIMIT 1",
+  ).get();
+  const duplicateReceiptSha = db.prepare(
+    "SELECT receipt_sha256 FROM durable_review_records GROUP BY receipt_sha256 HAVING count(*) > 1 LIMIT 1",
+  ).get();
+  if (duplicateReceiptId || duplicateReceiptSha) {
+    throw new DomainError("INTERNAL", "Historical durable review records contain conflicting receipt bindings.");
+  }
+  const sequenceRow = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(LEGACY_TABLE_NAME);
+  const sequence = sequenceRow
+    ? z.strictObject({ seq: z.number().int().nonnegative() }).parse(sequenceRow).seq
+    : 0;
+
+  dropKnownLegacyTriggers(db);
+  dropKnownLegacyIndexes(db);
+  db.exec("ALTER TABLE durable_review_records RENAME TO durable_review_records_pre_constraint_upgrade");
+  db.exec(LEGACY_SCHEMA);
+  db.exec(
+    `INSERT INTO durable_review_records
+      (seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json)
+     SELECT seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json
+       FROM durable_review_records_pre_constraint_upgrade
+      ORDER BY seq`,
+  );
+  db.exec("DROP TABLE durable_review_records_pre_constraint_upgrade");
+  setSequenceHighWater(db, LEGACY_TABLE_NAME, sequence);
+  db.exec(LEGACY_INDEX_SCHEMA);
+  installCurrentLegacyTriggers(db);
 }
 
 function rebuildAsQuarantine(
@@ -537,9 +697,6 @@ function rebuildAsQuarantine(
   );
 
   dropKnownV2Triggers(db);
-  for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
-    db.exec(`DROP TRIGGER IF EXISTS durable_review_records_${suffix}`);
-  }
   for (const index of [
     "durable_review_pending_records_created",
     "durable_review_pending_records_domain",
@@ -587,15 +744,25 @@ function rebuildAsQuarantine(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const row of legacyQuarantineRows) {
+      const reason = `retained-from-prior-quarantine:${row.reason}`;
+      const rowSha256 = quarantineEnvelopeSha256({
+        rowKind: row.row_kind,
+        oldSeq: row.old_seq,
+        reviewId: row.review_id,
+        rowJson: row.row_json,
+        reason,
+        migrationVersion: MIGRATION_VERSION,
+        sourceSchemaFingerprint: historicalFingerprint,
+      });
       insert.run(
         row.row_kind,
         row.old_seq,
         row.review_id,
         row.row_json,
-        `retained-from-prior-quarantine:${row.reason}`,
+        reason,
         MIGRATION_VERSION,
         historicalFingerprint,
-        createHash("sha256").update(row.row_json).digest("hex"),
+        rowSha256,
       );
     }
   }
@@ -607,13 +774,43 @@ function rebuildAsQuarantine(
   }
   setSequenceHighWater(db, "durable_review_pending_records", pendingHighWater);
   setSequenceHighWater(db, "durable_review_resolutions", resolutionHighWater);
-  installCurrentTriggers(db, true);
+  installCurrentV2Triggers(db, true);
 }
 
 function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptions): void {
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.exec(LEGACY_SCHEMA);
+    const actualLegacy = schemaFingerprint(db, [LEGACY_TABLE_NAME]);
+    const noLegacy = emptyLegacyFingerprint();
+    const priorCurrentLegacy = priorCurrentLegacyFingerprint();
+    const historicalLegacy = historicalLegacyFingerprint();
+    const normalizedLegacy = normalizedLegacyFingerprint();
+    const historicalLegacy436 = historicalLegacy436Fingerprint((expected) => {
+      expected.exec(historicalLegacyTriggerSql());
+    });
+    const historicalLegacy436WithCurrentTriggers = historicalLegacy436Fingerprint(installCurrentLegacyTriggers);
+    if (
+      actualLegacy !== noLegacy &&
+      actualLegacy !== priorCurrentLegacy &&
+      actualLegacy !== historicalLegacy &&
+      actualLegacy !== normalizedLegacy &&
+      actualLegacy !== historicalLegacy436 &&
+      actualLegacy !== historicalLegacy436WithCurrentTriggers
+    ) {
+      throw new DomainError("INTERNAL", "Durable review legacy schema fingerprint is unknown or weakened.");
+    }
+    if (
+      actualLegacy === historicalLegacy436 ||
+      actualLegacy === historicalLegacy436WithCurrentTriggers
+    ) {
+      rebuildHistoricalLegacy436(db);
+    } else {
+      if (actualLegacy === noLegacy) db.exec(LEGACY_SCHEMA);
+      dropKnownLegacyTriggers(db);
+      db.exec(LEGACY_INDEX_SCHEMA);
+      installCurrentLegacyTriggers(db);
+    }
+
     const actualV2 = schemaFingerprint(db, V2_TABLE_NAMES);
     const actualQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
     const currentV2 = currentV2Fingerprint();
@@ -628,7 +825,7 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
         throw new DomainError("INTERNAL", "Durable review quarantine exists without its exact owning schema.");
       }
       db.exec(V2_SCHEMA);
-      installCurrentTriggers(db, false);
+      installCurrentV2Triggers(db, false);
     } else if (actualV2 === historicalV2) {
       if (actualQuarantine !== noQuarantine) {
         throw new DomainError("INTERNAL", "Historical durable review schema has an unexpected quarantine surface.");
@@ -649,6 +846,9 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
     }
     if (schemaFingerprint(db, V2_TABLE_NAMES) !== currentV2) {
       throw new DomainError("INTERNAL", "Durable review migration did not install the exact current schema.");
+    }
+    if (schemaFingerprint(db, [LEGACY_TABLE_NAME]) !== normalizedLegacy) {
+      throw new DomainError("INTERNAL", "Durable review migration did not install the exact normalized legacy schema.");
     }
     const finalQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
     if (finalQuarantine !== noQuarantine && finalQuarantine !== currentQuarantine) {
@@ -818,9 +1018,10 @@ export class DurableReviewStore {
   }
 
   /**
-   * Quarantine hashes prove retained SQL values have not changed after
-   * migration. They are integrity evidence only and never assert authorship
-   * or an authenticated owner.
+   * Quarantine hashes bind the complete retained evidence envelope. They
+   * provide an internal consistency check only: because this SQLite database
+   * has no signed external migration anchor, they do not prove pre-migration
+   * origin, authorship, or an authenticated owner.
    */
   listMigrationQuarantine(): DurableReviewQuarantineEntry[] {
     const table = this.#db.prepare(
@@ -872,7 +1073,15 @@ export class DurableReviewStore {
       } catch {
         errors.push(`Quarantine entry ${entry.quarantineId} row_json is not valid JSON.`);
       }
-      const actual = createHash("sha256").update(entry.rowJson).digest("hex");
+      const actual = quarantineEnvelopeSha256({
+        rowKind: entry.rowKind,
+        oldSeq: entry.oldSeq,
+        reviewId: entry.reviewId,
+        rowJson: entry.rowJson,
+        reason: entry.reason,
+        migrationVersion: entry.migrationVersion,
+        sourceSchemaFingerprint: entry.sourceSchemaFingerprint,
+      });
       if (actual !== entry.rowSha256) {
         errors.push(`Quarantine entry ${entry.quarantineId} digest does not match retained row values.`);
       }
