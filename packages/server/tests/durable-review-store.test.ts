@@ -287,6 +287,109 @@ describe("DurableReviewStore", () => {
     }
   });
 
+  it("upgrades the named conflict trigger on an existing database before accepting new appends", async () => {
+    const database = temporaryDatabasePath();
+    const legacy = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const candidate = await record("legacy-review");
+    const rawBeforeUpgrade = new legacy.DatabaseSync(database.path);
+    try {
+      // This is the immediately previous trigger body: natural-key conflicts
+      // were guarded, but an explicit sequence REPLACE with all-new natural
+      // keys could evade it. Reopening must upgrade this named trigger without
+      // rewriting the existing append-only row.
+      rawBeforeUpgrade.exec(`
+        CREATE TABLE durable_review_records (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          review_id TEXT NOT NULL UNIQUE,
+          created_at_utc TEXT NOT NULL,
+          domain_id TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          input_id TEXT NOT NULL,
+          receipt_id TEXT NOT NULL UNIQUE,
+          receipt_sha256 TEXT NOT NULL UNIQUE,
+          record_json TEXT NOT NULL
+        );
+        CREATE TRIGGER durable_review_records_no_conflicting_insert
+        BEFORE INSERT ON durable_review_records
+        WHEN EXISTS (
+          SELECT 1 FROM durable_review_records
+          WHERE review_id = NEW.review_id
+             OR receipt_id = NEW.receipt_id
+             OR receipt_sha256 = NEW.receipt_sha256
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
+        END;
+        CREATE TRIGGER durable_review_records_no_update
+        BEFORE UPDATE ON durable_review_records
+        BEGIN
+          SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be updated');
+        END;
+        CREATE TRIGGER durable_review_records_no_delete
+        BEFORE DELETE ON durable_review_records
+        BEGIN
+          SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be deleted');
+        END;
+      `);
+      rawBeforeUpgrade
+        .prepare(
+          "INSERT INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          candidate.reviewId,
+          candidate.createdAtUtc,
+          candidate.intake.domainId,
+          candidate.intake.source.sourceId,
+          candidate.intake.input.inputId,
+          candidate.receipt.receiptId,
+          candidate.receipt.receiptSha256,
+          JSON.stringify(candidate),
+        );
+    } finally {
+      rawBeforeUpgrade.close();
+    }
+
+    const store = DurableReviewStore.open(database.path);
+    try {
+      // Existing rows stay readable and retain idempotency after the trigger
+      // migration; a normal new append still receives the next sequence.
+      expect(await store.append(candidate)).toMatchObject({ seq: 1, reviewId: "legacy-review" });
+      expect(await store.append(await record("post-migration-review", "post-migration-source", sha("d")))).toMatchObject({
+        seq: 2,
+        reviewId: "post-migration-review",
+      });
+
+      const rawAfterUpgrade = new legacy.DatabaseSync(database.path);
+      try {
+        rawAfterUpgrade.exec("PRAGMA recursive_triggers = OFF");
+        expect(() =>
+          rawAfterUpgrade
+            .prepare(
+              "INSERT OR REPLACE INTO durable_review_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              1,
+              "replacement-review",
+              candidate.createdAtUtc,
+              candidate.intake.domainId,
+              candidate.intake.source.sourceId,
+              candidate.intake.input.inputId,
+              "replacement-receipt",
+              sha("e"),
+              JSON.stringify(candidate),
+            ),
+        ).toThrow(/append-only: existing bindings cannot be replaced/);
+      } finally {
+        rawAfterUpgrade.close();
+      }
+      expect(store.count()).toBe(2);
+      expect(store.get(candidate.reviewId)?.record).toEqual(candidate);
+    } finally {
+      store.close();
+      database.remove();
+    }
+  });
+
   it("accepts Terraform metadata through the same verified append boundary", async () => {
     const store = DurableReviewStore.open(":memory:");
     try {

@@ -93,7 +93,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_sha256_unique
 -- therefore reject a conflict at the incoming INSERT boundary too: this guard
 -- runs before SQLite can choose the REPLACE conflict action, including on a
 -- raw/default connection.
-CREATE TRIGGER IF NOT EXISTS durable_review_records_no_conflicting_insert
+CREATE TRIGGER IF NOT EXISTS durable_review_records_no_update
+BEFORE UPDATE ON durable_review_records
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be updated');
+END;
+
+CREATE TRIGGER IF NOT EXISTS durable_review_records_no_delete
+BEFORE DELETE ON durable_review_records
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be deleted');
+END;
+`;
+
+// This trigger must be replaced on every open, rather than created with
+// `IF NOT EXISTS`: its body is a security boundary and must upgrade existing
+// databases when a newly-discovered SQLite conflict path is blocked.
+const CONFLICTING_INSERT_TRIGGER = `
+CREATE TRIGGER durable_review_records_no_conflicting_insert
 BEFORE INSERT ON durable_review_records
 WHEN EXISTS (
   SELECT 1
@@ -110,18 +127,6 @@ WHEN EXISTS (
 BEGIN
   SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
 END;
-
-CREATE TRIGGER IF NOT EXISTS durable_review_records_no_update
-BEFORE UPDATE ON durable_review_records
-BEGIN
-  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be updated');
-END;
-
-CREATE TRIGGER IF NOT EXISTS durable_review_records_no_delete
-BEFORE DELETE ON durable_review_records
-BEGIN
-  SELECT RAISE(ABORT, 'durable review records are append-only: records cannot be deleted');
-END;
 `;
 
 const nodeRequire = createRequire(import.meta.url);
@@ -129,6 +134,18 @@ const nodeRequire = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSync {
   const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
   return new sqlite.DatabaseSync(path);
+}
+
+function upgradeConflictingInsertTrigger(db: DatabaseSync): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec("DROP TRIGGER IF EXISTS durable_review_records_no_conflicting_insert");
+    db.exec(CONFLICTING_INSERT_TRIGGER);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function toEntry(row: Row): DurableReviewStoreEntry {
@@ -175,6 +192,7 @@ export class DurableReviewStore {
     // even when a raw connection leaves this pragma at SQLite's default OFF.
     db.exec("PRAGMA recursive_triggers = ON");
     db.exec(SCHEMA);
+    upgradeConflictingInsertTrigger(db);
     return new DurableReviewStore(db);
   }
 
