@@ -13,7 +13,7 @@
  */
 
 export { GENESIS_CHAIN_SHA256, computeChainHash } from "./chain";
-export { Ledger } from "./ledger";
+export { Ledger, LedgerCorruptionError } from "./ledger";
 export type {
   ChainBreak,
   ChainVerdict,

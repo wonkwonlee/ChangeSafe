@@ -62,6 +62,18 @@ export interface ChainVerdict {
 }
 
 /**
+ * The database was reachable, but stored ledger data failed its validation
+ * boundary. Callers must not collapse this into an availability failure:
+ * malformed durable evidence is an integrity failure.
+ */
+export class LedgerCorruptionError extends Error {
+  constructor(message: string, options: { cause: unknown }) {
+    super(message, options);
+    this.name = "LedgerCorruptionError";
+  }
+}
+
+/**
  * Stored rows are parsed, not asserted. The database file is a boundary
  * input like any other — and for a feature whose whole purpose is detecting
  * tampering, trusting its shape on faith would be the wrong instinct.
@@ -83,6 +95,16 @@ const RowSchema = z.object({
 });
 
 type Row = z.infer<typeof RowSchema>;
+
+function parseRow(raw: unknown): Row {
+  try {
+    return RowSchema.parse(raw);
+  } catch (cause) {
+    throw new LedgerCorruptionError("A stored ledger row does not match the ledger schema.", {
+      cause,
+    });
+  }
+}
 
 const SCHEMA_VERSION = 1;
 
@@ -151,9 +173,15 @@ function splitRecord(record: LedgerRecord): {
 
 /** Parse a stored record back into its validated shape. */
 function parseRecord(json: string): LedgerRecord {
-  const raw: unknown = JSON.parse(json);
-  const isEnvelope = typeof raw === "object" && raw !== null && "receipt" in raw;
-  return isEnvelope ? SignedReceiptSchema.parse(raw) : ChangeReceiptSchema.parse(raw);
+  try {
+    const raw: unknown = JSON.parse(json);
+    const isEnvelope = typeof raw === "object" && raw !== null && "receipt" in raw;
+    return isEnvelope ? SignedReceiptSchema.parse(raw) : ChangeReceiptSchema.parse(raw);
+  } catch (cause) {
+    throw new LedgerCorruptionError("A stored ledger record is not valid receipt evidence.", {
+      cause,
+    });
+  }
 }
 
 function toEntry(row: Row): LedgerEntry {
@@ -313,7 +341,7 @@ export class Ledger {
     const row = this.#db
       .prepare("SELECT * FROM receipts WHERE receipt_id = ?")
       .get(receiptId);
-    return row ? toEntry(RowSchema.parse(row)) : null;
+    return row ? toEntry(parseRow(row)) : null;
   }
 
   list(options: ListOptions = {}): LedgerEntry[] {
@@ -340,7 +368,7 @@ export class Ledger {
     const rows = this.#db
       .prepare(`SELECT * FROM receipts ${where} ORDER BY seq DESC LIMIT ${limit}`)
       .all(...params);
-    return rows.map((row) => toEntry(RowSchema.parse(row)));
+    return rows.map((row) => toEntry(parseRow(row)));
   }
 
   /**
@@ -354,7 +382,7 @@ export class Ledger {
     const rows = this.#db
       .prepare("SELECT * FROM receipts ORDER BY seq ASC")
       .all()
-      .map((row) => RowSchema.parse(row));
+      .map(parseRow);
     const breaks: ChainBreak[] = [];
 
     let previous = GENESIS_CHAIN_SHA256;

@@ -105,9 +105,16 @@ packages/server/           @changesafe/server — authenticated self-hosted
 packages/cli/              changesafe — gate, analyze, eval, verify, keygen,
                            ledger, serve, scenario, and Kubernetes collect;
                            ships pre-bundled
-app/                       Next.js showcase console (api/analyze, api/status)
-components/                console UI + client workflow hook
-lib/ai/                    app-level live + replay analysis entry points
+app/                       Next.js multi-domain review workbench: public
+                           Network replay at /, Terraform/Kubernetes
+                           subroutes, optional self-hosted client,
+                           versioned replay API + status
+components/                domain workbenches, shared evidence and
+                           capability/authority presentation
+features/                  app-local domain registries, versioned review
+                           contracts, neutral controller, public/self-hosted
+                           transports, durable review contracts
+lib/ai/                    server-only live-provider status/config binding
 lib/domain/                app-level wire contracts and version constants
 scenarios/                 nine synthetic incident bundles, fixtures,
                            expectations, plus the browser-usable registry
@@ -130,9 +137,9 @@ only) AI. Scenario fixtures must pass the production schemas.
 `packages/core/src/state-machine.ts` is the single workflow authority; UI
 must dispatch through it.
 
-Two domain shapes exist: **simulated-state** (network — hold a declarative
-model and apply operations to a clone) and **external-diff** (terraform —
-the diff arrives precomputed, so nothing simulates). An external-diff domain
+Two domain shapes exist: **simulated-state** (network and Kubernetes — hold a
+declarative model and apply operations to a clone) and **external-diff**
+(Terraform — the diff arrives precomputed, so nothing simulates). An external-diff domain
 may skip a universal policy only by declaring it in
 `skippedUniversalPolicies` with the reason and the domain policy that
 replaces it.
@@ -166,7 +173,7 @@ tests.
 ## Technology
 
 Strict TypeScript, Zod-first (schemas before derived types), Next.js App
-Router for the showcase app, npm workspaces, Vitest, Playwright. Node 22 and
+Router for the multi-domain workbench, npm workspaces, Vitest, Playwright. Node 22 and
 npm 10.9.8 are pinned (`engines`, `.nvmrc`, and a CI runtime-contract
 assertion). AI: provider-agnostic adapters (OpenAI Responses, Anthropic
 Messages, local Ollama) in `packages/ai`, plain `fetch` with no vendor SDKs,

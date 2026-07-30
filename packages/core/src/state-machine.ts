@@ -205,7 +205,15 @@ export function transition<TInput>(
     }
 
     case "FAIL": {
-      const recoverable: WorkflowPhase[] = ["ANALYZING", "PROPOSED", "VALIDATED", "APPROVED"];
+      const recoverable: WorkflowPhase[] = [
+        "ANALYZING",
+        "PROPOSED",
+        "VALIDATED",
+        "BLOCKED",
+        "APPROVED",
+        "REJECTED",
+        "SIMULATED",
+      ];
       if (!recoverable.includes(state.phase)) {
         throw new IllegalTransitionError(state.phase, event.type);
       }

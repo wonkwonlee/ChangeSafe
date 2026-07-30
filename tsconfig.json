@@ -30,6 +30,8 @@
       "@changesafe/domain-network": ["./packages/domain-network/src/index.ts"],
       "@changesafe/domain-terraform": ["./packages/domain-terraform/src/index.ts"],
       "@changesafe/domain-kubernetes": ["./packages/domain-kubernetes/src/index.ts"],
+      "@changesafe/domain-kubernetes/manifest-proposal": ["./packages/domain-kubernetes/src/manifest-proposal.ts"],
+      "@changesafe/domain-kubernetes/offline": ["./packages/domain-kubernetes/src/offline.ts"],
       "@changesafe/kubernetes-collector": ["./packages/kubernetes-collector/src/index.ts"],
       "changesafe": ["./packages/cli/src/main.ts"],
       "changesafe/version": ["./packages/cli/src/version.ts"]

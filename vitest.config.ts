@@ -20,6 +20,14 @@ export default defineConfig({
         root,
         "packages/domain-terraform/src/index.ts",
       ),
+      "@changesafe/domain-kubernetes/manifest-proposal": path.resolve(
+        root,
+        "packages/domain-kubernetes/src/manifest-proposal.ts",
+      ),
+      "@changesafe/domain-kubernetes/offline": path.resolve(
+        root,
+        "packages/domain-kubernetes/src/offline.ts",
+      ),
       "@changesafe/domain-kubernetes": path.resolve(
         root,
         "packages/domain-kubernetes/src/index.ts",

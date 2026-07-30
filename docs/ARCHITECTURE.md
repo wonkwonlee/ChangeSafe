@@ -1,135 +1,176 @@
 # ChangeSafe Architecture
 
-## System shape
+## Product surfaces and authority
 
-One strict-TypeScript Next.js (App Router) application. No database, no
-queues, no background workers. The only server-side surface is analysis; the
-entire post-analysis workflow runs in shared pure domain code.
-
-```text
-┌────────────────────────── Browser ───────────────────────────┐
-│  components/ (React UI)                                      │
-│    useWorkflow ──dispatch──▶ lib/domain/state-machine        │
-│    evaluatePolicies, runSimulation, createReceipt            │
-│    (pure lib code bundled client-side; synthetic data only)  │
-└───────────────┬──────────────────────────────────────────────┘
-                │ POST /api/analyze { scenarioId, mode }
-                │ GET  /api/status → { liveAvailable, provider, model }
-┌───────────────▼───────────────── Server ─────────────────────┐
-│  app/api/analyze/route.ts                                    │
-│    ├─ lib/ai/replay.ts  (fixture, provenance-labeled)        │
-│    └─ lib/ai/live.ts    (server-only binding)                │
-│         └─ packages/ai  (OpenAI | Anthropic | Ollama)        │
-│              provider credentials read here and nowhere      │
-│              else; structured output + local re-validation   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-Why this split: the deterministic core (patch, policies, receipts, state
-machine) is pure and operates on fully synthetic data, so running it in the
-browser costs nothing in safety and removes any need for server session state
-(serverless-safe, works identically on Vercel). The model call — the only
-secret-bearing, non-deterministic step — is isolated behind one POST route,
-whichever provider serves it.
-
-## Module map and dependency direction
+ChangeSafe is library/CLI-first. The Next.js application is a multi-domain
+review workbench over the same deterministic core; it is not a second policy
+engine.
 
 ```text
-packages/core/              proposal contract, five universal policies,
-                            deterministic risk, state machine, canonical
-                            serialization + SHA-256 receipts, DomainAdapter.
-                            Depends on zod alone.
-packages/domain-network/    device/topology model, allowlisted transactional
-                            patch engine, reachability, sandboxed simulation,
-                            MGMT_REACHABILITY + PROTECTED_RESOURCE
-packages/domain-terraform/  plan normalization, plan-derived proposals,
-                            DESTRUCTIVE_OP + PROTECTED_RESOURCE + REVERSIBILITY
-packages/ai/                provider adapters (OpenAI / Anthropic / Ollama),
-                            portable JSON Schema derivation, prompts,
-                            local validation, capture
-packages/cli/               the changesafe binary (esbuild-bundled)
-lib/domain/                 app wire contracts + version
-lib/ai/                     app-side binding: server-only live, replay
-scenarios/                  incident bundles + replay fixtures + expectations
-app/, components/           page, two API routes, UI + useWorkflow
+Public browser (ephemeral)                         Self-hosted (durable)
+┌───────────────────────────────┐                 ┌──────────────────────────┐
+│ /                    Network │                 │ /workbench/self-hosted   │
+│ /workbench/terraform         │                 │ browser client           │
+│ /workbench/kubernetes        │                 └────────────┬─────────────┘
+│                               │                              │ credentials:
+│ POST /api/reviews/analyze     │                              │ include
+│ strict V1 replay envelope     │                 ┌────────────▼─────────────┐
+│                               │                 │ operator HTTPS gateway  │
+│ findings + risk only          │                 │ HttpOnly session → OIDC │
+│ no decision/simulation/receipt│                 └────────────┬─────────────┘
+└──────────────┬────────────────┘                              │ bearer
+               │                                   ┌───────────▼──────────────┐
+               │                                   │ @changesafe/server       │
+               │                                   │ recompute → human intent │
+               │                                   │ sign → ledger append     │
+               │                                   └──────────────────────────┘
+        ┌──────▼──────────────────────────────────────────────────────────┐
+        │ core state machine + domain adapters + deterministic policies   │
+        │ no infrastructure execution path                               │
+        └──────────────────────────────────────────────────────────────────┘
 ```
 
-Allowed dependencies (violations are review failures):
+Exact `/workbench` and `POST /api/analyze` are retired compatibility paths.
+`GET /api/status` remains a non-secret provider/configuration status response;
+it is not a live-analysis transport.
 
-- UI → domain types, wire contracts, pure engines. UI never imports
-  `packages/ai` or `lib/ai` — provider adapters are server-side.
-- `packages/ai` → core + domain schemas and the patch path parser (for
-  reference checks). Nothing in core or the domains imports it.
-- Policy and patch engines → domain types only. **Never** UI or AI modules —
-  the gate cannot consult a model by construction, and no policy function
-  receives model confidence.
-- Receipts → validated domain outputs only, never raw model text.
-- `scenarios` fixtures parse through the production schemas at module load.
+Public replay has deliberately limited authority. It validates a fixture,
+recomputes findings and risk, and renders evidence. It creates no human
+decision, sandbox result, durable record, or receipt. A safe verdict means
+only that the deterministic gate found no BLOCK; it is not approval.
 
-The AI package sits outside the trust chain entirely: it can propose, and
-that is all. Deleting it would remove live analysis and change no verdict.
-
-## Trust boundaries
-
-1. **Untrusted data → model.** The incident bundle (alerts, notes, names,
-   values) is data. The server prompt wraps it in `<untrusted_incident_data>`
-   delimiters and instructs the model to treat embedded directives as
-   observations. This is defense-in-depth only — no safety property depends
-   on the model behaving.
-2. **Model → deterministic core.** Model output is untrusted until (a) the
-   provider's own structured-output enforcement, (b) local Zod strict parse,
-   (c) evidence-id existence check, (d) device-reference check. Anything else
-   is a typed error; no partial proposal survives.
-
-   Step (a) varies by provider — OpenAI constrains generation to a strict
-   `json_schema`, Anthropic to a forced strict tool call, Ollama to a
-   `format` schema with looser keyword support — so it is treated as a
-   quality measure, not a control. Steps (b) through (d) are identical for
-   every provider and are what actually decides acceptance. The portable wire
-   schema deliberately drops the length, range, and pattern keywords
-   providers disagree about; Zod re-imposes all of them locally.
-3. **Deterministic core → human.** Policies are pure functions; risk derives
-   only from verdicts. Any BLOCK forces the `BLOCKED` state, from which
-   `APPROVE` and `SIMULATION_COMPLETED` transitions throw — enforced in
-   `transition()`, not in button state.
-4. **Human → sandbox.** Only `APPROVED` reaches simulation; simulation
-   mutates a `structuredClone` and re-evaluates declared safety properties.
-   There is no code path that contacts infrastructure.
-
-## State machine
+## Module map
 
 ```text
-READY → ANALYZING → PROPOSED → VALIDATED
-  VALIDATED → BLOCKED → RECEIPT_ISSUED
-  VALIDATED → APPROVAL_REQUIRED → REJECTED → RECEIPT_ISSUED
-  APPROVAL_REQUIRED → APPROVED → SIMULATED → RECEIPT_ISSUED
-  {ANALYZING, PROPOSED, VALIDATED, APPROVED} → ERROR (safe message only)
-  any state → RESET → fresh READY
+packages/core/                 schemas, findings/risk, state machine,
+                               universal policies, receipts/signatures,
+                               DomainAdapter contract
+packages/domain-network/       simulated-state network adapter and policies
+packages/domain-terraform/     supplied external-diff adapter and policies
+packages/domain-kubernetes/    offline simulated-state adapter and policies
+packages/kubernetes-collector/ optional namespace-scoped read-only collector
+packages/ai/                   provider adapters; proposer only
+packages/ledger/               append-only SQLite receipt ledger
+packages/server/               OIDC, server recomputation, decisions,
+                               durable review primitives, receipt proof
+packages/cli/                  gate/analyze/eval/verify/serve/collect wiring
+features/domains/              strict app contracts, lazy runtime and
+                               presentation registries, fixtures
+features/reviews/              neutral controller, public/self-hosted
+                               transports, durable review contracts
+components/                    domain workbenches and shared evidence UI
+app/                           route-level composition and bounded APIs
 ```
 
-`CLASSIFY` (VALIDATED → BLOCKED | APPROVAL_REQUIRED) derives from findings
-inside the machine — callers cannot pick the branch. `APPROVE` re-checks
-findings for BLOCK as defense in depth. `ERROR` retains no proposal or
-findings.
+Dependency rules are review failures when violated:
 
-## Canonicalization and hashing
+- `packages/core` depends on Zod alone.
+- A domain depends on core; it never imports React, the app, or AI.
+- Nothing in the gate path depends on `packages/ai`.
+- Presentation metadata stays app-local and never enters `DomainAdapter`.
+- The ledger depends on core. The server depends on core, domains, and the
+  ledger, never AI.
+- Browser-reachable modules may not import `@changesafe/ai`, even through a
+  dynamic import.
+- `packages/core/src/state-machine.ts` remains the only workflow-transition
+  authority.
 
-`lib/receipt/canonical.ts` serializes with recursively sorted keys (code-unit
-order), arrays in order, `undefined` dropped, non-plain objects rejected.
-Uses: rollback verification (canonical equality) and SHA-256 hashing
-(WebCrypto, identical in Node and browsers). The receipt's `receiptSha256`
-covers the canonical receipt minus the hash field itself.
+## Domain registration and presentation
 
-## Reachability model
+`features/domains/registry.ts` validates runtime registrations and lazy-loads
+domain-specific implementations. Presentation registrations are separate:
+React components and display metadata never enter the pure adapter contract.
+The neutral review controller consumes versioned envelopes and dispatches
+only core transitions.
 
-Deliberately simple and fully deterministic: a link is traversable when its
-topology status ≠ down and both endpoint interfaces are enabled; a device
-that models routes participates in forwarding toward a target only if some
-route covers the target's management IP (devices with zero routes are
-passive); the target must hold a covering route back to the origin. This is
-enough to make "removing the only management route severs access" provable on
-a sandboxed copy, which is the property the demo depends on.
+Two domain shapes remain visibly distinct:
+
+- **Simulated-state:** Network and Kubernetes apply declarative operations
+  transactionally to a deep clone. The public workbench still does not run
+  simulation because it has no decision authority.
+- **External-diff:** Terraform receives a precomputed `terraform show -json`
+  diff. ChangeSafe never runs Terraform and never claims to simulate it.
+  Replaced/skipped universal policies are declared with reasons.
+
+The future-domain contract is documented in
+[`FUTURE_DOMAIN_TEMPLATE.md`](FUTURE_DOMAIN_TEMPLATE.md). A fourth test domain
+proves registration and generic fallback without changing the generic shell.
+IAM remains a separately specified future target, not a shipped domain.
+
+## Public replay transport
+
+`POST /api/reviews/analyze` accepts a strict, versioned,
+domain-discriminated replay request. The route:
+
+1. enforces a bounded request body;
+2. resolves a registered domain and exact contract version;
+3. loads a bundled, provenance-labeled fixture;
+4. validates input/proposal references locally;
+5. recomputes deterministic findings and risk;
+6. returns a strict response envelope.
+
+Unknown domains, versions, evidence, or resource references fail closed. The
+route has no fields or methods for approval, simulation, execution, or receipt
+issuance.
+
+## Self-hosted boundary
+
+`@changesafe/server` verifies OIDC bearer tokens, applies operator approver
+policy, recomputes findings from submitted input/proposal, and drives the same
+core state machine. A BLOCK returns conflict and is never appended as an
+approval. Successful decisions are signed when a key is configured and are
+appended to the hash-chained ledger before the response.
+
+Durable review endpoints exist when `createDecisionServer` receives a
+`DurableReviewStore`:
+
+- `POST /reviews`
+- `GET /reviews`
+- `GET /reviews/:id`
+- `POST /reviews/:id/decisions`
+- `GET /reviews/:id/receipt-proof`
+
+They are owner-scoped by verified issuer and subject. Receipt proof reports
+content integrity, signature presence, out-of-band public-key verification,
+and ledger inclusion independently.
+
+Current limitation: `changesafe serve` constructs the authenticated decision
+service and ledger but does not construct/pass `DurableReviewStore`.
+Therefore the vNext queue is an integration surface, not a turnkey deployment.
+The browser additionally requires an operator gateway/BFF: the public
+`CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` contains no bearer token, and the
+browser uses an HttpOnly session cookie while the gateway supplies OIDC to the
+server.
+
+## Deterministic trust boundaries
+
+1. **External content is data.** Alerts, notes, names, PR text, configuration,
+   plans, and manifests are never instructions.
+2. **Model output is invalid by default.** Provider-side structure is
+   defense-in-depth; local strict Zod validation and reference checks decide
+   acceptance.
+3. **Policies own findings; core owns risk.** Model confidence and
+   presentation state are absent from policy inputs.
+4. **Core owns legal transitions.** Any BLOCK makes approval and simulation
+   impossible regardless of UI or authentication.
+5. **Simulation is local only.** Where supported, operations mutate a deep
+   clone transactionally and rollback is checked canonically.
+6. **Humans and existing systems execute.** No ChangeSafe endpoint or adapter
+   executes infrastructure changes.
+
+## Integrity and authorship
+
+Canonical JSON uses recursively sorted keys and stable array order. Receipt
+hashes prove content integrity, not authorship. Ed25519 signatures prove an
+issuer only when checked against an expected public key obtained out of band.
+The ledger's SQLite triggers and hash chain make alteration, deletion, and
+reordering detectable; they do not provide external timestamping or
+non-repudiation.
 
 ## Kubernetes acquisition boundary
 
-Kubernetes collection is isolated from the pure gate: the optional collector performs explicit namespace-scoped `get/list` reads and atomically writes a validated snapshot. `@changesafe/domain-kubernetes` consumes only that snapshot and proposed manifests, derives deterministic resource-level operations, and simulates on a clone. No collector or Kubernetes client is imported by core policies.
+The optional collector is isolated from the gate. It rejects executable
+credential plugins, performs only explicit namespace-scoped `get/list` reads,
+validates a resource cap, and atomically writes a snapshot. The Kubernetes
+domain consumes only offline snapshots and proposed manifests. No collector
+or Kubernetes client is imported by core policies, and no manifest is applied.

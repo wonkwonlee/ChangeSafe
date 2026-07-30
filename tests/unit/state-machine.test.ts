@@ -139,6 +139,42 @@ describe("failure and reset behavior", () => {
     expect("findings" in state).toBe(false);
   });
 
+  it.each([
+    ["BLOCKED", () => blocked()],
+    [
+      "REJECTED",
+      () => transition(approvalRequired(), { type: "REJECT" }),
+    ],
+    [
+      "SIMULATED",
+      () =>
+        transition(
+          transition(approvalRequired(), { type: "APPROVE" }),
+          {
+            type: "SIMULATION_COMPLETED",
+            simulation: buildSimulation(),
+          },
+        ),
+    ],
+  ] as const)(
+    "FAIL from %s safely drops decision artifacts",
+    (_phase, buildState) => {
+      const state = transition(buildState(), {
+        type: "FAIL",
+        userMessage: "Receipt validation failed safely.",
+      });
+
+      expect(state).toMatchObject({
+        phase: "ERROR",
+        userMessage: "Receipt validation failed safely.",
+      });
+      expect("proposal" in state).toBe(false);
+      expect("findings" in state).toBe(false);
+      expect("simulation" in state).toBe(false);
+      expect("receipt" in state).toBe(false);
+    },
+  );
+
   it("RESET returns a clean READY from every phase", () => {
     const states = [ready(), proposed(), approvalRequired(), blocked()];
     for (const state of states) {

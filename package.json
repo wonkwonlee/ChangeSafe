@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "verify:client-bundles": "node scripts/verify-public-client-bundles.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -31,7 +32,6 @@
     "demo:replay": "bash scripts/demo-replay.sh"
   },
   "dependencies": {
-    "@vercel/speed-insights": "^2.0.0",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",

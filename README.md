@@ -6,33 +6,28 @@
 **TL;DR**
 - AI agents can now propose real infrastructure changes — and will confidently propose a dangerous one.
 - ChangeSafe treats every AI proposal as untrusted data: a pure, deterministic policy engine decides what's safe, not the model's confidence score.
-- Every approval, rejection, or block becomes a hashed, replayable receipt — so "the AI said it was fine" is never the answer to "why did this happen."
+- The public workbench is an ephemeral, keyless review surface. Authenticated self-hosting is the separate authority that can record human decisions and signed, ledger-backed receipts.
 
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
-**[▶ Try the live demo](https://change-safe.vercel.app)** — no signup, no API
-key, nothing to install. Three clicks, about sixty seconds:
+The vNext workbench is available from this branch locally at `/`. It presents
+the Network public replay by default, with Terraform at
+`/workbench/terraform`, Kubernetes at `/workbench/kubernetes`, and the
+optional self-hosted client at `/workbench/self-hosted`.
 
-1. Pick **`INC-4977 — Suspected route leak`** from the scenario list.
-2. Press **Run replay analysis**.
-3. Watch a 91%-confident proposal — one that obeys an instruction injected
-   into an operator note — get stopped by two deterministic policies, with
-   no way to approve it. The refusal itself becomes a hashed receipt you can
-   download.
-
-The header badge reads `replay only` on this deployment: no key is
-configured, so nothing here calls a model. That is the honest default, and
-the [replay vs live](#replay-vs-live-honestly) section explains exactly what
-replay does and does not skip.
+The hosted Vercel URL may still serve the previous release until this branch
+is deployed. Do not use the hosted UI as evidence that the vNext cutover is
+live.
 
 **[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
 
 **[↗ Open the Sites-hosted portfolio](https://changesafe-portfolio.wonkwon-lee94.chatgpt.site)** — an alternative hosted version of the same case study using OpenAI Sites.
 
-An AI proposes a change. ChangeSafe treats that proposal as untrusted
-data: pure, deterministic policies validate it, a human makes the decision,
-and every outcome — approved, rejected, or blocked — becomes a hashed,
-verifiable receipt.
+An AI proposes a change. ChangeSafe treats that proposal as untrusted data:
+pure deterministic policies validate it. The public workbench stops there:
+it creates no human decision, simulation result, durable review, or receipt.
+Those claims belong to the explicitly authenticated self-hosted path or the
+CLI, never to an anonymous browser replay.
 
 > AI diagnoses and proposes. Deterministic code validates. A human decides.
 > ChangeSafe never executes changes against infrastructure.
@@ -51,11 +46,10 @@ must survive deterministic policies and an explicit human decision. **The
 model's 91%-confident proposal buys it nothing** — confidence is displayed,
 never used. Safety never depends on the model resisting injection.
 
-![The red-team scenario blocked by the deterministic safety gate](docs/screenshots/scenario-b-blocked.png)
-
-*A red-team scenario: a confident proposal (echoing an instruction injected
-into an operator note) is blocked by two deterministic policies; approval is
-impossible and the refusal itself becomes a hashed receipt.*
+In the vNext Network workbench, select `INC-4977 — Suspected route leak` and
+press **Run replay**. The proposal echoes an injected instruction, but the
+deterministic gate still produces CRITICAL/BLOCKED findings. The UI explicitly
+states that no decision or receipt was created.
 
 ## Quickstart (no API key needed)
 
@@ -65,10 +59,12 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. **Replay mode works immediately** with bundled,
-clearly labeled fixtures — no key, no network, no cost.
+Open http://localhost:3000. **Public replay works immediately** with bundled,
+clearly labeled fixtures — no key, no model call, no infrastructure network,
+and no cost.
 
-Nine bundled scenarios cover the whole verdict space:
+Nine bundled Network scenarios cover the gate verdict space and exercise the
+full engine in tests:
 
 | Bundled scenario | What it demonstrates | Outcome |
 | --- | --- | --- |
@@ -82,6 +78,12 @@ Nine bundled scenarios cover the whole verdict space:
 | `INC-5341 — Replication window overrun` | The proposal *has* a rollback — it just restores the wrong value, which replaying it on a sandboxed copy proves. | CRITICAL · blocked |
 | `INC-5388 — Intermittent access-layer loss` | A one-device incident answered with a three-device "while we're in there" change. | CRITICAL · blocked |
 
+Here, “approvable” describes the core gate classification: no BLOCK was
+found, so an authority-bearing runtime may request a human decision. It never
+means that the public workbench approved the proposal. Simulation-specific
+expectations are verified by the corpus harness; public replay does not run
+that later stage.
+
 Full detail, plus which failure modes are covered and which are still gaps:
 **[docs/SCENARIOS.md](docs/SCENARIOS.md)** (generated; CI fails if it drifts).
 
@@ -93,6 +95,16 @@ advertised. Adding scenarios is the most valuable contribution: see
 corpus.
 
 ## How it works
+
+The engine supports a full gated decision lifecycle, but authority depends on
+the runtime:
+
+- **Public replay:** validate and evaluate only; ephemeral; no decision,
+  simulation, or receipt authority.
+- **Authenticated self-hosted:** server-recomputed findings, human
+  approve/reject intent, signed receipt, append-only ledger.
+- **CLI/CI:** deterministic gate and optional gate-only/blocked receipt; never
+  an approval.
 
 ```text
             untrusted input (incident bundle, plan, context)
@@ -145,9 +157,8 @@ proves a receipt was not altered; only a signature proves who issued it, and
 
 ## Self-hosting (optional)
 
-The demo above runs entirely in your browser, which is fine when the person
-clicking is the person accountable. A team can instead run the authenticated
-decision path, where the server — not the client — decides:
+A team can run the authenticated decision API, where the server — not the
+browser — owns the gate result and decision record:
 
 ```bash
 changesafe keygen --out signing-key
@@ -167,20 +178,26 @@ appended to a hash-chained SQLite ledger before the response is returned. A
 BLOCK is still unapprovable — authentication grants no new power over the
 gate. Nothing here can execute a change.
 
-Storage is `node:sqlite` and identity is verified with Web Crypto, so
-self-hosting adds no dependency and no native build step. See
+The vNext browser route does not send bearer tokens directly to this server.
+It expects `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` to name an operator-run
+HTTPS gateway/BFF that converts an HttpOnly authenticated session into the
+OIDC bearer request expected by `@changesafe/server`. The URL is public
+configuration and must contain no credential. Cleartext HTTP is accepted only
+for explicit loopback development.
+
+The repository exposes durable review primitives and endpoints, but
+`changesafe serve` currently wires only the decision/ledger API; it does not
+construct `DurableReviewStore`, so it is not yet a turnkey backend for the
+vNext queue UI. See the server README for the exact integration boundary.
+
+Storage is `node:sqlite` and identity is verified with Web Crypto. See
 [@changesafe/server](packages/server/README.md) and
 [@changesafe/ledger](packages/ledger/README.md).
 
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
 
-## Live model mode (optional)
-
-```bash
-cp .env.example .env.local     # add a key for one provider
-npm run dev
-```
+## Live model analysis (CLI only)
 
 Three providers are supported and none is privileged:
 
@@ -190,27 +207,14 @@ Three providers are supported and none is privileged:
 | Anthropic | `ANTHROPIC_API_KEY` | Messages API, forced strict tool call |
 | Ollama (local) | nothing — just run it | `format` JSON Schema |
 
-Set `CHANGESAFE_PROVIDER` to choose explicitly, or leave it unset to use
-whichever hosted key is present. The header badge switches from `replay only`
-to `live available` and names the configured model. Model calls run **only**
-server-side; the key never reaches the browser, and a failed live call offers
-an explicit switch to replay — never a silent substitution.
+The browser live-analysis compatibility route has been removed. Exact
+`POST /api/analyze` and exact `/workbench` are intentionally retired; the
+versioned public replay transport is `POST /api/reviews/analyze`. Provider
+credentials and live model calls remain CLI/server concerns.
 
-### Exposing live mode publicly
-
-`POST /api/analyze` is unauthenticated by design — the demo promises no
-signup — so on a deployment with a key configured, a live call spends your
-credit for whoever asks. Live calls are therefore capped per client
-(`CHANGESAFE_LIVE_RATE_LIMIT`, default 10 per hour; `0` disables it,
-`CHANGESAFE_LIVE_RATE_WINDOW_SECONDS` retunes it). Replay is never capped: it
-costs nothing and the demo's promise depends on it.
-
-The cap is a speed bump, not a defense. It counts in one process's memory, so
-a serverless deployment holds a counter per instance, and it identifies
-callers by a forwarded header that only a trusted proxy makes trustworthy. If
-you expose live mode to the internet, put authentication or a proxy in front
-of it — the cap turns "a loop empties the account" into "a loop is noticed",
-and nothing more.
+Set `CHANGESAFE_PROVIDER` and a provider key in your shell, then use
+`changesafe analyze`. A failed live call exits 2 and is never silently
+replaced by replay.
 
 All three adapters are plain `fetch` — no vendor SDKs, so the CLI stays
 dependency-free and every adapter is testable without a network or a
@@ -230,11 +234,13 @@ changesafe eval --provider anthropic --runs 3
 
 ### Replay vs live, honestly
 
-Replay skips **only** the network call. Fixtures carry explicit provenance
+Replay fixtures carry explicit provenance
 (`authored_synthetic`, `authored_red_team`, or `captured` with the model and
-capture time), are validated by the same schemas as live output, and run the
-identical validation → policy → decision → simulation → receipt pipeline. The
-UI labels replay output as fixture content and never presents it as a live
+capture time) and are validated by the same proposal schemas as live output.
+The public workbench then runs deterministic evaluation only. It does not
+claim the later decision, simulation, or receipt stages.
+
+The UI labels replay output as fixture content and never presents it as a live
 model call. `scenario-a-failover`'s fixture is a real captured GPT-5.6
 response, promoted from the opt-in live smoke test; the other eight bundled
 fixtures are authored — and every fixture says so on screen. The schema
@@ -355,6 +361,8 @@ npm i -g changesafe                                    # or just npx changesafe
 A domain teaches core what a change *is* in its world; core's universal
 policies then work unchanged. `packages/core/tests/standalone-domain.test.ts`
 implements a complete toy domain in one file to show the whole contract.
+The app-level registration and generic coverage path are documented in the
+[future-domain template](docs/FUTURE_DOMAIN_TEMPLATE.md).
 
 ## Where this is going
 
@@ -385,9 +393,10 @@ These do not change:
 - Receipt signing is optional. Hash-only receipts prove integrity but not
   authorship; a signature is meaningful only when checked against the expected
   public key.
-- The public demo intentionally keeps its keyless decision path client-side.
-  Authenticated attribution, signed decisions, and durable storage are
-  available through the separate self-hosted server.
+- The public workbench has no decision path. Authenticated attribution,
+  signed decisions, and durable storage belong to the separate self-hosted
+  server boundary, and its browser UI still requires an operator-supplied
+  HTTPS gateway/BFF.
 - The scenario corpus spans three domains (network, terraform, kubernetes;
   see [docs/SCENARIOS.md](docs/SCENARIOS.md) for the current count and
   failure-mode coverage) and should be treated as a coverage instrument, not
@@ -422,7 +431,7 @@ different":
   whether that specific change is safe.
 - **Policy-as-code — OPA, Sentinel, Conftest, Itential's governed change
   management.** Direct comparison in
-  [docs/LAUNCH.md](docs/LAUNCH.md#answers-to-the-questions-that-will-come-up).
+  [docs/LAUNCH.md](docs/LAUNCH.md#answers-to-expected-questions).
   Short version: if one of these already covers your case, use it.
 
 ## Contributing
