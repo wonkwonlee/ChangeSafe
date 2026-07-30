@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
@@ -175,6 +175,7 @@ export function ReviewWorkbenchShell({
   const scenario = useMemo(() => scenarioFor(selectedSourceId), [selectedSourceId]);
   const selectedExample = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
+  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const selectExample = useCallback(
     (sourceId: string) => {
@@ -192,6 +193,12 @@ export function ReviewWorkbenchShell({
   );
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+
+  useEffect(() => {
+    if (hasFindings(workflow) || workflow.phase === "ERROR") {
+      outcomeHeadingRef.current?.focus();
+    }
+  }, [workflow]);
 
   return (
     <div className="min-h-screen bg-canvas text-ink">
@@ -226,7 +233,63 @@ export function ReviewWorkbenchShell({
       </section>
 
       <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
-        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4">
+        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
+          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
+            <div>
+              <Label>Replay evaluation</Label>
+              <h2 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
+              <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
+                <ReplayStatus state={workflow} />
+              </p>
+            </div>
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
+              {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
+            </button>
+          </header>
+
+          <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
+              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><JsonBlock value={scenario.bundle} />
+            </section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
+              <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
+              <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
+            </section>
+            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
+            <div className="lg:col-span-2">
+              <DomainCoverageCatalog
+                catalog={coverageCatalog}
+                evaluatedPolicyIds={
+                  hasFindings(workflow)
+                    ? workflow.findings.map((finding) => finding.policyId)
+                    : []
+                }
+                simulationDisclosure="This public replay never requests sandbox simulation because it has no decision authority."
+                source={{
+                  sourceId: selectedSourceId,
+                  source: selectedExample.session.source,
+                  analysisMode: selectedExample.session.analysisMode,
+                  provenance: selectedExample.session.provenance,
+                }}
+              />
+            </div>
+          </div>
+        </main>
+
+        <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1">
+          <Label>Airlock status</Label>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Not run. Public replay cannot approve a proposal, so no sandbox simulation is requested.</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Execution outside ChangeSafe</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never executes infrastructure changes.</p></section>
+        </aside>
+
+        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
           <Label>Network examples</Label>
           <h1 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h1>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
@@ -254,60 +317,6 @@ export function ReviewWorkbenchShell({
               <div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{selectedExample.session.policyVersion}</dd></div>
             </dl>
           </section>
-        </aside>
-
-        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6">
-          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
-            <div>
-              <Label>Replay evaluation</Label>
-              <h2 className="mt-2 text-xl font-semibold">{workflow.phase}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
-              <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
-                <ReplayStatus state={workflow} />
-              </p>
-            </div>
-            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
-              {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
-            </button>
-          </header>
-
-          <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
-              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><JsonBlock value={scenario.bundle} />
-            </section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
-              <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
-              <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
-            </section>
-            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
-            <DomainCoverageCatalog
-              catalog={coverageCatalog}
-              evaluatedPolicyIds={
-                hasFindings(workflow)
-                  ? workflow.findings.map((finding) => finding.policyId)
-                  : []
-              }
-              simulationDisclosure="This public replay never requests sandbox simulation because it has no decision authority."
-              source={{
-                sourceId: selectedSourceId,
-                source: selectedExample.session.source,
-                analysisMode: selectedExample.session.analysisMode,
-                provenance: selectedExample.session.provenance,
-              }}
-            />
-          </div>
-        </main>
-
-        <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4">
-          <Label>Airlock status</Label>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Not run. Public replay cannot approve a proposal, so no sandbox simulation is requested.</p></section>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Execution outside ChangeSafe</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never executes infrastructure changes.</p></section>
         </aside>
       </div>
     </div>
