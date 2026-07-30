@@ -256,6 +256,27 @@ describe("DurableReviewStore", () => {
             ),
           ).toThrow(/append-only: existing bindings cannot be replaced/);
         }
+
+        // A writer can otherwise evade the natural-key checks by naming the
+        // immutable INTEGER PRIMARY KEY and supplying entirely new bindings.
+        // This must be rejected with raw SQLite defaults too, while the
+        // normal store insert continues to omit `seq` for AUTOINCREMENT.
+        const replaceExistingSequence = raw.prepare(
+          "INSERT OR REPLACE INTO durable_review_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        );
+        expect(() =>
+          replaceExistingSequence.run(
+            1,
+            "all-new-review",
+            candidate.createdAtUtc,
+            candidate.intake.domainId,
+            candidate.intake.source.sourceId,
+            candidate.intake.input.inputId,
+            "all-new-receipt",
+            sha("e"),
+            JSON.stringify(candidate),
+          ),
+        ).toThrow(/append-only: existing bindings cannot be replaced/);
       } finally {
         raw.close();
       }

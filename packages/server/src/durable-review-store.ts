@@ -101,6 +101,11 @@ WHEN EXISTS (
   WHERE review_id = NEW.review_id
      OR receipt_id = NEW.receipt_id
      OR receipt_sha256 = NEW.receipt_sha256
+     -- An omitted INTEGER PRIMARY KEY is represented as a non-positive
+     -- placeholder during a BEFORE INSERT trigger. Only a positive incoming
+     -- value can name an existing immutable sequence row, so preserve normal
+     -- AUTOINCREMENT assignment while rejecting an explicit seq REPLACE.
+     OR (NEW.seq > 0 AND seq = NEW.seq)
 )
 BEGIN
   SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
