@@ -352,6 +352,8 @@ npm i -g changesafe                                    # or just npx changesafe
 A domain teaches core what a change *is* in its world; core's universal
 policies then work unchanged. `packages/core/tests/standalone-domain.test.ts`
 implements a complete toy domain in one file to show the whole contract.
+The app-level registration and generic coverage path are documented in the
+[future-domain template](docs/FUTURE_DOMAIN_TEMPLATE.md).
 
 ## Where this is going
 

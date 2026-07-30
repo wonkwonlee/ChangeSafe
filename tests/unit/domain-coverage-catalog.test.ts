@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -134,6 +136,21 @@ const futureProposal = ChangeProposalSchema.parse({
 });
 
 describe("generic domain coverage fallback", () => {
+  it("keeps the documented fourth-domain path aligned with the runtime contracts", async () => {
+    const template = await readFile(
+      path.join(process.cwd(), "docs/FUTURE_DOMAIN_TEMPLATE.md"),
+      "utf8",
+    );
+
+    expect(template).toContain("defineSimulatedRuntime");
+    expect(template).toContain("defineExternalDiffRuntime");
+    expect(template).toContain("defineDomainPresentation");
+    expect(template).toContain("DOMAIN_REGISTRY");
+    expect(template).toContain("DomainCoverageCatalog.tsx");
+    expect(template).toContain("future-example");
+    expect(template).toContain("Production IAM remains unsupported");
+  });
+
   it("renders a test-only fourth domain without changing the generic catalog", async () => {
     const resolution = futureRegistry.resolve(
       "future-example",
@@ -185,6 +202,9 @@ describe("generic domain coverage fallback", () => {
     expect(markup).toContain("FUTURE_POLICY");
     expect(markup).toContain("evaluated · finding returned");
     expect(markup).toContain("authored-synthetic");
+    expect(markup).toContain("bundled authored fixture");
+    expect(markup).toContain("Infrastructure write");
+    expect(markup).toContain("unavailable");
     expect(markup).toContain(
       "no production identity or infrastructure integration exists",
     );

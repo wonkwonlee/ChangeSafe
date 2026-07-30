@@ -12,6 +12,40 @@ export interface DomainCoverageSource {
   readonly provenance: ReviewProvenance;
 }
 
+interface SourceCapabilityDisclosure {
+  readonly artifactInput: string;
+  readonly externalRead: string;
+  readonly modelGeneration: string;
+}
+
+const SOURCE_CAPABILITIES = {
+  "bundled-replay": {
+    artifactInput: "bundled captured fixture",
+    externalRead: "unavailable",
+    modelGeneration: "not run",
+  },
+  "authored-fixture": {
+    artifactInput: "bundled authored fixture",
+    externalRead: "unavailable",
+    modelGeneration: "not run",
+  },
+  "live-model": {
+    artifactInput: "validated server-side input",
+    externalRead: "unavailable",
+    modelGeneration: "server-side live analysis",
+  },
+  "uploaded-offline-artifact": {
+    artifactInput: "validated offline upload",
+    externalRead: "unavailable",
+    modelGeneration: "not run",
+  },
+  "read-only-collector": {
+    artifactInput: "validated collector result",
+    externalRead: "read-only collector",
+    modelGeneration: "not run",
+  },
+} satisfies Record<ReviewSource, SourceCapabilityDisclosure>;
+
 interface DomainCoverageCatalogProps {
   readonly catalog: LoadedDomainCoverageCatalog;
   readonly source: DomainCoverageSource;
@@ -50,6 +84,7 @@ export function DomainCoverageCatalog({
   const { registration, runtime } = catalog;
   const coverage = runtime.policyCoverage;
   const pack = coverage.baselinePack.parameters;
+  const sourceCapabilities = SOURCE_CAPABILITIES[source.source];
 
   return (
     <section
@@ -171,6 +206,16 @@ export function DomainCoverageCatalog({
             <Definition term="Source">{source.source}</Definition>
             <Definition term="Analysis mode">{source.analysisMode}</Definition>
             <Definition term="Provenance">{source.provenance}</Definition>
+            <Definition term="Artifact input">
+              {sourceCapabilities.artifactInput}
+            </Definition>
+            <Definition term="External read">
+              {sourceCapabilities.externalRead}
+            </Definition>
+            <Definition term="Model generation">
+              {sourceCapabilities.modelGeneration}
+            </Definition>
+            <Definition term="Infrastructure write">unavailable</Definition>
           </dl>
         </div>
         <div className="rounded border border-edge bg-canvas p-3">
