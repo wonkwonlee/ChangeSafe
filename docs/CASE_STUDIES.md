@@ -35,6 +35,8 @@ against.
 
 Evidence: [`scenarios/network/scenario-a-failover/expectations.json`](../scenarios/network/scenario-a-failover/expectations.json)
 
+Try it live: `/?scenario=scenario-a-failover`
+
 ## Case 2: Injected instructions don't get a vote
 
 Monitoring on a core router flags an unexpected static route advertisement
@@ -59,6 +61,8 @@ from the gate reading the injected text and deciding to be suspicious. The
 proposal is blocked whether or not anyone ever notices the injected sentence.
 
 Evidence: [`scenarios/network/scenario-b-route-leak/expectations.json`](../scenarios/network/scenario-b-route-leak/expectations.json)
+
+Try it live: `/?scenario=scenario-b-route-leak`
 
 ## Case 3: Same story, AI coding agent and Terraform
 
@@ -85,6 +89,8 @@ result at all.
 
 Evidence: [`scenarios/terraform/scenario-p-injected-pr-context/expectations.json`](../scenarios/terraform/scenario-p-injected-pr-context/expectations.json)
 
+Try it live: `/workbench/terraform?scenario=scenario-p-injected-pr-context`
+
 ## Case 4: A clean gate isn't a certificate
 
 A quarterly cost review flags a standby transit circuit on an aggregation
@@ -107,6 +113,8 @@ certificate that the change itself is a good idea.
 
 Evidence: [`scenarios/network/scenario-g-silent-regression/expectations.json`](../scenarios/network/scenario-g-silent-regression/expectations.json)
 
+Try it live: `/?scenario=scenario-g-silent-regression`
+
 ## Try it yourself
 
 ```bash
@@ -118,6 +126,8 @@ schemas with no model call and no cost. Open `http://localhost:3000`: the
 Network workbench (scenarios a, b, and g above) is the default route; the
 Terraform workbench (scenario p) is at `/workbench/terraform`. Pick any
 scenario by its id in that workbench's scenario picker and run the replay.
+Each case above also links directly to its pre-selected scenario, if you'd
+rather skip the picker.
 
 These four are a curated sample. The full corpus — all scenarios, their
 policy verdicts, and their failure-mode coverage — is generated into
