@@ -5,7 +5,26 @@ import {
   selfHostedReviewViewReducer,
   type ReviewAttempt,
 } from "@/features/reviews/selfHostedReviewViewState";
-import type { SelfHostedReviewEntry } from "@/features/reviews/selfHostedReviewTransport";
+import type {
+  SelfHostedReviewEntry,
+  SelfHostedReviewProjection,
+} from "@/features/reviews/selfHostedReviewTransport";
+
+const projection: SelfHostedReviewProjection = {
+  policyVersion: "core-v1+network-v1",
+  findings: [
+    {
+      policyId: "BLAST_RADIUS",
+      status: "WARN",
+      title: "Blast radius is wide",
+      explanation: "The proposal touches more resources than the warn threshold.",
+      affectedResources: ["device:edge-rtr-01"],
+      remediation: null,
+    },
+  ],
+  riskLevel: "MEDIUM",
+  approvable: true,
+};
 
 function review(reviewId: string): SelfHostedReviewEntry {
   return {
@@ -86,6 +105,7 @@ describe("self-hosted review view state", () => {
     state = selfHostedReviewViewReducer(state, {
       type: "selected",
       attempt: first,
+      projection,
       review: review("review-one"),
       resolutionStatus: "pending",
       proof: { status: "not-created" },
@@ -95,6 +115,7 @@ describe("self-hosted review view state", () => {
     state = selfHostedReviewViewReducer(state, {
       type: "selected",
       attempt: second,
+      projection,
       review: review("review-two"),
       resolutionStatus: "pending",
       proof: { status: "not-created" },
@@ -114,6 +135,7 @@ describe("self-hosted review view state", () => {
     state = selfHostedReviewViewReducer(state, {
       type: "selected",
       attempt: selectFirst,
+      projection,
       review: review("review-one"),
       resolutionStatus: "pending",
       proof: { status: "not-created" },
@@ -150,6 +172,7 @@ describe("self-hosted review view state", () => {
     state = selfHostedReviewViewReducer(state, {
       type: "selected",
       attempt: select,
+      projection,
       review: review("review-one"),
       resolutionStatus: "pending",
       proof: { status: "not-created" },
@@ -181,6 +204,7 @@ describe("self-hosted review view state", () => {
     state = selfHostedReviewViewReducer(state, {
       type: "selected",
       attempt: select,
+      projection,
       review: review("review-one"),
       resolutionStatus: "unknown",
       proof: { status: "unavailable" },

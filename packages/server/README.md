@@ -103,7 +103,7 @@ list still cannot approve a BLOCK.
 | `GET /ledger/verify` | bearer | Recompute the hash chain (409 if broken) |
 | `POST /reviews` | bearer | Queue a validated owner-scoped Network/Terraform intake |
 | `GET /reviews` | bearer | List the authenticated owner's pending reviews |
-| `GET /reviews/:id` | bearer | Read one owner-scoped pending review |
+| `GET /reviews/:id` | bearer | Read one owner-scoped pending review, plus findings/risk recomputed at response time |
 | `POST /reviews/:id/decisions` | bearer | Recompute and resolve a pending review |
 | `GET /reviews/:id/receipt-proof` | bearer | Report integrity, signature, OOB verification, and ledger claims independently |
 

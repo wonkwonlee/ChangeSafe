@@ -1,5 +1,8 @@
 import type { ReceiptProof } from "./durable-review-contract";
-import type { SelfHostedReviewEntry } from "./selfHostedReviewTransport";
+import type {
+  SelfHostedReviewEntry,
+  SelfHostedReviewProjection,
+} from "./selfHostedReviewTransport";
 
 export type ReviewResolutionStatus = "unknown" | "pending" | "resolved";
 
@@ -18,6 +21,12 @@ export interface ReviewAttempt {
 export interface SelfHostedReviewViewState {
   readonly targetReviewId: string | null;
   readonly review: SelfHostedReviewEntry | null;
+  /**
+   * Server-recomputed findings and risk for the selected review, or null when
+   * none has been read yet. Never derived in the browser: a projection the
+   * client computed would not be the verdict the server will enforce.
+   */
+  readonly projection: SelfHostedReviewProjection | null;
   readonly resolutionStatus: ReviewResolutionStatus;
   readonly proof: ReceiptProofViewState;
   readonly activeAttempt: ReviewAttempt | null;
@@ -27,6 +36,7 @@ export interface SelfHostedReviewViewState {
 export const INITIAL_SELF_HOSTED_REVIEW_VIEW_STATE: SelfHostedReviewViewState = {
   targetReviewId: null,
   review: null,
+  projection: null,
   resolutionStatus: "unknown",
   proof: { status: "not-created" },
   activeAttempt: null,
@@ -39,6 +49,7 @@ export type SelfHostedReviewViewAction =
       readonly type: "selected";
       readonly attempt: ReviewAttempt;
       readonly review: SelfHostedReviewEntry;
+      readonly projection: SelfHostedReviewProjection;
       readonly resolutionStatus: ReviewResolutionStatus;
       readonly proof: ReceiptProofViewState;
       readonly message?: string;
@@ -89,6 +100,7 @@ export function selfHostedReviewViewReducer(
     return {
       targetReviewId: action.attempt.reviewId,
       review: null,
+      projection: null,
       resolutionStatus: "unknown",
       proof: { status: "loading" },
       activeAttempt: action.attempt,
@@ -106,6 +118,7 @@ export function selfHostedReviewViewReducer(
         ...state,
         targetReviewId: action.review.reviewId,
         review: action.review,
+        projection: action.projection,
         resolutionStatus: action.resolutionStatus,
         proof: action.proof,
         message: action.message ?? null,
@@ -115,6 +128,9 @@ export function selfHostedReviewViewReducer(
         ...state,
         targetReviewId: action.review.reviewId,
         review: action.review,
+        // A freshly queued review has not been read back, so no server
+        // recomputation exists for it yet. Claiming one would be an invention.
+        projection: null,
         resolutionStatus: "pending",
         proof: { status: "not-created" },
       };

@@ -155,6 +155,22 @@ function assertIntakeInputIdentity(intake: DurableReviewIntake): void {
   }
 }
 
+/**
+ * The immutable pending record owns domain, input, and proposal identity.
+ * Both the read projection and the decision path derive their request from it
+ * so a client can never influence what the server evaluates.
+ */
+function pendingReviewRequest(
+  pending: DurableReviewStoreEntry["record"],
+): Omit<DecisionRequest, "decision"> {
+  return {
+    domain: pending.intake.domainId,
+    sourceId: pending.intake.source.sourceId,
+    input: pending.intake.input.content,
+    ...(pending.intake.proposal ? { proposal: pending.intake.proposal.content } : {}),
+  };
+}
+
 function reviewSummary(entry: DurableReviewStoreEntry) {
   return {
     seq: entry.seq,
@@ -346,12 +362,7 @@ async function handle(
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
-      domain: pending.intake.domainId,
-      sourceId: pending.intake.source.sourceId,
-      input: pending.intake.input.content,
-      ...(pending.intake.proposal
-        ? { proposal: pending.intake.proposal.content }
-        : {}),
+      ...pendingReviewRequest(pending),
       decision: body.decision,
     });
     const decided = await options.reviews.resolvePending(
@@ -529,7 +540,13 @@ async function handle(
       });
       return;
     }
-    send(response, 200, { review });
+    // Recomputed on every read, never stored: an approver must be able to see
+    // what the gate found before deciding, and a findings value persisted
+    // beside the artifact could only go stale or be tampered with.
+    const projection = options.decisions.project(
+      pendingReviewRequest(review.record),
+    );
+    send(response, 200, { review, projection });
     return;
   }
 

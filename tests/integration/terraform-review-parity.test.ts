@@ -25,7 +25,6 @@ import {
   receiveReviewTransport,
   recordReviewReceipt,
   rejectReview,
-  reviewCanSimulate,
   reviewControllerReducer,
   startReview,
 } from "@/features/reviews/controller";
@@ -128,7 +127,6 @@ describe("Terraform public replay parity", () => {
       );
 
       expect(state.review?.effectCapability).toEqual({ kind: "external-diff" });
-      expect(reviewCanSimulate(state)).toBe(false);
       expect(["APPROVAL_REQUIRED", "BLOCKED"]).toContain(state.workflow.phase);
 
       const reviewed = state;

@@ -53,6 +53,13 @@ test("Terraform public workbench evaluates a supplied external diff without Terr
   ]);
 });
 
+test("Terraform workbench navigation returns to the home workbench", async ({ page }) => {
+  await page.goto("/workbench/terraform");
+  await page.getByRole("link", { name: "Network" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("main", { name: "Review canvas" })).toBeVisible();
+});
+
 test("Terraform public workbench retains red-team provenance and blocks protected destructive evidence without execution", async ({ page }) => {
   const dataRequests = await interceptDataRequests(page);
   await page.goto("/workbench/terraform");

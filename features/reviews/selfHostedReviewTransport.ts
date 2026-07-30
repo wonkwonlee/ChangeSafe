@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ApproverSchema,
   IdSchema,
+  PolicyFindingSchema,
   RiskLevelSchema,
   Sha256HexSchema,
   SignedReceiptSchema,
@@ -9,6 +10,7 @@ import {
 } from "@changesafe/core";
 
 import {
+  DurableReviewDomainIdSchema,
   DurableReviewIntakeSchema,
   DurableReviewResolutionSchema,
   PendingDurableReviewRecordSchema,
@@ -17,23 +19,41 @@ import {
   type ReceiptProof,
 } from "./durable-review-contract";
 
+// The durable review contract owns the set of domains that can be queued.
+// Restating it here would let a new durable domain be accepted by the contract
+// and silently refused by this generic transport.
 const ReviewSummarySchema = z.strictObject({
   seq: z.number().int().positive(),
   reviewId: IdSchema,
   createdAtUtc: TimestampSchema,
-  domainId: z.enum(["network", "terraform"]),
+  domainId: DurableReviewDomainIdSchema,
   sourceId: IdSchema,
   inputId: IdSchema,
 });
 
-const ReviewEntrySchema = z.strictObject({
-  seq: z.number().int().positive(),
-  reviewId: IdSchema,
-  createdAtUtc: TimestampSchema,
-  domainId: z.enum(["network", "terraform"]),
-  sourceId: IdSchema,
-  inputId: IdSchema,
+const ReviewEntrySchema = ReviewSummarySchema.extend({
   record: PendingDurableReviewRecordSchema,
+});
+
+/**
+ * Server-recomputed policy evidence for one pending review.
+ *
+ * This is a sibling of the stored record, never a field inside it: findings
+ * and risk are derived at response time by the server's own policy
+ * evaluation. `PendingDurableReviewRecordSchema` is strict and carries no
+ * findings, so a stored or client-supplied verdict cannot arrive by this
+ * route and be mistaken for a recomputed one.
+ */
+const ReviewProjectionSchema = z.strictObject({
+  policyVersion: z.string().min(1).max(64),
+  findings: z.array(PolicyFindingSchema),
+  riskLevel: RiskLevelSchema,
+  approvable: z.boolean(),
+});
+
+const ReviewDetailSchema = z.strictObject({
+  review: ReviewEntrySchema,
+  projection: ReviewProjectionSchema,
 });
 
 const ResolutionEntrySchema = z.strictObject({
@@ -66,6 +86,8 @@ const ErrorEnvelopeSchema = z.strictObject({
 
 export type SelfHostedReviewSummary = z.infer<typeof ReviewSummarySchema>;
 export type SelfHostedReviewEntry = z.infer<typeof ReviewEntrySchema>;
+export type SelfHostedReviewProjection = z.infer<typeof ReviewProjectionSchema>;
+export type SelfHostedReviewDetail = z.infer<typeof ReviewDetailSchema>;
 export type SelfHostedDecisionResult = z.infer<typeof DecisionResultSchema>;
 
 export class SelfHostedReviewTransportError extends Error {
@@ -82,7 +104,8 @@ export class SelfHostedReviewTransportError extends Error {
 
 export interface SelfHostedReviewTransport {
   list(): Promise<readonly SelfHostedReviewSummary[]>;
-  get(reviewId: string): Promise<SelfHostedReviewEntry>;
+  /** Returns the stored record plus the server's response-time recomputation. */
+  get(reviewId: string): Promise<SelfHostedReviewDetail>;
   create(reviewId: string, intake: DurableReviewIntake): Promise<SelfHostedReviewEntry>;
   decide(
     reviewId: string,
@@ -165,10 +188,9 @@ export function createSelfHostedReviewTransport(
       return body.reviews;
     },
     async get(reviewId) {
-      const body = z
-        .strictObject({ review: ReviewEntrySchema })
-        .parse(await readJson(await request(`/reviews/${IdSchema.parse(reviewId)}`)));
-      return body.review;
+      return ReviewDetailSchema.parse(
+        await readJson(await request(`/reviews/${IdSchema.parse(reviewId)}`)),
+      );
     },
     async create(reviewId, intake) {
       const body = z

@@ -147,3 +147,68 @@ npm run test:e2e
 This plan and its generated Ultragoal artifacts may be committed and mirrored
 to GitHub issues now. Implementation begins only after owner review of the
 design specification and this story sequence.
+
+## G009/G010 closure (2026-07-30)
+
+G001–G008 shipped via PR #48 (`cbcb616`) plus the follow-up `947ec4c`. On
+verification, both remaining stories were substantially already implemented
+rather than requiring new feature work:
+
+- **G009.** 11 of 12 hardening dimensions were already covered by existing
+  tests (`tests/e2e/public-workbench-hardening.spec.ts`,
+  `tests/unit/design-tokens.test.ts`, `tests/unit/telemetry-privacy.test.ts`,
+  `tests/unit/workbench-performance-boundaries.test.ts`,
+  `scripts/verify-public-client-bundles.mjs`). Code-splitting is satisfied by
+  Next.js App Router's per-route splitting plus the per-route byte-budget/
+  marker-isolation test — no `next/dynamic` retrofit was needed.
+- **G010.** The legacy pre-vNext UI and compatibility routes were already
+  removed (`tests/integration/vnext-cutover.test.ts`), and README/
+  ARCHITECTURE/THREAT_MODEL docs already described the new shell. What
+  remained was the evidence and the two named gates, not code.
+
+**Full gate, run twice** (before and after the review-finding fixes below):
+`npm run lint`, `npm run typecheck`, `npm run build:packages`,
+`npm run build:cli`, `npm test`, `npm run build`,
+`npm run verify:client-bundles`, `scenario check` (network/terraform/
+kubernetes, 13/13), `scenario gallery --check`, `npm run test:e2e`
+(`PORT=3100`, port 3000 was occupied by an unrelated local service). Final
+run: 1051 vitest tests passed / 2 skipped (up from 1032), 31/31 Playwright,
+all builds and scans clean.
+
+**Independent code-reviewer APPROVE gate:** verdict **APPROVE WITH NOTES** —
+zero CRITICAL/HIGH, zero invariant violations, 5 MEDIUM + 6 LOW follow-ups.
+
+**Architect CLEAR gate:** verdict **CLEAR WITH NOTES** — all ten
+Architecture Invariants above hold structurally in code; two documentation-
+honesty gaps named (future-domain template understated onboarding cost;
+roadmap gap paragraph stale vs `main`).
+
+**Every MEDIUM and LOW finding from both gates was fixed** (TDD, focused
+tests first), except the one item both reviews explicitly flagged as
+informational/no-action (the deliberate `lib/rate-limit.ts` removal):
+documented the real per-domain route/nav cost in
+`docs/FUTURE_DOMAIN_TEMPLATE.md`; corrected the `docs/OSS_ROADMAP.md`
+`DurableReviewStore` gap paragraph against this branch's actual
+`packages/cli/src/serve.ts` (not `main`'s, which would have been inaccurate
+here); added `/workbench/self-hosted` to the client-bundle budget/asset
+sweep with an honestly-empty marker set (its queue is legitimately
+cross-domain); derived the self-hosted transport's domain-id enum from the
+durable review contract instead of hardcoding it twice; fixed a misattributed-
+failure UI bug in `SelfHostedReviewWorkbench.tsx`; removed a redundant
+double-parse in the analyze route; dropped the stale `liveAvailable`/
+`provider`/`model` fields from the app's `/api/status` (CLI/server concern
+now); fixed a latent bug where `receiptMatchesWorkflow` would have rejected
+every real self-hosted receipt once that path is ever wired up; deleted the
+zero-caller `reviewCanSimulate()` and documented why the rest of that
+lifecycle block has coverage but no current production caller; added a
+server-recomputed findings/risk projection to the pending self-hosted review
+read path (`DecisionService.project()`) so an approver no longer decides
+blind; and extended the client-secret-canary sweep from `.js`-only to
+`.js/.mjs/.json/.map/.css` plus emitted route HTML bodies.
+
+Not touched, by design: the scenario corpus expansion (owned by a separate
+session/worktree) and the two documented legacy data-shape compatibility
+shims in `durable-review-contract.ts` (pre-existing-data migration seams, not
+vNext UI/route cutover).
+
+G009 and G010 are closed on this branch.

@@ -376,7 +376,10 @@ export async function main(argv: string[], console: Console): Promise<number> {
       if (sub === "init") {
         const name = positionals[2];
         if (!name) throw new UsageError("scenario init needs a name: changesafe scenario init <name>");
-        return runScenarioInit({ name, dir: values.dir ?? "scenarios" }, console);
+        return runScenarioInit(
+          { name, dir: values.dir ?? `scenarios/${values.domain}` },
+          console,
+        );
       }
       throw new UsageError(
         `unknown scenario subcommand "${sub ?? ""}". Use check, init, or gallery.`,
