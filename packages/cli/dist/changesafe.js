@@ -27981,6 +27981,10 @@ var ReviewExampleDescriptorSchema = external_exports.strictObject({
   sourceId: IdSchema,
   label: external_exports.string().min(1).max(160),
   description: external_exports.string().min(1).max(1e3),
+  /** Non-null when this example is one of the featured case studies in
+   *  docs/CASE_STUDIES.md; names which one (e.g. "Case 2"), shown as a
+   *  small badge in the scenario picker. Null for every other example. */
+  caseStudy: external_exports.string().min(1).max(40).nullable().default(null),
   session: ReviewSessionEnvelopeSchema
 }).superRefine((descriptor, context) => {
   if (descriptor.domainId !== descriptor.session.domainId) {
