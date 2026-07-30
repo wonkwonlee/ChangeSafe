@@ -572,4 +572,43 @@ void import("@changesafe/ai");
       "public client bundle verification failed: a client module dynamically imports the AI package",
     );
   });
+
+  it("rejects a direct dynamic AI dependency from the self-hosted client workbench", () => {
+    const componentPath = path.resolve(
+      "components/SelfHostedReviewWorkbench.tsx",
+    );
+    const original = readFileSync(componentPath, "utf8");
+
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [componentPath, `${original}\nvoid import("@changesafe/ai");\n`],
+        ]),
+      }),
+    ).toThrow(
+      "public client bundle verification failed: a client module dynamically imports the AI package",
+    );
+  });
+
+  it("rejects a provider subpath dynamically imported below the self-hosted client boundary", () => {
+    const dependencyPath = path.resolve(
+      "components/SelfHostedReviewDetail.tsx",
+    );
+    const original = readFileSync(dependencyPath, "utf8");
+
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [
+            dependencyPath,
+            `${original}\nvoid import("@changesafe/ai/providers/anthropic");\n`,
+          ],
+        ]),
+      }),
+    ).toThrow(
+      "public client bundle verification failed: a client module dynamically imports the AI package",
+    );
+  });
 });
