@@ -10,6 +10,8 @@ import planK from "./terraform/scenario-k-capacity-scale-up/incident.json";
 import expectationsK from "./terraform/scenario-k-capacity-scale-up/expectations.json";
 import planN from "./terraform/scenario-n-stateless-replace/incident.json";
 import expectationsN from "./terraform/scenario-n-stateless-replace/expectations.json";
+import planO from "./terraform/scenario-o-stateful-replace-backed-up/incident.json";
+import expectationsO from "./terraform/scenario-o-stateful-replace-backed-up/expectations.json";
 
 import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
 import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
@@ -132,6 +134,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     planN,
     null,
     expectationsN,
+  ),
+  defineScenario(
+    "terraform",
+    "scenario-o-stateful-replace-backed-up",
+    "CHG-2418 — Resize the checkout read replica instance class",
+    "An instance-class bump forces the checkout read replica to be destroyed and recreated; it is tagged as backed up.",
+    planO,
+    null,
+    expectationsO,
   ),
   defineScenario(
     "kubernetes",
