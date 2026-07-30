@@ -66,8 +66,8 @@ CREATE TABLE IF NOT EXISTS durable_review_records (
   domain_id      TEXT NOT NULL,
   source_id      TEXT NOT NULL,
   input_id       TEXT NOT NULL,
-  receipt_id     TEXT NOT NULL,
-  receipt_sha256 TEXT NOT NULL,
+  receipt_id     TEXT NOT NULL UNIQUE,
+  receipt_sha256 TEXT NOT NULL UNIQUE,
   record_json    TEXT NOT NULL
 );
 
@@ -77,6 +77,14 @@ CREATE INDEX IF NOT EXISTS durable_review_records_domain
   ON durable_review_records (domain_id);
 CREATE INDEX IF NOT EXISTS durable_review_records_source
   ON durable_review_records (source_id);
+
+-- These unique indexes also protect databases created before the receipt
+-- columns became one-to-one bindings.  The queue must never let a receipt
+-- identity or its content hash appear to belong to two different reviews.
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_id_unique
+  ON durable_review_records (receipt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_sha256_unique
+  ON durable_review_records (receipt_sha256);
 
 CREATE TRIGGER IF NOT EXISTS durable_review_records_no_update
 BEFORE UPDATE ON durable_review_records
@@ -136,6 +144,11 @@ export class DurableReviewStore {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = FULL");
     db.exec("PRAGMA foreign_keys = ON");
+    // INSERT OR REPLACE implements its replacement as a DELETE followed by
+    // INSERT.  SQLite only runs that DELETE's trigger when recursive triggers
+    // are enabled on *this* connection.  Keep it on for every store instance
+    // so the append-only triggers below cover that alternate write spelling.
+    db.exec("PRAGMA recursive_triggers = ON");
     db.exec(SCHEMA);
     return new DurableReviewStore(db);
   }
@@ -179,23 +192,54 @@ export class DurableReviewStore {
       );
     }
 
-    this.#db
-      .prepare(
-        `INSERT INTO durable_review_records (
-           review_id, created_at_utc, domain_id, source_id, input_id,
-           receipt_id, receipt_sha256, record_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        record.reviewId,
-        record.createdAtUtc,
-        record.intake.domainId,
-        record.intake.source.sourceId,
-        record.intake.input.inputId,
-        record.receipt.receiptId,
-        record.receipt.receiptSha256,
-        canonicalize(record),
-      );
+    try {
+      this.#db
+        .prepare(
+          `INSERT INTO durable_review_records (
+             review_id, created_at_utc, domain_id, source_id, input_id,
+             receipt_id, receipt_sha256, record_json
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          record.reviewId,
+          record.createdAtUtc,
+          record.intake.domainId,
+          record.intake.source.sourceId,
+          record.intake.input.inputId,
+          record.receipt.receiptId,
+          record.receipt.receiptSha256,
+          canonicalize(record),
+        );
+    } catch (error) {
+      // A second process can insert between the optimistic read above and our
+      // INSERT. Re-read the authoritative row: only byte-for-byte equivalent
+      // immutable records are idempotent; every other collision fails closed.
+      const raced = this.get(record.reviewId);
+      if (raced) {
+        if (canonicalize(raced.record) === canonicalize(record)) {
+          return raced;
+        }
+        throw new DomainError(
+          "REQUEST_INVALID",
+          `Review ${record.reviewId} already records different immutable metadata.`,
+        );
+      }
+
+      const receiptCollision = this.#db
+        .prepare(
+          "SELECT review_id FROM durable_review_records WHERE receipt_id = ? OR receipt_sha256 = ? LIMIT 1",
+        )
+        .get(record.receipt.receiptId, record.receipt.receiptSha256);
+      if (receiptCollision) {
+        const row = z.strictObject({ review_id: IdSchema }).parse(receiptCollision);
+        throw new DomainError(
+          "REQUEST_INVALID",
+          `Receipt ${record.receipt.receiptId} or its content hash is already bound to review ${row.review_id}.`,
+        );
+      }
+
+      throw error;
+    }
 
     const inserted = this.get(record.reviewId);
     if (!inserted) {

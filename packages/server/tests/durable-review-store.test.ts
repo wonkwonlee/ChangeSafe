@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createRequire } from "node:module";
+
 import { describe, expect, it } from "vitest";
 
 import { hashCanonical } from "@changesafe/core";
@@ -7,8 +12,21 @@ import { SCENARIOS } from "../../../scenarios";
 import { DurableReviewStore } from "../src/durable-review-store";
 
 const sha = (character: string) => character.repeat(64);
+const nodeRequire = createRequire(import.meta.url);
 
-async function record(reviewId: string, sourceId = "network-source") {
+function temporaryDatabasePath(): { path: string; remove(): void } {
+  const directory = mkdtempSync(join(tmpdir(), "changesafe-durable-review-store-"));
+  return {
+    path: join(directory, "reviews.sqlite"),
+    remove: () => rmSync(directory, { recursive: true, force: true }),
+  };
+}
+
+async function record(
+  reviewId: string,
+  sourceId = "network-source",
+  receiptSha256 = sha("c"),
+) {
   const content = SCENARIOS[0]!.bundle;
   const inputSha256 = await hashCanonical(content);
   return {
@@ -51,7 +69,7 @@ async function record(reviewId: string, sourceId = "network-source") {
       proposalId: `${reviewId}-proposal`,
       proposalSha256: sha("b"),
       policyVersion: "network-policy-v1",
-      receiptSha256: sha("c"),
+      receiptSha256,
     },
     storage: { kind: "append-only-ledger" },
   } as const;
@@ -140,6 +158,92 @@ describe("DurableReviewStore", () => {
     }
   });
 
+  it("makes an exact record idempotent across independent store instances", async () => {
+    const database = temporaryDatabasePath();
+    const first = DurableReviewStore.open(database.path);
+    const second = DurableReviewStore.open(database.path);
+    try {
+      const candidate = await record("cross-process-review");
+      const [one, two] = await Promise.all([first.append(candidate), second.append(candidate)]);
+
+      expect(one).toEqual(two);
+      expect(one).toMatchObject({ seq: 1, reviewId: "cross-process-review" });
+      expect(first.count()).toBe(1);
+      expect(second.get("cross-process-review")).toEqual(one);
+    } finally {
+      first.close();
+      second.close();
+      database.remove();
+    }
+  });
+
+  it("refuses a receipt identity or receipt hash already bound to another review", async () => {
+    const store = DurableReviewStore.open(":memory:");
+    try {
+      const first = await record("review-one");
+      await store.append(first);
+
+      const receiptIdCollision = await record("review-two");
+      await expect(
+        store.append({
+          ...receiptIdCollision,
+          receipt: { ...receiptIdCollision.receipt, receiptId: first.receipt.receiptId },
+        }),
+      ).rejects.toThrow(/already bound to review review-one/);
+
+      const receiptHashCollision = await record("review-three");
+      await expect(
+        store.append({
+          ...receiptHashCollision,
+          receipt: { ...receiptHashCollision.receipt, receiptSha256: first.receipt.receiptSha256 },
+        }),
+      ).rejects.toThrow(/already bound to review review-one/);
+      expect(store.count()).toBe(1);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("does not let INSERT OR REPLACE bypass the append-only SQLite triggers", async () => {
+    const database = temporaryDatabasePath();
+    const store = DurableReviewStore.open(database.path);
+    try {
+      const candidate = await record("replace-protected-review");
+      await store.append(candidate);
+
+      const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+      const raw = new sqlite.DatabaseSync(database.path);
+      try {
+        // recursive_triggers is connection-local. This is the same mandatory
+        // setting applied by DurableReviewStore.open for every service-owned
+        // connection; direct filesystem access is not a supported writer.
+        raw.exec("PRAGMA recursive_triggers = ON");
+        expect(() =>
+          raw
+            .prepare(
+              "INSERT OR REPLACE INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              candidate.reviewId,
+              candidate.createdAtUtc,
+              candidate.intake.domainId,
+              candidate.intake.source.sourceId,
+              candidate.intake.input.inputId,
+              candidate.receipt.receiptId,
+              candidate.receipt.receiptSha256,
+              JSON.stringify(candidate),
+            ),
+        ).toThrow(/append-only/);
+      } finally {
+        raw.close();
+      }
+      expect(store.get(candidate.reviewId)?.record).toEqual(candidate);
+    } finally {
+      store.close();
+      database.remove();
+    }
+  });
+
   it("accepts Terraform metadata through the same verified append boundary", async () => {
     const store = DurableReviewStore.open(":memory:");
     try {
@@ -179,7 +283,7 @@ describe("DurableReviewStore", () => {
     const store = DurableReviewStore.open(":memory:");
     try {
       await store.append(await record("review-one", "source-a"));
-      await store.append(await record("review-two", "source-b"));
+      await store.append(await record("review-two", "source-b", sha("d")));
 
       expect(store.list({ sourceId: "source-a" }).map((entry) => entry.reviewId)).toEqual([
         "review-one",
