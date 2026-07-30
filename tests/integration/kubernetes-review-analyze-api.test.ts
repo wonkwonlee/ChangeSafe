@@ -5,6 +5,7 @@ import { POLICY_VERSION } from "@changesafe/domain-kubernetes/offline";
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/examples";
 import {
+  KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
   KUBERNETES_UNSUPPORTED_PUBLIC_REPLAY_SOURCE,
 } from "@/features/domains/kubernetes/fixtures";
 import {
@@ -52,6 +53,7 @@ describe("POST /api/reviews/analyze Kubernetes public replay", () => {
       expect(payload.result).toMatchObject({
         domainId: "kubernetes",
         sourceId,
+        inputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
         riskLevel: expectedRisk,
         session: {
           contractVersion: descriptor!.contractVersion,

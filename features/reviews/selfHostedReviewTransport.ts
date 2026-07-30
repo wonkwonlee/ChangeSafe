@@ -48,7 +48,7 @@ const ResolutionEntrySchema = z.strictObject({
 
 const DecisionResultSchema = z.strictObject({
   receiptId: IdSchema,
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approved", "rejected"]),
   riskLevel: RiskLevelSchema,
   approver: ApproverSchema,
   ledgerSeq: z.number().int().positive(),
