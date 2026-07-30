@@ -10,14 +10,12 @@
 
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
-The vNext workbench is available from this branch locally at `/`. It presents
-the Network public replay by default, with Terraform at
-`/workbench/terraform`, Kubernetes at `/workbench/kubernetes`, and the
-optional self-hosted client at `/workbench/self-hosted`.
+**[↗ Try the live workbench](https://change-safe.vercel.app/)** — the Network
+public replay is the default view, with Terraform at `/workbench/terraform`,
+Kubernetes at `/workbench/kubernetes`, and the optional self-hosted client at
+`/workbench/self-hosted`.
 
-The hosted Vercel URL may still serve the previous release until this branch
-is deployed. Do not use the hosted UI as evidence that the vNext cutover is
-live.
+![The Network public replay workbench: evidence, topology, and policy coverage for a bundled incident, before any replay has run](docs/screenshots/workbench-network-home.png)
 
 **[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
 
@@ -46,10 +44,12 @@ must survive deterministic policies and an explicit human decision. **The
 model's 91%-confident proposal buys it nothing** — confidence is displayed,
 never used. Safety never depends on the model resisting injection.
 
-In the vNext Network workbench, select `INC-4977 — Suspected route leak` and
-press **Run replay**. The proposal echoes an injected instruction, but the
+In the Network workbench, select `INC-4977 — Suspected route leak` and press
+**Run replay**. The proposal echoes an injected instruction, but the
 deterministic gate still produces CRITICAL/BLOCKED findings. The UI explicitly
 states that no decision or receipt was created.
+
+![The same incident after replay: MGMT_REACHABILITY and PROTECTED_RESOURCE both BLOCK, UNTRUSTED_INSTRUCTION flags the injected note as data, and risk reads CRITICAL / BLOCKED with no decision or receipt created](docs/screenshots/workbench-network-blocked.png)
 
 ## Quickstart (no API key needed)
 

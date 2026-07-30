@@ -12,8 +12,9 @@ deploys, tags, or posts automatically.
 - v0.3.0 and v0.3.1 were manually published and do **not** carry npm
   provenance attestations. Future releases should use trusted publishing and
   verify the resulting attestations before announcing them.
-- The vNext UI cutover is a feature-branch change. It does not itself create
-  an npm release, Git tag, GitHub Release, or production deployment.
+- The vNext UI cutover (#47, #48, #49) is merged to `main` and deployed to
+  the hosted Vercel URL. It does not itself create an npm release, Git tag,
+  or GitHub Release.
 
 ## vNext deployment pre-flight
 
@@ -32,7 +33,7 @@ node packages/cli/dist/changesafe.js scenario gallery --check
 PORT=3100 npm run test:e2e
 ```
 
-Only after deploying the reviewed commit, verify:
+After deploying a reviewed commit, verify:
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://change-safe.vercel.app/
@@ -50,9 +51,13 @@ Expected after the vNext deployment:
 - exact `POST /api/analyze` → 404;
 - Terraform, Kubernetes, and self-hosted subroutes → 200.
 
-Also exercise `POST /api/reviews/analyze` with a valid versioned replay
-request. Until these checks pass, describe the hosted deployment as the
-previous release and use a local vNext checkout for demonstrations.
+Also exercise `POST /api/reviews/analyze` with a request body: it must
+reject a malformed one against the versioned review contract (400, not
+404), proving the route is live and schema-enforced rather than absent.
+
+**Verified 2026-07-30**: all of the above pass against the hosted
+deployment. The hosted URL currently serves the vNext workbench — safe to
+use as demo and cutover evidence.
 
 ## Short product description
 
