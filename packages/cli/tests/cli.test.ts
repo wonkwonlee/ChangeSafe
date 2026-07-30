@@ -20,6 +20,7 @@ import {
 } from "@changesafe/core";
 import { networkDomain } from "@changesafe/domain-network";
 import { getScenario } from "@/scenarios";
+import { INJECTED_PULL_REQUEST_BODY } from "@/features/domains/terraform/injected-pr-body";
 
 import { main } from "../src/main";
 import { CLI_APP_VERSION, CLI_PACKAGE_VERSION } from "../src/version";
@@ -287,6 +288,8 @@ describe("changesafe gate --domain terraform", () => {
 
   it("blocks a destructive plan and flags injected pull request text", async () => {
     const capture = createCapture();
+    const contextPath = path.join(temporaryDir(), "injected-pr-body.txt");
+    writeFileSync(contextPath, INJECTED_PULL_REQUEST_BODY);
     const code = await main(
       [
         "gate",
@@ -295,7 +298,7 @@ describe("changesafe gate --domain terraform", () => {
         "--input",
         path.join(PLANS, "protected-and-injected.tfplan.json"),
         "--context",
-        path.join(PLANS, "injected-pr-body.txt"),
+        contextPath,
         "--format",
         "json",
       ],

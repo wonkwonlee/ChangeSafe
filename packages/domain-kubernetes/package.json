@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./manifest-proposal": {
+      "types": "./dist/manifest-proposal.d.ts",
+      "default": "./dist/manifest-proposal.js"
+    },
+    "./offline": {
+      "types": "./dist/offline.d.ts",
+      "default": "./dist/offline.js"
     }
   },
   "files": [

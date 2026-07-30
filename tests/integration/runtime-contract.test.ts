@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -53,6 +53,30 @@ function topLevelJobBlocks(yaml: string): Array<{ name: string; body: string }> 
 }
 
 describe("v0.1.0 runtime contract", () => {
+  it("keeps every checked-in Action self-test input available without an install", () => {
+    const ci = workflows.find((entry) => entry.name === "ci.yml");
+    expect(ci).toBeDefined();
+    const actionSelfTest = topLevelJobBlocks(ci?.body ?? "").find(
+      (job) => job.name === "action-selftest",
+    );
+    expect(actionSelfTest).toBeDefined();
+    if (!actionSelfTest) throw new Error("Expected the action-selftest CI job");
+
+    const referencedPaths = [
+      ...actionSelfTest.body.matchAll(
+        /(?:^|\s)(?:node|--input|--context)\s+((?:packages|scripts)\/[^\s\\]+)/g,
+      ),
+    ].flatMap((match) => {
+      const referencedPath = match[1];
+      return referencedPath ? [referencedPath] : [];
+    });
+
+    expect(referencedPaths.length).toBeGreaterThan(0);
+    for (const referencedPath of referencedPaths) {
+      expect(existsSync(path.join(root, referencedPath)), referencedPath).toBe(true);
+    }
+  });
+
   it("pins Node 22 and npm 10.9.8 in manifest and lockfile", () => {
     expect(readFileSync(path.join(root, ".nvmrc"), "utf8").trim()).toBe("22");
     expect(pkg.engines).toEqual({ node: ">=22 <23", npm: "10.9.8" });

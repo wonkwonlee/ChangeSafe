@@ -4,20 +4,28 @@ Status: adopted 2026-07-25. Supersedes the project's earlier Build Week
 framing. P0–P6 are complete; P7 has completed its first pass and remains the
 ongoing community phase.
 
+The multi-domain console vNext is a later product-extension track. Its branch
+adds Network, Terraform, and Kubernetes public replay workbenches, an app-local
+runtime/presentation registry, explicit policy/source coverage, and an
+authenticated self-hosted integration client without changing the
+library/CLI-first strategy. The public runtime evaluates only; accountable
+decisions and receipts remain separate.
+
 ## 1. Vision
 
 ChangeSafe is an open-source **deterministic airlock for AI-proposed
 infrastructure changes**: a typed proposal from any AI (or any tool) must
-survive pure, deterministic safety policies and an explicit human decision,
-and every outcome — approved, rejected, or blocked — becomes a hashed,
-verifiable receipt.
+survive pure deterministic safety policies. Accountable decisions and
+receipts belong to the authenticated self-hosted or CLI/CI boundaries; the
+public replay remains ephemeral.
 
 The project ships three layers, in priority order:
 
 1. **`@changesafe/core` + CLI** — an embeddable library and a
    CI-friendly command-line gate. This is the adoption engine.
-2. **The showcase app** — the public keyless console, plus an optional
-   authenticated self-hosting mode. This is the storefront.
+2. **The multi-domain workbench** — public keyless Network, Terraform, and
+   Kubernetes replay surfaces plus an optional authenticated self-hosted
+   integration client. This is the storefront.
 3. **The scenario/red-team corpus** — community-contributed incidents and
    adversarial proposals; long-term, a public benchmark for AI-agent change
    safety. This is the moat.
@@ -276,14 +284,13 @@ the earliest point where the project is useful to a stranger in 10 minutes.
   failures so a network problem never reads as a model score.
 - `FixtureProvenance` generalized `captured_gpt_5_6` → `captured`; the
   fixture's `model` field already records the vendor precisely.
-- App copy now names the configured provider and model, and receipts record
-  the model that actually answered rather than the one configured.
+- CLI/live-analysis receipts record the model that actually answered rather
+  than the one configured. The public workbench is replay-only.
 
 ### P6 — Self-host hardening (L) — **done**
 
-Added as a *separate self-hosting mode*; the public console keeps its
-keyless, client-side flow, since a Vercel deployment has no durable
-filesystem and the demo's "no signup" promise is worth keeping.
+Added as a *separate self-hosting mode*. The public workbench remains keyless
+and ephemeral: it evaluates but does not decide, simulate, or issue receipts.
 
 - **Signed receipts.** Ed25519 through Web Crypto (`changesafe keygen`,
   `--sign-key`, `verify --public-key`), so core stays isomorphic and the
@@ -301,6 +308,10 @@ filesystem and the demo's "no signup" promise is worth keeping.
   the approver on the receipt, signs it, and appends to the ledger before
   answering. A BLOCK is still unapprovable — by anyone, authenticated or not.
 - Postgres remains optional and unbuilt; SQLite covers the self-hoster.
+- vNext durable review primitives and owner-scoped endpoints are implemented,
+  but `changesafe serve` does not yet wire `DurableReviewStore`. The browser
+  queue additionally requires an operator-owned HTTPS gateway/BFF with an
+  HttpOnly session; this is an explicit integration gap, not a turnkey claim.
 
 ### P7 — Benchmark + community (ongoing) — **first pass done**
 
@@ -355,7 +366,7 @@ an interchangeable proposer.
 `{ id, stateSchema?, proposalNormalizer, pathAllowlist?, policies[],
 simulator? , renderHints }`. Two shapes:
 
-- **Shape A — simulated-state domain** (network today, K8s later): we hold
+- **Shape A — simulated-state domain** (Network and Kubernetes): we hold
   a declarative state model, apply typed operations transactionally to a
   clone, and simulate outcomes. Universal + domain policies run.
 - **Shape B — external-diff domain** (terraform): the diff arrives
@@ -397,9 +408,10 @@ schema changes follow semver + documented migrations.
 
 1. ~~npm scope: is `@changesafe` claimable?~~ **Resolved 2026-07-27**: both
    the `@changesafe` scope and the unscoped `changesafe` name were unclaimed
-   and are now published. `changesafe`, `@changesafe/core`,
-   `@changesafe/domain-network`, and `@changesafe/domain-terraform` are on
-   npm at `0.2.0` with provenance attestation. No fallback name was needed.
+   and are now published. Five v0.3.1 packages are on npm. The v0.3.0
+   bootstrap and v0.3.1 remediation were manual publications and therefore
+   lack npm provenance attestations; future releases should use trusted
+   publishing and verify provenance. No fallback name was needed.
 2. ~~Public repo naming/timing.~~ **Resolved 2026-07-25**: the repository
    is public at `github.com/wonkwonlee/ChangeSafe`.
 3. Docs-site tooling (Starlight vs Nextra) remains an open owner decision
@@ -409,7 +421,8 @@ schema changes follow semver + documented migrations.
    offline simulated-state domain and namespace-scoped read-only collector,
    then patched in v0.3.1 for valid direct Node ESM imports; future domains
    can follow the same adapter boundary.
-   (most visceral lockout demo) — decide after P4 feedback.
+5. IAM remains a post-vNext specification target. The app registry and generic
+   fallback prove extensibility, but no production IAM domain is claimed.
 
 ## 8. Success metrics (12 weeks post-launch)
 

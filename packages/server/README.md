@@ -11,9 +11,8 @@ changesafe serve \
   --sign-key signing-key.pem
 ```
 
-The public console runs the workflow in the browser, which is fine when the
-person clicking is the person accountable. A team needs something else: an
-approver whose identity was established by their own identity provider, a
+The public workbench is ephemeral and has no decision authority. A team needs
+an approver whose identity was established by its own identity provider, a
 decision the client cannot fake, and a durable record neither party can
 quietly edit.
 
@@ -102,6 +101,18 @@ list still cannot approve a BLOCK.
 | `POST /decisions` | bearer | Decide; recomputes findings, signs, appends |
 | `GET /decisions` | bearer | List recorded decisions |
 | `GET /ledger/verify` | bearer | Recompute the hash chain (409 if broken) |
+| `POST /reviews` | bearer | Queue a validated owner-scoped Network/Terraform intake |
+| `GET /reviews` | bearer | List the authenticated owner's pending reviews |
+| `GET /reviews/:id` | bearer | Read one owner-scoped pending review |
+| `POST /reviews/:id/decisions` | bearer | Recompute and resolve a pending review |
+| `GET /reviews/:id/receipt-proof` | bearer | Report integrity, signature, OOB verification, and ledger claims independently |
+
+The `/reviews` family exists only when `createDecisionServer` receives a
+`DurableReviewStore`. It is absent otherwise. `changesafe serve` currently
+constructs the decision service and ledger but does **not** construct/pass the
+durable store, so that command is not yet a turnkey backend for the vNext
+review queue. Durable intake currently supports Network and Terraform;
+Kubernetes is rejected rather than silently downgraded.
 
 The decision is appended to the ledger **before** the response is returned: a
 decision the caller was told about but the ledger never saw is exactly the gap
@@ -112,11 +123,15 @@ same door it is written through.
 ## What this does not do
 
 - **No execution.** Unchanged from every other part of ChangeSafe.
-- **No authorization model.** Any identity the issuer vouches for can decide.
-  Restrict who gets a token with the audience, or put a proxy in front —
-  ChangeSafe deliberately does not become a second, weaker IdP.
+- **No browser login or BFF.** The vNext browser client expects an
+  operator-run HTTPS gateway with an HttpOnly session. That gateway supplies
+  the bearer token to this server; `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL`
+  is browser-visible and must contain no credential.
 - **No TLS.** Bind to localhost and terminate TLS at your proxy.
 - **No session or login flow.** Bring a token.
+- **No turnkey durable queue from `changesafe serve`.** Integrators must wire
+  `DurableReviewStore` into `createDecisionServer` and own the gateway,
+  cookie/origin/CSRF policy, and deployment lifecycle.
 
 ## License
 

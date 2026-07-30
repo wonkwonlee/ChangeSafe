@@ -26,7 +26,8 @@ fi
 node packages/cli/dist/changesafe.js verify "$RECEIPT_PATH" --skip-signature
 printf '\nReplay receipt: %s\n' "$RECEIPT_PATH"
 printf 'Starting replay-only web demo at http://localhost:%s\n' "${PORT:-3100}"
-printf 'Open the URL, choose scenario-b-route-leak, then run replay analysis.\n'
+printf 'The CLI receipt above is gate-only/blocked evidence; the public web replay does not create a receipt.\n'
+printf 'Open the root URL, select INC-4977, then choose Run replay.\n'
 printf 'Press Ctrl-C to stop the demo server.\n\n'
 
 exec env -u OPENAI_API_KEY \

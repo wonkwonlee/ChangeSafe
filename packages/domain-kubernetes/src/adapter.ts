@@ -1,4 +1,4 @@
-import { CORE_POLICY_VERSION, type ChangeOperation } from "@changesafe/core";
+import type { ChangeOperation } from "@changesafe/core";
 
 import { applyKubernetesOperations } from "./apply";
 import { parseKubernetesPath } from "./paths";
@@ -8,10 +8,9 @@ import { evaluateProtectedResource } from "./policies/protected-resource";
 import { evaluateServiceSelector } from "./policies/service-selector";
 import { evaluateWorkloadAvailability } from "./policies/workload-availability";
 import type { KubernetesDomainAdapter } from "./schemas";
+import { POLICY_VERSION } from "./version";
 
-/** Bumped whenever Kubernetes policy behavior changes; recorded in receipts. */
-export const KUBERNETES_POLICY_VERSION = "kubernetes-v0.1.0";
-export const POLICY_VERSION = `${CORE_POLICY_VERSION}+${KUBERNETES_POLICY_VERSION}`;
+export { KUBERNETES_POLICY_VERSION, POLICY_VERSION } from "./version";
 
 /** Pure simulated-state adapter; it has no Kubernetes API, CLI, or AI dependency. */
 export const kubernetesDomain: KubernetesDomainAdapter = {

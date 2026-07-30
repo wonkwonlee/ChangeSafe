@@ -22555,7 +22555,15 @@ function transition(state, event) {
       throw new IllegalTransitionError(state.phase, event.type);
     }
     case "FAIL": {
-      const recoverable = ["ANALYZING", "PROPOSED", "VALIDATED", "APPROVED"];
+      const recoverable = [
+        "ANALYZING",
+        "PROPOSED",
+        "VALIDATED",
+        "BLOCKED",
+        "APPROVED",
+        "REJECTED",
+        "SIMULATED"
+      ];
       if (!recoverable.includes(state.phase)) {
         throw new IllegalTransitionError(state.phase, event.type);
       }
@@ -25166,32 +25174,12 @@ function normalizeSnapshot(raw) {
   );
 }
 
-// ../domain-kubernetes/src/manifests.ts
-var import_yaml = __toESM(require_dist(), 1);
+// ../domain-kubernetes/src/manifest-proposal.ts
 var ManifestEnvelopeSchema = external_exports.looseObject({
   metadata: external_exports.looseObject({
     deletionTimestamp: external_exports.unknown().optional()
   })
 });
-function parseManifestDocuments(text) {
-  let documents;
-  try {
-    documents = (0, import_yaml.parseAllDocuments)(text);
-  } catch (error51) {
-    throw new DomainError("SCHEMA_VALIDATION", "The Kubernetes manifest text is invalid YAML.", {
-      cause: error51
-    });
-  }
-  const parseError = documents.find((document) => document.errors.length > 0);
-  if (parseError) {
-    throw new DomainError("SCHEMA_VALIDATION", "The Kubernetes manifest text is invalid YAML.", {
-      cause: parseError.errors[0]
-    });
-  }
-  return KubernetesManifestSetSchema.parse({
-    documents: documents.map((document) => document.toJSON()).filter((document) => document !== null)
-  });
-}
 function rejectManifestDeletionIntent(document) {
   const parsed = ManifestEnvelopeSchema.safeParse(document);
   if (parsed.success && Object.hasOwn(parsed.data.metadata, "deletionTimestamp")) {
@@ -25325,6 +25313,28 @@ function deriveManifestProposal(snapshotInput, manifestSetInput) {
     proposal,
     resourceEvidenceIds: operations.flatMap((operation) => operation.evidenceIds)
   };
+}
+
+// ../domain-kubernetes/src/manifests.ts
+var import_yaml = __toESM(require_dist(), 1);
+function parseManifestDocuments(text) {
+  let documents;
+  try {
+    documents = (0, import_yaml.parseAllDocuments)(text);
+  } catch (error51) {
+    throw new DomainError("SCHEMA_VALIDATION", "The Kubernetes manifest text is invalid YAML.", {
+      cause: error51
+    });
+  }
+  const parseError = documents.find((document) => document.errors.length > 0);
+  if (parseError) {
+    throw new DomainError("SCHEMA_VALIDATION", "The Kubernetes manifest text is invalid YAML.", {
+      cause: parseError.errors[0]
+    });
+  }
+  return KubernetesManifestSetSchema.parse({
+    documents: documents.map((document) => document.toJSON()).filter((document) => document !== null)
+  });
 }
 
 // ../domain-kubernetes/src/paths.ts
@@ -25679,9 +25689,11 @@ function evaluateWorkloadAvailability(context) {
   return { policyId: "K8S_WORKLOAD_AVAILABILITY", status: "PASS", title: "Modeled workload availability is preserved", explanation: "No existing Deployment or StatefulSet is reduced to zero, changed to Recreate, or given a wider modeled disruption budget.", affectedResources: [], remediation: null };
 }
 
-// ../domain-kubernetes/src/adapter.ts
+// ../domain-kubernetes/src/version.ts
 var KUBERNETES_POLICY_VERSION = "kubernetes-v0.1.0";
 var POLICY_VERSION3 = `${CORE_POLICY_VERSION}+${KUBERNETES_POLICY_VERSION}`;
+
+// ../domain-kubernetes/src/adapter.ts
 var kubernetesDomain = {
   domainId: "kubernetes",
   policyVersion: POLICY_VERSION3,
@@ -26593,6 +26605,12 @@ async function computeChainHash(input) {
 
 // ../ledger/src/ledger.ts
 import { createRequire } from "node:module";
+var LedgerCorruptionError = class extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "LedgerCorruptionError";
+  }
+};
 var RowSchema = external_exports.object({
   seq: external_exports.number().int().positive(),
   receipt_id: external_exports.string(),
@@ -26608,6 +26626,15 @@ var RowSchema = external_exports.object({
   chain_sha256: external_exports.string(),
   record_json: external_exports.string()
 });
+function parseRow(raw) {
+  try {
+    return RowSchema.parse(raw);
+  } catch (cause) {
+    throw new LedgerCorruptionError("A stored ledger row does not match the ledger schema.", {
+      cause
+    });
+  }
+}
 var SCHEMA_VERSION = 1;
 var DEFAULT_LIST_LIMIT = 50;
 var MAX_LIST_LIMIT = 1e3;
@@ -26655,9 +26682,15 @@ function splitRecord(record2) {
   return { receipt: record2, signatureKeyId: null };
 }
 function parseRecord(json2) {
-  const raw = JSON.parse(json2);
-  const isEnvelope = typeof raw === "object" && raw !== null && "receipt" in raw;
-  return isEnvelope ? SignedReceiptSchema.parse(raw) : ChangeReceiptSchema.parse(raw);
+  try {
+    const raw = JSON.parse(json2);
+    const isEnvelope = typeof raw === "object" && raw !== null && "receipt" in raw;
+    return isEnvelope ? SignedReceiptSchema.parse(raw) : ChangeReceiptSchema.parse(raw);
+  } catch (cause) {
+    throw new LedgerCorruptionError("A stored ledger record is not valid receipt evidence.", {
+      cause
+    });
+  }
 }
 function toEntry(row) {
   return {
@@ -26785,7 +26818,7 @@ var Ledger = class _Ledger {
   }
   get(receiptId) {
     const row = this.#db.prepare("SELECT * FROM receipts WHERE receipt_id = ?").get(receiptId);
-    return row ? toEntry(RowSchema.parse(row)) : null;
+    return row ? toEntry(parseRow(row)) : null;
   }
   list(options = {}) {
     const clauses = [];
@@ -26802,7 +26835,7 @@ var Ledger = class _Ledger {
     const requested = options.limit ?? DEFAULT_LIST_LIMIT;
     const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), MAX_LIST_LIMIT) : DEFAULT_LIST_LIMIT;
     const rows = this.#db.prepare(`SELECT * FROM receipts ${where} ORDER BY seq DESC LIMIT ${limit}`).all(...params);
-    return rows.map((row) => toEntry(RowSchema.parse(row)));
+    return rows.map((row) => toEntry(parseRow(row)));
   }
   /**
    * Recompute the whole chain and report every broken link.
@@ -26812,7 +26845,7 @@ var Ledger = class _Ledger {
    * itself a break — that is the case a plain receipts table cannot see.
    */
   async verifyChain() {
-    const rows = this.#db.prepare("SELECT * FROM receipts ORDER BY seq ASC").all().map((row) => RowSchema.parse(row));
+    const rows = this.#db.prepare("SELECT * FROM receipts ORDER BY seq ASC").all().map(parseRow);
     const breaks = [];
     let previous = GENESIS_CHAIN_SHA256;
     let expectedSeq = 1;
@@ -27295,7 +27328,8 @@ var terraform2 = {
   id: "terraform",
   adapter: terraformDomain,
   parseInput(raw) {
-    const input = normalizePlan(raw);
+    const parsed = TerraformInputSchema.safeParse(raw);
+    const input = parsed.success ? parsed.data : normalizePlan(raw);
     return { input, inputId: input.planId };
   },
   resolveProposal(input) {
@@ -27321,8 +27355,101 @@ var DecisionService = class {
   constructor(options) {
     this.#options = options;
   }
-  async decide(request, approver) {
+  /**
+   * Prove every deterministic precondition before a caller reserves an
+   * immutable durable-review claim. This performs no receipt or ledger write.
+   */
+  preflightSigned(request, expectedPolicyVersion) {
+    this.#requireSigningCapability();
+    this.#prepare(request, expectedPolicyVersion);
+  }
+  /**
+   * Durable review resolutions require authorship proof. Check that capability
+   * before policy evaluation or receipt creation so a missing key can never
+   * append an unsigned ledger record and then fail the durable request.
+   */
+  async decideSigned(request, approver, issuance) {
+    this.#requireSigningCapability();
+    const outcome2 = await this.decide(request, approver, issuance);
+    if (!("receipt" in outcome2.record)) {
+      throw new DomainError(
+        "INTERNAL",
+        "The durable decision path did not produce a signed receipt."
+      );
+    }
+    return { ...outcome2, record: outcome2.record };
+  }
+  async decide(request, approver, issuance) {
+    const prepared = this.#prepare(request, issuance?.expectedPolicyVersion);
+    if (issuance) {
+      const existing = this.#options.ledger.get(issuance.receiptId);
+      if (existing) {
+        return this.#recoverSignedOutcome(existing, prepared, approver, issuance);
+      }
+    }
+    const receipt = await createReceipt({
+      sourceId: prepared.request.sourceId,
+      inputId: prepared.inputId,
+      input: prepared.input,
+      proposal: prepared.proposal,
+      appVersion: this.#options.appVersion,
+      policyVersion: prepared.policyVersion,
+      mode: "offline",
+      model: null,
+      fixtureProvenance: null,
+      findings: prepared.findings,
+      riskLevel: prepared.riskLevel,
+      decision: prepared.request.decision === "approve" ? "approved" : "rejected",
+      approver,
+      simulation: prepared.simulation,
+      createdAtUtc: issuance?.receiptCreatedAtUtc ?? this.#options.now?.(),
+      receiptId: issuance?.receiptId
+    });
+    const record2 = this.#options.signingKeyPair ? await signReceipt(receipt, this.#options.signingKeyPair, {
+      signedAtUtc: issuance?.receiptSignedAtUtc ?? this.#options.now?.()
+    }) : receipt;
+    let entry = this.#options.ledger.get(receipt.receiptId);
+    if (entry) {
+      if (canonicalize(entry.record) !== canonicalize(record2)) {
+        throw new DomainError(
+          "REQUEST_INVALID",
+          `Receipt ${receipt.receiptId} is already bound to different immutable ledger content.`
+        );
+      }
+    } else {
+      try {
+        entry = await this.#options.ledger.append(record2);
+      } catch (error51) {
+        const raced = this.#options.ledger.get(receipt.receiptId);
+        if (!raced || canonicalize(raced.record) !== canonicalize(record2)) {
+          throw error51;
+        }
+        entry = raced;
+      }
+    }
+    return {
+      record: record2,
+      receipt,
+      ledgerSeq: entry.seq,
+      chainSha256: entry.chainSha256
+    };
+  }
+  #requireSigningCapability() {
+    if (!this.#options.signingKeyPair) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review decisions require a configured receipt signing key."
+      );
+    }
+  }
+  #prepare(request, expectedPolicyVersion) {
     const domain2 = resolveServerDomain(request.domain);
+    if (expectedPolicyVersion && expectedPolicyVersion !== domain2.adapter.policyVersion) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `The pending review policy version ${expectedPolicyVersion} is stale; active policy version is ${domain2.adapter.policyVersion}.`
+      );
+    }
     const { input, inputId } = domain2.parseInput(request.input);
     const proposal = domain2.resolveProposal(input, request.proposal);
     validateProposalEvidence(domain2.adapter, input, proposal);
@@ -27360,33 +27487,90 @@ var DecisionService = class {
         "The decision workflow ended in an unexpected state; no receipt was issued."
       );
     }
-    const receipt = await createReceipt({
-      sourceId: request.sourceId,
-      inputId,
+    return {
+      request,
       input,
+      inputId,
       proposal,
-      appVersion: this.#options.appVersion,
       policyVersion: domain2.adapter.policyVersion,
+      findings,
+      riskLevel,
+      simulation
+    };
+  }
+  async #recoverSignedOutcome(entry, prepared, approver, issuance) {
+    const record2 = SignedReceiptSchema.parse(entry.record);
+    if (!await verifyReceiptHash(record2.receipt)) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} failed its content-integrity check.`
+      );
+    }
+    const trustedPublicKey = await this.#trustedRecoveryKey(
+      record2.signature.publicKeyId
+    );
+    if (!trustedPublicKey) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} names an unknown signing key.`
+      );
+    }
+    const signatureVerdict = await verifyReceiptSignature(
+      record2,
+      trustedPublicKey
+    );
+    if (signatureVerdict !== "valid") {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} failed out-of-band signature verification.`
+      );
+    }
+    const expected = await createReceipt({
+      sourceId: prepared.request.sourceId,
+      inputId: prepared.inputId,
+      input: prepared.input,
+      proposal: prepared.proposal,
+      // Recovery validates the immutable historical record. A deployment
+      // upgrade must not rewrite its app identity or require the old key.
+      appVersion: record2.receipt.appVersion,
+      policyVersion: prepared.policyVersion,
       mode: "offline",
       model: null,
       fixtureProvenance: null,
-      findings,
-      riskLevel,
-      decision: request.decision === "approve" ? "approved" : "rejected",
+      findings: prepared.findings,
+      riskLevel: prepared.riskLevel,
+      decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,
-      simulation,
-      createdAtUtc: this.#options.now?.()
+      simulation: prepared.simulation,
+      createdAtUtc: issuance.receiptCreatedAtUtc,
+      receiptId: issuance.receiptId
     });
-    const record2 = this.#options.signingKeyPair ? await signReceipt(receipt, this.#options.signingKeyPair, {
-      signedAtUtc: this.#options.now?.()
-    }) : receipt;
-    const entry = await this.#options.ledger.append(record2);
+    if (canonicalize(expected) !== canonicalize(record2.receipt) || record2.signature.signedAtUtc !== issuance.receiptSignedAtUtc || entry.receiptId !== issuance.receiptId || entry.receiptSha256 !== record2.receipt.receiptSha256) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} does not match the immutable decision claim.`
+      );
+    }
+    const chain = await this.#options.ledger.verifyChain();
+    if (!chain.ok) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} is not in a valid append-only ledger chain.`
+      );
+    }
     return {
       record: record2,
-      receipt,
+      receipt: record2.receipt,
       ledgerSeq: entry.seq,
       chainSha256: entry.chainSha256
     };
+  }
+  async #trustedRecoveryKey(publicKeyId) {
+    const historical = this.#options.trustedReceiptPublicKeys?.get(publicKeyId);
+    if (historical) return historical;
+    const active = this.#options.signingKeyPair?.publicKey;
+    if (active && await computePublicKeyId(active) === publicKeyId) return active;
+    return void 0;
   }
 };
 
@@ -27659,6 +27843,942 @@ function bearerToken(authorization) {
 
 // ../server/src/http.ts
 import { createServer } from "node:http";
+
+// ../../features/domains/review-contract.ts
+var REVIEW_CONTRACT_VERSION = "2.0.0";
+var DomainIdSchema = external_exports.string().regex(
+  /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/,
+  "domainId must be a stable lower-kebab identifier"
+);
+var DomainShapeSchema = external_exports.enum(["simulated-state", "external-diff"]);
+var ReviewCapabilitiesSchema = external_exports.strictObject({
+  sandboxSimulation: external_exports.boolean(),
+  resourceGraph: external_exports.boolean(),
+  structuredDiff: external_exports.boolean(),
+  untrustedContext: external_exports.boolean(),
+  durableDecision: external_exports.boolean()
+});
+var ReviewRuntimeModeSchema = external_exports.enum(["public-replay", "self-hosted"]);
+var ReviewSourceSchema = external_exports.enum([
+  "bundled-replay",
+  "authored-fixture",
+  "live-model",
+  "uploaded-offline-artifact",
+  "read-only-collector"
+]);
+var ReviewAnalysisModeSchema = external_exports.enum(["replay", "live", "offline"]);
+var ReviewProvenanceSchema = external_exports.enum([
+  "captured-replay",
+  "authored-synthetic",
+  "authored-red-team",
+  "live-model",
+  "uploaded-offline-artifact",
+  "read-only-collector"
+]);
+var ReviewSessionEnvelopeBaseSchema = external_exports.strictObject({
+  domainId: DomainIdSchema,
+  contractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+  /** Exact deterministic policy set that evaluated this review. */
+  policyVersion: external_exports.string().min(1).max(32),
+  domainShape: DomainShapeSchema,
+  capabilities: ReviewCapabilitiesSchema,
+  runtimeMode: ReviewRuntimeModeSchema,
+  source: ReviewSourceSchema,
+  analysisMode: ReviewAnalysisModeSchema,
+  provenance: ReviewProvenanceSchema
+});
+var validSourceClassifications = [
+  {
+    source: "bundled-replay",
+    analysisMode: "replay",
+    provenance: "captured-replay"
+  },
+  {
+    source: "authored-fixture",
+    analysisMode: "replay",
+    provenance: "authored-synthetic"
+  },
+  {
+    source: "authored-fixture",
+    analysisMode: "replay",
+    provenance: "authored-red-team"
+  },
+  {
+    source: "live-model",
+    analysisMode: "live",
+    provenance: "live-model"
+  },
+  {
+    source: "uploaded-offline-artifact",
+    analysisMode: "offline",
+    provenance: "uploaded-offline-artifact"
+  },
+  {
+    source: "read-only-collector",
+    analysisMode: "offline",
+    provenance: "read-only-collector"
+  }
+];
+var ReviewSessionEnvelopeSchema = ReviewSessionEnvelopeBaseSchema.superRefine(
+  (session, context) => {
+    if (session.domainShape === "external-diff" && session.capabilities.sandboxSimulation) {
+      context.addIssue({
+        code: "custom",
+        message: "external-diff domains cannot advertise sandbox simulation",
+        path: ["capabilities", "sandboxSimulation"]
+      });
+    }
+    if (session.runtimeMode === "public-replay" && session.capabilities.durableDecision) {
+      context.addIssue({
+        code: "custom",
+        message: "public replay cannot advertise durable decision support",
+        path: ["capabilities", "durableDecision"]
+      });
+    }
+    const sourceClassificationIsValid = validSourceClassifications.some(
+      (classification) => classification.source === session.source && classification.analysisMode === session.analysisMode && classification.provenance === session.provenance
+    );
+    if (!sourceClassificationIsValid) {
+      context.addIssue({
+        code: "custom",
+        message: "source, analysis mode, and provenance must describe one coherent origin",
+        path: ["provenance"]
+      });
+    }
+  }
+);
+var UnknownDomainErrorResultSchema = external_exports.strictObject({
+  ok: external_exports.literal(false),
+  error: external_exports.strictObject({
+    code: external_exports.literal("UNKNOWN_DOMAIN"),
+    domainId: DomainIdSchema
+  })
+});
+var ContractVersionMismatchErrorResultSchema = external_exports.strictObject({
+  ok: external_exports.literal(false),
+  error: external_exports.strictObject({
+    code: external_exports.literal("CONTRACT_VERSION_MISMATCH"),
+    domainId: DomainIdSchema,
+    expectedContractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+    receivedContractVersion: external_exports.string().min(1).max(64)
+  })
+}).refine(
+  (result) => result.error.receivedContractVersion !== result.error.expectedContractVersion,
+  {
+    message: "received contract version must differ from the expected version",
+    path: ["error", "receivedContractVersion"]
+  }
+);
+var ReviewContractErrorResultSchema = external_exports.union([
+  UnknownDomainErrorResultSchema,
+  ContractVersionMismatchErrorResultSchema
+]);
+var ReviewExampleDescriptorSchema = external_exports.strictObject({
+  domainId: DomainIdSchema,
+  contractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+  sourceId: IdSchema,
+  label: external_exports.string().min(1).max(160),
+  description: external_exports.string().min(1).max(1e3),
+  session: ReviewSessionEnvelopeSchema
+}).superRefine((descriptor, context) => {
+  if (descriptor.domainId !== descriptor.session.domainId) {
+    context.addIssue({
+      code: "custom",
+      message: "example domain must match the review session domain",
+      path: ["domainId"]
+    });
+  }
+  if (descriptor.contractVersion !== descriptor.session.contractVersion) {
+    context.addIssue({
+      code: "custom",
+      message: "example contract version must match the review session contract",
+      path: ["contractVersion"]
+    });
+  }
+});
+var SandboxSimulationEffectCapabilitySchema = external_exports.strictObject({
+  kind: external_exports.literal("sandbox-simulation")
+});
+var ExternalDiffEffectCapabilitySchema = external_exports.strictObject({
+  kind: external_exports.literal("external-diff")
+});
+var UnavailableEffectCapabilitySchema = external_exports.strictObject({
+  kind: external_exports.literal("unavailable"),
+  reason: external_exports.string().min(1).max(500)
+});
+var ReviewEffectCapabilitySchema = external_exports.discriminatedUnion("kind", [
+  SandboxSimulationEffectCapabilitySchema,
+  ExternalDiffEffectCapabilitySchema,
+  UnavailableEffectCapabilitySchema
+]);
+var ReviewProposalProvenanceSchema = external_exports.strictObject({
+  classification: ReviewProvenanceSchema,
+  model: external_exports.string().min(1).max(64).nullable(),
+  provider: external_exports.string().min(1).max(32).nullable(),
+  fixtureId: IdSchema.nullable(),
+  notes: external_exports.string().min(1).max(1e3).nullable()
+}).superRefine((provenance, context) => {
+  if (provenance.classification === "live-model") {
+    if (provenance.model === null || provenance.provider === null) {
+      context.addIssue({
+        code: "custom",
+        message: "live model provenance requires model and provider metadata",
+        path: ["classification"]
+      });
+    }
+    if (provenance.fixtureId !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "live model provenance cannot claim a replay fixture",
+        path: ["fixtureId"]
+      });
+    }
+    return;
+  }
+  if (provenance.classification === "captured-replay") {
+    if (provenance.model === null || provenance.fixtureId === null) {
+      context.addIssue({
+        code: "custom",
+        message: "captured replay provenance requires model and fixture metadata",
+        path: ["classification"]
+      });
+    }
+    return;
+  }
+  if (provenance.classification === "authored-synthetic" || provenance.classification === "authored-red-team") {
+    if (provenance.model !== null || provenance.provider !== null || provenance.fixtureId === null) {
+      context.addIssue({
+        code: "custom",
+        message: "authored provenance requires a fixture and cannot claim a model",
+        path: ["classification"]
+      });
+    }
+    return;
+  }
+  if (provenance.model !== null || provenance.provider !== null || provenance.fixtureId !== null) {
+    context.addIssue({
+      code: "custom",
+      message: "offline input provenance cannot claim model or fixture metadata",
+      path: ["classification"]
+    });
+  }
+});
+var ReviewAnalysisResultSchema = external_exports.strictObject({
+  ok: external_exports.literal(true),
+  contractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+  domainId: DomainIdSchema,
+  session: ReviewSessionEnvelopeSchema,
+  sourceId: IdSchema,
+  inputId: IdSchema,
+  input: JsonValueSchema,
+  proposal: ChangeProposalSchema,
+  findings: external_exports.array(PolicyFindingSchema).min(1).max(64),
+  riskLevel: RiskLevelSchema,
+  provenance: ReviewProposalProvenanceSchema,
+  effectCapability: ReviewEffectCapabilitySchema
+}).superRefine((result, context) => {
+  if (result.domainId !== result.session.domainId) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis domain must match the review session domain",
+      path: ["domainId"]
+    });
+  }
+  if (result.contractVersion !== result.session.contractVersion) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis contract version must match the review session contract",
+      path: ["contractVersion"]
+    });
+  }
+  if (result.provenance.classification !== result.session.provenance) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis provenance must match the review session provenance",
+      path: ["provenance", "classification"]
+    });
+  }
+  if (result.riskLevel !== deriveRiskLevel(result.findings)) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis risk must match the canonical risk derived from findings",
+      path: ["riskLevel"]
+    });
+  }
+  if (result.effectCapability.kind === "sandbox-simulation" && (result.session.domainShape !== "simulated-state" || !result.session.capabilities.sandboxSimulation)) {
+    context.addIssue({
+      code: "custom",
+      message: "sandbox simulation requires a simulation-capable state domain",
+      path: ["effectCapability", "kind"]
+    });
+  }
+  if (result.effectCapability.kind === "external-diff" && result.session.domainShape !== "external-diff") {
+    context.addIssue({
+      code: "custom",
+      message: "external diff effects require an external-diff domain",
+      path: ["effectCapability", "kind"]
+    });
+  }
+  if (result.effectCapability.kind === "unavailable" && (result.session.domainShape === "external-diff" || result.session.capabilities.sandboxSimulation)) {
+    context.addIssue({
+      code: "custom",
+      message: "effect unavailability is valid only when no effect mechanism exists",
+      path: ["effectCapability", "kind"]
+    });
+  }
+});
+var ReviewTransportErrorCodeSchema = external_exports.enum([
+  "REQUEST_INVALID",
+  "UNKNOWN_DOMAIN",
+  "CONTRACT_VERSION_MISMATCH",
+  "SOURCE_UNKNOWN",
+  "INPUT_INVALID",
+  "PROPOSAL_INVALID",
+  "ANALYSIS_UNAVAILABLE",
+  "ANALYSIS_FAILED",
+  "ANALYSIS_INVALID",
+  "INTERNAL"
+]);
+var ReviewReplayEligibleErrorCodeSchema = external_exports.enum([
+  "ANALYSIS_UNAVAILABLE",
+  "ANALYSIS_FAILED",
+  "ANALYSIS_INVALID"
+]);
+var ReviewReplaySourceSchema = external_exports.strictObject({
+  domainId: DomainIdSchema,
+  contractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+  sourceId: IdSchema
+});
+var reviewTransportErrorFields = {
+  code: ReviewTransportErrorCodeSchema,
+  message: external_exports.string().min(1).max(500),
+  domainId: DomainIdSchema.nullable(),
+  expectedContractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION).nullable(),
+  receivedContractVersion: external_exports.string().min(1).max(64).nullable()
+};
+var ReviewReplayUnavailableErrorSchema = external_exports.strictObject({
+  ...reviewTransportErrorFields,
+  replayAvailable: external_exports.literal(false)
+});
+var ReviewReplayAvailableErrorSchema = external_exports.strictObject({
+  ...reviewTransportErrorFields,
+  code: ReviewReplayEligibleErrorCodeSchema,
+  domainId: DomainIdSchema,
+  replayAvailable: external_exports.literal(true),
+  replaySource: ReviewReplaySourceSchema
+});
+var ReviewTransportErrorDetailSchema = external_exports.discriminatedUnion(
+  "replayAvailable",
+  [ReviewReplayUnavailableErrorSchema, ReviewReplayAvailableErrorSchema]
+);
+var ReviewTransportErrorSchema = external_exports.strictObject({
+  ok: external_exports.literal(false),
+  contractVersion: external_exports.literal(REVIEW_CONTRACT_VERSION),
+  error: ReviewTransportErrorDetailSchema
+}).superRefine((result, context) => {
+  const { error: error51 } = result;
+  if (error51.replayAvailable) {
+    if (error51.domainId !== error51.replaySource.domainId) {
+      context.addIssue({
+        code: "custom",
+        message: "replay source domain must match the validated request domain",
+        path: ["error", "replaySource", "domainId"]
+      });
+    }
+    if (error51.expectedContractVersion !== null || error51.receivedContractVersion !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "replay-eligible analysis errors cannot include mismatch metadata",
+        path: ["error"]
+      });
+    }
+    return;
+  }
+  if (error51.code === "UNKNOWN_DOMAIN") {
+    if (error51.domainId === null || error51.expectedContractVersion !== null || error51.receivedContractVersion !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "unknown domain errors require only the rejected domain id",
+        path: ["error"]
+      });
+    }
+    return;
+  }
+  if (error51.code === "CONTRACT_VERSION_MISMATCH") {
+    if (error51.domainId === null || error51.expectedContractVersion === null || error51.receivedContractVersion === null || error51.receivedContractVersion === error51.expectedContractVersion) {
+      context.addIssue({
+        code: "custom",
+        message: "contract mismatch errors require distinct expected and received versions",
+        path: ["error"]
+      });
+    }
+    return;
+  }
+  if (error51.expectedContractVersion !== null || error51.receivedContractVersion !== null) {
+    context.addIssue({
+      code: "custom",
+      message: "only contract mismatch errors include version metadata",
+      path: ["error"]
+    });
+  }
+});
+var ReviewSummaryViewModelSchema = external_exports.strictObject({
+  title: external_exports.string().min(1).max(160),
+  description: external_exports.string().min(1).max(1e3),
+  inputId: IdSchema,
+  sourceId: IdSchema
+});
+var ReviewEvidenceItemViewModelSchema = external_exports.strictObject({
+  evidenceId: EvidenceIdSchema,
+  label: external_exports.string().min(1).max(160),
+  detail: external_exports.string().min(1).max(2e3),
+  untrusted: external_exports.boolean()
+});
+var ReviewEvidenceViewModelSchema = external_exports.strictObject({
+  title: external_exports.string().min(1).max(160),
+  items: external_exports.array(ReviewEvidenceItemViewModelSchema).max(5e3)
+});
+var ReviewChangeItemViewModelSchema = external_exports.strictObject({
+  op: ChangeOpKindSchema,
+  path: StatePathSchema,
+  summary: external_exports.string().min(1).max(500)
+});
+var ReviewChangeViewModelSchema = external_exports.strictObject({
+  title: external_exports.string().min(1).max(160),
+  summary: external_exports.string().min(1).max(1e3),
+  items: external_exports.array(ReviewChangeItemViewModelSchema).max(1e3)
+});
+var ReviewSafetyPropertyViewModelSchema = external_exports.strictObject({
+  propertyId: IdSchema,
+  satisfied: external_exports.boolean(),
+  detail: external_exports.string().min(1).max(1e3)
+});
+var ReviewSandboxImpactViewModelSchema = external_exports.strictObject({
+  kind: external_exports.literal("sandbox-simulation"),
+  title: external_exports.string().min(1).max(160),
+  summary: external_exports.string().min(1).max(1e3),
+  changedResourceIds: external_exports.array(external_exports.string().min(1).max(256)).max(1e3),
+  safetyProperties: external_exports.array(ReviewSafetyPropertyViewModelSchema).max(100)
+});
+var ReviewExternalDiffImpactViewModelSchema = external_exports.strictObject({
+  kind: external_exports.literal("external-diff"),
+  title: external_exports.string().min(1).max(160),
+  summary: external_exports.string().min(1).max(1e3),
+  changedResourceIds: external_exports.array(external_exports.string().min(1).max(256)).max(1e3)
+});
+var ReviewUnavailableImpactViewModelSchema = external_exports.strictObject({
+  kind: external_exports.literal("unavailable"),
+  title: external_exports.string().min(1).max(160),
+  reason: external_exports.string().min(1).max(500)
+});
+var ReviewImpactViewModelSchema = external_exports.discriminatedUnion("kind", [
+  ReviewSandboxImpactViewModelSchema,
+  ReviewExternalDiffImpactViewModelSchema,
+  ReviewUnavailableImpactViewModelSchema
+]);
+
+// ../../features/reviews/durable-review-contract.ts
+var DurableReviewDomainIdSchema = external_exports.enum(["network", "terraform"]);
+var DurableReviewSourceSchema = external_exports.discriminatedUnion("domainId", [
+  external_exports.strictObject({
+    domainId: external_exports.literal("network"),
+    sourceId: IdSchema,
+    sourceKind: external_exports.literal("network-incident-bundle"),
+    origin: external_exports.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    /** A client-supplied artifact observation claim, not a server queue time. */
+    untrustedArtifactObservedAtUtc: TimestampSchema
+  }),
+  external_exports.strictObject({
+    domainId: external_exports.literal("terraform"),
+    sourceId: IdSchema,
+    sourceKind: external_exports.literal("terraform-show-json"),
+    origin: external_exports.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    /** A client-supplied artifact observation claim, not a server queue time. */
+    untrustedArtifactObservedAtUtc: TimestampSchema
+  })
+]);
+var HistoricalDurableReviewSourceSchema = external_exports.discriminatedUnion("domainId", [
+  external_exports.strictObject({
+    domainId: external_exports.literal("network"),
+    sourceId: IdSchema,
+    sourceKind: external_exports.literal("network-incident-bundle"),
+    origin: external_exports.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    collectedAtUtc: TimestampSchema
+  }),
+  external_exports.strictObject({
+    domainId: external_exports.literal("terraform"),
+    sourceId: IdSchema,
+    sourceKind: external_exports.literal("terraform-show-json"),
+    origin: external_exports.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    collectedAtUtc: TimestampSchema
+  })
+]);
+var DurableReviewInputEnvelopeSchema = external_exports.strictObject({
+  inputId: IdSchema,
+  inputSha256: Sha256HexSchema,
+  /** Untrusted, schema-validated input; the domain validates its shape later. */
+  content: JsonValueSchema
+});
+var DurableReviewProposalEnvelopeSchema = external_exports.strictObject({
+  proposalId: IdSchema,
+  proposalSha256: Sha256HexSchema,
+  /** Untrusted proposal artifact; the server parses and evaluates it again at decision time. */
+  content: JsonValueSchema
+});
+var DurableReviewIntakeSchema = external_exports.strictObject({
+  domainId: DurableReviewDomainIdSchema,
+  source: DurableReviewSourceSchema,
+  input: DurableReviewInputEnvelopeSchema,
+  proposal: DurableReviewProposalEnvelopeSchema.optional()
+}).superRefine((intake, context) => {
+  if (intake.domainId !== intake.source.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["source", "domainId"],
+      message: "durable intake source domain must match the intake domain"
+    });
+  }
+  const domainSchema = intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+  const content = domainSchema.safeParse(intake.input.content);
+  if (!content.success) {
+    context.addIssue({
+      code: "custom",
+      path: ["input", "content"],
+      message: `durable ${intake.domainId} intake content must satisfy its domain schema`
+    });
+  }
+  if (intake.domainId === "network") {
+    if (intake.proposal) {
+      const proposal = NetworkChangeProposalSchema.safeParse(intake.proposal.content);
+      if (!proposal.success) {
+        context.addIssue({
+          code: "custom",
+          path: ["proposal", "content"],
+          message: "durable network proposal content must satisfy its domain schema"
+        });
+      } else if (proposal.data.proposalId !== intake.proposal.proposalId) {
+        context.addIssue({
+          code: "custom",
+          path: ["proposal", "proposalId"],
+          message: "durable proposalId must match the validated proposal artifact"
+        });
+      }
+    }
+  } else if (intake.proposal) {
+    context.addIssue({
+      code: "custom",
+      path: ["proposal"],
+      message: "Terraform proposals are derived from the immutable plan and cannot be submitted"
+    });
+  }
+});
+var HistoricalDurableReviewIntakeSchema = external_exports.strictObject({
+  domainId: DurableReviewDomainIdSchema,
+  source: HistoricalDurableReviewSourceSchema,
+  input: DurableReviewInputEnvelopeSchema
+}).superRefine((intake, context) => {
+  if (intake.domainId !== intake.source.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["source", "domainId"],
+      message: "historical durable intake source domain must match the intake domain"
+    });
+  }
+  const domainSchema = intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+  if (!domainSchema.safeParse(intake.input.content).success) {
+    context.addIssue({
+      code: "custom",
+      path: ["input", "content"],
+      message: `historical durable ${intake.domainId} intake content must satisfy its domain schema`
+    });
+  }
+});
+var DurableReceiptBindingSchema = external_exports.strictObject({
+  receiptId: IdSchema,
+  sourceId: IdSchema,
+  inputId: IdSchema,
+  inputSha256: Sha256HexSchema,
+  proposalId: IdSchema,
+  proposalSha256: Sha256HexSchema,
+  policyVersion: external_exports.string().min(1).max(32),
+  receiptSha256: Sha256HexSchema
+});
+var DurableReviewSessionBindingSchema = ReviewSessionEnvelopeSchema.superRefine(
+  (session, context) => {
+    if (session.contractVersion !== REVIEW_CONTRACT_VERSION) {
+      context.addIssue({
+        code: "custom",
+        path: ["contractVersion"],
+        message: "durable records require the current review contract version"
+      });
+    }
+    if (session.runtimeMode !== "self-hosted") {
+      context.addIssue({
+        code: "custom",
+        path: ["runtimeMode"],
+        message: "only authenticated self-hosted sessions may form durable records"
+      });
+    }
+    if (!session.capabilities.durableDecision) {
+      context.addIssue({
+        code: "custom",
+        path: ["capabilities", "durableDecision"],
+        message: "durable records require explicitly advertised durable decision support"
+      });
+    }
+    if (session.analysisMode !== "offline") {
+      context.addIssue({
+        code: "custom",
+        path: ["analysisMode"],
+        message: "durable offline intake records must use offline analysis mode"
+      });
+    }
+  }
+);
+var DurableReviewOwnerSchema = external_exports.strictObject({
+  tenantId: external_exports.string().url().max(2048),
+  issuer: external_exports.string().url().max(2048),
+  subject: external_exports.string().min(1).max(512).regex(/^[^\u0000-\u001f\u007f]+$/),
+  scope: external_exports.literal("self-hosted-review")
+}).superRefine((owner, context) => {
+  if (owner.tenantId !== owner.issuer) {
+    context.addIssue({
+      code: "custom",
+      path: ["tenantId"],
+      message: "the initial durable review tenant must bind exactly to its OIDC issuer"
+    });
+  }
+});
+function bindPendingRecord(record2, context) {
+  if (record2.session.domainId !== record2.intake.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["intake", "domainId"],
+      message: "record session and intake must name the same domain"
+    });
+  }
+  if (record2.session.source !== record2.intake.source.origin) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "source"],
+      message: "durable session source must bind exactly to the intake origin"
+    });
+  }
+  if (record2.session.provenance !== record2.intake.source.origin) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "provenance"],
+      message: "durable session provenance must bind exactly to the intake origin"
+    });
+  }
+}
+function bindHistoricalRecord(record2, context) {
+  if (record2.session.domainId !== record2.intake.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["intake", "domainId"],
+      message: "historical record session and intake must name the same domain"
+    });
+  }
+  if (record2.session.source !== record2.intake.source.origin || record2.session.provenance !== record2.intake.source.origin) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "source"],
+      message: "historical durable session provenance must bind to the intake origin"
+    });
+  }
+}
+function bindReceipt(record2, context) {
+  if (record2.receipt.sourceId !== record2.intake.source.sourceId) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "sourceId"],
+      message: "receipt source must bind to the immutable intake source"
+    });
+  }
+  if (record2.receipt.inputId !== record2.intake.input.inputId) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "inputId"],
+      message: "receipt input must bind to the immutable intake input"
+    });
+  }
+  if (record2.receipt.inputSha256 !== record2.intake.input.inputSha256) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "inputSha256"],
+      message: "receipt input hash must bind to the immutable intake input"
+    });
+  }
+  if (record2.receipt.policyVersion !== record2.session.policyVersion) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "policyVersion"],
+      message: "receipt policy version must bind to the evaluating session"
+    });
+  }
+  if (record2.intake.proposal && (record2.receipt.proposalId !== record2.intake.proposal.proposalId || record2.receipt.proposalSha256 !== record2.intake.proposal.proposalSha256)) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "proposalSha256"],
+      message: "receipt proposal must bind to the immutable intake proposal"
+    });
+  }
+}
+var PendingDurableReviewRecordSchema = external_exports.strictObject({
+  recordVersion: external_exports.literal("2"),
+  reviewId: IdSchema,
+  createdAtUtc: TimestampSchema,
+  owner: DurableReviewOwnerSchema,
+  session: DurableReviewSessionBindingSchema,
+  intake: DurableReviewIntakeSchema,
+  storage: external_exports.strictObject({ kind: external_exports.literal("append-only-review-store") })
+}).superRefine(bindPendingRecord);
+var DurableReviewResolutionSchema = external_exports.strictObject({
+  resolutionVersion: external_exports.literal("1"),
+  reviewId: IdSchema,
+  resolvedAtUtc: TimestampSchema,
+  receipt: DurableReceiptBindingSchema
+});
+var CurrentDurableReviewRecordSchema = external_exports.strictObject({
+  recordVersion: external_exports.literal("1"),
+  reviewId: IdSchema,
+  createdAtUtc: TimestampSchema,
+  session: DurableReviewSessionBindingSchema,
+  intake: DurableReviewIntakeSchema,
+  receipt: DurableReceiptBindingSchema,
+  storage: external_exports.strictObject({ kind: external_exports.literal("append-only-ledger") })
+}).superRefine((record2, context) => {
+  bindPendingRecord(record2, context);
+  bindReceipt(record2, context);
+});
+var HistoricalDurableReviewRecordSchema = external_exports.strictObject({
+  recordVersion: external_exports.literal("1"),
+  reviewId: IdSchema,
+  createdAtUtc: TimestampSchema,
+  session: DurableReviewSessionBindingSchema,
+  intake: HistoricalDurableReviewIntakeSchema,
+  receipt: DurableReceiptBindingSchema,
+  storage: external_exports.strictObject({ kind: external_exports.literal("append-only-ledger") })
+}).superRefine((record2, context) => {
+  bindHistoricalRecord(record2, context);
+  bindReceipt(record2, context);
+});
+var DurableReviewRecordSchema = external_exports.union([
+  CurrentDurableReviewRecordSchema,
+  HistoricalDurableReviewRecordSchema
+]);
+var DurableReviewDecisionClaimSchema = external_exports.strictObject({
+  claimVersion: external_exports.literal("1"),
+  reviewId: IdSchema,
+  owner: DurableReviewOwnerSchema,
+  /** Frozen convenience claim; issuer and subject remain the authority. */
+  approverEmail: external_exports.string().max(255).nullable(),
+  decision: external_exports.enum(["approve", "reject"]),
+  claimedAtUtc: TimestampSchema,
+  receiptId: IdSchema,
+  receiptCreatedAtUtc: TimestampSchema,
+  receiptSignedAtUtc: TimestampSchema
+});
+var ContentIntegrityClaimSchema = external_exports.strictObject({
+  status: external_exports.enum(["verified", "mismatch", "not-checked"]),
+  checkedAtUtc: TimestampSchema.nullable()
+}).superRefine((claim, context) => {
+  if ((claim.status === "verified" || claim.status === "mismatch") && claim.checkedAtUtc === null) {
+    context.addIssue({ code: "custom", path: ["checkedAtUtc"], message: "checked integrity claims require a check time" });
+  }
+  if (claim.status === "not-checked" && claim.checkedAtUtc !== null) {
+    context.addIssue({ code: "custom", path: ["checkedAtUtc"], message: "unchecked integrity claims cannot imply a check time" });
+  }
+});
+var ReceiptSignaturePresenceSchema = external_exports.discriminatedUnion("present", [
+  external_exports.strictObject({ present: external_exports.literal(true), publicKeyId: external_exports.string().regex(/^[a-f0-9]{32}$/) }),
+  external_exports.strictObject({ present: external_exports.literal(false), publicKeyId: external_exports.null() }),
+  external_exports.strictObject({ present: external_exports.null(), publicKeyId: external_exports.null() })
+]);
+var OutOfBandVerificationSchema = external_exports.discriminatedUnion("status", [
+  external_exports.strictObject({ status: external_exports.literal("not-checked"), trustedPublicKeyId: external_exports.null(), checkedAtUtc: external_exports.null() }),
+  external_exports.strictObject({ status: external_exports.literal("unverified"), trustedPublicKeyId: external_exports.null(), checkedAtUtc: TimestampSchema }),
+  external_exports.strictObject({ status: external_exports.enum(["valid", "invalid", "key-mismatch"]), trustedPublicKeyId: external_exports.string().regex(/^[a-f0-9]{32}$/), checkedAtUtc: TimestampSchema })
+]);
+var LedgerInclusionClaimSchema = external_exports.discriminatedUnion("status", [
+  external_exports.strictObject({ status: external_exports.literal("included"), sequence: external_exports.number().int().positive(), chainSha256: Sha256HexSchema, checkedAtUtc: TimestampSchema }),
+  external_exports.strictObject({ status: external_exports.enum(["not-included", "invalid", "unavailable"]), sequence: external_exports.null(), chainSha256: external_exports.null(), checkedAtUtc: TimestampSchema }),
+  external_exports.strictObject({ status: external_exports.literal("not-checked"), sequence: external_exports.null(), chainSha256: external_exports.null(), checkedAtUtc: external_exports.null() })
+]);
+var LedgerChainClaimSchema = external_exports.discriminatedUnion("status", [
+  external_exports.strictObject({ status: external_exports.enum(["verified", "invalid"]), headChainSha256: Sha256HexSchema.nullable(), checkedAtUtc: TimestampSchema }),
+  external_exports.strictObject({ status: external_exports.literal("unavailable"), headChainSha256: external_exports.null(), checkedAtUtc: TimestampSchema }),
+  external_exports.strictObject({ status: external_exports.literal("not-checked"), headChainSha256: external_exports.null(), checkedAtUtc: external_exports.null() })
+]);
+var ReceiptProofSchema = external_exports.strictObject({
+  reviewId: IdSchema,
+  receiptId: IdSchema,
+  receiptSha256: Sha256HexSchema,
+  contentIntegrity: ContentIntegrityClaimSchema,
+  signature: ReceiptSignaturePresenceSchema,
+  outOfBandVerification: OutOfBandVerificationSchema,
+  ledgerInclusion: LedgerInclusionClaimSchema,
+  ledgerChain: LedgerChainClaimSchema
+}).superRefine((proof, context) => {
+  if (!proof.signature.present && proof.outOfBandVerification.status !== "not-checked") {
+    context.addIssue({
+      code: "custom",
+      path: ["outOfBandVerification", "status"],
+      message: "a receipt without a signature cannot claim out-of-band verification"
+    });
+  }
+  if (proof.signature.present && (proof.outOfBandVerification.status === "valid" || proof.outOfBandVerification.status === "invalid") && proof.outOfBandVerification.trustedPublicKeyId !== proof.signature.publicKeyId) {
+    context.addIssue({
+      code: "custom",
+      path: ["outOfBandVerification", "trustedPublicKeyId"],
+      message: "a valid or invalid out-of-band verification must name the signing key"
+    });
+  }
+  if (proof.signature.present && proof.outOfBandVerification.status === "key-mismatch" && proof.outOfBandVerification.trustedPublicKeyId === proof.signature.publicKeyId) {
+    context.addIssue({
+      code: "custom",
+      path: ["outOfBandVerification", "trustedPublicKeyId"],
+      message: "a key mismatch must name a trusted key different from the signing key"
+    });
+  }
+});
+function verifyReceiptProof(binding, raw) {
+  const proof = ReceiptProofSchema.parse(raw);
+  if (proof.reviewId !== binding.reviewId || proof.receiptId !== binding.receipt.receiptId || proof.receiptSha256 !== binding.receipt.receiptSha256) {
+    throw new Error("receipt proof does not match the immutable durable review receipt binding");
+  }
+  return proof;
+}
+
+// ../server/src/receipt-proof.ts
+function receiptOf(record2) {
+  return "receipt" in record2 ? record2.receipt : record2;
+}
+function unavailableRecordClaims() {
+  return {
+    contentIntegrity: { status: "not-checked", checkedAtUtc: null },
+    signature: { present: null, publicKeyId: null },
+    outOfBandVerification: {
+      status: "not-checked",
+      trustedPublicKeyId: null,
+      checkedAtUtc: null
+    }
+  };
+}
+async function recordClaims(resolution, entry, trustedPublicKeys, checkedAtUtc) {
+  const record2 = entry.record;
+  const receipt = receiptOf(record2);
+  const integrityVerified = await verifyReceiptHash(receipt) && receipt.receiptId === resolution.receipt.receiptId && receipt.receiptSha256 === resolution.receipt.receiptSha256 && entry.receiptId === resolution.receipt.receiptId && entry.receiptSha256 === resolution.receipt.receiptSha256;
+  if (!("receipt" in record2)) {
+    return {
+      contentIntegrity: {
+        status: integrityVerified ? "verified" : "mismatch",
+        checkedAtUtc
+      },
+      signature: { present: false, publicKeyId: null },
+      outOfBandVerification: {
+        status: "not-checked",
+        trustedPublicKeyId: null,
+        checkedAtUtc: null
+      }
+    };
+  }
+  const trustedPublicKey = trustedPublicKeys?.get(record2.signature.publicKeyId);
+  if (!trustedPublicKey) {
+    return {
+      contentIntegrity: {
+        status: integrityVerified ? "verified" : "mismatch",
+        checkedAtUtc
+      },
+      signature: {
+        present: true,
+        publicKeyId: record2.signature.publicKeyId
+      },
+      outOfBandVerification: {
+        status: "unverified",
+        trustedPublicKeyId: null,
+        checkedAtUtc
+      }
+    };
+  }
+  const trustedPublicKeyId = await computePublicKeyId(trustedPublicKey);
+  const signatureVerdict = await verifyReceiptSignature(record2, trustedPublicKey);
+  if (signatureVerdict === "unverified") {
+    throw new Error("signature verification returned an unchecked verdict despite a trusted key");
+  }
+  return {
+    contentIntegrity: {
+      status: integrityVerified ? "verified" : "mismatch",
+      checkedAtUtc
+    },
+    signature: {
+      present: true,
+      publicKeyId: record2.signature.publicKeyId
+    },
+    outOfBandVerification: {
+      status: signatureVerdict === "key_mismatch" ? "key-mismatch" : signatureVerdict,
+      trustedPublicKeyId,
+      checkedAtUtc
+    }
+  };
+}
+async function buildReceiptProof(resolution, ledger, options) {
+  let entry = null;
+  let entryStatus = "available";
+  try {
+    entry = ledger.get(resolution.receipt.receiptId);
+  } catch (error51) {
+    entryStatus = error51 instanceof LedgerCorruptionError ? "invalid" : "unavailable";
+  }
+  const claims = entry ? await recordClaims(
+    resolution,
+    entry,
+    options.trustedPublicKeys,
+    options.checkedAtUtc
+  ) : unavailableRecordClaims();
+  const ledgerInclusion = entryStatus !== "available" ? {
+    status: entryStatus,
+    sequence: null,
+    chainSha256: null,
+    checkedAtUtc: options.checkedAtUtc
+  } : entry && entry.receiptId === resolution.receipt.receiptId && entry.receiptSha256 === resolution.receipt.receiptSha256 ? {
+    status: "included",
+    sequence: entry.seq,
+    chainSha256: entry.chainSha256,
+    checkedAtUtc: options.checkedAtUtc
+  } : {
+    status: "not-included",
+    sequence: null,
+    chainSha256: null,
+    checkedAtUtc: options.checkedAtUtc
+  };
+  let ledgerChain;
+  try {
+    const verdict = await ledger.verifyChain();
+    ledgerChain = {
+      status: verdict.ok ? "verified" : "invalid",
+      headChainSha256: verdict.headChainSha256,
+      checkedAtUtc: options.checkedAtUtc
+    };
+  } catch (error51) {
+    ledgerChain = {
+      status: error51 instanceof LedgerCorruptionError ? "invalid" : "unavailable",
+      headChainSha256: null,
+      checkedAtUtc: options.checkedAtUtc
+    };
+  }
+  return verifyReceiptProof(resolution, {
+    reviewId: resolution.reviewId,
+    receiptId: resolution.receipt.receiptId,
+    receiptSha256: resolution.receipt.receiptSha256,
+    ...claims,
+    ledgerInclusion,
+    ledgerChain
+  });
+}
+
+// ../server/src/http.ts
 var MAX_BODY_BYTES = 2 * 1024 * 1024;
 var PayloadTooLargeError = class extends DomainError {
   constructor() {
@@ -27682,6 +28802,78 @@ var DecisionBodySchema = external_exports.strictObject({
   proposal: external_exports.unknown().optional(),
   decision: external_exports.enum(["approve", "reject"])
 });
+var ReviewIntakeBodySchema = external_exports.strictObject({
+  reviewId: IdSchema,
+  intake: DurableReviewIntakeSchema
+});
+var ReviewDecisionBodySchema = external_exports.strictObject({
+  decision: external_exports.enum(["approve", "reject"])
+});
+function pendingReviewSession(intake) {
+  const network3 = intake.domainId === "network";
+  return {
+    domainId: intake.domainId,
+    contractVersion: REVIEW_CONTRACT_VERSION,
+    policyVersion: resolveServerDomain(intake.domainId).adapter.policyVersion,
+    domainShape: network3 ? "simulated-state" : "external-diff",
+    capabilities: {
+      sandboxSimulation: network3,
+      resourceGraph: true,
+      structuredDiff: true,
+      untrustedContext: true,
+      durableDecision: true
+    },
+    runtimeMode: "self-hosted",
+    source: "uploaded-offline-artifact",
+    analysisMode: "offline",
+    provenance: "uploaded-offline-artifact"
+  };
+}
+function normalizeUploadedIntake(intake) {
+  return {
+    ...intake,
+    source: { ...intake.source, origin: "uploaded-offline-artifact" }
+  };
+}
+function durableReviewOwner(identity) {
+  return DurableReviewOwnerSchema.parse({
+    tenantId: identity.issuer,
+    issuer: identity.issuer,
+    subject: identity.subject,
+    scope: "self-hosted-review"
+  });
+}
+function serverNow(options) {
+  return TimestampSchema.parse(options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString());
+}
+function assertIntakeInputIdentity(intake) {
+  const inputId = intake.domainId === "terraform" ? TerraformInputSchema.parse(intake.input.content).planId : resolveServerDomain(intake.domainId).parseInput(intake.input.content).inputId;
+  if (inputId !== intake.input.inputId) {
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "The durable intake inputId does not match the validated domain input."
+    );
+  }
+  if (intake.domainId === "network") {
+    const proposal = NetworkChangeProposalSchema.parse(intake.proposal?.content);
+    if (proposal.proposalId !== intake.proposal?.proposalId) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "The durable intake proposalId does not match the validated Network proposal."
+      );
+    }
+  }
+}
+function reviewSummary(entry) {
+  return {
+    seq: entry.seq,
+    reviewId: entry.reviewId,
+    createdAtUtc: entry.createdAtUtc,
+    domainId: entry.domainId,
+    sourceId: entry.sourceId,
+    inputId: entry.inputId
+  };
+}
 function send(response, status, body) {
   const payload = JSON.stringify(body);
   response.writeHead(status, {
@@ -27776,6 +28968,113 @@ async function handle(request, response, options) {
     });
     return;
   }
+  if (route === "POST /reviews") {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
+      });
+      return;
+    }
+    const body = ReviewIntakeBodySchema.parse(await readBody(request));
+    const intake = normalizeUploadedIntake(body.intake);
+    assertIntakeInputIdentity(intake);
+    const review = await options.reviews.appendPending({
+      recordVersion: "2",
+      reviewId: body.reviewId,
+      createdAtUtc: serverNow(options),
+      owner: durableReviewOwner(identity),
+      session: pendingReviewSession(intake),
+      intake,
+      storage: { kind: "append-only-review-store" }
+    });
+    send(response, 201, { review });
+    return;
+  }
+  const reviewDecisionMatch = request.method === "POST" ? /^\/reviews\/([^/]+)\/decisions$/.exec(url2.pathname) : null;
+  if (reviewDecisionMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(reviewDecisionMatch[1]);
+    const owner = durableReviewOwner(identity);
+    if (!options.reviews.get(reviewId, owner)) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." }
+      });
+      return;
+    }
+    const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    const durableDecisionRequest = (pending) => ({
+      domain: pending.intake.domainId,
+      sourceId: pending.intake.source.sourceId,
+      input: pending.intake.input.content,
+      ...pending.intake.proposal ? { proposal: pending.intake.proposal.content } : {},
+      decision: body.decision
+    });
+    const decided = await options.reviews.resolvePending(
+      reviewId,
+      owner,
+      {
+        decision: body.decision,
+        claimedAtUtc: serverNow(options),
+        approverEmail: approver.email
+      },
+      (pending) => {
+        options.decisions.preflightSigned(
+          durableDecisionRequest(pending),
+          pending.session.policyVersion
+        );
+      },
+      async (pending, claim) => {
+        const outcome2 = await options.decisions.decideSigned(
+          durableDecisionRequest(pending),
+          {
+            subject: claim.owner.subject,
+            issuer: claim.owner.issuer,
+            email: claim.approverEmail
+          },
+          {
+            expectedPolicyVersion: pending.session.policyVersion,
+            receiptId: claim.receiptId,
+            receiptCreatedAtUtc: claim.receiptCreatedAtUtc,
+            receiptSignedAtUtc: claim.receiptSignedAtUtc
+          }
+        );
+        return {
+          outcome: outcome2,
+          resolution: {
+            resolutionVersion: "1",
+            reviewId,
+            resolvedAtUtc: serverNow(options),
+            receipt: {
+              receiptId: outcome2.receipt.receiptId,
+              sourceId: outcome2.receipt.sourceId,
+              inputId: outcome2.receipt.inputId,
+              inputSha256: outcome2.receipt.inputSha256,
+              proposalId: outcome2.receipt.proposalId,
+              proposalSha256: outcome2.receipt.proposalSha256,
+              policyVersion: outcome2.receipt.policyVersion,
+              receiptSha256: outcome2.receipt.receiptSha256
+            }
+          }
+        };
+      }
+    );
+    send(response, 201, {
+      receiptId: decided.outcome.receipt.receiptId,
+      decision: decided.outcome.receipt.decision,
+      riskLevel: decided.outcome.receipt.riskLevel,
+      approver: decided.outcome.receipt.approver,
+      ledgerSeq: decided.outcome.ledgerSeq,
+      chainSha256: decided.outcome.chainSha256,
+      record: decided.outcome.record,
+      resolution: decided.resolution
+    });
+    return;
+  }
   if (route === "GET /decisions") {
     const requestedLimit = url2.searchParams.get("limit");
     const parsedLimit = requestedLimit === null ? Number.NaN : Number(requestedLimit);
@@ -27797,6 +29096,77 @@ async function handle(request, response, options) {
     });
     return;
   }
+  if (route === "GET /reviews") {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
+      });
+      return;
+    }
+    const requestedLimit = url2.searchParams.get("limit");
+    const parsedLimit = requestedLimit === null ? Number.NaN : Number(requestedLimit);
+    const limit = Number.isFinite(parsedLimit) ? parsedLimit : void 0;
+    const requestedDomainId = url2.searchParams.get("domainId");
+    const reviews = options.reviews.list({
+      limit,
+      ...requestedDomainId === null ? {} : { domainId: external_exports.enum(["network", "terraform"]).parse(requestedDomainId) },
+      sourceId: url2.searchParams.get("sourceId") ?? void 0
+    }, durableReviewOwner(identity));
+    send(response, 200, { reviews: reviews.map(reviewSummary) });
+    return;
+  }
+  const receiptProofMatch = request.method === "GET" ? /^\/reviews\/([^/]+)\/receipt-proof$/.exec(url2.pathname) : null;
+  if (receiptProofMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(receiptProofMatch[1]);
+    const owner = durableReviewOwner(identity);
+    if (!options.reviews.get(reviewId, owner)) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." }
+      });
+      return;
+    }
+    const resolution = options.reviews.getResolution(reviewId, owner);
+    if (!resolution) {
+      send(response, 409, {
+        error: {
+          code: "ILLEGAL_TRANSITION",
+          message: "The requested review does not have an immutable resolution."
+        }
+      });
+      return;
+    }
+    const proof = await buildReceiptProof(resolution.resolution, options.ledger, {
+      checkedAtUtc: serverNow(options),
+      ...options.trustedReceiptPublicKeys ? { trustedPublicKeys: options.trustedReceiptPublicKeys } : {}
+    });
+    send(response, 200, { proof });
+    return;
+  }
+  const reviewMatch = request.method === "GET" ? /^\/reviews\/([^/]+)$/.exec(url2.pathname) : null;
+  if (reviewMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(reviewMatch[1]);
+    const review = options.reviews.get(reviewId, durableReviewOwner(identity));
+    if (!review) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." }
+      });
+      return;
+    }
+    send(response, 200, { review });
+    return;
+  }
   if (route === "GET /ledger/verify") {
     const verdict = await options.ledger.verifyChain();
     send(response, verdict.ok ? 200 : 409, verdict);
@@ -27806,6 +29176,130 @@ async function handle(request, response, options) {
     error: { code: "REQUEST_INVALID", message: `No route for ${route}.` }
   });
 }
+
+// ../server/src/durable-review-store.ts
+import { createRequire as createRequire2 } from "node:module";
+var PendingRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int().positive(),
+  review_id: IdSchema,
+  created_at_utc: external_exports.string(),
+  domain_id: external_exports.enum(["network", "terraform"]),
+  source_id: IdSchema,
+  input_id: IdSchema,
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.literal("self-hosted-review"),
+  record_json: external_exports.string()
+});
+var ResolutionRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int().positive(),
+  review_id: IdSchema,
+  resolved_at_utc: external_exports.string(),
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.literal("self-hosted-review"),
+  receipt_id: IdSchema,
+  receipt_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  resolution_json: external_exports.string()
+});
+var DecisionClaimRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int().positive(),
+  review_id: IdSchema,
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.literal("self-hosted-review"),
+  decision: external_exports.enum(["approve", "reject"]),
+  claimed_at_utc: external_exports.string(),
+  receipt_id: IdSchema,
+  claim_json: external_exports.string()
+});
+var LegacyPreclaimProvenanceRowSchema = external_exports.strictObject({
+  review_id: IdSchema,
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.literal("self-hosted-review"),
+  receipt_id: IdSchema,
+  receipt_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  source_schema_fingerprint: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  resolution_row_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/)
+});
+var LegacyRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int().positive(),
+  review_id: IdSchema,
+  created_at_utc: external_exports.string(),
+  domain_id: external_exports.enum(["network", "terraform"]),
+  source_id: IdSchema,
+  input_id: IdSchema,
+  receipt_id: IdSchema,
+  receipt_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  record_json: external_exports.string()
+});
+var MigrationPendingRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int(),
+  review_id: external_exports.string(),
+  created_at_utc: external_exports.string(),
+  domain_id: external_exports.string(),
+  source_id: external_exports.string(),
+  input_id: external_exports.string(),
+  record_json: external_exports.string()
+});
+var MigrationResolutionRowSchema = external_exports.strictObject({
+  seq: external_exports.number().int(),
+  review_id: external_exports.string(),
+  resolved_at_utc: external_exports.string(),
+  receipt_id: external_exports.string(),
+  receipt_sha256: external_exports.string(),
+  resolution_json: external_exports.string()
+});
+var MigrationOwnerfulPendingRowSchema = MigrationPendingRowSchema.extend({
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.string()
+});
+var MigrationOwnerfulResolutionRowSchema = MigrationResolutionRowSchema.extend({
+  owner_tenant_id: external_exports.string(),
+  owner_issuer: external_exports.string(),
+  owner_subject: external_exports.string(),
+  owner_scope: external_exports.string()
+});
+var QuarantineRowSchema = external_exports.strictObject({
+  quarantine_id: external_exports.number().int().positive(),
+  row_kind: external_exports.enum(["pending", "resolution"]),
+  old_seq: external_exports.number().int(),
+  review_id: external_exports.string(),
+  row_json: external_exports.string(),
+  reason: external_exports.string(),
+  migration_version: external_exports.string(),
+  source_schema_fingerprint: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  row_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/)
+});
+var ListOptionsSchema = external_exports.strictObject({ limit: external_exports.number().finite().optional(), domainId: external_exports.enum(["network", "terraform"]).optional(), sourceId: IdSchema.optional() });
+var LEGACY_INDEX_SCHEMA = `
+CREATE INDEX IF NOT EXISTS durable_review_records_created
+  ON durable_review_records (created_at_utc);
+CREATE INDEX IF NOT EXISTS durable_review_records_domain
+  ON durable_review_records (domain_id);
+CREATE INDEX IF NOT EXISTS durable_review_records_source
+  ON durable_review_records (source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_id_unique
+  ON durable_review_records (receipt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_sha256_unique
+  ON durable_review_records (receipt_sha256);
+`;
+var HISTORICAL_LEGACY_436_SCHEMA = `
+CREATE TABLE durable_review_records (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
+  domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
+  receipt_id TEXT NOT NULL, receipt_sha256 TEXT NOT NULL, record_json TEXT NOT NULL
+);
+${LEGACY_INDEX_SCHEMA}
+`;
+var nodeRequire2 = createRequire2(import.meta.url);
 
 // src/serve.ts
 function parseClaimRule(raw) {
@@ -28071,8 +29565,8 @@ async function collectKubernetesSnapshot(options, client) {
 
 // ../kubernetes-collector/src/client.ts
 import { createHash as createHash2 } from "node:crypto";
-import { createRequire as createRequire2 } from "node:module";
-var runtimeRequire = createRequire2(import.meta.url);
+import { createRequire as createRequire3 } from "node:module";
+var runtimeRequire = createRequire3(import.meta.url);
 function loadKubernetesClient() {
   return runtimeRequire("@kubernetes/client-node");
 }

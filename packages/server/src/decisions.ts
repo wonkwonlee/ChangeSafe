@@ -1,5 +1,8 @@
 import {
+  canonicalize,
+  computePublicKeyId,
   DomainError,
+  SignedReceiptSchema,
   createReceipt,
   evaluatePolicies,
   hasBlockingFinding,
@@ -7,13 +10,18 @@ import {
   signReceipt,
   transition,
   validateProposalEvidence,
+  verifyReceiptHash,
+  verifyReceiptSignature,
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
+  type PolicyFinding,
+  type RiskLevel,
+  type SimulationResult,
   type SignedReceipt,
   type WorkflowState,
 } from "@changesafe/core";
-import type { Ledger } from "@changesafe/ledger";
+import type { Ledger, LedgerEntry } from "@changesafe/ledger";
 
 import { resolveServerDomain } from "./domains";
 
@@ -33,13 +41,41 @@ export interface DecisionOutcome {
   chainSha256: string;
 }
 
+export interface SignedDecisionOutcome extends DecisionOutcome {
+  record: SignedReceipt;
+}
+
+export interface DurableDecisionIssuance {
+  expectedPolicyVersion: string;
+  receiptId: string;
+  receiptCreatedAtUtc: string;
+  receiptSignedAtUtc: string;
+}
+
 export interface DecisionServiceOptions {
   ledger: Ledger;
   appVersion: string;
   /** When present, every issued receipt is signed with it. */
   signingKeyPair?: { privateKey: CryptoKey; publicKey: CryptoKey };
+  /**
+   * Operator-controlled historical verifying keys, indexed by their
+   * out-of-band fingerprint. Required to recover a ledgered receipt after
+   * the active signing key has rotated.
+   */
+  trustedReceiptPublicKeys?: ReadonlyMap<string, CryptoKey>;
   /** Injectable for deterministic tests. */
   now?: () => string;
+}
+
+interface PreparedDecision {
+  request: DecisionRequest;
+  input: unknown;
+  inputId: string;
+  proposal: ChangeProposal;
+  policyVersion: string;
+  findings: PolicyFinding[];
+  riskLevel: RiskLevel;
+  simulation: SimulationResult | null;
 }
 
 /**
@@ -63,8 +99,129 @@ export class DecisionService {
     this.#options = options;
   }
 
-  async decide(request: DecisionRequest, approver: Approver): Promise<DecisionOutcome> {
+  /**
+   * Prove every deterministic precondition before a caller reserves an
+   * immutable durable-review claim. This performs no receipt or ledger write.
+   */
+  preflightSigned(request: DecisionRequest, expectedPolicyVersion?: string): void {
+    this.#requireSigningCapability();
+    this.#prepare(request, expectedPolicyVersion);
+  }
+
+  /**
+   * Durable review resolutions require authorship proof. Check that capability
+   * before policy evaluation or receipt creation so a missing key can never
+   * append an unsigned ledger record and then fail the durable request.
+   */
+  async decideSigned(
+    request: DecisionRequest,
+    approver: Approver,
+    issuance?: DurableDecisionIssuance,
+  ): Promise<SignedDecisionOutcome> {
+    this.#requireSigningCapability();
+    const outcome = await this.decide(request, approver, issuance);
+    if (!("receipt" in outcome.record)) {
+      throw new DomainError(
+        "INTERNAL",
+        "The durable decision path did not produce a signed receipt.",
+      );
+    }
+    return { ...outcome, record: outcome.record };
+  }
+
+  async decide(
+    request: DecisionRequest,
+    approver: Approver,
+    issuance?: DurableDecisionIssuance,
+  ): Promise<DecisionOutcome> {
+    const prepared = this.#prepare(request, issuance?.expectedPolicyVersion);
+
+    if (issuance) {
+      const existing = this.#options.ledger.get(issuance.receiptId);
+      if (existing) {
+        return this.#recoverSignedOutcome(existing, prepared, approver, issuance);
+      }
+    }
+
+    const receipt = await createReceipt({
+      sourceId: prepared.request.sourceId,
+      inputId: prepared.inputId,
+      input: prepared.input,
+      proposal: prepared.proposal,
+      appVersion: this.#options.appVersion,
+      policyVersion: prepared.policyVersion,
+      mode: "offline",
+      model: null,
+      fixtureProvenance: null,
+      findings: prepared.findings,
+      riskLevel: prepared.riskLevel,
+      decision: prepared.request.decision === "approve" ? "approved" : "rejected",
+      approver,
+      simulation: prepared.simulation,
+      createdAtUtc: issuance?.receiptCreatedAtUtc ?? this.#options.now?.(),
+      receiptId: issuance?.receiptId,
+    });
+
+    const record = this.#options.signingKeyPair
+      ? await signReceipt(receipt, this.#options.signingKeyPair, {
+          signedAtUtc: issuance?.receiptSignedAtUtc ?? this.#options.now?.(),
+        })
+      : receipt;
+
+    // Recorded before the response is returned: a decision the caller was
+    // told about but the ledger never saw would be exactly the gap the
+    // ledger exists to close.
+    let entry = this.#options.ledger.get(receipt.receiptId);
+    if (entry) {
+      if (canonicalize(entry.record) !== canonicalize(record)) {
+        throw new DomainError(
+          "REQUEST_INVALID",
+          `Receipt ${receipt.receiptId} is already bound to different immutable ledger content.`,
+        );
+      }
+    } else {
+      try {
+        entry = await this.#options.ledger.append(record);
+      } catch (error) {
+        const raced = this.#options.ledger.get(receipt.receiptId);
+        if (!raced || canonicalize(raced.record) !== canonicalize(record)) {
+          throw error;
+        }
+        entry = raced;
+      }
+    }
+
+    return {
+      record,
+      receipt,
+      ledgerSeq: entry.seq,
+      chainSha256: entry.chainSha256,
+    };
+  }
+
+  #requireSigningCapability(): void {
+    if (!this.#options.signingKeyPair) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review decisions require a configured receipt signing key.",
+      );
+    }
+  }
+
+  #prepare(
+    request: DecisionRequest,
+    expectedPolicyVersion?: string,
+  ): PreparedDecision {
     const domain = resolveServerDomain(request.domain);
+    if (
+      expectedPolicyVersion &&
+      expectedPolicyVersion !== domain.adapter.policyVersion
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `The pending review policy version ${expectedPolicyVersion} is stale; active policy version is ${domain.adapter.policyVersion}.`,
+      );
+    }
     const { input, inputId } = domain.parseInput(request.input);
     const proposal = domain.resolveProposal(input, request.proposal);
 
@@ -119,40 +276,101 @@ export class DecisionService {
       );
     }
 
-    const receipt = await createReceipt({
-      sourceId: request.sourceId,
-      inputId,
+    return {
+      request,
       input,
+      inputId,
       proposal: proposal as ChangeProposal,
-      appVersion: this.#options.appVersion,
       policyVersion: domain.adapter.policyVersion,
+      findings,
+      riskLevel,
+      simulation,
+    };
+  }
+
+  async #recoverSignedOutcome(
+    entry: LedgerEntry,
+    prepared: PreparedDecision,
+    approver: Approver,
+    issuance: DurableDecisionIssuance,
+  ): Promise<SignedDecisionOutcome> {
+    const record = SignedReceiptSchema.parse(entry.record);
+    if (!(await verifyReceiptHash(record.receipt))) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} failed its content-integrity check.`,
+      );
+    }
+    const trustedPublicKey = await this.#trustedRecoveryKey(
+      record.signature.publicKeyId,
+    );
+    if (!trustedPublicKey) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} names an unknown signing key.`,
+      );
+    }
+    const signatureVerdict = await verifyReceiptSignature(
+      record,
+      trustedPublicKey,
+    );
+    if (signatureVerdict !== "valid") {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} failed out-of-band signature verification.`,
+      );
+    }
+    const expected = await createReceipt({
+      sourceId: prepared.request.sourceId,
+      inputId: prepared.inputId,
+      input: prepared.input,
+      proposal: prepared.proposal,
+      // Recovery validates the immutable historical record. A deployment
+      // upgrade must not rewrite its app identity or require the old key.
+      appVersion: record.receipt.appVersion,
+      policyVersion: prepared.policyVersion,
       mode: "offline",
       model: null,
       fixtureProvenance: null,
-      findings,
-      riskLevel,
-      decision: request.decision === "approve" ? "approved" : "rejected",
+      findings: prepared.findings,
+      riskLevel: prepared.riskLevel,
+      decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,
-      simulation,
-      createdAtUtc: this.#options.now?.(),
+      simulation: prepared.simulation,
+      createdAtUtc: issuance.receiptCreatedAtUtc,
+      receiptId: issuance.receiptId,
     });
-
-    const record = this.#options.signingKeyPair
-      ? await signReceipt(receipt, this.#options.signingKeyPair, {
-          signedAtUtc: this.#options.now?.(),
-        })
-      : receipt;
-
-    // Recorded before the response is returned: a decision the caller was
-    // told about but the ledger never saw would be exactly the gap the
-    // ledger exists to close.
-    const entry = await this.#options.ledger.append(record);
-
+    if (
+      canonicalize(expected) !== canonicalize(record.receipt) ||
+      record.signature.signedAtUtc !== issuance.receiptSignedAtUtc ||
+      entry.receiptId !== issuance.receiptId ||
+      entry.receiptSha256 !== record.receipt.receiptSha256
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} does not match the immutable decision claim.`,
+      );
+    }
+    const chain = await this.#options.ledger.verifyChain();
+    if (!chain.ok) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} is not in a valid append-only ledger chain.`,
+      );
+    }
     return {
       record,
-      receipt,
+      receipt: record.receipt,
       ledgerSeq: entry.seq,
       chainSha256: entry.chainSha256,
     };
+  }
+
+  async #trustedRecoveryKey(publicKeyId: string): Promise<CryptoKey | undefined> {
+    const historical = this.#options.trustedReceiptPublicKeys?.get(publicKeyId);
+    if (historical) return historical;
+    const active = this.#options.signingKeyPair?.publicKey;
+    if (active && (await computePublicKeyId(active)) === publicKeyId) return active;
+    return undefined;
   }
 }

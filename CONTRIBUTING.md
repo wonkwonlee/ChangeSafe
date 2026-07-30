@@ -11,10 +11,10 @@ for the invariants every change must respect.
 
 The engine lives in workspace packages: `@changesafe/core` is the
 domain-agnostic gate (see `packages/core/README.md`),
-`@changesafe/domain-network` teaches it about networks through the
-`DomainAdapter` contract, and `changesafe` (see `packages/cli/README.md`) is
-the CLI. The Next.js console at the repository root is a consumer, not the
-product.
+the domain packages teach it about Network, Terraform, and Kubernetes through
+the `DomainAdapter` contract, and `changesafe` (see
+`packages/cli/README.md`) is the CLI. The Next.js multi-domain workbench at
+the repository root is a consumer, not a second policy authority.
 
 Fastest loop while working on scenarios or policies:
 
@@ -41,6 +41,12 @@ npm run build
 npx playwright install chromium   # once
 npm run test:e2e
 ```
+
+The default `/` route is the ephemeral Network public replay.
+`/workbench/terraform` and `/workbench/kubernetes` are the other public
+domain surfaces. `/workbench/self-hosted` is an optional client for an
+operator-run authenticated HTTPS gateway; it is not an anonymous decision
+surface.
 
 If something else already uses port 3000, run the app and the suite on
 another port: `PORT=3100 npm run dev` / `PORT=3100 npm run test:e2e`.

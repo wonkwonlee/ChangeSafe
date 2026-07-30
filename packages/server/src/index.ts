@@ -18,6 +18,7 @@ export type {
   DecisionRequest,
   DecisionOutcome,
   DecisionServiceOptions,
+  DurableDecisionIssuance,
 } from "./decisions";
 
 export { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
@@ -28,3 +29,15 @@ export type { ApproverPolicy, Jwk, OidcConfig, VerifiedIdentity } from "./oidc";
 
 export { createDecisionServer } from "./http";
 export type { DecisionServerOptions } from "./http";
+
+export { buildReceiptProof } from "./receipt-proof";
+export type { ReceiptProofLedger } from "./receipt-proof";
+
+export { DurableReviewStore } from "./durable-review-store";
+export type {
+  DurableReviewStoreEntry,
+  DurableReviewResolutionEntry,
+  DurableReviewDecisionClaimEntry,
+  DurableReviewStoreListOptions,
+  LegacyDurableReviewStoreEntry,
+} from "./durable-review-store";

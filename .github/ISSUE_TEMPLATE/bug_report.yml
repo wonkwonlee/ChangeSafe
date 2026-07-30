@@ -30,8 +30,8 @@ body:
       description: Commands, scenario id, or a minimal input file.
       placeholder: |
         1. npm run dev
-        2. Select scenario ...
-        3. Run replay analysis
+        2. Open / and select INC-4977 ...
+        3. Choose Run replay
     validations:
       required: true
   - type: input

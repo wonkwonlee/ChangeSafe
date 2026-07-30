@@ -10,6 +10,7 @@ import {
   deriveProposal,
   normalizePlan,
   terraformDomain,
+  TerraformInputSchema,
 } from "@changesafe/domain-terraform";
 import type { SimulationResult } from "@changesafe/core";
 
@@ -50,7 +51,11 @@ const terraform: ServerDomain = {
   id: "terraform",
   adapter: terraformDomain as unknown as DomainAdapter<never, never>,
   parseInput(raw) {
-    const input = normalizePlan(raw);
+    // Durable intake stores the already-normalized, hash-bound plan. The
+    // legacy decision endpoint may still submit raw `terraform show -json`,
+    // so accept either without normalizing a normalized plan into a no-op.
+    const parsed = TerraformInputSchema.safeParse(raw);
+    const input = parsed.success ? parsed.data : normalizePlan(raw);
     return { input, inputId: input.planId };
   },
   resolveProposal(input) {
