@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
@@ -192,6 +193,10 @@ export function ReviewWorkbenchShell() {
           <a className="mr-auto text-base font-bold tracking-tight text-ink" href="#review">
             ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span>
           </a>
+          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Legacy local</Link>
+          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/terraform">Terraform</Link>
+          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/kubernetes">Kubernetes</Link>
+          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/self-hosted">Authenticated self-hosted</Link>
           <a className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="#sources">Sources</a>
         </nav>
       </header>
