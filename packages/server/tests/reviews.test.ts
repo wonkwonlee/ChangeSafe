@@ -230,6 +230,37 @@ describe("pending review policy projection", () => {
     expect(body.review.record).not.toHaveProperty("projection");
   });
 
+  it("keeps a historical review readable when its stored policy version is stale", async () => {
+    const token = await context.idp.token();
+    await postReview(await pendingNetworkReview("review-historical-policy"), token);
+    const stored = context.reviews.get("review-historical-policy", {
+      tenantId: context.idp.issuer,
+      issuer: context.idp.issuer,
+      subject: "user-alice",
+      scope: "self-hosted-review",
+    });
+    expect(stored).not.toBeNull();
+    await context.reviews.appendPending({
+      ...stored!.record,
+      reviewId: "review-historical-policy-stale",
+      session: { ...stored!.record.session, policyVersion: "network-stale-v0" },
+    });
+
+    const response = await fetch(
+      `${context.baseUrl}/reviews/review-historical-policy-stale`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      review: { record: { session: { policyVersion: string } } };
+      projection: { policyVersion: string };
+    };
+    expect(body.review.record.session.policyVersion).toBe("network-stale-v0");
+    expect(body.projection.policyVersion).toBe(
+      resolveServerDomain("network").adapter.policyVersion,
+    );
+  });
+
   it("reports a blocked pending review as unapprovable before any decision", async () => {
     const token = await context.idp.token();
     await postReview(await pendingBlockedNetworkReview(), token);

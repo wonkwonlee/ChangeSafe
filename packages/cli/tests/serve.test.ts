@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FakeIdp } from "../../server/tests/helpers";
+import { generateSigningKeyPair } from "@changesafe/core";
 import { runServe, type ServeOptions } from "../src/serve";
 import type { Console } from "../src/output";
 
@@ -50,6 +51,26 @@ describe("changesafe serve — durable review queue wiring", () => {
     restoreFetch = undefined;
   });
 
+  it("refuses to start a durable review queue without a receipt signing key", async () => {
+    const paths = temporaryDbDir();
+
+    await expect(
+      runServe(
+        {
+          db: paths.db,
+          host: "127.0.0.1",
+          port: nextPort++,
+          oidcIssuer: "https://idp.example.test",
+          oidcAudience: "changesafe",
+          reviewsDb: paths.reviewsDb,
+        },
+        silentConsole(),
+      ),
+    ).rejects.toThrow(/--sign-key/);
+
+    paths.remove();
+  });
+
   it("leaves the durable review queue absent without --reviews-db", async () => {
     const idp = await FakeIdp.create();
     const paths = temporaryDbDir();
@@ -88,6 +109,8 @@ describe("changesafe serve — durable review queue wiring", () => {
     restoreFetch = () => {
       globalThis.fetch = originalFetch;
     };
+    const signingKey = path.join(path.dirname(paths.db), "signing-key.pem");
+    writeFileSync(signingKey, (await generateSigningKeyPair()).privateKeyPem);
 
     const { baseUrl, close } = await startServer({
       db: paths.db,
@@ -95,6 +118,7 @@ describe("changesafe serve — durable review queue wiring", () => {
       oidcIssuer: idp.issuer,
       oidcAudience: "changesafe",
       reviewsDb: paths.reviewsDb,
+      signKey: signingKey,
     });
     stopServer = close;
 

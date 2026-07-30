@@ -36,7 +36,7 @@ export function SelfHostedReviewDetail({
       </div>
     );
   }
-  const pending = resolutionStatus === "pending";
+  const pending = resolutionStatus === "pending" && projection !== null;
   const statusLabel =
     resolutionStatus === "pending"
       ? "Pending human decision"
@@ -73,6 +73,11 @@ export function SelfHostedReviewDetail({
             <p className="mt-2 text-xs text-ink-faint">
               Recomputed by the server at read time from the immutable artifact under policy version <span className="font-mono">{projection.policyVersion}</span>. Nothing here was supplied by this browser or stored on the review record.
             </p>
+            {projection.policyVersion !== review.record.session.policyVersion ? (
+              <p className="mt-2 rounded border border-warn/50 bg-warn/10 p-3 text-xs text-warn" role="status">
+                This historical review was queued under <span className="font-mono">{review.record.session.policyVersion}</span>; the active policy is <span className="font-mono">{projection.policyVersion}</span>. The record remains readable, while any new decision is checked against the active policy.
+              </p>
+            ) : null}
             <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
               <div><dt className="text-ink-faint">Risk level</dt><dd className="mt-1 font-semibold">{projection.riskLevel}</dd></div>
               <div><dt className="text-ink-faint">Approvable</dt><dd className="mt-1 font-semibold">{projection.approvable ? "Yes — no blocking finding" : "No — a BLOCK finding refuses approval for anyone"}</dd></div>
@@ -123,7 +128,7 @@ export function SelfHostedReviewDetail({
           <p className="mt-2 text-sm text-ink-dim">The immutable resolution has already been written.</p>
         ) : (
           <p className="mt-2 text-sm text-ink-dim">
-            Decision controls remain disabled until the server confirms that this review is pending.
+            Decision controls remain disabled until the server confirms that this review is pending and its policy projection has been read.
           </p>
         )}
         {actionMessage ? <p className="mt-3 rounded border border-warn/50 bg-warn/10 p-3 text-sm text-warn" role="status">{actionMessage}</p> : null}

@@ -83,6 +83,12 @@ export async function runServe(options: ServeOptions, console: Console): Promise
     );
   }
 
+  if (options.reviewsDb && !options.signKey) {
+    throw new UsageError(
+      "serve --reviews-db requires --sign-key because durable review decisions must be signed.",
+    );
+  }
+
   const approverPolicy = buildApproverPolicy(options);
 
   const ledger = Ledger.open(options.db);

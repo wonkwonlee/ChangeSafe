@@ -198,17 +198,23 @@ export function SelfHostedReviewWorkbench({
     // create catch above would tell the operator the review was not created
     // when in fact it was.
     if (created) {
+      const queueToken = ++queueAttemptToken.current;
       try {
         const nextReviews = await transport.list();
-        if (attemptToken.current === attempt.token) {
+        if (
+          attemptToken.current === attempt.token &&
+          queueAttemptToken.current === queueToken
+        ) {
           setReviews(nextReviews);
         }
       } catch (error) {
-        dispatch({
-          type: "failed",
-          attempt,
-          message: `The review was created. Refreshing the queue failed: ${errorMessage(error)}`,
-        });
+        if (queueAttemptToken.current === queueToken) {
+          dispatch({
+            type: "failed",
+            attempt,
+            message: `The review was created. Refreshing the queue failed: ${errorMessage(error)}`,
+          });
+        }
       }
     }
     dispatch({ type: "finish", attempt });
@@ -218,7 +224,8 @@ export function SelfHostedReviewWorkbench({
     if (
       !transport ||
       !viewState.review ||
-      viewState.resolutionStatus !== "pending"
+      viewState.resolutionStatus !== "pending" ||
+      !viewState.projection
     ) {
       return;
     }

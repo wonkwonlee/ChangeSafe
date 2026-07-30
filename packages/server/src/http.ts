@@ -545,7 +545,6 @@ async function handle(
     // beside the artifact could only go stale or be tampered with.
     const projection = options.decisions.project(
       pendingReviewRequest(review.record),
-      review.record.session.policyVersion,
     );
     send(response, 200, { review, projection });
     return;

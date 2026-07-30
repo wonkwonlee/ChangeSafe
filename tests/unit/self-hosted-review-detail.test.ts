@@ -120,6 +120,8 @@ describe("self-hosted review detail", () => {
 
     expect(markup).toContain("No server recomputation has been read");
     expect(markup).not.toContain("BLAST_RADIUS");
+    expect(markup).not.toContain(">Approve<");
+    expect(markup).not.toContain(">Reject<");
   });
 
   it("reports an unapprovable blocked change without inventing a verdict", () => {

@@ -134,9 +134,10 @@ They are owner-scoped by verified issuer and subject. Receipt proof reports
 content integrity, signature presence, out-of-band public-key verification,
 and ledger inclusion independently.
 
-Current limitation: `changesafe serve` constructs the authenticated decision
-service and ledger but does not construct/pass `DurableReviewStore`.
-Therefore the vNext queue is an integration surface, not a turnkey deployment.
+`changesafe serve` constructs `DurableReviewStore` when `--reviews-db` is
+passed; without that flag the vNext queue remains disabled. The queue is
+therefore available as a turnkey server-side surface, but the browser still
+requires an operator gateway/BFF.
 The browser additionally requires an operator gateway/BFF: the public
 `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` contains no bearer token, and the
 browser uses an HttpOnly session cookie while the gateway supplies OIDC to the

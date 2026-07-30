@@ -1,4 +1,5 @@
-import { readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -20,13 +21,15 @@ import { SCENARIO_DOMAIN_IDS, resolveScenarioDomain } from "@/scenarios/domains"
 
 const SCENARIOS_DIR = path.join(process.cwd(), "scenarios");
 
-function scenarioDirectoriesOnDisk(): string[] {
+function scenarioDirectoriesOnDisk(root = SCENARIOS_DIR): string[] {
   const ids: string[] = [];
-  for (const domainId of SCENARIO_DOMAIN_IDS) {
-    const domainDir = path.join(SCENARIOS_DIR, domainId);
-    if (!existsSync(domainDir)) continue;
-    for (const entry of readdirSync(domainDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) ids.push(entry.name);
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (!SCENARIO_DOMAIN_IDS.includes(entry.name)) {
+      throw new Error(`scenario directory is outside a registered domain: ${entry.name}`);
+    }
+    for (const scenario of readdirSync(path.join(root, entry.name), { withFileTypes: true })) {
+      if (scenario.isDirectory()) ids.push(scenario.name);
     }
   }
   return ids.sort();
@@ -36,6 +39,16 @@ describe("scenario registry completeness", () => {
   it("registers every scenario directory found on disk", () => {
     const registered = SCENARIOS.map((scenario) => scenario.scenarioId).sort();
     expect(scenarioDirectoriesOnDisk()).toEqual(registered);
+  });
+
+  it("rejects scenarios placed outside a registered domain", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "changesafe-scenarios-"));
+    mkdirSync(path.join(root, "misspelled-domain", "scenario-one"), { recursive: true });
+    try {
+      expect(() => scenarioDirectoriesOnDisk(root)).toThrow(/outside a registered domain/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("ships the required files for every registered scenario", () => {

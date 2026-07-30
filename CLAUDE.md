@@ -91,7 +91,9 @@ packages/domain-terraform/ @changesafe/domain-terraform — external-diff
                            domain over `terraform show -json`; never runs
                            Terraform
 packages/domain-kubernetes/ @changesafe/domain-kubernetes — offline Kubernetes
-                           state domain and namespace-scoped read-only collector
+                           state domain and policies
+packages/kubernetes-collector/ private namespace-scoped read-only collector;
+                           the only workspace depending on @kubernetes/client-node
 packages/ai/               @changesafe/ai — provider-agnostic adapters
                            (OpenAI, Anthropic, Ollama) on plain `fetch`,
                            hardened prompt, portable JSON Schema derivation,
