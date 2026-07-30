@@ -1,6 +1,6 @@
 import { importSigningKeyPair } from "@changesafe/core";
 import { Ledger } from "@changesafe/ledger";
-import { DecisionService, OidcVerifier, createDecisionServer } from "@changesafe/server";
+import { DecisionService, DurableReviewStore, OidcVerifier, createDecisionServer } from "@changesafe/server";
 import type { ApproverPolicy } from "@changesafe/server";
 
 import { UsageError, readTextFile } from "./io";
@@ -19,6 +19,12 @@ export interface ServeOptions {
   /** Claim requirements as `name=value`, e.g. `groups=sre`. */
   approverClaims?: string[];
   signKey?: string;
+  /**
+   * Durable review queue database. Optional so an operator upgrading in
+   * place is not forced onto the queue: without it, `POST /reviews` and
+   * `POST /reviews/:id/decisions` do not exist, exactly as before this flag.
+   */
+  reviewsDb?: string;
   /** Resolves once the server is listening; tests use it to stop waiting. */
   onListening?: (close: () => Promise<void>) => void;
 }
@@ -80,12 +86,14 @@ export async function runServe(options: ServeOptions, console: Console): Promise
   const approverPolicy = buildApproverPolicy(options);
 
   const ledger = Ledger.open(options.db);
+  const reviews = options.reviewsDb ? DurableReviewStore.open(options.reviewsDb) : undefined;
   const signingKeyPair = options.signKey
     ? await importSigningKeyPair(readTextFile(options.signKey, "signing key"))
     : undefined;
 
   const server = createDecisionServer({
     ledger,
+    reviews,
     verifier: new OidcVerifier({
       issuer: options.oidcIssuer,
       audience: options.oidcAudience,
@@ -118,6 +126,11 @@ export async function runServe(options: ServeOptions, console: Console): Promise
       ? `  ${paint(console.color, "dim", "receipts are signed")}`
       : `  ${paint(console.color, "yellow", "receipts are unsigned")} ${paint(console.color, "dim", "— pass --sign-key to prove authorship")}`,
   );
+  console.out(
+    reviews
+      ? `  ${paint(console.color, "dim", `durable review queue ${options.reviewsDb} · ${reviews.count()} pending`)}`
+      : `  ${paint(console.color, "dim", "durable review queue disabled")} ${paint(console.color, "dim", "— pass --reviews-db to accept POST /reviews")}`,
+  );
   console.out("");
   console.out(`  ${paint(console.color, "dim", "This API decides and records. It cannot execute a change.")}`);
   console.out("");
@@ -125,6 +138,7 @@ export async function runServe(options: ServeOptions, console: Console): Promise
   const close = async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     ledger.close();
+    reviews?.close();
   };
 
   if (options.onListening) {

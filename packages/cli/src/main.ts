@@ -104,10 +104,17 @@ SERVE OPTIONS (self-hosting)
   --approver-claim <name>=<value>
                         require this claim, e.g. groups=sre (repeatable)
   --sign-key <file>     sign every receipt this API issues
+  --reviews-db <file>   durable review queue; enables POST /reviews and
+                        POST /reviews/:id/decisions (disabled by default)
 
 The API recomputes findings itself rather than trusting the caller, records an
 authenticated approver on every decision, and appends to the ledger before
 answering. It has no execution endpoint and no anonymous mode.
+
+Without --reviews-db, the durable review queue is disabled: /reviews and
+/reviews/:id/decisions do not exist, and /decisions is the only way to
+record a decision. This matches every self-hosted deployment before this
+flag existed — the queue is additive, never a required upgrade.
 
 Authentication says who someone is; --approver and --approver-claim say which
 of those people may act here. With neither, anyone your issuer will mint a
@@ -154,6 +161,7 @@ const OPTION_SPEC = {
   check: { type: "boolean", default: false },
   report: { type: "string" },
   db: { type: "string" },
+  "reviews-db": { type: "string" },
   host: { type: "string" },
   port: { type: "string" },
   "oidc-issuer": { type: "string" },
@@ -315,6 +323,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           approvers: values.approver,
           approverClaims: values["approver-claim"],
           signKey: values["sign-key"],
+          reviewsDb: values["reviews-db"],
         },
         console,
       );
