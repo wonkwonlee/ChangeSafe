@@ -18,6 +18,7 @@ import { Ledger } from "@changesafe/ledger";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "../../../features/domains/terraform/fixtures";
 import { DecisionService } from "../src/decisions";
 import { DurableReviewStore } from "../src/durable-review-store";
+import { resolveServerDomain } from "../src/domains";
 import { createDecisionServer } from "../src/http";
 import { OidcVerifier } from "../src/oidc";
 import { FakeIdp } from "./helpers";
@@ -197,6 +198,77 @@ async function getReceiptProof(reviewId: string, token?: string) {
     headers: token ? { authorization: `Bearer ${token}` } : {},
   });
 }
+
+describe("pending review policy projection", () => {
+  it("returns server-recomputed findings and risk with a pending review", async () => {
+    const token = await context.idp.token();
+    await postReview(await pendingNetworkReview(), token);
+
+    const response = await fetch(`${context.baseUrl}/reviews/review-network-one`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      review: { record: Record<string, unknown> };
+      projection: {
+        policyVersion: string;
+        findings: { policyId: string; status: string }[];
+        riskLevel: string;
+        approvable: boolean;
+      };
+    };
+
+    expect(body.projection.findings.length).toBeGreaterThan(0);
+    expect(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).toContain(body.projection.riskLevel);
+    expect(body.projection.approvable).toBe(true);
+    expect(body.projection.policyVersion).toBe(
+      resolveServerDomain("network").adapter.policyVersion,
+    );
+    // Derived at response time, never persisted onto the immutable record.
+    expect(body.review.record).not.toHaveProperty("findings");
+    expect(body.review.record).not.toHaveProperty("riskLevel");
+    expect(body.review.record).not.toHaveProperty("projection");
+  });
+
+  it("reports a blocked pending review as unapprovable before any decision", async () => {
+    const token = await context.idp.token();
+    await postReview(await pendingBlockedNetworkReview(), token);
+
+    const response = await fetch(
+      `${context.baseUrl}/reviews/review-network-blocked`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    const body = (await response.json()) as {
+      projection: {
+        findings: { status: string }[];
+        riskLevel: string;
+        approvable: boolean;
+      };
+    };
+
+    expect(body.projection.findings.some(({ status }) => status === "BLOCK")).toBe(true);
+    expect(body.projection.riskLevel).toBe("CRITICAL");
+    expect(body.projection.approvable).toBe(false);
+    // A read must not decide anything.
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("refuses an intake that tries to supply its own findings or risk", async () => {
+    const token = await context.idp.token();
+    const intake = await pendingNetworkReview("review-forged-findings");
+
+    const response = await postReview(
+      {
+        ...intake,
+        intake: { ...intake.intake, findings: [], riskLevel: "LOW" },
+      },
+      token,
+    );
+
+    expect(response.status).toBe(422);
+    expect(context.reviews.count()).toBe(0);
+  });
+});
 
 describe("durable review intake HTTP API", () => {
   it("authenticates before reading an intake body or queue", async () => {

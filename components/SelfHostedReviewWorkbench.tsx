@@ -145,7 +145,8 @@ export function SelfHostedReviewWorkbench({
       dispatch({
         type: "selected",
         attempt,
-        review: reviewResult.value,
+        review: reviewResult.value.review,
+        projection: reviewResult.value.projection,
         resolutionStatus,
         proof,
         message,
@@ -181,21 +182,36 @@ export function SelfHostedReviewWorkbench({
     const reviewId = `review-${crypto.randomUUID()}`;
     setQueueMessage(null);
     const attempt = beginAttempt("create", reviewId);
+    let created = false;
     try {
       const review = await transport.create(
         reviewId,
         await createSelfHostedIntake(example, new Date().toISOString()),
       );
+      created = true;
       dispatch({ type: "created", attempt, review });
-      const nextReviews = await transport.list();
-      if (attemptToken.current === attempt.token) {
-        setReviews(nextReviews);
-      }
     } catch (error) {
       dispatch({ type: "failed", attempt, message: errorMessage(error) });
-    } finally {
-      dispatch({ type: "finish", attempt });
     }
+
+    // The queue refresh is a separate request. Folding its failure into the
+    // create catch above would tell the operator the review was not created
+    // when in fact it was.
+    if (created) {
+      try {
+        const nextReviews = await transport.list();
+        if (attemptToken.current === attempt.token) {
+          setReviews(nextReviews);
+        }
+      } catch (error) {
+        dispatch({
+          type: "failed",
+          attempt,
+          message: `The review was created. Refreshing the queue failed: ${errorMessage(error)}`,
+        });
+      }
+    }
+    dispatch({ type: "finish", attempt });
   }
 
   async function decide(decision: "approve" | "reject") {
@@ -295,6 +311,7 @@ export function SelfHostedReviewWorkbench({
             actionMessage={viewState.message ?? queueMessage}
             busy={busy}
             onDecide={(decision) => void decide(decision)}
+            projection={viewState.projection}
             proof={viewState.proof}
             resolutionStatus={viewState.resolutionStatus}
             review={viewState.review}

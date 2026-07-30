@@ -1,4 +1,7 @@
-import type { SelfHostedReviewEntry } from "@/features/reviews/selfHostedReviewTransport";
+import type {
+  SelfHostedReviewEntry,
+  SelfHostedReviewProjection,
+} from "@/features/reviews/selfHostedReviewTransport";
 import type {
   ReceiptProofViewState,
   ReviewResolutionStatus,
@@ -8,6 +11,7 @@ import { SelfHostedReceiptProof } from "./SelfHostedReceiptProof";
 
 export function SelfHostedReviewDetail({
   review,
+  projection,
   proof,
   resolutionStatus,
   busy,
@@ -15,6 +19,7 @@ export function SelfHostedReviewDetail({
   onDecide,
 }: {
   review: SelfHostedReviewEntry | null;
+  projection: SelfHostedReviewProjection | null;
   proof: ReceiptProofViewState;
   resolutionStatus: ReviewResolutionStatus;
   busy: boolean;
@@ -59,6 +64,47 @@ export function SelfHostedReviewDetail({
           <div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{review.record.session.policyVersion}</dd></div>
           <div><dt className="text-ink-faint">Input SHA-256</dt><dd className="mt-1 break-all font-mono">{review.record.intake.input.inputSha256}</dd></div>
         </dl>
+      </section>
+
+      <section className="mt-5 border-t border-edge pt-4" aria-labelledby="recomputed-findings-title">
+        <h3 id="recomputed-findings-title" className="text-sm font-semibold">Server-recomputed policy findings</h3>
+        {projection ? (
+          <>
+            <p className="mt-2 text-xs text-ink-faint">
+              Recomputed by the server at read time from the immutable artifact under policy version <span className="font-mono">{projection.policyVersion}</span>. Nothing here was supplied by this browser or stored on the review record.
+            </p>
+            <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+              <div><dt className="text-ink-faint">Risk level</dt><dd className="mt-1 font-semibold">{projection.riskLevel}</dd></div>
+              <div><dt className="text-ink-faint">Approvable</dt><dd className="mt-1 font-semibold">{projection.approvable ? "Yes — no blocking finding" : "No — a BLOCK finding refuses approval for anyone"}</dd></div>
+            </dl>
+            {projection.findings.length === 0 ? (
+              <p className="mt-3 text-sm text-ink-dim">No policy returned a finding for this change.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {projection.findings.map((finding) => (
+                  <li className="rounded border border-edge bg-surface p-3" key={finding.policyId}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded border border-edge px-2 py-0.5 text-xs font-semibold">{finding.status}</span>
+                      <span className="font-mono text-xs text-ink-dim">{finding.policyId}</span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium">{finding.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-dim">{finding.explanation}</p>
+                    {finding.affectedResources.length > 0 ? (
+                      <p className="mt-1 break-all font-mono text-xs text-ink-faint">{finding.affectedResources.join(" · ")}</p>
+                    ) : null}
+                    {finding.remediation ? (
+                      <p className="mt-1 text-xs text-ink-dim">Remediation: {finding.remediation}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-ink-dim">
+            No server recomputation has been read for this review. Select it from the queue to see what the gate found before deciding.
+          </p>
+        )}
       </section>
 
       <section className="mt-5 border-t border-edge pt-4" aria-labelledby="human-decision-title">

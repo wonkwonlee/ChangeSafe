@@ -27442,7 +27442,26 @@ var DecisionService = class {
       );
     }
   }
-  #prepare(request, expectedPolicyVersion) {
+  /**
+   * Recompute findings and risk for a pending change without deciding it.
+   *
+   * A human asked to approve or reject must be shown what the gate found, and
+   * showing them a value the client supplied would defeat the reason the
+   * decision moved server-side at all. This runs exactly the same evaluation
+   * the decision path runs, and writes nothing: no receipt, no ledger entry,
+   * no workflow transition.
+   */
+  project(request, expectedPolicyVersion) {
+    const evaluated = this.#evaluate(request, expectedPolicyVersion);
+    return Object.freeze({
+      policyVersion: evaluated.policyVersion,
+      findings: Object.freeze([...evaluated.findings]),
+      riskLevel: evaluated.riskLevel,
+      approvable: !hasBlockingFinding(evaluated.findings)
+    });
+  }
+  /** The shared recomputation behind both the read projection and a decision. */
+  #evaluate(request, expectedPolicyVersion) {
     const domain2 = resolveServerDomain(request.domain);
     if (expectedPolicyVersion && expectedPolicyVersion !== domain2.adapter.policyVersion) {
       throw new DomainError(
@@ -27454,6 +27473,18 @@ var DecisionService = class {
     const proposal = domain2.resolveProposal(input, request.proposal);
     validateProposalEvidence(domain2.adapter, input, proposal);
     const { findings, riskLevel } = evaluatePolicies(domain2.adapter, input, proposal);
+    return {
+      domain: domain2,
+      input,
+      inputId,
+      proposal,
+      policyVersion: domain2.adapter.policyVersion,
+      findings,
+      riskLevel
+    };
+  }
+  #prepare(request, expectedPolicyVersion) {
+    const { domain: domain2, input, inputId, proposal, policyVersion, findings, riskLevel } = this.#evaluate(request, expectedPolicyVersion);
     let state = initialState(request.sourceId, input);
     state = transition(state, { type: "START_ANALYSIS", mode: "offline" });
     state = transition(state, {
@@ -27492,7 +27523,7 @@ var DecisionService = class {
       input,
       inputId,
       proposal,
-      policyVersion: domain2.adapter.policyVersion,
+      policyVersion,
       findings,
       riskLevel,
       simulation
@@ -28949,6 +28980,14 @@ function assertIntakeInputIdentity(intake) {
     }
   }
 }
+function pendingReviewRequest(pending) {
+  return {
+    domain: pending.intake.domainId,
+    sourceId: pending.intake.source.sourceId,
+    input: pending.intake.input.content,
+    ...pending.intake.proposal ? { proposal: pending.intake.proposal.content } : {}
+  };
+}
 function reviewSummary(entry) {
   return {
     seq: entry.seq,
@@ -29093,10 +29132,7 @@ async function handle(request, response, options) {
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
     const durableDecisionRequest = (pending) => ({
-      domain: pending.intake.domainId,
-      sourceId: pending.intake.source.sourceId,
-      input: pending.intake.input.content,
-      ...pending.intake.proposal ? { proposal: pending.intake.proposal.content } : {},
+      ...pendingReviewRequest(pending),
       decision: body.decision
     });
     const decided = await options.reviews.resolvePending(
@@ -29249,7 +29285,11 @@ async function handle(request, response, options) {
       });
       return;
     }
-    send(response, 200, { review });
+    const projection = options.decisions.project(
+      pendingReviewRequest(review.record),
+      review.record.session.policyVersion
+    );
+    send(response, 200, { review, projection });
     return;
   }
   if (route === "GET /ledger/verify") {

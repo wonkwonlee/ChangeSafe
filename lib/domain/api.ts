@@ -5,12 +5,15 @@ import { z } from "zod";
  * code (no server dependencies) so both sides validate the same shapes.
  */
 
+/**
+ * The app's own status contract.
+ *
+ * It deliberately advertises no provider, model, or live-analysis capability:
+ * `/api/reviews/analyze` serves validated bundled replay only, so reporting a
+ * configured provider here would describe a capability this application does
+ * not offer. Live analysis is a CLI and self-hosted-server concern.
+ */
 export const StatusResponseSchema = z.strictObject({
-  liveAvailable: z.boolean(),
-  /** Configured provider and model, or null when live mode is unconfigured.
-   *  Never a credential, and never a promise that a call will succeed. */
-  provider: z.string().max(32).nullable(),
-  model: z.string().max(64).nullable(),
   appVersion: z.string().max(32),
 });
 

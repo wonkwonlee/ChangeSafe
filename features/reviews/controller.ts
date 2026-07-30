@@ -1,4 +1,5 @@
 import {
+  ApproverSchema,
   ChangeReceiptSchema,
   IdSchema,
   IllegalTransitionError,
@@ -8,6 +9,7 @@ import {
   initialState,
   transition,
   verifyReceiptHash,
+  type Approver,
   type ChangeReceipt,
   type FixtureProvenance,
   type ReceiptDecision,
@@ -39,6 +41,16 @@ export interface ActiveReviewRequest {
 export interface ReviewControllerState<TInput> {
   readonly session: ReviewSessionEnvelope;
   readonly expectedInputId: string;
+  /**
+   * The authenticated identity this session's receipts must name.
+   *
+   * Null is the honest answer for an unauthenticated runtime — a CLI gate run
+   * or public replay — and a receipt naming an approver would then be a claim
+   * this session cannot vouch for. A self-hosted deployment binds its
+   * OIDC-verified approver here so a receipt issued for somebody else is
+   * rejected rather than accepted as this session's decision.
+   */
+  readonly expectedApprover: Approver | null;
   readonly workflow: WorkflowState<TInput>;
   readonly review: ReviewAnalysisResult | null;
   readonly transportError: ReviewTransportErrorDetail | null;
@@ -79,6 +91,8 @@ export interface InitialReviewControllerInput<TInput> {
   readonly input: TInput;
   readonly expectedInputId: string;
   readonly session: ReviewSessionEnvelope;
+  /** Omitted or null when no authenticated approver identity is established. */
+  readonly approver?: Approver | null;
 }
 
 export function initialReviewControllerState<TInput>(
@@ -90,6 +104,7 @@ export function initialReviewControllerState<TInput>(
   return {
     session,
     expectedInputId,
+    expectedApprover: parseApprover(source.approver),
     workflow: initialState(sourceId, source.input),
     review: null,
     transportError: null,
@@ -114,6 +129,25 @@ export function rebindReview<TInput>(
   return { type: "REBIND_REVIEW", source };
 }
 
+/**
+ * Decision lifecycle: approve, reject, simulation completion, and receipt
+ * recording.
+ *
+ * This block has **no production caller today**, and that is a deliberate
+ * state rather than an abandoned one. `useReviewController` is consumed only
+ * by the three public-replay shells, where `reviewCanUseReviewLifecycle` is
+ * always false because public replay never carries `durableDecision`. The
+ * shipped self-hosted workbench reaches the authenticated server through
+ * `selfHostedReviewTransport` and `selfHostedReviewViewState` instead, and
+ * that path is safe on its own terms: `packages/server/src/decisions.ts`
+ * recomputes findings and risk server-side and refuses a BLOCK for anyone.
+ *
+ * What lives here is the shared, domain-neutral lifecycle a future
+ * self-hosted integration adopts to stop duplicating that flow in the browser.
+ * It is fully exercised by `tests/unit/review-controller.test.ts`, so it is
+ * covered code awaiting a caller — do not read "no production caller" as
+ * "dead", and do not delete it to satisfy a coverage tool.
+ */
 export function approveReview(): ReviewControllerCommand {
   return { type: "APPROVE_REVIEW" };
 }
@@ -213,6 +247,7 @@ export function reviewControllerReducer<TInput>(
       return {
         session,
         expectedInputId,
+        expectedApprover: parseApprover(command.source.approver),
         workflow: transition(state.workflow, {
           type: "RESET",
           sourceId,
@@ -301,14 +336,10 @@ export function reviewControllerReducer<TInput>(
   }
 }
 
-export function reviewCanSimulate<TInput>(
-  state: ReviewControllerState<TInput>,
-): boolean {
-  return (
-    reviewCanUseReviewLifecycle(state.session) &&
-    state.workflow.phase === "APPROVED" &&
-    state.review?.effectCapability.kind === "sandbox-simulation"
-  );
+function parseApprover(approver: Approver | null | undefined): Approver | null {
+  return approver === undefined || approver === null
+    ? null
+    : ApproverSchema.parse(approver);
 }
 
 /**
@@ -481,7 +512,11 @@ async function receiptMatchesWorkflow<TInput>(
     receipt.mode === workflow.mode &&
     receipt.fixtureProvenance === workflow.provenance &&
     receipt.model === (state.review?.provenance.model ?? null) &&
-    receipt.approver === null &&
+    // A self-hosted receipt is issued with the OIDC-verified approver
+    // populated, so asserting null here would reject every real one. The
+    // check that matters is that the receipt names *this* session's
+    // authenticated identity and no other.
+    canonicallyEqual(receipt.approver, state.expectedApprover) &&
     receipt.decision === expectedDecision &&
     canonicallyEqual(receipt.simulation, expectedSimulation) &&
     receiptHashValid
