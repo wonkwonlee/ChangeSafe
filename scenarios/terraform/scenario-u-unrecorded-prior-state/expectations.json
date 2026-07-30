@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-u-unrecorded-prior-state",
+  "teaches": "A plan destroying a resource with no recorded prior state has nothing for REVERSIBILITY to reconstruct from — an honest-looking plan-generation gap that the gate still refuses. The same missing \"before\" state also means DESTRUCTIVE_OP cannot see a backup declaration for a stateful resource, so it blocks too, distinct from a protected-resource block.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "BLOCK",
+    "PROTECTED_RESOURCE": "PASS",
+    "REVERSIBILITY": "BLOCK",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["ineffective-rollback"]
+  }
+}

@@ -16,6 +16,8 @@ import planP from "./terraform/scenario-p-injected-pr-context/incident.json";
 import expectationsP from "./terraform/scenario-p-injected-pr-context/expectations.json";
 import planT from "./terraform/scenario-t-blast-radius-drift/incident.json";
 import expectationsT from "./terraform/scenario-t-blast-radius-drift/expectations.json";
+import planU from "./terraform/scenario-u-unrecorded-prior-state/incident.json";
+import expectationsU from "./terraform/scenario-u-unrecorded-prior-state/expectations.json";
 
 import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
 import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
@@ -165,6 +167,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     planT,
     null,
     expectationsT,
+  ),
+  defineScenario(
+    "terraform",
+    "scenario-u-unrecorded-prior-state",
+    "CHG-2437 — Remove an unused archive logs bucket",
+    "A plan to delete an S3 bucket carries no recorded prior state for it.",
+    planU,
+    null,
+    expectationsU,
   ),
   defineScenario(
     "kubernetes",

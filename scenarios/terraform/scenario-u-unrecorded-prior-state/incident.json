@@ -1,0 +1,19 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.data.aws_s3_bucket.archive_logs",
+      "module_address": "module.data",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "archive_logs",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": null,
+        "after": null
+      }
+    }
+  ]
+}
