@@ -208,6 +208,27 @@ export const DurableReviewRecordSchema = z
     }
   });
 
+/**
+ * The only durable-record acceptance boundary.  A persistence adapter must
+ * call this before appending a review record: structural parsing alone cannot
+ * establish that a caller's intake hash represents the submitted content.
+ *
+ * This function intentionally does not persist anything.  The server owns
+ * the subsequent atomic append to its review store and append-only ledger.
+ */
+export async function acceptDurableReviewRecordForPersistence(
+  raw: unknown,
+): Promise<DurableReviewRecord> {
+  // Extract the untrusted intake without accepting the rest of the record so
+  // hash/domain verification is necessarily completed before receipt binding.
+  const candidate = z.object({ intake: z.unknown() }).passthrough().parse(raw);
+  const intake = await verifyDurableReviewIntake(candidate.intake);
+
+  // The record schema then binds the verified intake to the authenticated
+  // session and every immutable receipt identity/hash field.
+  return DurableReviewRecordSchema.parse({ ...candidate, intake });
+}
+
 const ContentIntegrityClaimSchema = z.strictObject({
   status: z.enum(["verified", "mismatch", "not-checked"]),
   checkedAtUtc: TimestampSchema.nullable(),

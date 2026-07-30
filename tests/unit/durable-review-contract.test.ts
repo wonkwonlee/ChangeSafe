@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptDurableReviewRecordForPersistence,
   createDurableReviewIntake,
   DurableReviewIntakeSchema,
   DurableReviewRecordSchema,
@@ -95,6 +96,29 @@ describe("durable self-hosted review contracts", () => {
         reviewId: `${domainId}-review`,
         storage: { kind: "append-only-ledger" },
       });
+      await expect(acceptDurableReviewRecordForPersistence(await record(domainId))).resolves.toMatchObject({
+        reviewId: `${domainId}-review`,
+        intake: { input: { inputSha256: acceptedIntake.input.inputSha256 } },
+      });
+    },
+  );
+
+  it.each(["network", "terraform"] as const)(
+    "rejects a forged %s record input and receipt hash before persistence",
+    async (domainId) => {
+      const candidate = await record(domainId);
+      const forgedHash = sha("f");
+
+      await expect(
+        acceptDurableReviewRecordForPersistence({
+          ...candidate,
+          intake: {
+            ...candidate.intake,
+            input: { ...candidate.intake.input, inputSha256: forgedHash },
+          },
+          receipt: { ...candidate.receipt, inputSha256: forgedHash },
+        }),
+      ).rejects.toThrow(/inputSha256/);
     },
   );
 
