@@ -17,15 +17,17 @@ async function pending(reviewId: string, sourceId = "network-source") {
   const content = SCENARIOS[0]!.bundle;
   const inputSha256 = await hashCanonical(content);
   return {
-    recordVersion: "2", reviewId, createdAtUtc: "2026-07-30T01:00:00.000Z",
+    recordVersion: "2", reviewId, createdAtUtc: "2026-07-30T01:00:00.000Z", owner: { tenantId: "https://idp.test", issuer: "https://idp.test", subject: "user-alice", scope: "self-hosted-review" },
     session: { domainId: "network", contractVersion: "2.0.0", policyVersion: "network-policy-v1", domainShape: "simulated-state", capabilities: { sandboxSimulation: true, resourceGraph: true, structuredDiff: true, untrustedContext: true, durableDecision: true }, runtimeMode: "self-hosted", source: "uploaded-offline-artifact", analysisMode: "offline", provenance: "uploaded-offline-artifact" },
-    intake: { domainId: "network", source: { domainId: "network", sourceId, sourceKind: "network-incident-bundle", origin: "uploaded-offline-artifact", collectedAtUtc: "2026-07-30T00:00:00.000Z" }, input: { inputId: "network-input", inputSha256, content } },
+    intake: { domainId: "network", source: { domainId: "network", sourceId, sourceKind: "network-incident-bundle", origin: "uploaded-offline-artifact", untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z" }, input: { inputId: "network-input", inputSha256, content } },
     storage: { kind: "append-only-review-store" },
   } as const;
 }
 async function legacy(reviewId: string) {
   const item = await pending(reviewId);
-  return { ...item, recordVersion: "1", receipt: { receiptId: `${reviewId}-receipt`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha("c") }, storage: { kind: "append-only-ledger" } } as const;
+  const { owner: _owner, ...withoutOwner } = item;
+  void _owner;
+  return { ...withoutOwner, recordVersion: "1", receipt: { receiptId: `${reviewId}-receipt`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha("c") }, storage: { kind: "append-only-ledger" } } as const;
 }
 function resolution(reviewId: string, item: Awaited<ReturnType<typeof pending>>, suffix = "one") {
   return { resolutionVersion: "1", reviewId, resolvedAtUtc: "2026-07-30T02:00:00.000Z", receipt: { receiptId: `${reviewId}-receipt-${suffix}`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha(suffix === "one" ? "c" : "d") } } as const;

@@ -7,6 +7,7 @@ import type { Ledger } from "@changesafe/ledger";
 
 import {
   DurableReviewIntakeSchema,
+  DurableReviewOwnerSchema,
   type DurableReviewIntake,
 } from "../../../features/reviews/durable-review-contract";
 import { REVIEW_CONTRACT_VERSION } from "../../../features/domains/review-contract";
@@ -56,7 +57,6 @@ const DecisionBodySchema = z.strictObject({
  */
 const ReviewIntakeBodySchema = z.strictObject({
   reviewId: IdSchema,
-  createdAtUtc: TimestampSchema,
   intake: DurableReviewIntakeSchema,
 });
 
@@ -66,6 +66,8 @@ export interface DecisionServerOptions {
   decisions: DecisionService;
   /** Optional during rolling upgrades; /reviews does not exist without it. */
   reviews?: DurableReviewStore;
+  /** Injectable only for deterministic server tests; client timestamps are never queue timestamps. */
+  now?: () => string;
 }
 
 function pendingReviewSession(intake: DurableReviewIntake) {
@@ -83,10 +85,34 @@ function pendingReviewSession(intake: DurableReviewIntake) {
       durableDecision: true,
     },
     runtimeMode: "self-hosted",
-    source: intake.source.origin,
+    source: "uploaded-offline-artifact",
     analysisMode: "offline",
-    provenance: intake.source.origin,
+    provenance: "uploaded-offline-artifact",
   } as const;
+}
+
+function normalizeUploadedIntake(intake: DurableReviewIntake): DurableReviewIntake {
+  // The public HTTP endpoint receives an uploaded artifact. A caller must not
+  // turn that upload into evidence of a live collector merely by setting a
+  // provenance enum. Artifact observation time remains explicitly client
+  // claimed and is never confused with the server queue timestamp.
+  return {
+    ...intake,
+    source: { ...intake.source, origin: "uploaded-offline-artifact" },
+  };
+}
+
+function durableReviewOwner(identity: { issuer: string; subject: string }) {
+  return DurableReviewOwnerSchema.parse({
+    tenantId: identity.issuer,
+    issuer: identity.issuer,
+    subject: identity.subject,
+    scope: "self-hosted-review",
+  });
+}
+
+function serverNow(options: DecisionServerOptions): string {
+  return TimestampSchema.parse(options.now?.() ?? new Date().toISOString());
 }
 
 /**
@@ -255,7 +281,8 @@ async function handle(
       return;
     }
     const body = ReviewIntakeBodySchema.parse(await readBody(request));
-    assertIntakeInputIdentity(body.intake);
+    const intake = normalizeUploadedIntake(body.intake);
+    assertIntakeInputIdentity(intake);
     // `appendPending` recomputes the canonical content hash and revalidates
     // the domain schema before its immutable database append.  The explicit
     // server construction here prevents a client from claiming public or
@@ -263,9 +290,10 @@ async function handle(
     const review = await options.reviews.appendPending({
       recordVersion: "2",
       reviewId: body.reviewId,
-      createdAtUtc: body.createdAtUtc,
-      session: pendingReviewSession(body.intake),
-      intake: body.intake,
+      createdAtUtc: serverNow(options),
+      owner: durableReviewOwner(identity),
+      session: pendingReviewSession(intake),
+      intake,
       storage: { kind: "append-only-review-store" },
     });
     send(response, 201, { review });
@@ -320,7 +348,7 @@ async function handle(
         ? {}
         : { domainId: z.enum(["network", "terraform"]).parse(requestedDomainId) }),
       sourceId: url.searchParams.get("sourceId") ?? undefined,
-    });
+    }, durableReviewOwner(identity));
     send(response, 200, { reviews: reviews.map(reviewSummary) });
     return;
   }
@@ -334,7 +362,7 @@ async function handle(
       return;
     }
     const reviewId = IdSchema.parse(reviewMatch[1]);
-    const review = options.reviews.get(reviewId);
+    const review = options.reviews.get(reviewId, durableReviewOwner(identity));
     if (!review) {
       send(response, 404, {
         error: { code: "REQUEST_INVALID", message: "The requested review was not found." },

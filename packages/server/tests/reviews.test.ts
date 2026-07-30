@@ -43,6 +43,7 @@ beforeEach(async () => {
       { fetch: idp.fetch() },
     ),
     decisions: new DecisionService({ ledger, appVersion: "changesafe-server-test" }),
+    now: () => "2026-07-30T05:00:00.000Z",
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
@@ -64,7 +65,6 @@ afterEach(async () => context.close());
 async function pendingNetworkReview(reviewId = "review-network-one") {
   return {
     reviewId,
-    createdAtUtc: "2026-07-30T04:00:00.000Z",
     intake: {
       domainId: "network",
       source: {
@@ -72,7 +72,7 @@ async function pendingNetworkReview(reviewId = "review-network-one") {
         sourceId: "network-source-one",
         sourceKind: "network-incident-bundle",
         origin: "uploaded-offline-artifact",
-        collectedAtUtc: "2026-07-30T03:00:00.000Z",
+        untrustedArtifactObservedAtUtc: "2026-07-30T03:00:00.000Z",
       },
       input: {
         inputId: "inc-uplink-degraded-4821",
@@ -91,7 +91,6 @@ async function pendingTerraformReview(reviewId = "review-terraform-one") {
   });
   return {
     reviewId,
-    createdAtUtc: "2026-07-30T04:00:00.000Z",
     intake: {
       domainId: "terraform",
       source: {
@@ -99,7 +98,7 @@ async function pendingTerraformReview(reviewId = "review-terraform-one") {
         sourceId: "terraform-source-one",
         sourceKind: "terraform-show-json",
         origin: "read-only-collector",
-        collectedAtUtc: "2026-07-30T03:00:00.000Z",
+        untrustedArtifactObservedAtUtc: "2026-07-30T03:00:00.000Z",
       },
       input: {
         inputId: fixture.inputId,
@@ -152,6 +151,13 @@ describe("durable review intake HTTP API", () => {
         provenance: "uploaded-offline-artifact",
         capabilities: { durableDecision: true },
       },
+      createdAtUtc: "2026-07-30T05:00:00.000Z",
+      owner: {
+        tenantId: context.idp.issuer,
+        issuer: context.idp.issuer,
+        subject: "user-alice",
+        scope: "self-hosted-review",
+      },
     });
     expect(body.review.record).not.toHaveProperty("receipt");
     expect(context.reviews.count()).toBe(1);
@@ -176,6 +182,30 @@ describe("durable review intake HTTP API", () => {
     expect(context.ledger.count()).toBe(0);
   });
 
+  it("normalizes collector claims to uploaded artifacts and uses only the injected server clock", async () => {
+    const intake = await pendingTerraformReview("review-normalized-collector");
+    const response = await postReview(
+      {
+        ...intake,
+        // A queue timestamp is server-owned. Keeping it in the request is a
+        // schema error rather than an ambiguous client time claim.
+        createdAtUtc: "2000-01-01T00:00:00.000Z",
+      },
+      await context.idp.token(),
+    );
+    expect(response.status).toBe(422);
+    expect(context.reviews.count()).toBe(0);
+
+    const accepted = await postReview(intake, await context.idp.token());
+    expect(accepted.status).toBe(201);
+    const body = (await accepted.json()) as { review: { record: { createdAtUtc: string; intake: { source: { origin: string; untrustedArtifactObservedAtUtc: string } } } } };
+    expect(body.review.record.createdAtUtc).toBe("2026-07-30T05:00:00.000Z");
+    expect(body.review.record.intake.source).toEqual(expect.objectContaining({
+      origin: "uploaded-offline-artifact",
+      untrustedArtifactObservedAtUtc: "2026-07-30T03:00:00.000Z",
+    }));
+  });
+
   it("accepts a verified Terraform external-diff intake without simulation authority", async () => {
     const response = await postReview(await pendingTerraformReview(), await context.idp.token());
 
@@ -186,8 +216,8 @@ describe("durable review intake HTTP API", () => {
           session: {
             domainId: "terraform",
             domainShape: "external-diff",
-            source: "read-only-collector",
-            provenance: "read-only-collector",
+            source: "uploaded-offline-artifact",
+            provenance: "uploaded-offline-artifact",
             capabilities: { sandboxSimulation: false, durableDecision: true },
           },
         },
@@ -256,5 +286,26 @@ describe("durable review intake HTTP API", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(missing.status).toBe(404);
+  });
+
+  it("scopes create retries, list, and detail to the authenticated OIDC principal", async () => {
+    const alice = await context.idp.token();
+    const bob = await context.idp.token({ sub: "user-bob", email: "bob@example.test" });
+    const intake = await pendingNetworkReview("review-owner-bound");
+    expect((await postReview(intake, alice)).status).toBe(201);
+    // Same owner + immutable request is the only idempotent retry.
+    expect((await postReview(intake, alice)).status).toBe(201);
+
+    const bobList = await fetch(`${context.baseUrl}/reviews`, { headers: { authorization: `Bearer ${bob}` } });
+    expect(bobList.status).toBe(200);
+    expect((await bobList.json()) as { reviews: unknown[] }).toEqual({ reviews: [] });
+    const bobDetail = await fetch(`${context.baseUrl}/reviews/review-owner-bound`, { headers: { authorization: `Bearer ${bob}` } });
+    expect(bobDetail.status).toBe(404);
+
+    // A conflicting id under another owner is deliberately generic. It leaks
+    // neither the prior intake nor its owner and is not treated as a retry.
+    const bobCreate = await postReview(intake, bob);
+    expect(bobCreate.status).toBe(400);
+    expect(context.reviews.count()).toBe(1);
   });
 });

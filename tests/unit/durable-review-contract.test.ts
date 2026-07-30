@@ -39,7 +39,7 @@ async function intake(domainId: "network" | "terraform") {
           ? "network-incident-bundle"
           : "terraform-show-json",
       origin: "uploaded-offline-artifact",
-      collectedAtUtc: "2026-07-30T00:00:00.000Z",
+      untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z",
     },
     input: {
       inputId: `${domainId}-input`,
@@ -96,6 +96,7 @@ async function pendingRecord(domainId: "network" | "terraform") {
     recordVersion: "2",
     reviewId: `${domainId}-review`,
     createdAtUtc: "2026-07-30T00:01:00.000Z",
+    owner: { tenantId: "https://idp.test", issuer: "https://idp.test", subject: "user-alice", scope: "self-hosted-review" },
     session: session(domainId),
     intake: await intake(domainId),
     storage: { kind: "append-only-review-store" },
@@ -297,7 +298,7 @@ describe("durable self-hosted review contracts", () => {
         sourceId: "network-source",
         sourceKind: "network-incident-bundle",
         origin: "uploaded-offline-artifact",
-        collectedAtUtc: "2026-07-30T00:00:00.000Z",
+        untrustedArtifactObservedAtUtc: "2026-07-30T00:00:00.000Z",
       },
       input: { inputId: "network-input", content: content("network") },
     });

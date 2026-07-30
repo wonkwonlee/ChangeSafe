@@ -10,9 +10,11 @@ import {
   bindServerResolutionToPendingReview,
   DurableReviewRecordSchema,
   DurableReviewResolutionSchema,
+  DurableReviewOwnerSchema,
   PendingDurableReviewRecordSchema,
   type DurableReviewRecord,
   type DurableReviewResolution,
+  type DurableReviewOwner,
   type PendingDurableReviewRecord,
 } from "../../../features/reviews/durable-review-contract";
 
@@ -221,7 +223,18 @@ export class DurableReviewStore {
     const inserted = this.getLegacy(record.reviewId); if (!inserted) throw new DomainError("INTERNAL", "The legacy review store accepted a record but could not read it back."); return inserted;
   }
   #queue<T>(task: () => T): Promise<T> { const result = this.#writes.then(task, task); this.#writes = result.then(() => undefined, () => undefined); return result; }
-  get(reviewId: string): DurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_pending_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? pendingEntry(PendingRowSchema.parse(row)) : null; }
+  /**
+   * An owner-scoped read deliberately returns null for another principal's
+   * review.  HTTP maps that to the same 404 as a missing id, so review ids do
+   * not become an enumeration oracle.
+   */
+  get(reviewId: string, owner?: DurableReviewOwner): DurableReviewStoreEntry | null {
+    const row = this.#db.prepare("SELECT * FROM durable_review_pending_records WHERE review_id = ?").get(IdSchema.parse(reviewId));
+    if (!row) return null;
+    const entry = pendingEntry(PendingRowSchema.parse(row));
+    const expected = owner ? DurableReviewOwnerSchema.parse(owner) : null;
+    return expected && canonicalize(entry.record.owner) !== canonicalize(expected) ? null : entry;
+  }
   getResolution(reviewId: string): DurableReviewResolutionEntry | null {
     const id = IdSchema.parse(reviewId); const row = this.#db.prepare("SELECT * FROM durable_review_resolutions WHERE review_id = ?").get(id);
     if (!row) return null;
@@ -230,11 +243,17 @@ export class DurableReviewStore {
     return resolutionEntry(ResolutionRowSchema.parse(row), pending.record);
   }
   getLegacy(reviewId: string): LegacyDurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? legacyEntry(LegacyRowSchema.parse(row)) : null; }
-  list(options: DurableReviewStoreListOptions = {}): DurableReviewStoreEntry[] {
+  list(options: DurableReviewStoreListOptions = {}, owner?: DurableReviewOwner): DurableReviewStoreEntry[] {
     const valid = ListOptionsSchema.parse(options); const clauses: string[] = []; const params: string[] = [];
     if (valid.domainId) { clauses.push("domain_id = ?"); params.push(valid.domainId); } if (valid.sourceId) { clauses.push("source_id = ?"); params.push(valid.sourceId); }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return this.#db.prepare(`SELECT * FROM durable_review_pending_records ${where} ORDER BY seq DESC LIMIT ${limitOf(valid.limit)}`).all(...params).map((row) => pendingEntry(PendingRowSchema.parse(row)));
+    const expected = owner ? DurableReviewOwnerSchema.parse(owner) : null;
+    // Apply ownership before the public limit. Otherwise a different
+    // principal's newest records could starve an owner's bounded queue view.
+    return this.#db.prepare(`SELECT * FROM durable_review_pending_records ${where} ORDER BY seq DESC`).all(...params)
+      .map((row) => pendingEntry(PendingRowSchema.parse(row)))
+      .filter((entry) => !expected || canonicalize(entry.record.owner) === canonicalize(expected))
+      .slice(0, limitOf(valid.limit));
   }
   listLegacy(options: DurableReviewStoreListOptions = {}): LegacyDurableReviewStoreEntry[] {
     const valid = ListOptionsSchema.parse(options); const clauses: string[] = []; const params: string[] = [];

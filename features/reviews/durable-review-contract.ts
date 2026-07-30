@@ -23,14 +23,16 @@ const DurableReviewSourceSchema = z.discriminatedUnion("domainId", [
     sourceId: IdSchema,
     sourceKind: z.literal("network-incident-bundle"),
     origin: z.enum(["uploaded-offline-artifact", "read-only-collector"]),
-    collectedAtUtc: TimestampSchema,
+    /** A client-supplied artifact observation claim, not a server queue time. */
+    untrustedArtifactObservedAtUtc: TimestampSchema,
   }),
   z.strictObject({
     domainId: z.literal("terraform"),
     sourceId: IdSchema,
     sourceKind: z.literal("terraform-show-json"),
     origin: z.enum(["uploaded-offline-artifact", "read-only-collector"]),
-    collectedAtUtc: TimestampSchema,
+    /** A client-supplied artifact observation claim, not a server queue time. */
+    untrustedArtifactObservedAtUtc: TimestampSchema,
   }),
 ]);
 
@@ -147,6 +149,28 @@ const DurableReviewSessionBindingSchema = ReviewSessionEnvelopeSchema.superRefin
   },
 );
 
+/**
+ * Server-attested ownership scope for a durable review queue item.  The HTTP
+ * boundary derives every field from a verified OIDC identity; none are part of
+ * the caller's intake body.  `tenantId` intentionally uses the issuer URI in
+ * this first self-hosted deployment, so identities from different issuers can
+ * never share a queue namespace accidentally.
+ */
+export const DurableReviewOwnerSchema = z.strictObject({
+  tenantId: z.string().url().max(2048),
+  issuer: z.string().url().max(2048),
+  subject: z.string().min(1).max(512).regex(/^[^\u0000-\u001f\u007f]+$/),
+  scope: z.literal("self-hosted-review"),
+}).superRefine((owner, context) => {
+  if (owner.tenantId !== owner.issuer) {
+    context.addIssue({
+      code: "custom",
+      path: ["tenantId"],
+      message: "the initial durable review tenant must bind exactly to its OIDC issuer",
+    });
+  }
+});
+
 function bindPendingRecord(
   record: {
     session: z.infer<typeof DurableReviewSessionBindingSchema>;
@@ -190,6 +214,7 @@ export const PendingDurableReviewRecordSchema = z
     recordVersion: z.literal("2"),
     reviewId: IdSchema,
     createdAtUtc: TimestampSchema,
+    owner: DurableReviewOwnerSchema,
     session: DurableReviewSessionBindingSchema,
     intake: DurableReviewIntakeSchema,
     storage: z.strictObject({ kind: z.literal("append-only-review-store") }),
@@ -415,6 +440,7 @@ export function verifyReceiptProof(
 }
 
 export type DurableReviewIntake = z.infer<typeof DurableReviewIntakeSchema>;
+export type DurableReviewOwner = z.infer<typeof DurableReviewOwnerSchema>;
 export type PendingDurableReviewRecord = z.infer<typeof PendingDurableReviewRecordSchema>;
 export type DurableReviewResolution = z.infer<typeof DurableReviewResolutionSchema>;
 export type DurableReviewRecord = z.infer<typeof DurableReviewRecordSchema>;
