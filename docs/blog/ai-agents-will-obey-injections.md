@@ -121,8 +121,8 @@ AI proposes an action:
 4. A human decides, and nothing else can.
 5. The decision — including every refusal — is recorded.
 
-We built a second domain to check this claim rather than assert it:
-Terraform plans. It works differently in an interesting way. Terraform has
+We built additional domains to check this claim rather than assert it.
+Terraform plans work differently in an interesting way. Terraform has
 already computed the diff, so there is nothing to simulate; the plan *is*
 the simulation. And a plan has no inverse operations, so the rollback policy
 — "does the supplied rollback restore prior state?" — is unanswerable.
@@ -132,6 +132,11 @@ the skip, say why, and name what answers the same question in its place
 (here: can this be put back at all, given what the plan records?). The skip
 shows up in the policy order. Silently dropping a safety check is how gates
 rot into decoration.
+
+Kubernetes adds the other shape: a supported offline snapshot plus proposed
+manifests can be evaluated and sandboxed on a clone, while the gate contacts
+no cluster and applies no manifest. The optional collector remains a separate
+namespace-scoped read-only tool.
 
 That domain produces the demo I find most convincing, because it is mundane:
 an AI opens a Terraform pull request replacing a compliance bucket, and the
@@ -158,12 +163,15 @@ worse than none:
   real, ongoing cost.
 - **A gate you do not run stops nothing.** This is a check in a pipeline,
   not a control plane.
-- **Integrity is not authorship.** Hashed receipts detect alteration. They
-  are unsigned, so they prove nothing about who produced them.
+- **Integrity is not authorship.** Hashed receipts detect alteration.
+  Optional Ed25519 signatures prove an issuer only when checked against the
+  expected public key obtained out of band.
 
 ## Try it
 
-ChangeSafe is MIT licensed and the demo needs no signup or API key:
+ChangeSafe is MIT licensed. The public workbench needs no signup or API key,
+but the hosted deployment may lag the current branch until a release is
+deployed:
 
 - Live: <https://change-safe.vercel.app>
 - Source: <https://github.com/wonkwonlee/ChangeSafe>

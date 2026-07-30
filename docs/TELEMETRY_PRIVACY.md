@@ -1,75 +1,77 @@
-# Telemetry Privacy Boundary
+# Telemetry, Privacy, and Public Client Boundary
 
-ChangeSafe does not install or mount client analytics or real-user telemetry
-collectors. The application therefore sends no infrastructure artifacts,
-proposal or finding contents, receipts, review identifiers, approver
-identities, model or provider metadata, or secrets to a telemetry service.
+ChangeSafe mounts no client analytics or real-user telemetry collector. The
+browser therefore does not intentionally send infrastructure artifacts,
+proposal/finding contents, receipt data, review identifiers, approver
+identities, provider metadata, or secrets to a telemetry service.
 
-## Why Speed Insights is not mounted
+## Why no client collector is mounted
 
-Vercel Speed Insights is designed to collect anonymous Web Vitals, but its
-documented data points still include the requested URL, normalized route, and
-HTML element attribution. Those fields are useful for ordinary product
-performance monitoring, but ChangeSafe's future self-hosted routes may contain
-opaque review references and its rendered elements represent untrusted
-infrastructure evidence.
+Even performance products described as anonymous can include requested URLs,
+normalized routes, and element attribution. Those fields are useful for
+ordinary product analytics but are unnecessary for deterministic review and
+could expose opaque self-hosted review references or evidence structure.
 
-The SDK supports a `beforeSend` filter, including returning `null` to cancel an
-event. That is not the selected boundary here:
+Filtering events after loading a collector is a weaker boundary than not
+loading one:
 
-- filtering still requires loading a client collector on pages that render
-  sensitive review data;
-- a later route or component could accidentally weaken an allowlist;
-- ChangeSafe does not need client telemetry to perform deterministic review;
-- removal is easier to audit than proving every future event field is safely
-  redacted.
+- future routes could weaken an allowlist;
+- a collector still runs on pages rendering sensitive evidence;
+- filtering behavior becomes another security-critical client dependency;
+- local/CI performance evidence is sufficient for this project.
 
-Official references:
+`tests/unit/telemetry-privacy.test.ts` checks dependency manifests, browser
+source, instrumentation-client entry points, and public scripts. It rejects
+known analytics imports, collector globals, and telemetry endpoints.
 
-- [Speed Insights privacy and collected fields](https://vercel.com/docs/speed-insights/privacy-policy)
-- [Speed Insights package configuration and `beforeSend`](https://vercel.com/docs/speed-insights/package)
+## Public route budgets
 
-## Enforcement
+After a production build, `npm run verify:client-bundles` measures raw initial
+JavaScript for:
 
-`tests/unit/telemetry-privacy.test.ts` verifies the dependency manifest and
-walks browser-facing application source using the repository's TypeScript
-static-import parser. It also checks project-root and `src/`
-`instrumentation-client.*` entry points plus browser-delivered scripts under
-`public/`. The guard rejects Vercel analytics imports, Speed Insights
-injection, global collector calls, and hard-coded Vercel telemetry endpoints.
+| Public route | G010 cutover baseline | Ceiling |
+| --- | ---: | ---: |
+| `/` (Network) | 1,075,614 bytes | 1,310,720 bytes |
+| `/workbench/terraform` | 999,358 bytes | 1,310,720 bytes |
+| `/workbench/kubernetes` | 1,003,052 bytes | 1,310,720 bytes |
 
-Performance work remains evidence-based through local and CI-controlled tests:
-production builds, bundle budgets, Playwright interaction and reflow checks,
-and large-fixture benchmarks. These checks do not transmit runtime artifacts
-or user activity to an external collector.
+Exact `/workbench` is retired and is not a budgeted route.
 
-## Public client bundle gate
+The verifier reads emitted route HTML, resolves every referenced JavaScript
+file to a canonical path inside `.next`, and rejects path/symlink escapes. Raw
+bytes are deliberately conservative and less sensitive to compression/tooling
+changes than transfer-size estimates.
 
-`npm run build && npm run verify:client-bundles` reads the emitted static HTML
-for `/workbench`, `/workbench/terraform`, and `/workbench/kubernetes`. It
-discovers the initial `/_next/static/*.js` scripts from that HTML, resolves and
-deduplicates their canonical real paths, and measures raw uncompressed bytes.
-The static directory, route HTML, and every resolved script must remain inside
-their expected canonical build boundaries, so symlink aliases cannot redirect
-the scan into server output or outside `.next`. The verifier never depends on
-hashed filenames, build timing, or a private Next.js manifest shape.
+## Secret and server-code scan
 
-Each public route has a 1,310,720-byte (1.25 MiB) raw initial-JavaScript
-ceiling. The G009 production baseline was 1,078,075 bytes for Network,
-1,001,606 bytes for Terraform, and 1,005,300 bytes for Kubernetes. The ceiling
-therefore leaves about 21.6% growth above the largest measured route while
-still rejecting a material unreviewed increase. Raw bytes are intentionally
-more conservative and stable than network-compressed transfer measurements.
+The production verifier scans **every canonical emitted JavaScript chunk**,
+not only the initial-route union. The G010 cutover build contained 26 such
+chunks. It rejects:
 
-The same command scans the deduplicated union of resolved initial JavaScript
-chunks for hosted provider canary values, the exact untrusted-data prompt
-delimiter, and the configured OpenAI, Anthropic, and local Ollama endpoint
-prefixes. It also rejects each known foreign-domain policy id in that route's
-initial chunks without treating benign numbers or a route's own policy ids as
-violations. This emitted-output check complements the static public-route
-dependency graph: a TypeScript import/export walk rejects direct or transitive
-static dependencies on `@changesafe/ai` (including subpaths), while type-only
-references and dynamic imports remain outside that static graph.
+- hosted provider canary values;
+- the exact untrusted-data prompt delimiter;
+- configured OpenAI, Anthropic, and Ollama endpoint prefixes;
+- route-inappropriate foreign-domain policy identifiers.
 
-The telemetry test separately proves no client collector exists to send
-application data elsewhere.
+A source dependency guard complements emitted-output scanning. Browser-
+reachable modules may not statically or dynamically import `@changesafe/ai`
+or a self-hosted server-only package. Type-only references are allowed only
+when they cannot affect the emitted client.
+
+These checks prove that reviewed canaries and known server-only strings are
+absent from the build. They do not prove that arbitrary infrastructure
+artifacts are non-sensitive; operators must still treat inputs and self-hosted
+review data according to their own handling policy.
+
+## Performance evidence without telemetry
+
+Performance and accessibility are measured through deterministic local/CI
+checks:
+
+- production build and raw bundle budgets;
+- Playwright keyboard, focus, reduced-motion, 200% reflow, and responsive
+  behavior;
+- graph/table equivalence;
+- bounded large-fixture rendering.
+
+None of these checks transmits runtime user activity to an external collector.

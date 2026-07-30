@@ -18,17 +18,25 @@ domain decisions.
 
 ## Current project direction
 
-- The project is library/CLI-first; the Next.js app is the showcase console.
+- The project is library/CLI-first; the Next.js app is the multi-domain Change
+  Review Workbench.
 - P0–P6 are complete. P7 (benchmark and community contribution surface) is
   ongoing.
 - The replay demo and red-team scenario contract are release-critical.
+- The vNext default `/` is an ephemeral Network public replay. Terraform and
+  Kubernetes use `/workbench/terraform` and `/workbench/kubernetes`.
+  Exact `/workbench` and `/api/analyze` are retired.
+- Public replay evaluates only. It creates no decision, simulation result,
+  durable review, or receipt. The optional self-hosted browser route needs an
+  operator-run HTTPS gateway/BFF with an HttpOnly session; `changesafe serve`
+  does not yet wire the durable review queue store.
 - New work should generally improve scenarios, domains, documentation,
   integrations, tests, or release hardening rather than add platform
   machinery ahead of the roadmap.
 - Read `docs/OSS_ROADMAP.md` before starting multi-file work and follow the
   repository contract in `AGENTS.md`.
 
-## Current release status (2026-07-29)
+## Current release and vNext status (2026-07-30)
 
 - Kubernetes shipped in v0.3.0 and was patched in v0.3.1. The v0.3.1 tag and
   GitHub Release are published; use `@changesafe/domain-kubernetes@0.3.1` or
