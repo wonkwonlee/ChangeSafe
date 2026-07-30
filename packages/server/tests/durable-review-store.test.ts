@@ -177,6 +177,145 @@ describe("DurableReviewStore v2 pending queue", () => {
     } finally { store.close(); database.remove(); }
   });
 
+  it("upgrades the prior ownerless v2 schema without inventing ownership or losing bound rows", async () => {
+    const database = temporaryDatabasePath();
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const owned = await pending("owned-old-review");
+    const ownedResolution = resolution(owned.reviewId, owned);
+    const ownerless = await pending("unowned-old-review", "unowned-source");
+    const { owner: _discardedOwner, ...unownedRecord } = ownerless;
+    void _discardedOwner;
+    const unownedResolution = resolution(ownerless.reviewId, ownerless, "two");
+    const raw = new sqlite.DatabaseSync(database.path);
+    try {
+      raw.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE durable_review_records (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
+          domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
+          receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL
+        );
+        CREATE TABLE durable_review_pending_records (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
+          domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL, record_json TEXT NOT NULL
+        );
+        CREATE TABLE durable_review_resolutions (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, resolved_at_utc TEXT NOT NULL,
+          receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, resolution_json TEXT NOT NULL,
+          FOREIGN KEY (review_id) REFERENCES durable_review_pending_records(review_id)
+        );
+        CREATE INDEX durable_review_pending_records_created ON durable_review_pending_records (created_at_utc);
+        CREATE INDEX durable_review_pending_records_domain ON durable_review_pending_records (domain_id);
+        CREATE INDEX durable_review_pending_records_source ON durable_review_pending_records (source_id);
+        CREATE TRIGGER durable_review_pending_records_no_update BEFORE UPDATE ON durable_review_pending_records
+          BEGIN SELECT RAISE(ABORT, 'durable_review_pending_records is append-only: rows cannot be updated'); END;
+        CREATE TRIGGER durable_review_pending_records_no_delete BEFORE DELETE ON durable_review_pending_records
+          BEGIN SELECT RAISE(ABORT, 'durable_review_pending_records is append-only: rows cannot be deleted'); END;
+        CREATE TRIGGER durable_review_pending_records_no_conflicting_insert BEFORE INSERT ON durable_review_pending_records
+          WHEN EXISTS (SELECT 1 FROM durable_review_pending_records WHERE review_id = NEW.review_id OR (NEW.seq > 0 AND seq = NEW.seq))
+          BEGIN SELECT RAISE(ABORT, 'durable_review_pending_records is append-only: existing bindings cannot be replaced'); END;
+        CREATE TRIGGER durable_review_resolutions_no_update BEFORE UPDATE ON durable_review_resolutions
+          BEGIN SELECT RAISE(ABORT, 'durable_review_resolutions is append-only: rows cannot be updated'); END;
+        CREATE TRIGGER durable_review_resolutions_no_delete BEFORE DELETE ON durable_review_resolutions
+          BEGIN SELECT RAISE(ABORT, 'durable_review_resolutions is append-only: rows cannot be deleted'); END;
+        CREATE TRIGGER durable_review_resolutions_no_conflicting_insert BEFORE INSERT ON durable_review_resolutions
+          WHEN EXISTS (SELECT 1 FROM durable_review_resolutions WHERE review_id = NEW.review_id OR receipt_id = NEW.receipt_id OR receipt_sha256 = NEW.receipt_sha256 OR (NEW.seq > 0 AND seq = NEW.seq))
+          BEGIN SELECT RAISE(ABORT, 'durable_review_resolutions is append-only: existing bindings cannot be replaced'); END;
+        CREATE TRIGGER durable_review_resolutions_parent_binding BEFORE INSERT ON durable_review_resolutions
+          WHEN NOT EXISTS (SELECT 1 FROM durable_review_pending_records WHERE review_id = NEW.review_id)
+          BEGIN SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding'); END;
+      `);
+      const insertPending = raw.prepare(
+        "INSERT INTO durable_review_pending_records (review_id, created_at_utc, domain_id, source_id, input_id, record_json) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      insertPending.run(
+        owned.reviewId,
+        owned.createdAtUtc,
+        owned.intake.domainId,
+        owned.intake.source.sourceId,
+        owned.intake.input.inputId,
+        JSON.stringify(owned),
+      );
+      insertPending.run(
+        unownedRecord.reviewId,
+        unownedRecord.createdAtUtc,
+        unownedRecord.intake.domainId,
+        unownedRecord.intake.source.sourceId,
+        unownedRecord.intake.input.inputId,
+        JSON.stringify(unownedRecord),
+      );
+      const insertResolution = raw.prepare(
+        "INSERT INTO durable_review_resolutions (review_id, resolved_at_utc, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?)",
+      );
+      insertResolution.run(
+        ownedResolution.reviewId,
+        ownedResolution.resolvedAtUtc,
+        ownedResolution.receipt.receiptId,
+        ownedResolution.receipt.receiptSha256,
+        JSON.stringify(ownedResolution),
+      );
+      insertResolution.run(
+        unownedResolution.reviewId,
+        unownedResolution.resolvedAtUtc,
+        unownedResolution.receipt.receiptId,
+        unownedResolution.receipt.receiptSha256,
+        JSON.stringify(unownedResolution),
+      );
+    } finally {
+      raw.close();
+    }
+
+    const store = DurableReviewStore.open(database.path);
+    try {
+      expect(store.count()).toBe(1);
+      expect(store.get(owned.reviewId, aliceOwner)?.record).toEqual(owned);
+      expect(store.get(owned.reviewId, bobOwner)).toBeNull();
+      expect(store.getResolution(owned.reviewId, aliceOwner)?.resolution).toEqual(ownedResolution);
+      expect(store.getResolution(owned.reviewId, bobOwner)).toBeNull();
+      expect(store.get(ownerless.reviewId, aliceOwner)).toBeNull();
+
+      const migrated = new sqlite.DatabaseSync(database.path);
+      try {
+        const quarantine = migrated
+          .prepare("SELECT row_kind, review_id, reason, row_json FROM durable_review_v2_migration_quarantine ORDER BY row_kind")
+          .all() as Array<{ row_kind: string; review_id: string; reason: string; row_json: string }>;
+        expect(quarantine.map(({ row_kind, review_id, reason }) => ({ row_kind, review_id, reason }))).toEqual([
+          {
+            row_kind: "pending",
+            review_id: ownerless.reviewId,
+            reason: "pending-record-invalid-or-ownerless",
+          },
+          {
+            row_kind: "resolution",
+            review_id: ownerless.reviewId,
+            reason: "resolution-parent-unmigrated",
+          },
+        ]);
+        expect(quarantine.every((row) => JSON.parse(row.row_json).review_id === ownerless.reviewId)).toBe(true);
+        const pendingColumns = migrated
+          .prepare("PRAGMA table_info(durable_review_pending_records)")
+          .all() as Array<{ name: string }>;
+        expect(pendingColumns.map((column) => column.name)).toContain("owner_tenant_id");
+        const pendingIndexes = migrated
+          .prepare("PRAGMA index_list(durable_review_pending_records)")
+          .all() as Array<{ name: string }>;
+        expect(pendingIndexes.map((index) => index.name)).toEqual(expect.arrayContaining([
+          "durable_review_pending_records_created",
+          "durable_review_pending_records_domain",
+          "durable_review_pending_records_source",
+          "durable_review_pending_records_owner",
+        ]));
+        expect(migrated.prepare("PRAGMA foreign_key_list(durable_review_resolutions)").all()).toHaveLength(5);
+        expect(() => migrated.prepare("UPDATE durable_review_pending_records SET source_id = 'changed' WHERE review_id = ?").run(owned.reviewId)).toThrow(/append-only/);
+      } finally {
+        migrated.close();
+      }
+    } finally {
+      store.close();
+      database.remove();
+    }
+  });
+
   it("preserves legacy v1 resolved rows on upgrade without presenting them as pending v2 queue work", async () => {
     const database = temporaryDatabasePath(); const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); const old = await legacy("old-review");
     const raw = new sqlite.DatabaseSync(database.path);

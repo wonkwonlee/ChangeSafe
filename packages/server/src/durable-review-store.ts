@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -45,6 +46,37 @@ const LegacyRowSchema = z.strictObject({
 type PendingRow = z.infer<typeof PendingRowSchema>;
 type ResolutionRow = z.infer<typeof ResolutionRowSchema>;
 type LegacyRow = z.infer<typeof LegacyRowSchema>;
+const OwnerlessPendingRowSchema = PendingRowSchema.omit({
+  owner_tenant_id: true,
+  owner_issuer: true,
+  owner_subject: true,
+  owner_scope: true,
+});
+const OwnerlessResolutionRowSchema = ResolutionRowSchema.omit({
+  owner_tenant_id: true,
+  owner_issuer: true,
+  owner_subject: true,
+  owner_scope: true,
+});
+const MigrationPendingRowSchema = z.strictObject({
+  seq: z.number().int().positive(),
+  review_id: z.string(),
+  created_at_utc: z.string(),
+  domain_id: z.string(),
+  source_id: z.string(),
+  input_id: z.string(),
+  record_json: z.string(),
+});
+const MigrationResolutionRowSchema = z.strictObject({
+  seq: z.number().int().positive(),
+  review_id: z.string(),
+  resolved_at_utc: z.string(),
+  receipt_id: z.string(),
+  receipt_sha256: z.string(),
+  resolution_json: z.string(),
+});
+type OwnerlessPendingRow = z.infer<typeof MigrationPendingRowSchema>;
+type OwnerlessResolutionRow = z.infer<typeof MigrationResolutionRowSchema>;
 
 export interface DurableReviewStoreEntry {
   seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform";
@@ -67,12 +99,15 @@ const MAX_LIST_LIMIT = 1000;
 // `durable_review_records` is v1 compatibility data. Do not rewrite it into a
 // pending item: it represents an already-resolved historical record, and its
 // receipt is not evidence that a new v2 resolution was appended.
-const SCHEMA = `
+const LEGACY_SCHEMA = `
 CREATE TABLE IF NOT EXISTS durable_review_records (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
   domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
   receipt_id TEXT NOT NULL UNIQUE, receipt_sha256 TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL
 );
+`;
+
+const V2_SCHEMA = `
 CREATE TABLE IF NOT EXISTS durable_review_pending_records (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL, created_at_utc TEXT NOT NULL,
   domain_id TEXT NOT NULL, source_id TEXT NOT NULL, input_id TEXT NOT NULL,
@@ -94,6 +129,17 @@ CREATE INDEX IF NOT EXISTS durable_review_pending_records_domain ON durable_revi
 CREATE INDEX IF NOT EXISTS durable_review_pending_records_source ON durable_review_pending_records (source_id);
 CREATE INDEX IF NOT EXISTS durable_review_pending_records_owner ON durable_review_pending_records
   (owner_tenant_id, owner_issuer, owner_subject, owner_scope, seq DESC);
+`;
+
+const V2_MIGRATION_QUARANTINE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS durable_review_v2_migration_quarantine (
+  row_kind TEXT NOT NULL CHECK (row_kind IN ('pending', 'resolution')),
+  old_seq INTEGER NOT NULL,
+  review_id TEXT NOT NULL,
+  row_json TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (row_kind, old_seq)
+);
 `;
 
 const TABLES = [
@@ -171,6 +217,168 @@ END;`;
 
 const nodeRequire = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSync { const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); return new sqlite.DatabaseSync(path); }
+function tableColumns(db: DatabaseSync, table: "durable_review_pending_records" | "durable_review_resolutions"): Set<string> {
+  const rows = z.array(z.object({ name: z.string() }).passthrough()).parse(
+    db.prepare(`PRAGMA table_info(${table})`).all(),
+  );
+  return new Set(rows.map((row) => row.name));
+}
+function canonicalInputSha256(record: PendingDurableReviewRecord): string {
+  return createHash("sha256").update(canonicalize(record.intake.input.content)).digest("hex");
+}
+function ownerlessPendingRecord(row: OwnerlessPendingRow): PendingDurableReviewRecord {
+  OwnerlessPendingRowSchema.parse(row);
+  const record = PendingDurableReviewRecordSchema.parse(JSON.parse(row.record_json));
+  if (
+    row.review_id !== record.reviewId ||
+    row.created_at_utc !== record.createdAtUtc ||
+    row.domain_id !== record.intake.domainId ||
+    row.source_id !== record.intake.source.sourceId ||
+    row.input_id !== record.intake.input.inputId ||
+    canonicalInputSha256(record) !== record.intake.input.inputSha256
+  ) {
+    throw new DomainError("REQUEST_INVALID", "Ownerless durable review columns or content hash do not bind to its immutable record.");
+  }
+  return record;
+}
+function ownerlessResolution(row: OwnerlessResolutionRow, pending: PendingDurableReviewRecord): DurableReviewResolution {
+  OwnerlessResolutionRowSchema.parse(row);
+  const resolution = DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json));
+  if (
+    resolution.reviewId !== row.review_id ||
+    resolution.resolvedAtUtc !== row.resolved_at_utc ||
+    resolution.receipt.receiptId !== row.receipt_id ||
+    resolution.receipt.receiptSha256 !== row.receipt_sha256
+  ) {
+    throw new DomainError("REQUEST_INVALID", "Ownerless durable resolution columns do not bind to its immutable resolution.");
+  }
+  return bindServerResolutionToPendingReview(pending, resolution);
+}
+function dropKnownV2Triggers(db: DatabaseSync): void {
+  for (const table of ["durable_review_pending_records", "durable_review_resolutions"] as const) {
+    for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
+      db.exec(`DROP TRIGGER IF EXISTS ${table}_${suffix}`);
+    }
+  }
+  db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_PARENT_BINDING_TRIGGER}`);
+}
+function quarantineOwnerlessRow(
+  db: DatabaseSync,
+  rowKind: "pending" | "resolution",
+  row: OwnerlessPendingRow | OwnerlessResolutionRow,
+  reason: "pending-record-invalid-or-ownerless" | "resolution-parent-unmigrated" | "resolution-binding-invalid",
+): void {
+  db.prepare(
+    "INSERT INTO durable_review_v2_migration_quarantine (row_kind, old_seq, review_id, row_json, reason) VALUES (?, ?, ?, ?, ?)",
+  ).run(rowKind, row.seq, row.review_id, canonicalize(row), reason);
+}
+/**
+ * b729212 and 8247f70 created v2 tables whose SQL identity was only
+ * `review_id`. The latter already wrote a validated owner inside record_json,
+ * so those rows can be upgraded without inventing authority. Earlier or
+ * malformed rows are retained byte-for-byte in quarantine and never enter an
+ * authenticated owner's queue.
+ */
+function migrateOwnerlessV2Tables(db: DatabaseSync): void {
+  const pendingColumns = tableColumns(db, "durable_review_pending_records");
+  const resolutionColumns = tableColumns(db, "durable_review_resolutions");
+  const pendingExists = pendingColumns.size > 0;
+  const resolutionExists = resolutionColumns.size > 0;
+  if (!pendingExists && !resolutionExists) return;
+  if (!pendingExists || !resolutionExists) {
+    throw new DomainError("INTERNAL", "Durable review v2 schema is incomplete and cannot be migrated safely.");
+  }
+  const pendingHasOwner = pendingColumns.has("owner_tenant_id");
+  const resolutionHasOwner = resolutionColumns.has("owner_tenant_id");
+  if (pendingHasOwner && resolutionHasOwner) return;
+  if (pendingHasOwner || resolutionHasOwner) {
+    throw new DomainError("INTERNAL", "Durable review v2 schema has a partial owner migration and cannot be trusted.");
+  }
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    dropKnownV2Triggers(db);
+    for (const index of [
+      "durable_review_pending_records_created",
+      "durable_review_pending_records_domain",
+      "durable_review_pending_records_source",
+      "durable_review_pending_records_owner",
+    ]) {
+      db.exec(`DROP INDEX IF EXISTS ${index}`);
+    }
+    db.exec("ALTER TABLE durable_review_pending_records RENAME TO durable_review_pending_records_ownerless");
+    db.exec("ALTER TABLE durable_review_resolutions RENAME TO durable_review_resolutions_ownerless");
+    db.exec(V2_SCHEMA);
+    db.exec(V2_MIGRATION_QUARANTINE_SCHEMA);
+
+    const migrated = new Map<string, PendingDurableReviewRecord>();
+    const pendingRows = db
+      .prepare("SELECT * FROM durable_review_pending_records_ownerless ORDER BY seq")
+      .all()
+      .map((row) => MigrationPendingRowSchema.parse(row));
+    const insertPending = db.prepare(
+      "INSERT INTO durable_review_pending_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, owner_tenant_id, owner_issuer, owner_subject, owner_scope, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    for (const row of pendingRows) {
+      let record: PendingDurableReviewRecord;
+      try {
+        record = ownerlessPendingRecord(row);
+      } catch {
+        quarantineOwnerlessRow(db, "pending", row, "pending-record-invalid-or-ownerless");
+        continue;
+      }
+      insertPending.run(
+        row.seq,
+        row.review_id,
+        row.created_at_utc,
+        row.domain_id,
+        row.source_id,
+        row.input_id,
+        ...ownerValues(record.owner),
+        canonicalize(record),
+      );
+      migrated.set(row.review_id, record);
+    }
+
+    const resolutionRows = db
+      .prepare("SELECT * FROM durable_review_resolutions_ownerless ORDER BY seq")
+      .all()
+      .map((row) => MigrationResolutionRowSchema.parse(row));
+    const insertResolution = db.prepare(
+      "INSERT INTO durable_review_resolutions (seq, review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    for (const row of resolutionRows) {
+      const pending = migrated.get(row.review_id);
+      if (!pending) {
+        quarantineOwnerlessRow(db, "resolution", row, "resolution-parent-unmigrated");
+        continue;
+      }
+      let resolution: DurableReviewResolution;
+      try {
+        resolution = ownerlessResolution(row, pending);
+      } catch {
+        quarantineOwnerlessRow(db, "resolution", row, "resolution-binding-invalid");
+        continue;
+      }
+      insertResolution.run(
+        row.seq,
+        row.review_id,
+        row.resolved_at_utc,
+        ...ownerValues(pending.owner),
+        row.receipt_id,
+        row.receipt_sha256,
+        canonicalize(resolution),
+      );
+    }
+
+    db.exec("DROP TABLE durable_review_resolutions_ownerless");
+    db.exec("DROP TABLE durable_review_pending_records_ownerless");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
 function upgradeTriggers(db: DatabaseSync): void {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -244,7 +452,11 @@ export class DurableReviewStore {
   static open(path: string): DurableReviewStore {
     const db = openDatabase(path);
     db.exec("PRAGMA journal_mode = WAL"); db.exec("PRAGMA synchronous = FULL"); db.exec("PRAGMA foreign_keys = ON"); db.exec("PRAGMA recursive_triggers = ON");
-    db.exec(SCHEMA); upgradeTriggers(db); return new DurableReviewStore(db);
+    db.exec(LEGACY_SCHEMA);
+    migrateOwnerlessV2Tables(db);
+    db.exec(V2_SCHEMA);
+    upgradeTriggers(db);
+    return new DurableReviewStore(db);
   }
   close(): void { this.#db.close(); }
   /** Number of v2 pending intake records, never historical v1 resolved rows. */
