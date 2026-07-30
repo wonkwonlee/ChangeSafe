@@ -114,7 +114,7 @@ A stateless compute replace (AMI update forcing recreation) earns exactly one DE
 
 **CHG-2418 — Resize the checkout read replica instance class** — An instance-class bump forces the checkout read replica to be destroyed and recreated; it is tagged as backed up.
 
-The Terraform MEDIUM path: a stateful resource replaced under a declared backup earns one warning for the destructive operation, and the backup tag satisfies the reversibility requirement, placing it at MEDIUM risk without blocking.
+A stateful resource replace lands at the same one-warning Terraform MEDIUM level as a stateless one (scenario-n) — not because losing state is treated as routine, but because a declared backup tag fully clears REVERSIBILITY (PASS, not a downgraded WARN), leaving DESTRUCTIVE_OP as the sole warning.
 
 - Risk **MEDIUM**, approvable
 - Non-passing policies: `DESTRUCTIVE_OP` WARN

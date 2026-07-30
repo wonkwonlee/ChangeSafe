@@ -59,6 +59,11 @@ const terraform: ScenarioDomain = {
   domainId: "terraform",
   adapter: terraformDomain as unknown as DomainAdapter<never, never>,
   parseInput: (raw) => {
+    // The CLI-facing registry (`packages/cli/src/domains.ts`, driven from
+    // `packages/cli/src/scenario.ts`) carries this same `context` field
+    // through a differently-shaped mechanism: it's extracted at the call
+    // site and passed as a second argument, rather than destructured here
+    // inside `parseInput`. Keep both in sync if this wiring ever changes.
     const { context, ...plan } = raw as { context?: { kind: string; text: string }[] } & Record<string, unknown>;
     return normalizePlan(plan, { context });
   },
