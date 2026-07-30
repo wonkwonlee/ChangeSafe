@@ -8,6 +8,8 @@ import planJ from "./terraform/scenario-j-destroy-protected/incident.json";
 import expectationsJ from "./terraform/scenario-j-destroy-protected/expectations.json";
 import planK from "./terraform/scenario-k-capacity-scale-up/incident.json";
 import expectationsK from "./terraform/scenario-k-capacity-scale-up/expectations.json";
+import planN from "./terraform/scenario-n-stateless-replace/incident.json";
+import expectationsN from "./terraform/scenario-n-stateless-replace/expectations.json";
 
 import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
 import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
@@ -121,6 +123,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     planK,
     null,
     expectationsK,
+  ),
+  defineScenario(
+    "terraform",
+    "scenario-n-stateless-replace",
+    "CHG-2410 — Recreate the checkout worker instance for an AMI update",
+    "A routine AMI bump forces Terraform to replace the checkout worker instance in place; nothing stateful is touched.",
+    planN,
+    null,
+    expectationsN,
   ),
   defineScenario(
     "kubernetes",
