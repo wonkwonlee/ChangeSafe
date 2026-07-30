@@ -22,10 +22,16 @@ interface RuntimeDependencyGraph {
   readonly packageSpecifiers: ReadonlySet<string>;
 }
 
-const DOMAIN_RUNTIME_MODULES = [
+const DOMAIN_REGISTRY_ENTRYPOINTS = [
   "@changesafe/domain-network",
   "@changesafe/domain-terraform",
   "@changesafe/domain-kubernetes/offline",
+] as const;
+
+const DOMAIN_PACKAGE_ROOTS = [
+  "@changesafe/domain-network",
+  "@changesafe/domain-terraform",
+  "@changesafe/domain-kubernetes",
 ] as const;
 
 function moduleReferences(
@@ -185,17 +191,26 @@ function hasDomainPackage(
   );
 }
 
+function foreignDomainPackageRoots(
+  graph: RuntimeDependencyGraph,
+  forbiddenPackageRoots: readonly string[],
+): readonly string[] {
+  return forbiddenPackageRoots.filter((packageRoot) =>
+    hasDomainPackage(graph, packageRoot),
+  );
+}
+
 describe("workbench deterministic performance boundaries", () => {
   it("keeps every domain runtime behind the registry's lazy import boundary", () => {
     const references = moduleReferences("features/domains/registry.ts");
     const runtimeReferences = references.filter((reference) =>
-      DOMAIN_RUNTIME_MODULES.includes(
-        reference.specifier as (typeof DOMAIN_RUNTIME_MODULES)[number],
+      DOMAIN_REGISTRY_ENTRYPOINTS.includes(
+        reference.specifier as (typeof DOMAIN_REGISTRY_ENTRYPOINTS)[number],
       ),
     );
 
     expect(runtimeReferences).toEqual(
-      DOMAIN_RUNTIME_MODULES.map((specifier) => ({
+      DOMAIN_REGISTRY_ENTRYPOINTS.map((specifier) => ({
         kind: "dynamic",
         specifier,
       })),
@@ -294,25 +309,79 @@ describe("workbench deterministic performance boundaries", () => {
 
   it.each([
     [
-      "app/workbench/page.tsx",
-      ["@changesafe/domain-terraform", "@changesafe/domain-kubernetes/offline"],
+      "package root",
+      'import "@changesafe/domain-kubernetes";',
     ],
     [
-      "app/workbench/terraform/page.tsx",
-      ["@changesafe/domain-network", "@changesafe/domain-kubernetes/offline"],
-    ],
-    [
-      "app/workbench/kubernetes/page.tsx",
-      ["@changesafe/domain-network", "@changesafe/domain-terraform"],
+      "exported subpath",
+      'import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes/offline";',
     ],
   ] as const)(
+    "detects a foreign Kubernetes %s introduced into the Network route",
+    (_caseName, injectedImport) => {
+      const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
+      const originalShell = readFileSync(shellPath, "utf8");
+      const graph = collectStaticRuntimeDependencyGraph(
+        "app/workbench/page.tsx",
+        new Map([
+          [shellPath, `${originalShell}\n${injectedImport}\n`],
+        ]),
+      );
+
+      expect(
+        foreignDomainPackageRoots(
+          graph,
+          DOMAIN_PACKAGE_ROOTS.filter(
+            (packageRoot) => packageRoot !== "@changesafe/domain-network",
+          ),
+        ),
+      ).toContain("@changesafe/domain-kubernetes");
+    },
+  );
+
+  it("keeps type-only and dynamic domain references outside the static route graph", () => {
+    const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
+    const originalShell = readFileSync(shellPath, "utf8");
+    const graph = collectStaticRuntimeDependencyGraph(
+      "app/workbench/page.tsx",
+      new Map([
+        [
+          shellPath,
+          `${originalShell}
+import type { KubernetesSnapshot } from "@changesafe/domain-kubernetes";
+void import("@changesafe/domain-kubernetes/offline");
+`,
+        ],
+      ]),
+    );
+
+    expect(
+      foreignDomainPackageRoots(
+        graph,
+        DOMAIN_PACKAGE_ROOTS.filter(
+          (packageRoot) => packageRoot !== "@changesafe/domain-network",
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["app/workbench/page.tsx", "@changesafe/domain-network"],
+    ["app/workbench/terraform/page.tsx", "@changesafe/domain-terraform"],
+    ["app/workbench/kubernetes/page.tsx", "@changesafe/domain-kubernetes"],
+  ] as const)(
     "keeps the resolved static runtime graph for %s free of foreign domain packages",
-    (entryPath, forbiddenPackages) => {
+    (entryPath, ownedPackageRoot) => {
       const graph = collectStaticRuntimeDependencyGraph(entryPath);
       expect(graph.localFiles.size).toBeGreaterThan(1);
-      for (const forbiddenPackage of forbiddenPackages) {
-        expect(hasDomainPackage(graph, forbiddenPackage)).toBe(false);
-      }
+      expect(
+        foreignDomainPackageRoots(
+          graph,
+          DOMAIN_PACKAGE_ROOTS.filter(
+            (packageRoot) => packageRoot !== ownedPackageRoot,
+          ),
+        ),
+      ).toEqual([]);
     },
   );
 
