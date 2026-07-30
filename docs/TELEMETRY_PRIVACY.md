@@ -33,7 +33,7 @@ JavaScript for:
 | --- | ---: | ---: |
 | `/` (Network) | 1,075,614 bytes | 1,310,720 bytes |
 | `/workbench/terraform` | 999,358 bytes | 1,310,720 bytes |
-| `/workbench/kubernetes` | 1,003,052 bytes | 1,310,720 bytes |
+| `/workbench/kubernetes` | 1,003,425 bytes | 1,310,720 bytes |
 
 Exact `/workbench` is retired and is not a budgeted route.
 

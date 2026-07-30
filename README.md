@@ -428,7 +428,7 @@ different":
   whether that specific change is safe.
 - **Policy-as-code — OPA, Sentinel, Conftest, Itential's governed change
   management.** Direct comparison in
-  [docs/LAUNCH.md](docs/LAUNCH.md#answers-to-the-questions-that-will-come-up).
+  [docs/LAUNCH.md](docs/LAUNCH.md#answers-to-expected-questions).
   Short version: if one of these already covers your case, use it.
 
 ## Contributing

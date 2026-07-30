@@ -364,7 +364,7 @@ an interchangeable proposer.
 `{ id, stateSchema?, proposalNormalizer, pathAllowlist?, policies[],
 simulator? , renderHints }`. Two shapes:
 
-- **Shape A — simulated-state domain** (network today, K8s later): we hold
+- **Shape A — simulated-state domain** (Network and Kubernetes): we hold
   a declarative state model, apply typed operations transactionally to a
   clone, and simulate outcomes. Universal + domain policies run.
 - **Shape B — external-diff domain** (terraform): the diff arrives
