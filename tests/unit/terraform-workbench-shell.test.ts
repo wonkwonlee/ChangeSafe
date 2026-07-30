@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// TerraformWorkbenchShell reads the ?scenario deep-link via next/navigation's
+// client hooks. Outside a real Next.js app router (as here, rendering
+// straight to static markup) those hooks throw without this mock.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => null,
+  useRouter: () => ({ replace: () => {} }),
+}));
 
 import { TerraformWorkbenchShell } from "../../components/TerraformWorkbenchShell";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";

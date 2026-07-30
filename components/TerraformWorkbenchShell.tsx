@@ -10,7 +10,9 @@ import {
   BoundedJsonBlock,
   EvidencePager,
 } from "@/components/BoundedEvidence";
+import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
@@ -181,7 +183,12 @@ export function TerraformWorkbenchShell({
     ...initialSource(),
     transport: publicReplayTransport,
   });
-  const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
+  const { initialScenarioId, setScenarioInUrl } = useScenarioDeepLink(
+    TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId),
+  );
+  const [selectedSourceId, setSelectedSourceId] = useState(
+    initialScenarioId ?? INITIAL_EXAMPLE.sourceId,
+  );
   const fixture = useMemo(() => fixtureFor(selectedSourceId), [selectedSourceId]);
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const input = useMemo(() => inputFor(fixture), [fixture]);
@@ -210,11 +217,27 @@ export function TerraformWorkbenchShell({
       session: nextExample.session,
     });
     setSelectedSourceId(sourceId);
+    setScenarioInUrl(sourceId);
     setChangeQuery("");
     setChangePageIndex(0);
-  }, [controller]);
+  }, [controller, setScenarioInUrl]);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+
+  useEffect(() => {
+    if (initialScenarioId) {
+      // One-time sync from the URL's ?scenario= deep link into workflow
+      // state on mount, not a cascading re-render: initialScenarioId is
+      // frozen for the component's lifetime (see useScenarioDeepLink), so
+      // this effect fires at most once.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialScenarioId);
+    }
+    // Intentionally runs once on mount only — selectExample itself updates
+    // selectedSourceId and the URL, and re-running this on every
+    // selectExample identity change would fight the user's own clicks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
@@ -322,7 +345,7 @@ export function TerraformWorkbenchShell({
           <h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Terraform examples">
             {TERRAFORM_REVIEW_EXAMPLES.map((candidate) => (
-              <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>
+              <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}{candidate.caseStudy ? <CaseStudyBadge label={candidate.caseStudy} /> : null}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>
             ))}
           </ul>
           <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title">

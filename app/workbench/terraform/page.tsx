@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { TerraformWorkbenchShell } from "@/components/TerraformWorkbenchShell";
 import { loadDomainCoverageCatalog } from "@/features/domains/registry";
@@ -11,5 +12,9 @@ export const metadata: Metadata = {
 
 export default async function TerraformWorkbenchPage() {
   const coverageCatalog = await loadDomainCoverageCatalog("terraform");
-  return <TerraformWorkbenchShell coverageCatalog={coverageCatalog} />;
+  return (
+    <Suspense fallback={null}>
+      <TerraformWorkbenchShell coverageCatalog={coverageCatalog} />
+    </Suspense>
+  );
 }
