@@ -8,6 +8,7 @@ const RETIRED_SURFACES = [
   "components/useWorkflow.ts",
   "features/domains/network/useNetworkWorkflow.ts",
   "lib/ai/replay.ts",
+  "lib/rate-limit.ts",
 ] as const;
 
 describe("vNext default-route cutover", () => {
