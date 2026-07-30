@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,17 +11,21 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  CLIENT_BUNDLE_MARKER_CONTRACTS,
   PUBLIC_WORKBENCH_BUDGET_BYTES,
   PUBLIC_WORKBENCH_ROUTES,
+  inspectPublicClientSourceDependencies,
   inspectPublicClientBuild,
 } from "../../scripts/verify-public-client-bundles.mjs";
 
 const temporaryDirectories: string[] = [];
 
 function temporaryBuild(): string {
-  const directory = mkdtempSync(path.join(tmpdir(), "changesafe-client-build-"));
-  temporaryDirectories.push(directory);
-  return directory;
+  const container = mkdtempSync(path.join(tmpdir(), "changesafe-client-build-"));
+  const buildRoot = path.join(container, ".next");
+  mkdirSync(buildRoot);
+  temporaryDirectories.push(container);
+  return buildRoot;
 }
 
 function writeBuildFile(buildRoot: string, relativePath: string, body: string): void {
@@ -103,6 +108,39 @@ describe("public client bundle verifier", () => {
         chunkCount: 2,
       },
     ]);
+    expect(report.initialChunkCount).toBe(2);
+  });
+
+  it("deduplicates different emitted aliases that resolve to the same client chunk", () => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/canonical.js", "canonical");
+    symlinkSync(
+      "canonical.js",
+      path.join(buildRoot, "static/chunks/alias.js"),
+    );
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/canonical.js",
+      "/_next/static/chunks/alias.js",
+    ]);
+
+    const report = inspectPublicClientBuild({
+      buildRoot,
+      budgetBytes: 10_000,
+      routes: [
+        {
+          route: "/workbench",
+          htmlPath: "server/app/workbench.html",
+          forbiddenRuntimeMarkers: [],
+        },
+      ],
+    });
+
+    expect(report.routes[0]).toEqual({
+      route: "/workbench",
+      bytes: Buffer.byteLength("canonical"),
+      chunkCount: 1,
+    });
+    expect(report.initialChunkCount).toBe(1);
   });
 
   it("fails closed when a route exceeds its initial-JavaScript budget", () => {
@@ -130,51 +168,56 @@ describe("public client bundle verifier", () => {
     );
   });
 
-  it("rejects server-only AI markers and secret canaries without echoing secret values", () => {
-    const secret = "sk-test-never-print-this-value";
-
-    for (const body of [
-      'fetch("https://api.openai.com")',
-      `const value="${secret}"`,
-    ]) {
-      const buildRoot = temporaryBuild();
-      writeBuildFile(buildRoot, "static/chunks/server-only.js", body);
-      writeRoute(buildRoot, "server/app/workbench.html", [
-        "/_next/static/chunks/server-only.js",
-      ]);
-
-      let message = "";
-      try {
-        inspectPublicClientBuild({
-          buildRoot,
-          budgetBytes: 10_000,
-          routes: [
-            {
-              route: "/workbench",
-              htmlPath: "server/app/workbench.html",
-              forbiddenRuntimeMarkers: [],
-            },
-          ],
-          secretCanaries: [{ label: "OPENAI_API_KEY", value: secret }],
-        });
-      } catch (error) {
-        message = error instanceof Error ? error.message : String(error);
-      }
-
-      expect(message).toContain("public client bundle verification failed");
-      expect(message).not.toContain(secret);
-    }
-  });
-
-  it("rejects a foreign domain runtime marker in a route's initial chunks", () => {
+  it.each([
+    ["OPENAI_API_KEY", "sk-test-never-print-openai"],
+    ["ANTHROPIC_API_KEY", "sk-ant-test-never-print-anthropic"],
+  ])("rejects the %s canary without echoing its value", (label, secret) => {
     const buildRoot = temporaryBuild();
     writeBuildFile(
       buildRoot,
-      "static/chunks/network.js",
-      'const policyId = "DESTRUCTIVE_OP";',
+      "static/chunks/server-only.js",
+      `const value="${secret}"`,
     );
     writeRoute(buildRoot, "server/app/workbench.html", [
-      "/_next/static/chunks/network.js",
+      "/_next/static/chunks/server-only.js",
+    ]);
+
+    let message = "";
+    try {
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+        secretCanaries: [{ label, value: secret }],
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("public client bundle verification failed");
+    expect(message).not.toContain(secret);
+  });
+
+  it.each([
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.promptMarkers.map((marker) => [
+      "prompt",
+      marker,
+    ] as const),
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.providerEndpointMarkers.map((marker) => [
+      "provider endpoint",
+      marker,
+    ] as const),
+  ])("rejects the precise %s marker %s", (_kind, marker) => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/server-only.js", marker);
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/server-only.js",
     ]);
 
     expect(() =>
@@ -185,21 +228,70 @@ describe("public client bundle verifier", () => {
           {
             route: "/workbench",
             htmlPath: "server/app/workbench.html",
-            forbiddenRuntimeMarkers: ["DESTRUCTIVE_OP"],
+            forbiddenRuntimeMarkers: [],
           },
         ],
         secretCanaries: [],
       }),
     ).toThrow(
-      "public client bundle verification failed: /workbench contains a foreign domain runtime marker",
+      "public client bundle verification failed: server-only client content reached an initial chunk",
     );
   });
 
-  it("rejects path-traversing Next script sources", () => {
+  it.each(
+    PUBLIC_WORKBENCH_ROUTES.flatMap((routeConfig) =>
+      routeConfig.forbiddenRuntimeMarkers.map((marker) => [
+        routeConfig,
+        marker,
+      ] as const),
+    ),
+  )("rejects %s foreign policy marker %s", (routeConfig, marker) => {
     const buildRoot = temporaryBuild();
-    writeRoute(buildRoot, "server/app/workbench.html", [
-      "/_next/static/../server/app.js",
+    writeBuildFile(buildRoot, "static/chunks/route.js", marker);
+    writeRoute(buildRoot, routeConfig.htmlPath, [
+      "/_next/static/chunks/route.js",
     ]);
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [routeConfig],
+      }),
+    ).toThrow(
+      `public client bundle verification failed: ${routeConfig.route} contains a foreign domain runtime marker`,
+    );
+  });
+
+  it.each([
+    [PUBLIC_WORKBENCH_ROUTES[0], "MGMT_REACHABILITY"],
+    [PUBLIC_WORKBENCH_ROUTES[1], "DESTRUCTIVE_OP"],
+    [PUBLIC_WORKBENCH_ROUTES[2], "K8S_PRIVILEGE_ESCALATION"],
+    [PUBLIC_WORKBENCH_ROUTES[2], "the benign metric value is 11434"],
+  ] as const)("allows %s own or benign marker %s", (routeConfig, marker) => {
+    if (!routeConfig) throw new Error("Expected a public route contract");
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/route.js", marker);
+    writeRoute(buildRoot, routeConfig.htmlPath, [
+      "/_next/static/chunks/route.js",
+    ]);
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [routeConfig],
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    "/_next/static/../server/app.js",
+    "/_next/static/chunks/../chunks/app.js",
+  ])("rejects path-traversing or dot-segment script source %s", (source) => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/placeholder.js", "placeholder");
+    writeRoute(buildRoot, "server/app/workbench.html", [source]);
 
     expect(() =>
       inspectPublicClientBuild({
@@ -217,5 +309,94 @@ describe("public client bundle verifier", () => {
     ).toThrow(
       "public client bundle verification failed: /workbench contains an invalid client script path",
     );
+  });
+
+  it("rejects a static directory symlinked to server output", () => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "server/app/workbench.html", [
+      '<script src="/_next/static/chunks/app.js"></script>',
+    ].join(""));
+    writeBuildFile(buildRoot, "server/chunks/app.js", "server output");
+    symlinkSync("server", path.join(buildRoot, "static"), "dir");
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+      }),
+    ).toThrow(
+      "public client bundle verification failed: client static directory is not canonical",
+    );
+  });
+
+  it("rejects a route HTML path that traverses outside the build root", () => {
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/app.js", "client");
+    writeFileSync(
+      path.join(buildRoot, "../outside.html"),
+      '<script src="/_next/static/chunks/app.js"></script>',
+    );
+
+    expect(() =>
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "../outside.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+      }),
+    ).toThrow(
+      "public client bundle verification failed: /workbench contains an invalid emitted HTML path",
+    );
+  });
+
+  it.each([
+    "@changesafe/ai",
+    "@changesafe/ai/providers/openai",
+  ])("rejects a public route static dependency on %s", (specifier) => {
+    const entryPath = path.resolve("app/workbench/page.tsx");
+    const original = readFileSync(entryPath, "utf8");
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [entryPath, `${original}\nimport "${specifier}";\n`],
+        ]),
+      }),
+    ).toThrow(
+      "public client bundle verification failed: public route statically imports the AI package",
+    );
+  });
+
+  it("allows type-only and dynamic AI package references outside the static graph", () => {
+    const entryPath = path.resolve("app/workbench/page.tsx");
+    const original = readFileSync(entryPath, "utf8");
+    expect(() =>
+      inspectPublicClientSourceDependencies({
+        repositoryRoot: process.cwd(),
+        sourceOverrides: new Map([
+          [
+            entryPath,
+            `${original}
+import type { AnalysisProvider } from "@changesafe/ai";
+export type { AnalysisProvider as Provider } from "@changesafe/ai";
+export { type AnalysisProvider as ProviderAlias } from "@changesafe/ai";
+void import("@changesafe/ai");
+`,
+          ],
+        ]),
+      }),
+    ).not.toThrow();
   });
 });

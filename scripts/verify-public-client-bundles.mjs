@@ -1,13 +1,35 @@
 import {
+  existsSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import ts from "typescript";
 
 export const PUBLIC_WORKBENCH_BUDGET_BYTES = 1_310_720;
+
+const KUBERNETES_POLICY_MARKERS = Object.freeze([
+  "K8S_WORKLOAD_AVAILABILITY",
+  "K8S_PRIVILEGE_ESCALATION",
+  "K8S_SERVICE_SELECTOR",
+  "K8S_MUTABLE_IMAGE",
+  "K8S_PROTECTED_RESOURCE",
+]);
+
+export const CLIENT_BUNDLE_MARKER_CONTRACTS = Object.freeze({
+  aiPackageRoot: "@changesafe/ai",
+  promptMarkers: Object.freeze([
+    "<untrusted_incident_data>",
+    "</untrusted_incident_data>",
+  ]),
+  providerEndpointMarkers: Object.freeze([
+    "https://api.openai.com/v1",
+    "https://api.anthropic.com/v1",
+    "http://127.0.0.1:11434",
+  ]),
+});
 
 export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
   Object.freeze({
@@ -16,7 +38,7 @@ export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
     forbiddenRuntimeMarkers: Object.freeze([
       "DESTRUCTIVE_OP",
       "REVERSIBILITY",
-      "K8S_",
+      ...KUBERNETES_POLICY_MARKERS,
     ]),
   }),
   Object.freeze({
@@ -24,7 +46,7 @@ export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
     htmlPath: "server/app/workbench/terraform.html",
     forbiddenRuntimeMarkers: Object.freeze([
       "MGMT_REACHABILITY",
-      "K8S_",
+      ...KUBERNETES_POLICY_MARKERS,
     ]),
   }),
   Object.freeze({
@@ -38,13 +60,10 @@ export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
   }),
 ]);
 
-const SERVER_ONLY_CLIENT_MARKERS = Object.freeze([
-  "@changesafe/ai",
-  "packages/ai",
-  "untrusted_incident_data",
-  "api.openai.com",
-  "api.anthropic.com",
-  "11434",
+const PUBLIC_ROUTE_ENTRY_PATHS = Object.freeze([
+  "app/workbench/page.tsx",
+  "app/workbench/terraform/page.tsx",
+  "app/workbench/kubernetes/page.tsx",
 ]);
 
 function failure(message) {
@@ -59,6 +78,10 @@ function isStrictDescendant(parent, candidate) {
     relative !== ".." &&
     !path.isAbsolute(relative)
   );
+}
+
+function isSameOrDescendant(parent, candidate) {
+  return parent === candidate || isStrictDescendant(parent, candidate);
 }
 
 function initialClientScriptSources(html, route) {
@@ -82,39 +105,47 @@ function initialClientScriptSources(html, route) {
   if (sources.length === 0) {
     throw failure(`${route} contains no initial client scripts`);
   }
-  return [...new Set(sources)].sort();
+  return sources.sort();
 }
 
-function resolveClientScript(buildRoot, realBuildRoot, source, route) {
-  const relativePath = source.slice("/_next/".length);
-  const requestedPath = path.resolve(buildRoot, relativePath);
+function resolveRouteHtml(buildRoot, realBuildRoot, htmlPath, route) {
+  const requestedPath = path.resolve(buildRoot, htmlPath);
+  let realPath;
+  try {
+    realPath = realpathSync(requestedPath);
+  } catch {
+    throw failure(`${route} emitted HTML is unavailable`);
+  }
+  if (!isStrictDescendant(realBuildRoot, realPath)) {
+    throw failure(`${route} contains an invalid emitted HTML path`);
+  }
+  return realPath;
+}
+
+function resolveClientScript(buildRoot, realStaticRoot, source, route) {
+  const relativePath = source.slice("/_next/static/".length);
+  const requestedPath = path.resolve(buildRoot, "static", relativePath);
   let realPath;
   try {
     realPath = realpathSync(requestedPath);
   } catch {
     throw failure(`${route} references a missing client script`);
   }
-  if (!isStrictDescendant(realBuildRoot, realPath)) {
+  if (!isStrictDescendant(realStaticRoot, realPath)) {
     throw failure(`${route} contains an invalid client script path`);
   }
   return realPath;
 }
 
-function javascriptFiles(directory) {
-  return readdirSync(directory, { withFileTypes: true })
-    .flatMap((entry) => {
-      const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) return javascriptFiles(entryPath);
-      return entry.isFile() && entry.name.endsWith(".js") ? [entryPath] : [];
-    })
-    .sort();
-}
-
 function assertNoServerOnlyClientContent(files, secretCanaries) {
+  const serverOnlyMarkers = [
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.promptMarkers,
+    ...CLIENT_BUNDLE_MARKER_CONTRACTS.providerEndpointMarkers,
+  ];
   for (const filePath of files) {
     const body = readFileSync(filePath, "utf8");
-    if (SERVER_ONLY_CLIENT_MARKERS.some((marker) => body.includes(marker))) {
-      throw failure("server-only AI content reached a client chunk");
+    if (serverOnlyMarkers.some((marker) => body.includes(marker))) {
+      throw failure("server-only client content reached an initial chunk");
     }
     if (
       secretCanaries.some(
@@ -126,6 +157,153 @@ function assertNoServerOnlyClientContent(files, secretCanaries) {
   }
 }
 
+function staticModuleSpecifiers(sourceText, filePath) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const specifiers = [];
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      const clause = statement.importClause;
+      const namedBindings = clause?.namedBindings;
+      const isTypeOnly =
+        clause?.isTypeOnly === true ||
+        (clause?.name === undefined &&
+          namedBindings !== undefined &&
+          ts.isNamedImports(namedBindings) &&
+          namedBindings.elements.length > 0 &&
+          namedBindings.elements.every((element) => element.isTypeOnly));
+      if (
+        !isTypeOnly &&
+        ts.isStringLiteralLike(statement.moduleSpecifier)
+      ) {
+        specifiers.push(statement.moduleSpecifier.text);
+      }
+      continue;
+    }
+
+    if (ts.isExportDeclaration(statement)) {
+      const isTypeOnly =
+        statement.isTypeOnly ||
+        (statement.exportClause !== undefined &&
+          ts.isNamedExports(statement.exportClause) &&
+          statement.exportClause.elements.length > 0 &&
+          statement.exportClause.elements.every(
+            (element) => element.isTypeOnly,
+          ));
+      if (
+        !isTypeOnly &&
+        statement.moduleSpecifier &&
+        ts.isStringLiteralLike(statement.moduleSpecifier)
+      ) {
+        specifiers.push(statement.moduleSpecifier.text);
+      }
+    }
+  }
+
+  return specifiers;
+}
+
+function resolveLocalSource(repositoryRoot, importerPath, specifier) {
+  const unresolved =
+    specifier.startsWith("@/")
+      ? path.resolve(repositoryRoot, specifier.slice(2))
+      : specifier.startsWith(".")
+        ? path.resolve(path.dirname(importerPath), specifier)
+        : undefined;
+  if (!unresolved || !isSameOrDescendant(repositoryRoot, unresolved)) {
+    return undefined;
+  }
+
+  const candidates = [
+    unresolved,
+    ...[".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"].map(
+      (extension) => `${unresolved}${extension}`,
+    ),
+    ...[".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"].map(
+      (extension) => path.join(unresolved, `index${extension}`),
+    ),
+  ];
+  return candidates.find(
+    (candidate) => existsSync(candidate) && statSync(candidate).isFile(),
+  );
+}
+
+export function inspectPublicClientSourceDependencies({
+  repositoryRoot,
+  entryPaths = PUBLIC_ROUTE_ENTRY_PATHS,
+  sourceOverrides = new Map(),
+}) {
+  const realRepositoryRoot = realpathSync(repositoryRoot);
+  const pending = entryPaths.map((entryPath) =>
+    path.isAbsolute(entryPath)
+      ? entryPath
+      : path.resolve(realRepositoryRoot, entryPath),
+  );
+  const visited = new Set();
+
+  while (pending.length > 0) {
+    const requestedPath = pending.pop();
+    if (!requestedPath) continue;
+    let filePath;
+    try {
+      filePath = realpathSync(requestedPath);
+    } catch {
+      throw failure("public route source dependency is unavailable");
+    }
+    if (
+      !isSameOrDescendant(realRepositoryRoot, filePath) ||
+      visited.has(filePath)
+    ) {
+      continue;
+    }
+    visited.add(filePath);
+
+    const sourceText =
+      sourceOverrides.get(filePath) ??
+      sourceOverrides.get(requestedPath) ??
+      readFileSync(filePath, "utf8");
+    for (const specifier of staticModuleSpecifiers(sourceText, filePath)) {
+      if (
+        specifier === CLIENT_BUNDLE_MARKER_CONTRACTS.aiPackageRoot ||
+        specifier.startsWith(
+          `${CLIENT_BUNDLE_MARKER_CONTRACTS.aiPackageRoot}/`,
+        )
+      ) {
+        throw failure("public route statically imports the AI package");
+      }
+      const dependency = resolveLocalSource(
+        realRepositoryRoot,
+        filePath,
+        specifier,
+      );
+      if (dependency) pending.push(dependency);
+    }
+  }
+
+  return Object.freeze({ scannedSourceCount: visited.size });
+}
+
+/**
+ * @typedef {{
+ *   route: string;
+ *   htmlPath: string;
+ *   forbiddenRuntimeMarkers: readonly string[];
+ * }} PublicRouteContract
+ */
+
+/**
+ * @param {{
+ *   buildRoot: string;
+ *   routes?: readonly PublicRouteContract[];
+ *   budgetBytes?: number;
+ *   secretCanaries?: Array<{ label: string; value: string }>;
+ * }} options
+ */
 export function inspectPublicClientBuild({
   buildRoot,
   routes = PUBLIC_WORKBENCH_ROUTES,
@@ -143,25 +321,50 @@ export function inspectPublicClientBuild({
     throw failure("Next production build is unavailable");
   }
 
+  let realStaticRoot;
+  try {
+    realStaticRoot = realpathSync(path.join(buildRoot, "static"));
+  } catch {
+    throw failure("client chunk directory is unavailable");
+  }
+  if (realStaticRoot !== path.join(realBuildRoot, "static")) {
+    throw failure("client static directory is not canonical");
+  }
+
+  const initialFiles = new Set();
   const routeReports = routes.map((routeConfig) => {
     let html;
     try {
       html = readFileSync(
-        path.join(buildRoot, routeConfig.htmlPath),
-        "utf8",
-      );
-    } catch {
-      throw failure(`${routeConfig.route} emitted HTML is unavailable`);
-    }
-    const files = initialClientScriptSources(html, routeConfig.route).map(
-      (source) =>
-        resolveClientScript(
+        resolveRouteHtml(
           buildRoot,
           realBuildRoot,
-          source,
+          routeConfig.htmlPath,
           routeConfig.route,
         ),
-    );
+        "utf8",
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith(
+        "public client bundle verification failed:",
+      )) {
+        throw error;
+      }
+      throw failure(`${routeConfig.route} emitted HTML is unavailable`);
+    }
+    const files = [
+      ...new Set(
+        initialClientScriptSources(html, routeConfig.route).map((source) =>
+          resolveClientScript(
+            buildRoot,
+            realStaticRoot,
+            source,
+            routeConfig.route,
+          ),
+        ),
+      ),
+    ].sort();
+    for (const filePath of files) initialFiles.add(filePath);
     const bytes = files.reduce(
       (total, filePath) => total + statSync(filePath).size,
       0,
@@ -192,18 +395,14 @@ export function inspectPublicClientBuild({
     });
   });
 
-  let allClientFiles;
-  try {
-    allClientFiles = javascriptFiles(path.join(buildRoot, "static"));
-  } catch {
-    throw failure("client chunk directory is unavailable");
-  }
-  assertNoServerOnlyClientContent(allClientFiles, secretCanaries);
+  const resolvedInitialFiles = [...initialFiles].sort();
+  assertNoServerOnlyClientContent(resolvedInitialFiles, secretCanaries);
 
   return Object.freeze({
     budgetBytes,
     routes: Object.freeze(routeReports),
-    scannedChunkCount: allClientFiles.length,
+    initialChunkCount: resolvedInitialFiles.length,
+    scannedChunkCount: resolvedInitialFiles.length,
   });
 }
 
@@ -211,6 +410,7 @@ export function verifyPublicClientBuild({
   repoRoot = process.cwd(),
   environment = process.env,
 } = {}) {
+  inspectPublicClientSourceDependencies({ repositoryRoot: repoRoot });
   return inspectPublicClientBuild({
     buildRoot: path.join(repoRoot, ".next"),
     secretCanaries: [
@@ -233,7 +433,7 @@ function printReport(report) {
     );
   }
   process.stdout.write(
-    `Client security scan: ${report.scannedChunkCount} emitted JavaScript chunks clean.\n`,
+    `Client security scan: ${report.scannedChunkCount} resolved initial JavaScript chunks clean.\n`,
   );
 }
 
