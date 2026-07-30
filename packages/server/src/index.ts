@@ -18,6 +18,7 @@ export type {
   DecisionRequest,
   DecisionOutcome,
   DecisionServiceOptions,
+  DurableDecisionIssuance,
 } from "./decisions";
 
 export { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
@@ -33,6 +34,7 @@ export { DurableReviewStore } from "./durable-review-store";
 export type {
   DurableReviewStoreEntry,
   DurableReviewResolutionEntry,
+  DurableReviewDecisionClaimEntry,
   DurableReviewStoreListOptions,
   LegacyDurableReviewStoreEntry,
 } from "./durable-review-store";

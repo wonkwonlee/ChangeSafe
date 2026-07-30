@@ -148,6 +148,39 @@ describe("durable self-hosted review contracts", () => {
     },
   );
 
+  it("rejects a valid-shaped forged Network proposal hash on the v1 persistence path", async () => {
+    const candidate = await record("network");
+    const forgedHash = sha("f");
+    expect(DurableReviewRecordSchema.safeParse({
+      ...candidate,
+      intake: {
+        ...candidate.intake,
+        proposal: {
+          ...candidate.intake.proposal!,
+          proposalSha256: forgedHash,
+        },
+      },
+      receipt: {
+        ...candidate.receipt,
+        proposalSha256: forgedHash,
+      },
+    }).success).toBe(true);
+    await expect(acceptDurableReviewRecordForPersistence({
+      ...candidate,
+      intake: {
+        ...candidate.intake,
+        proposal: {
+          ...candidate.intake.proposal!,
+          proposalSha256: forgedHash,
+        },
+      },
+      receipt: {
+        ...candidate.receipt,
+        proposalSha256: forgedHash,
+      },
+    })).rejects.toThrow(/proposalSha256/);
+  });
+
   it.each(["network", "terraform"] as const)(
     "creates a receipt-free pending %s review and binds a later server resolution",
     async (domainId) => {
@@ -298,7 +331,14 @@ describe("durable self-hosted review contracts", () => {
     })).rejects.toThrow(/proposalSha256/);
     await expect(createDurableReviewIntake({
       domainId: "network",
-      source: accepted.source,
+      source: {
+        domainId: "network",
+        sourceId: accepted.source.sourceId,
+        sourceKind: "network-incident-bundle",
+        origin: accepted.source.origin,
+        untrustedArtifactObservedAtUtc:
+          accepted.source.untrustedArtifactObservedAtUtc,
+      },
       input: { inputId: accepted.input.inputId, content: accepted.input.content },
     })).rejects.toThrow(/requires an immutable proposal/);
     expect(DurableReviewIntakeSchema.safeParse({

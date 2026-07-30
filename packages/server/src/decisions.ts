@@ -1,4 +1,5 @@
 import {
+  canonicalize,
   DomainError,
   createReceipt,
   evaluatePolicies,
@@ -35,6 +36,13 @@ export interface DecisionOutcome {
 
 export interface SignedDecisionOutcome extends DecisionOutcome {
   record: SignedReceipt;
+}
+
+export interface DurableDecisionIssuance {
+  expectedPolicyVersion: string;
+  receiptId: string;
+  receiptCreatedAtUtc: string;
+  receiptSignedAtUtc: string;
 }
 
 export interface DecisionServiceOptions {
@@ -75,6 +83,7 @@ export class DecisionService {
   async decideSigned(
     request: DecisionRequest,
     approver: Approver,
+    issuance?: DurableDecisionIssuance,
   ): Promise<SignedDecisionOutcome> {
     if (!this.#options.signingKeyPair) {
       throw new DomainError(
@@ -82,7 +91,7 @@ export class DecisionService {
         "Durable review decisions require a configured receipt signing key.",
       );
     }
-    const outcome = await this.decide(request, approver);
+    const outcome = await this.decide(request, approver, issuance);
     if (!("receipt" in outcome.record)) {
       throw new DomainError(
         "INTERNAL",
@@ -92,8 +101,21 @@ export class DecisionService {
     return { ...outcome, record: outcome.record };
   }
 
-  async decide(request: DecisionRequest, approver: Approver): Promise<DecisionOutcome> {
+  async decide(
+    request: DecisionRequest,
+    approver: Approver,
+    issuance?: DurableDecisionIssuance,
+  ): Promise<DecisionOutcome> {
     const domain = resolveServerDomain(request.domain);
+    if (
+      issuance &&
+      issuance.expectedPolicyVersion !== domain.adapter.policyVersion
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `The pending review policy version ${issuance.expectedPolicyVersion} is stale; active policy version is ${domain.adapter.policyVersion}.`,
+      );
+    }
     const { input, inputId } = domain.parseInput(request.input);
     const proposal = domain.resolveProposal(input, request.proposal);
 
@@ -163,19 +185,38 @@ export class DecisionService {
       decision: request.decision === "approve" ? "approved" : "rejected",
       approver,
       simulation,
-      createdAtUtc: this.#options.now?.(),
+      createdAtUtc: issuance?.receiptCreatedAtUtc ?? this.#options.now?.(),
+      receiptId: issuance?.receiptId,
     });
 
     const record = this.#options.signingKeyPair
       ? await signReceipt(receipt, this.#options.signingKeyPair, {
-          signedAtUtc: this.#options.now?.(),
+          signedAtUtc: issuance?.receiptSignedAtUtc ?? this.#options.now?.(),
         })
       : receipt;
 
     // Recorded before the response is returned: a decision the caller was
     // told about but the ledger never saw would be exactly the gap the
     // ledger exists to close.
-    const entry = await this.#options.ledger.append(record);
+    let entry = this.#options.ledger.get(receipt.receiptId);
+    if (entry) {
+      if (canonicalize(entry.record) !== canonicalize(record)) {
+        throw new DomainError(
+          "REQUEST_INVALID",
+          `Receipt ${receipt.receiptId} is already bound to different immutable ledger content.`,
+        );
+      }
+    } else {
+      try {
+        entry = await this.#options.ledger.append(record);
+      } catch (error) {
+        const raced = this.#options.ledger.get(receipt.receiptId);
+        if (!raced || canonicalize(raced.record) !== canonicalize(record)) {
+          throw error;
+        }
+        entry = raced;
+      }
+    }
 
     return {
       record,

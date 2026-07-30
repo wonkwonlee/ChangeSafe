@@ -346,6 +346,27 @@ describe("durable review intake HTTP API", () => {
     expect(context.ledger.count()).toBe(0);
   });
 
+  it("returns a safe client error for a forged Network proposal hash without queue or ledger writes", async () => {
+    const candidate = await pendingNetworkReview("review-network-forged-proposal");
+    const response = await postReview(
+      {
+        ...candidate,
+        intake: {
+          ...candidate.intake,
+          proposal: {
+            ...candidate.intake.proposal,
+            proposalSha256: "f".repeat(64),
+          },
+        },
+      },
+      await context.idp.token(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
   it("lists bounded pending reviews and reads one by immutable id", async () => {
     const token = await context.idp.token();
     await postReview(await pendingNetworkReview("review-network-one"), token);
@@ -503,6 +524,31 @@ describe("durable review decision HTTP API", () => {
     expect(response.status).toBe(409);
     expect(context.ledger.count()).toBe(0);
     expect(context.reviews.getResolution("review-network-blocked", aliceOwner())).toBeNull();
+  });
+
+  it("refuses a pending review whose frozen policy version no longer matches the active adapter", async () => {
+    const token = await context.idp.token();
+    expect((await postReview(await pendingNetworkReview("review-policy-template"), token)).status).toBe(201);
+    const template = context.reviews.get("review-policy-template", aliceOwner());
+    expect(template).not.toBeNull();
+    await context.reviews.appendPending({
+      ...template!.record,
+      reviewId: "review-stale-policy",
+      session: {
+        ...template!.record.session,
+        policyVersion: "network-stale-v0",
+      },
+    });
+
+    const response = await decideReview(
+      "review-stale-policy",
+      { decision: "reject" },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(0);
+    expect(context.reviews.getResolution("review-stale-policy", aliceOwner())).toBeNull();
   });
 
   it("keeps Kubernetes explicitly outside the durable decision contract", async () => {

@@ -8,8 +8,19 @@ import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { hashCanonical } from "@changesafe/core";
+import {
+  generateSigningKeyPair,
+  hashCanonical,
+  importSigningKeyPair,
+} from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
+import { Ledger } from "@changesafe/ledger";
+import type {
+  DurableReviewDecisionClaim,
+  PendingDurableReviewRecord,
+} from "../../../features/reviews/durable-review-contract";
 import { SCENARIOS } from "../../../scenarios";
+import { DecisionService } from "../src/decisions";
 import { DurableReviewStore } from "../src/durable-review-store";
 
 const sha = (character: string) => character.repeat(64);
@@ -55,6 +66,26 @@ async function legacy(reviewId: string) {
       source: { ...historicalSource, collectedAtUtc: untrustedArtifactObservedAtUtc },
     },
     receipt: { receiptId: `${reviewId}-receipt`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: `${reviewId}-proposal`, proposalSha256: sha("b"), policyVersion: item.session.policyVersion, receiptSha256: sha("c") },
+    storage: { kind: "append-only-ledger" },
+  } as const;
+}
+async function currentLegacy(reviewId: string) {
+  const item = await pending(reviewId);
+  const { owner: _owner, ...withoutOwner } = item;
+  void _owner;
+  return {
+    ...withoutOwner,
+    recordVersion: "1",
+    receipt: {
+      receiptId: `${reviewId}-receipt`,
+      sourceId: item.intake.source.sourceId,
+      inputId: item.intake.input.inputId,
+      inputSha256: item.intake.input.inputSha256,
+      proposalId: item.intake.proposal.proposalId,
+      proposalSha256: item.intake.proposal.proposalSha256,
+      policyVersion: item.session.policyVersion,
+      receiptSha256: sha("c"),
+    },
     storage: { kind: "append-only-ledger" },
   } as const;
 }
@@ -398,7 +429,7 @@ describe("DurableReviewStore v2 pending queue", () => {
         seq: 11,
         record: historical,
       });
-      const next = await legacy("post-436-review");
+      const next = await currentLegacy("post-436-review");
       await expect(migrated.append({
         ...next,
         receipt: { ...next.receipt, receiptSha256: sha("d") },
@@ -450,6 +481,154 @@ describe("DurableReviewStore v2 pending queue", () => {
   it("accepts a verified receipt-free pending intake exactly once", async () => {
     const store = DurableReviewStore.open(":memory:");
     try { const item = await pending("review-one"); const first = await store.appendPending(item); expect(await store.appendPending(item)).toEqual(first); expect(first).toMatchObject({ seq: 1, reviewId: "review-one" }); expect(store.count()).toBe(1); expect(store.get("review-one", aliceOwner)).toEqual(first); expect(store.getResolution("review-one", aliceOwner)).toBeNull(); } finally { store.close(); }
+  });
+
+  it("correlates a racing cross-instance decision to one signed ledger receipt", async () => {
+    const database = temporaryDatabasePath();
+    const ledgerPath = join(database.path, "..", "ledger.sqlite");
+    const first = DurableReviewStore.open(database.path);
+    const second = DurableReviewStore.open(database.path);
+    const ledger = Ledger.open(ledgerPath);
+    try {
+      const base = await pending("review-cross-instance-decision");
+      const item = {
+        ...base,
+        session: { ...base.session, policyVersion: networkDomain.policyVersion },
+        intake: {
+          ...base.intake,
+          input: {
+            ...base.intake.input,
+            inputId: base.intake.input.content.incidentId,
+          },
+        },
+      } as const;
+      await first.appendPending(item);
+      const pem = await generateSigningKeyPair();
+      const decisions = new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-test",
+        signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
+      });
+      const issue = async (
+        stored: PendingDurableReviewRecord,
+        claim: DurableReviewDecisionClaim,
+      ) => {
+        const outcome = await decisions.decideSigned(
+          {
+            domain: stored.intake.domainId,
+            sourceId: stored.intake.source.sourceId,
+            input: stored.intake.input.content,
+            proposal: stored.intake.proposal?.content,
+            decision: "reject",
+          },
+          { subject: aliceOwner.subject, issuer: aliceOwner.issuer, email: null },
+          {
+            expectedPolicyVersion: stored.session.policyVersion,
+            receiptId: claim.receiptId,
+            receiptCreatedAtUtc: claim.receiptCreatedAtUtc,
+            receiptSignedAtUtc: claim.receiptSignedAtUtc,
+          },
+        );
+        return {
+          outcome,
+          resolution: {
+            resolutionVersion: "1",
+            reviewId: stored.reviewId,
+            resolvedAtUtc: "2026-07-30T02:00:00.000Z",
+            receipt: {
+              receiptId: outcome.receipt.receiptId,
+              sourceId: outcome.receipt.sourceId,
+              inputId: outcome.receipt.inputId,
+              inputSha256: outcome.receipt.inputSha256,
+              proposalId: outcome.receipt.proposalId,
+              proposalSha256: outcome.receipt.proposalSha256,
+              policyVersion: outcome.receipt.policyVersion,
+              receiptSha256: outcome.receipt.receiptSha256,
+            },
+          },
+        } as const;
+      };
+
+      const results = await Promise.all([
+        first.resolvePending(
+          item.reviewId,
+          aliceOwner,
+          { decision: "reject", claimedAtUtc: "2026-07-30T01:01:00.000Z", approverEmail: null },
+          issue,
+        ),
+        second.resolvePending(
+          item.reviewId,
+          aliceOwner,
+          { decision: "reject", claimedAtUtc: "2026-07-30T01:01:01.000Z", approverEmail: "changed@example.test" },
+          issue,
+        ),
+      ]);
+
+      expect(ledger.count()).toBe(1);
+      expect(new Set(results.map(({ outcome }) => outcome.receipt.receiptId)).size).toBe(1);
+      expect(first.getDecisionClaim(item.reviewId, aliceOwner)?.receiptId).toBe(
+        results[0]!.outcome.receipt.receiptId,
+      );
+      expect(first.getDecisionClaim(item.reviewId, bobOwner)).toBeNull();
+      expect(second.getResolution(item.reviewId, aliceOwner)).not.toBeNull();
+      const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+      const raw = new sqlite.DatabaseSync(database.path);
+      try {
+        expect(() => raw.prepare(
+          "UPDATE durable_review_decision_claims SET decision = 'approve' WHERE review_id = ?",
+        ).run(item.reviewId)).toThrow(/append-only/);
+        expect(() => raw.prepare(
+          "DELETE FROM durable_review_decision_claims WHERE review_id = ?",
+        ).run(item.reviewId)).toThrow(/append-only/);
+      } finally {
+        raw.close();
+      }
+
+      const crashBase = await pending("review-ledger-before-resolution-crash");
+      const crashItem = {
+        ...crashBase,
+        session: {
+          ...crashBase.session,
+          policyVersion: networkDomain.policyVersion,
+        },
+        intake: {
+          ...crashBase.intake,
+          input: {
+            ...crashBase.intake.input,
+            inputId: crashBase.intake.input.content.incidentId,
+          },
+        },
+      } as const;
+      await first.appendPending(crashItem);
+      let ledgeredBeforeCrash: string | null = null;
+      await expect(first.resolvePending(
+        crashItem.reviewId,
+        aliceOwner,
+        { decision: "reject", claimedAtUtc: "2026-07-30T02:01:00.000Z", approverEmail: null },
+        async (stored, claim) => {
+          const issued = await issue(stored, claim);
+          ledgeredBeforeCrash = issued.outcome.receipt.receiptId;
+          throw new Error("simulated crash after ledger append");
+        },
+      )).rejects.toThrow(/simulated crash/);
+      expect(ledger.count()).toBe(2);
+      expect(first.getResolution(crashItem.reviewId, aliceOwner)).toBeNull();
+
+      const recovered = await second.resolvePending(
+        crashItem.reviewId,
+        aliceOwner,
+        { decision: "reject", claimedAtUtc: "2026-07-30T04:00:00.000Z", approverEmail: "changed@example.test" },
+        issue,
+      );
+      expect(ledger.count()).toBe(2);
+      expect(recovered.outcome.receipt.receiptId).toBe(ledgeredBeforeCrash);
+      expect(second.getResolution(crashItem.reviewId, aliceOwner)).not.toBeNull();
+    } finally {
+      first.close();
+      second.close();
+      ledger.close();
+      database.remove();
+    }
   });
 
   it("treats advancing server timestamps as one concurrent retry and preserves first acceptance time", async () => {
@@ -1022,6 +1201,6 @@ describe("DurableReviewStore v2 pending queue", () => {
 
   it("keeps compatibility-only v1 append isolated from the pending queue", async () => {
     const store = DurableReviewStore.open(":memory:");
-    try { const old = await legacy("legacy-review"); await store.append(old); expect(store.legacyCount()).toBe(1); expect(store.count()).toBe(0); expect(store.get("legacy-review", aliceOwner)).toBeNull(); expect(store.getLegacy("legacy-review")?.record).toEqual(old); } finally { store.close(); }
+    try { const old = await currentLegacy("legacy-review"); await store.append(old); expect(store.legacyCount()).toBe(1); expect(store.count()).toBe(0); expect(store.get("legacy-review", aliceOwner)).toBeNull(); expect(store.getLegacy("legacy-review")?.record).toEqual(old); } finally { store.close(); }
   });
 });

@@ -342,11 +342,15 @@ async function handle(
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
-    const resolvedAtUtc = serverNow(options);
     const decided = await options.reviews.resolvePending(
       reviewId,
       owner,
-      async (pending) => {
+      {
+        decision: body.decision,
+        claimedAtUtc: serverNow(options),
+        approverEmail: approver.email,
+      },
+      async (pending, claim) => {
         // Both domain choices come from the validated immutable pending
         // record. Network re-parses its hash-bound proposal artifact;
         // Terraform derives its proposal from the stored plan.
@@ -360,14 +364,24 @@ async function handle(
               : {}),
             decision: body.decision,
           },
-          approver,
+          {
+            subject: claim.owner.subject,
+            issuer: claim.owner.issuer,
+            email: claim.approverEmail,
+          },
+          {
+            expectedPolicyVersion: pending.session.policyVersion,
+            receiptId: claim.receiptId,
+            receiptCreatedAtUtc: claim.receiptCreatedAtUtc,
+            receiptSignedAtUtc: claim.receiptSignedAtUtc,
+          },
         );
         return {
           outcome,
           resolution: {
             resolutionVersion: "1",
             reviewId,
-            resolvedAtUtc,
+            resolvedAtUtc: serverNow(options),
             receipt: {
               receiptId: outcome.receipt.receiptId,
               sourceId: outcome.receipt.sourceId,

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -9,11 +9,13 @@ import {
   acceptDurableReviewRecordForPersistence,
   acceptPendingDurableReviewRecordForPersistence,
   bindServerResolutionToPendingReview,
+  DurableReviewDecisionClaimSchema,
   DurableReviewRecordSchema,
   DurableReviewResolutionSchema,
   DurableReviewOwnerSchema,
   PendingDurableReviewRecordSchema,
   type DurableReviewRecord,
+  type DurableReviewDecisionClaim,
   type DurableReviewResolution,
   type DurableReviewOwner,
   type PendingDurableReviewRecord,
@@ -38,6 +40,18 @@ const ResolutionRowSchema = z.strictObject({
   owner_scope: z.literal("self-hosted-review"),
   receipt_id: IdSchema, receipt_sha256: z.string().regex(/^[a-f0-9]{64}$/), resolution_json: z.string(),
 });
+const DecisionClaimRowSchema = z.strictObject({
+  seq: z.number().int().positive(),
+  review_id: IdSchema,
+  owner_tenant_id: z.string(),
+  owner_issuer: z.string(),
+  owner_subject: z.string(),
+  owner_scope: z.literal("self-hosted-review"),
+  decision: z.enum(["approve", "reject"]),
+  claimed_at_utc: z.string(),
+  receipt_id: IdSchema,
+  claim_json: z.string(),
+});
 const LegacyRowSchema = z.strictObject({
   seq: z.number().int().positive(), review_id: IdSchema, created_at_utc: z.string(),
   domain_id: z.enum(["network", "terraform"]), source_id: IdSchema, input_id: IdSchema,
@@ -45,6 +59,7 @@ const LegacyRowSchema = z.strictObject({
 });
 type PendingRow = z.infer<typeof PendingRowSchema>;
 type ResolutionRow = z.infer<typeof ResolutionRowSchema>;
+type DecisionClaimRow = z.infer<typeof DecisionClaimRowSchema>;
 type LegacyRow = z.infer<typeof LegacyRowSchema>;
 const MigrationPendingRowSchema = z.strictObject({
   seq: z.number().int(),
@@ -96,6 +111,14 @@ export interface DurableReviewStoreEntry {
 export interface DurableReviewResolutionEntry {
   seq: number; reviewId: string; resolvedAtUtc: string; receiptId: string; receiptSha256: string;
   resolution: DurableReviewResolution;
+}
+export interface DurableReviewDecisionClaimEntry {
+  seq: number;
+  reviewId: string;
+  decision: "approve" | "reject";
+  claimedAtUtc: string;
+  receiptId: string;
+  claim: DurableReviewDecisionClaim;
 }
 /** Read-only compatibility surface for resolved v1 rows. They are not queue items. */
 export interface LegacyDurableReviewStoreEntry {
@@ -206,6 +229,24 @@ CREATE TABLE durable_review_v2_migration_quarantine (
 );
 `;
 
+const DECISION_CLAIM_SCHEMA = `
+CREATE TABLE durable_review_decision_claims (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id TEXT NOT NULL,
+  owner_tenant_id TEXT NOT NULL,
+  owner_issuer TEXT NOT NULL,
+  owner_subject TEXT NOT NULL,
+  owner_scope TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject')),
+  claimed_at_utc TEXT NOT NULL,
+  receipt_id TEXT NOT NULL UNIQUE,
+  claim_json TEXT NOT NULL,
+  UNIQUE (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id),
+  FOREIGN KEY (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
+    REFERENCES durable_review_pending_records(owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
+);
+`;
+
 const HISTORICAL_OWNERLESS_V2_SCHEMA = `
 CREATE TABLE durable_review_pending_records (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
@@ -253,6 +294,7 @@ const RESOLUTION_PARENT_BINDING_TRIGGER = "durable_review_resolutions_parent_bin
 const LEGACY_TABLE_NAME = "durable_review_records";
 const V2_TABLE_NAMES = ["durable_review_pending_records", "durable_review_resolutions"] as const;
 const QUARANTINE_TABLE_NAME = "durable_review_v2_migration_quarantine";
+const DECISION_CLAIM_TABLE_NAME = "durable_review_decision_claims";
 
 function triggerSql(table: string, conflict: string): string {
   const names = { update: `${table}_no_update`, delete: `${table}_no_delete`, insert: `${table}_no_conflicting_insert` };
@@ -419,6 +461,51 @@ WHEN EXISTS (
  SELECT RAISE(ABORT, 'durable review migration quarantine is append-only: evidence cannot be replaced'); END;`;
 }
 
+function decisionClaimTriggerSql(): string {
+  return `
+CREATE TRIGGER durable_review_decision_claims_no_update
+BEFORE UPDATE ON durable_review_decision_claims BEGIN
+ SELECT RAISE(ABORT, 'durable review decision claims are append-only: rows cannot be updated'); END;
+CREATE TRIGGER durable_review_decision_claims_no_delete
+BEFORE DELETE ON durable_review_decision_claims BEGIN
+ SELECT RAISE(ABORT, 'durable review decision claims are append-only: rows cannot be deleted'); END;
+CREATE TRIGGER durable_review_decision_claims_no_conflicting_insert
+BEFORE INSERT ON durable_review_decision_claims
+WHEN EXISTS (
+  SELECT 1 FROM durable_review_decision_claims
+  WHERE (
+    owner_tenant_id = NEW.owner_tenant_id
+    AND owner_issuer = NEW.owner_issuer
+    AND owner_subject = NEW.owner_subject
+    AND owner_scope = NEW.owner_scope
+    AND review_id = NEW.review_id
+  ) OR receipt_id = NEW.receipt_id OR (NEW.seq > 0 AND seq = NEW.seq)
+) BEGIN
+ SELECT RAISE(ABORT, 'durable review decision claims are append-only: existing bindings cannot be replaced'); END;
+CREATE TRIGGER durable_review_decision_claims_parent_binding
+BEFORE INSERT ON durable_review_decision_claims
+WHEN NOT json_valid(NEW.claim_json)
+  OR NOT EXISTS (
+    SELECT 1 FROM durable_review_pending_records AS pending
+    WHERE pending.review_id = NEW.review_id
+      AND pending.owner_tenant_id = NEW.owner_tenant_id
+      AND pending.owner_issuer = NEW.owner_issuer
+      AND pending.owner_subject = NEW.owner_subject
+      AND pending.owner_scope = NEW.owner_scope
+      AND json_extract(NEW.claim_json, '$.claimVersion') = '1'
+      AND json_extract(NEW.claim_json, '$.reviewId') = NEW.review_id
+      AND json_extract(NEW.claim_json, '$.owner.tenantId') = NEW.owner_tenant_id
+      AND json_extract(NEW.claim_json, '$.owner.issuer') = NEW.owner_issuer
+      AND json_extract(NEW.claim_json, '$.owner.subject') = NEW.owner_subject
+      AND json_extract(NEW.claim_json, '$.owner.scope') = NEW.owner_scope
+      AND json_extract(NEW.claim_json, '$.decision') = NEW.decision
+      AND json_extract(NEW.claim_json, '$.claimedAtUtc') = NEW.claimed_at_utc
+      AND json_extract(NEW.claim_json, '$.receiptId') = NEW.receipt_id
+  ) BEGIN
+ SELECT RAISE(ABORT, 'durable_review_decision_claims requires immutable parent binding');
+END;`;
+}
+
 const nodeRequire = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSync { const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); return new sqlite.DatabaseSync(path); }
 function normalizeSql(sql: string | null): string | null {
@@ -583,6 +670,18 @@ function emptyQuarantineFingerprint(): string {
   return expectedFingerprint("", [QUARANTINE_TABLE_NAME]);
 }
 
+function currentDecisionClaimFingerprint(): string {
+  return expectedFingerprint(
+    DECISION_CLAIM_SCHEMA,
+    [DECISION_CLAIM_TABLE_NAME],
+    (db) => db.exec(decisionClaimTriggerSql()),
+  );
+}
+
+function emptyDecisionClaimFingerprint(): string {
+  return expectedFingerprint("", [DECISION_CLAIM_TABLE_NAME]);
+}
+
 function dropKnownLegacyTriggers(db: DatabaseSync): void {
   for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
     db.exec(`DROP TRIGGER IF EXISTS durable_review_records_${suffix}`);
@@ -688,6 +787,21 @@ function rebuildAsQuarantine(
   sourceSchemaFingerprint: string,
   correctiveOwnerfulMigration: boolean,
 ): void {
+  const decisionClaimFingerprint = schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]);
+  if (decisionClaimFingerprint !== emptyDecisionClaimFingerprint()) {
+    if (
+      decisionClaimFingerprint !== currentDecisionClaimFingerprint() ||
+      z.strictObject({ count: z.number().int().nonnegative() }).parse(
+        db.prepare("SELECT count(*) AS count FROM durable_review_decision_claims").get(),
+      ).count !== 0
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review ownership migration cannot rewrite a non-empty or unknown decision-claim surface.",
+      );
+    }
+    db.exec("DROP TABLE durable_review_decision_claims");
+  }
   const pendingRows = db.prepare("SELECT * FROM durable_review_pending_records ORDER BY seq").all()
     .map((row) => correctiveOwnerfulMigration
       ? MigrationOwnerfulPendingRowSchema.parse(row)
@@ -866,6 +980,19 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
       throw new DomainError("INTERNAL", "Durable review schema fingerprint is unknown or weakened.");
     }
 
+    const actualDecisionClaims = schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]);
+    const noDecisionClaims = emptyDecisionClaimFingerprint();
+    const currentDecisionClaims = currentDecisionClaimFingerprint();
+    if (actualDecisionClaims === noDecisionClaims) {
+      db.exec(DECISION_CLAIM_SCHEMA);
+      db.exec(decisionClaimTriggerSql());
+    } else if (actualDecisionClaims !== currentDecisionClaims) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review decision-claim schema fingerprint is unknown or weakened.",
+      );
+    }
+
     if (options.migrationFaultInjection === "after-trigger-installation") {
       throw new DomainError("INTERNAL", "Injected durable review migration failure.");
     }
@@ -874,6 +1001,12 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
     }
     if (schemaFingerprint(db, [LEGACY_TABLE_NAME]) !== normalizedLegacy) {
       throw new DomainError("INTERNAL", "Durable review migration did not install the exact normalized legacy schema.");
+    }
+    if (schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]) !== currentDecisionClaims) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review migration did not install the exact decision-claim schema.",
+      );
     }
     const finalQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
     if (finalQuarantine !== noQuarantine && finalQuarantine !== currentQuarantine) {
@@ -930,6 +1063,39 @@ function resolutionEntry(row: ResolutionRow, pending: PendingDurableReviewRecord
   catch (error) { throw new DomainError("REQUEST_INVALID", `Stored durable resolution does not bind to its immutable parent: ${error instanceof Error ? error.message : "invalid binding"}`); }
   return { seq: row.seq, reviewId: row.review_id, resolvedAtUtc: row.resolved_at_utc, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, resolution };
 }
+function decisionClaimEntry(
+  row: DecisionClaimRow,
+  pending: PendingDurableReviewRecord,
+): DurableReviewDecisionClaimEntry {
+  const claim = DurableReviewDecisionClaimSchema.parse(JSON.parse(row.claim_json));
+  const rowOwner = DurableReviewOwnerSchema.parse({
+    tenantId: row.owner_tenant_id,
+    issuer: row.owner_issuer,
+    subject: row.owner_subject,
+    scope: row.owner_scope,
+  });
+  if (
+    claim.reviewId !== row.review_id ||
+    canonicalize(claim.owner) !== canonicalize(rowOwner) ||
+    canonicalize(claim.owner) !== canonicalize(pending.owner) ||
+    claim.decision !== row.decision ||
+    claim.claimedAtUtc !== row.claimed_at_utc ||
+    claim.receiptId !== row.receipt_id
+  ) {
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "Stored durable decision claim columns do not bind to its immutable claim.",
+    );
+  }
+  return {
+    seq: row.seq,
+    reviewId: row.review_id,
+    decision: row.decision,
+    claimedAtUtc: row.claimed_at_utc,
+    receiptId: row.receipt_id,
+    claim,
+  };
+}
 function legacyEntry(row: LegacyRow): LegacyDurableReviewStoreEntry { return { seq: row.seq, reviewId: row.review_id, createdAtUtc: row.created_at_utc, domainId: row.domain_id, sourceId: row.source_id, inputId: row.input_id, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, record: DurableReviewRecordSchema.parse(JSON.parse(row.record_json)) }; }
 function limitOf(raw: number | undefined): number { return Math.min(Math.max(Math.trunc(raw ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT); }
 function samePendingRequest(left: PendingDurableReviewRecord, right: PendingDurableReviewRecord): boolean {
@@ -951,7 +1117,7 @@ export class DurableReviewStore {
   static open(path: string, options: DurableReviewStoreOpenOptions = {}): DurableReviewStore {
     const db = openDatabase(path);
     try {
-      db.exec("PRAGMA journal_mode = WAL"); db.exec("PRAGMA synchronous = FULL"); db.exec("PRAGMA foreign_keys = ON"); db.exec("PRAGMA recursive_triggers = ON");
+      db.exec("PRAGMA journal_mode = WAL"); db.exec("PRAGMA synchronous = FULL"); db.exec("PRAGMA foreign_keys = ON"); db.exec("PRAGMA recursive_triggers = ON"); db.exec("PRAGMA busy_timeout = 5000");
       initializeSchema(db, options);
       return new DurableReviewStore(db);
     } catch (error) {
@@ -989,51 +1155,125 @@ export class DurableReviewStore {
   }
 
   /**
-   * Serialize the audit-first decision sequence for one server process.
+   * Claim and complete the audit-first decision sequence across every process
+   * sharing this review database.
    *
-   * `issue` must return only after its signed receipt has reached the receipt
-   * ledger. The review resolution is appended afterwards, so a policy,
-   * signing, or ledger failure leaves the pending item unresolved. SQLite
-   * files cannot share an atomic transaction, therefore a later review-store
-   * failure deliberately leaves the already-auditable ledger receipt intact.
+   * The immutable claim is appended before receipt issuance. Its stable
+   * receipt identity makes retries idempotent at the ledger boundary: a crash
+   * before ledger append can retry the same record, while a crash after ledger
+   * append can reconcile that exact record and append only the missing review
+   * resolution. Conflicting human intent can never replace the first claim.
    */
   async resolvePending<T>(
     reviewId: string,
     owner: DurableReviewOwner,
+    request: {
+      decision: "approve" | "reject";
+      claimedAtUtc: string;
+      approverEmail: string | null;
+    },
     issue: (
       pending: PendingDurableReviewRecord,
+      claim: DurableReviewDecisionClaim,
     ) => Promise<{ outcome: T; resolution: unknown }>,
   ): Promise<{ outcome: T; resolution: DurableReviewResolutionEntry }> {
     const id = IdSchema.parse(reviewId);
     const validOwner = DurableReviewOwnerSchema.parse(owner);
-    return this.#queue(async () => {
-      const pending = this.get(id, validOwner);
-      if (!pending) {
-        throw new DomainError("REQUEST_INVALID", `No pending durable review exists for ${id}.`);
-      }
-      if (this.getResolution(id, validOwner)) {
+    const pending = this.get(id, validOwner);
+    if (!pending) {
+      throw new DomainError("REQUEST_INVALID", `No pending durable review exists for ${id}.`);
+    }
+    const claim = this.#claimDecision(
+      pending.record,
+      request.decision,
+      request.claimedAtUtc,
+      request.approverEmail,
+    );
+    const issued = await issue(pending.record, claim.claim);
+    const accepted = bindServerResolutionToPendingReview(
+      pending.record,
+      issued.resolution,
+    );
+    return {
+      outcome: issued.outcome,
+      resolution: await this.#queue(() => this.#appendResolution(pending.record, accepted)),
+    };
+  }
+  #claimDecision(
+    pending: PendingDurableReviewRecord,
+    decision: "approve" | "reject",
+    claimedAtUtc: string,
+    approverEmail: string | null,
+  ): DurableReviewDecisionClaimEntry {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!this.get(pending.reviewId, pending.owner)) {
         throw new DomainError(
-          "ILLEGAL_TRANSITION",
-          `Review ${id} already has an immutable resolution.`,
+          "REQUEST_INVALID",
+          `No pending durable review exists for ${pending.reviewId}.`,
         );
       }
-      const issued = await issue(pending.record);
-      const accepted = bindServerResolutionToPendingReview(
-        pending.record,
-        issued.resolution,
+      if (this.getResolution(pending.reviewId, pending.owner)) {
+        throw new DomainError(
+          "ILLEGAL_TRANSITION",
+          `Review ${pending.reviewId} already has an immutable resolution.`,
+        );
+      }
+      const existing = this.getDecisionClaim(pending.reviewId, pending.owner);
+      if (existing) {
+        if (existing.decision !== decision) {
+          throw new DomainError(
+            "ILLEGAL_TRANSITION",
+            `Review ${pending.reviewId} already has a conflicting immutable decision claim.`,
+          );
+        }
+        this.#db.exec("COMMIT");
+        return existing;
+      }
+      const claim = DurableReviewDecisionClaimSchema.parse({
+        claimVersion: "1",
+        reviewId: pending.reviewId,
+        owner: pending.owner,
+        approverEmail,
+        decision,
+        claimedAtUtc,
+        receiptId: `rcpt-${randomUUID()}`,
+        receiptCreatedAtUtc: claimedAtUtc,
+        receiptSignedAtUtc: claimedAtUtc,
+      });
+      this.#db.prepare(
+        `INSERT INTO durable_review_decision_claims
+          (review_id, owner_tenant_id, owner_issuer, owner_subject, owner_scope,
+           decision, claimed_at_utc, receipt_id, claim_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        claim.reviewId,
+        ...ownerValues(claim.owner),
+        claim.decision,
+        claim.claimedAtUtc,
+        claim.receiptId,
+        canonicalize(claim),
       );
-      return {
-        outcome: issued.outcome,
-        resolution: this.#appendResolution(pending.record, accepted),
-      };
-    });
+      const inserted = this.getDecisionClaim(pending.reviewId, pending.owner);
+      if (!inserted) {
+        throw new DomainError(
+          "INTERNAL",
+          "The review store accepted a decision claim but could not read it back.",
+        );
+      }
+      this.#db.exec("COMMIT");
+      return inserted;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
   }
   #appendResolution(pending: PendingDurableReviewRecord, resolution: DurableReviewResolution): DurableReviewResolutionEntry {
     const existing = this.getResolution(pending.reviewId, pending.owner);
-    if (existing) { if (canonicalize(existing.resolution) === canonicalize(resolution)) return existing; throw new DomainError("REQUEST_INVALID", `Review ${pending.reviewId} already records a different immutable resolution.`); }
+    if (existing) { if (canonicalize(existing.resolution) === canonicalize(resolution)) return existing; throw new DomainError("ILLEGAL_TRANSITION", `Review ${pending.reviewId} already records a different immutable resolution.`); }
     try { this.#db.prepare("INSERT INTO durable_review_resolutions (review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(resolution.reviewId, resolution.resolvedAtUtc, ...ownerValues(pending.owner), resolution.receipt.receiptId, resolution.receipt.receiptSha256, canonicalize(resolution)); }
     catch (error) {
-      const raced = this.getResolution(pending.reviewId, pending.owner); if (raced) { if (canonicalize(raced.resolution) === canonicalize(resolution)) return raced; throw new DomainError("REQUEST_INVALID", `Review ${pending.reviewId} already records a different immutable resolution.`); }
+      const raced = this.getResolution(pending.reviewId, pending.owner); if (raced) { if (canonicalize(raced.resolution) === canonicalize(resolution)) return raced; throw new DomainError("ILLEGAL_TRANSITION", `Review ${pending.reviewId} already records a different immutable resolution.`); }
       const collision = this.#db.prepare("SELECT review_id FROM durable_review_resolutions WHERE receipt_id = ? OR receipt_sha256 = ? LIMIT 1").get(resolution.receipt.receiptId, resolution.receipt.receiptSha256);
       if (collision) throw new DomainError("REQUEST_INVALID", `Receipt ${resolution.receipt.receiptId} or its content hash is already bound to review ${z.strictObject({ review_id: IdSchema }).parse(collision).review_id}.`);
       throw error;
@@ -1059,6 +1299,30 @@ export class DurableReviewStore {
   get(reviewId: string, owner: DurableReviewOwner): DurableReviewStoreEntry | null {
     const row = this.#db.prepare("SELECT * FROM durable_review_pending_records WHERE review_id = ? AND owner_tenant_id = ? AND owner_issuer = ? AND owner_subject = ? AND owner_scope = ?").get(IdSchema.parse(reviewId), ...ownerValues(owner));
     return row ? pendingEntry(PendingRowSchema.parse(row)) : null;
+  }
+  getDecisionClaim(
+    reviewId: string,
+    owner: DurableReviewOwner,
+  ): DurableReviewDecisionClaimEntry | null {
+    const id = IdSchema.parse(reviewId);
+    const validOwner = DurableReviewOwnerSchema.parse(owner);
+    const row = this.#db.prepare(
+      `SELECT * FROM durable_review_decision_claims
+       WHERE review_id = ?
+         AND owner_tenant_id = ?
+         AND owner_issuer = ?
+         AND owner_subject = ?
+         AND owner_scope = ?`,
+    ).get(id, ...ownerValues(validOwner));
+    if (!row) return null;
+    const pending = this.get(id, validOwner);
+    if (!pending) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored durable decision claim ${id} has no immutable pending parent.`,
+      );
+    }
+    return decisionClaimEntry(DecisionClaimRowSchema.parse(row), pending.record);
   }
   getResolution(reviewId: string, owner: DurableReviewOwner): DurableReviewResolutionEntry | null {
     const id = IdSchema.parse(reviewId); const validOwner = DurableReviewOwnerSchema.parse(owner);

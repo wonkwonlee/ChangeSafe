@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  DomainError,
   IdSchema,
   JsonValueSchema,
   Sha256HexSchema,
@@ -174,13 +175,19 @@ export async function verifyDurableReviewIntake(
   const intake = DurableReviewIntakeSchema.parse(raw);
   const inputSha256 = await hashCanonical(intake.input.content);
   if (inputSha256 !== intake.input.inputSha256) {
-    throw new Error("durable intake inputSha256 does not match canonical input content");
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "durable intake inputSha256 does not match canonical input content",
+    );
   }
   if (
     intake.proposal &&
     await hashCanonical(intake.proposal.content) !== intake.proposal.proposalSha256
   ) {
-    throw new Error("durable intake proposalSha256 does not match canonical proposal content");
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "durable intake proposalSha256 does not match canonical proposal content",
+    );
   }
   return intake;
 }
@@ -193,7 +200,10 @@ export async function createDurableReviewIntake(
   },
 ): Promise<DurableReviewIntake> {
   if (raw.domainId === "network" && !raw.proposal) {
-    throw new Error("durable network intake requires an immutable proposal artifact");
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "durable network intake requires an immutable proposal artifact",
+    );
   }
   const content = raw.input.content;
   return verifyDurableReviewIntake({
@@ -479,7 +489,27 @@ export async function acceptDurableReviewRecordForPersistence(
     .union([DurableReviewIntakeSchema, HistoricalDurableReviewIntakeSchema])
     .parse(candidate.intake);
   if (await hashCanonical(parsedIntake.input.content) !== parsedIntake.input.inputSha256) {
-    throw new Error("durable intake inputSha256 does not match canonical input content");
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "durable intake inputSha256 does not match canonical input content",
+    );
+  }
+  if (parsedIntake.domainId === "network") {
+    if (!("proposal" in parsedIntake) || !parsedIntake.proposal) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "durable network records without a canonical proposal artifact are read-only historical data and cannot be persisted",
+      );
+    }
+    if (
+      await hashCanonical(parsedIntake.proposal.content) !==
+      parsedIntake.proposal.proposalSha256
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "durable intake proposalSha256 does not match canonical proposal content",
+      );
+    }
   }
 
   // The record schema then binds the verified intake to the authenticated
@@ -498,6 +528,26 @@ export async function acceptPendingDurableReviewRecordForPersistence(
   const intake = await verifyDurableReviewIntake(candidate.intake);
   return PendingDurableReviewRecordSchema.parse({ ...candidate, intake });
 }
+
+/**
+ * Durable correlation established before a signed receipt can be issued.
+ *
+ * The review store appends this record under a database uniqueness constraint.
+ * A retry with the same human intent reuses the exact receipt identity and
+ * timestamps; a conflicting intent is never allowed to replace it.
+ */
+export const DurableReviewDecisionClaimSchema = z.strictObject({
+  claimVersion: z.literal("1"),
+  reviewId: IdSchema,
+  owner: DurableReviewOwnerSchema,
+  /** Frozen convenience claim; issuer and subject remain the authority. */
+  approverEmail: z.string().max(255).nullable(),
+  decision: z.enum(["approve", "reject"]),
+  claimedAtUtc: TimestampSchema,
+  receiptId: IdSchema,
+  receiptCreatedAtUtc: TimestampSchema,
+  receiptSignedAtUtc: TimestampSchema,
+});
 
 /**
  * Bind a server-issued receipt to an immutable pending record. This helper is
@@ -635,6 +685,7 @@ export function verifyReceiptProof(
 
 export type DurableReviewIntake = z.infer<typeof DurableReviewIntakeSchema>;
 export type DurableReviewOwner = z.infer<typeof DurableReviewOwnerSchema>;
+export type DurableReviewDecisionClaim = z.infer<typeof DurableReviewDecisionClaimSchema>;
 export type PendingDurableReviewRecord = z.infer<typeof PendingDurableReviewRecordSchema>;
 export type DurableReviewResolution = z.infer<typeof DurableReviewResolutionSchema>;
 export type DurableReviewRecord = z.infer<typeof DurableReviewRecordSchema>;
