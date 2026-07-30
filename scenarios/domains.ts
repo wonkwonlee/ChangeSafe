@@ -58,7 +58,10 @@ const network: ScenarioDomain = {
 const terraform: ScenarioDomain = {
   domainId: "terraform",
   adapter: terraformDomain as unknown as DomainAdapter<never, never>,
-  parseInput: (raw) => normalizePlan(raw),
+  parseInput: (raw) => {
+    const { context, ...plan } = raw as { context?: { kind: string; text: string }[] } & Record<string, unknown>;
+    return normalizePlan(plan, { context });
+  },
   inputId: (input) => (input as TerraformInput).planId,
   deriveProposal: (input) => deriveProposal(input as TerraformInput),
 };
