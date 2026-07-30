@@ -86,6 +86,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_id_unique
 CREATE UNIQUE INDEX IF NOT EXISTS durable_review_records_receipt_sha256_unique
   ON durable_review_records (receipt_sha256);
 
+-- INSERT OR REPLACE normally resolves a uniqueness conflict by deleting the
+-- conflicting row before inserting its replacement.  DELETE triggers only
+-- observe that implicit deletion when a connection opts into
+-- recursive_triggers, which is a connection-local pragma.  The queue must
+-- therefore reject a conflict at the incoming INSERT boundary too: this guard
+-- runs before SQLite can choose the REPLACE conflict action, including on a
+-- raw/default connection.
+CREATE TRIGGER IF NOT EXISTS durable_review_records_no_conflicting_insert
+BEFORE INSERT ON durable_review_records
+WHEN EXISTS (
+  SELECT 1
+  FROM durable_review_records
+  WHERE review_id = NEW.review_id
+     OR receipt_id = NEW.receipt_id
+     OR receipt_sha256 = NEW.receipt_sha256
+)
+BEGIN
+  SELECT RAISE(ABORT, 'durable review records are append-only: existing bindings cannot be replaced');
+END;
+
 CREATE TRIGGER IF NOT EXISTS durable_review_records_no_update
 BEFORE UPDATE ON durable_review_records
 BEGIN
@@ -144,10 +164,10 @@ export class DurableReviewStore {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = FULL");
     db.exec("PRAGMA foreign_keys = ON");
-    // INSERT OR REPLACE implements its replacement as a DELETE followed by
-    // INSERT.  SQLite only runs that DELETE's trigger when recursive triggers
-    // are enabled on *this* connection.  Keep it on for every store instance
-    // so the append-only triggers below cover that alternate write spelling.
+    // Keep recursive triggers on for service-owned connections so direct
+    // DELETE/UPDATE protections remain fully observable. The schema-level
+    // conflicting-insert guard below independently blocks INSERT OR REPLACE
+    // even when a raw connection leaves this pragma at SQLite's default OFF.
     db.exec("PRAGMA recursive_triggers = ON");
     db.exec(SCHEMA);
     return new DurableReviewStore(db);

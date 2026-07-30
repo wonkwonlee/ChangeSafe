@@ -204,7 +204,7 @@ describe("DurableReviewStore", () => {
     }
   });
 
-  it("does not let INSERT OR REPLACE bypass the append-only SQLite triggers", async () => {
+  it("does not let INSERT OR REPLACE replace a row with SQLite recursive triggers off", async () => {
     const database = temporaryDatabasePath();
     const store = DurableReviewStore.open(database.path);
     try {
@@ -214,26 +214,48 @@ describe("DurableReviewStore", () => {
       const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
       const raw = new sqlite.DatabaseSync(database.path);
       try {
-        // recursive_triggers is connection-local. This is the same mandatory
-        // setting applied by DurableReviewStore.open for every service-owned
-        // connection; direct filesystem access is not a supported writer.
-        raw.exec("PRAGMA recursive_triggers = ON");
-        expect(() =>
-          raw
-            .prepare(
-              "INSERT OR REPLACE INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .run(
-              candidate.reviewId,
+        // The guard must not rely on service-owned connection configuration.
+        // `recursive_triggers` is connection-local and defaults to OFF; make
+        // that raw-writer condition explicit before exercising REPLACE.
+        raw.exec("PRAGMA recursive_triggers = OFF");
+        expect(
+          raw.prepare("PRAGMA recursive_triggers").get(),
+        ).toEqual({ recursive_triggers: 0 });
+        const replace = raw.prepare(
+          "INSERT OR REPLACE INTO durable_review_records (review_id, created_at_utc, domain_id, source_id, input_id, receipt_id, receipt_sha256, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        );
+        const replacements = [
+          {
+            reviewId: candidate.reviewId,
+            receiptId: "different-receipt",
+            receiptSha256: sha("d"),
+          },
+          {
+            reviewId: "different-review",
+            receiptId: candidate.receipt.receiptId,
+            receiptSha256: sha("d"),
+          },
+          {
+            reviewId: "another-review",
+            receiptId: "another-receipt",
+            receiptSha256: candidate.receipt.receiptSha256,
+          },
+        ];
+
+        for (const replacement of replacements) {
+          expect(() =>
+            replace.run(
+              replacement.reviewId,
               candidate.createdAtUtc,
               candidate.intake.domainId,
               candidate.intake.source.sourceId,
               candidate.intake.input.inputId,
-              candidate.receipt.receiptId,
-              candidate.receipt.receiptSha256,
+              replacement.receiptId,
+              replacement.receiptSha256,
               JSON.stringify(candidate),
             ),
-        ).toThrow(/append-only/);
+          ).toThrow(/append-only: existing bindings cannot be replaced/);
+        }
       } finally {
         raw.close();
       }
