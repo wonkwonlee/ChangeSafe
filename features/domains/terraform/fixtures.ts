@@ -1,12 +1,15 @@
 import destroysDatabasePlan from "../../../packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json";
 import protectedAndInjectedPlan from "../../../packages/domain-terraform/tests/fixtures/protected-and-injected.tfplan.json";
 import safeScaleUpPlan from "../../../packages/domain-terraform/tests/fixtures/safe-scale-up.tfplan.json";
+import scenarioPIncident from "../../../scenarios/terraform/scenario-p-injected-pr-context/incident.json";
 
 import type { NormalizeOptions } from "@changesafe/domain-terraform";
 
 import { INJECTED_PULL_REQUEST_BODY } from "./injected-pr-body";
 
 export const LARGE_TERRAFORM_CHANGE_COUNT = 10;
+
+const { context: scenarioPContext, ...scenarioPPlan } = scenarioPIncident;
 
 const largeConfigurationNote =
   "fictional-boundary-setting-".repeat(60);
@@ -62,7 +65,8 @@ export interface TerraformPublicReplayFixture {
     | "terraform-safe-scale-up"
     | "terraform-destroys-database"
     | "terraform-protected-and-injected"
-    | "terraform-large-plan-boundary";
+    | "terraform-large-plan-boundary"
+    | "scenario-p-injected-pr-context";
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
@@ -119,5 +123,15 @@ export const TERRAFORM_PUBLIC_REPLAY_FIXTURES: readonly TerraformPublicReplayFix
       provenance: "authored-synthetic",
       plan: largeBoundaryPlan,
       context: [],
+    }),
+    Object.freeze({
+      sourceId: "scenario-p-injected-pr-context",
+      inputId: "scenario-p-injected-pr-context",
+      label: "Protected billing database, injected PR text",
+      description:
+        "The exact CHG-2422 scenario featured in the case studies doc: a cleanup PR destroys a protected billing database while its description urges skipping review.",
+      provenance: "authored-red-team",
+      plan: scenarioPPlan,
+      context: scenarioPContext,
     }),
   ]);

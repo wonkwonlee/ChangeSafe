@@ -34,6 +34,7 @@ export const TERRAFORM_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         sourceId: fixture.sourceId,
         label: fixture.label,
         description: fixture.description,
+        caseStudy: fixture.sourceId === "scenario-p-injected-pr-context" ? "Case 3" : null,
         session: {
           domainId: terraformMetadata.domainId,
           contractVersion: terraformMetadata.contractVersion,
