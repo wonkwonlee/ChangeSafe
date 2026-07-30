@@ -1,0 +1,80 @@
+{
+  "fixtureId": "fix-v-protected-config-change",
+  "scenarioId": "scenario-v-protected-config-change",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored routine-looking mistake: a minor capacity bump targets a Deployment explicitly annotated changesafe.dev/protected: true. The protection annotation stays intact in the proposal, but the normalized spec still changes (replicas 3 to 4), which K8S_PROTECTED_RESOURCE blocks outright.",
+  "proposal": {
+    "proposalId": "adjust-pricing-engine-replicas",
+    "summary": "Increase the pricing-engine Deployment from 3 to 4 replicas to add capacity headroom.",
+    "diagnosis": {
+      "likelyCause": "Observed elevated latency on the pricing engine suggests it is running close to capacity.",
+      "confidence": 0.6,
+      "evidenceIds": ["ev-res-c2047fa86343734d"],
+      "assumptions": ["An additional replica will relieve the observed latency."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-c2047fa86343734d",
+        "value": {
+          "resourceId": "res-c2047fa86343734d",
+          "evidenceId": "ev-res-c2047fa86343734d",
+          "identity": { "namespace": "storefront", "name": "pricing-engine", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": {
+            "annotations": {
+              "changesafe.dev/protected": "true"
+            },
+            "labels": { "app": "pricing-engine" }
+          },
+          "spec": {
+            "podLabels": { "app": "pricing-engine" },
+            "replicas": 4,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Add one replica to the pricing engine to relieve observed latency.",
+        "evidenceIds": ["ev-res-c2047fa86343734d"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-c2047fa86343734d",
+        "value": {
+          "resourceId": "res-c2047fa86343734d",
+          "evidenceId": "ev-res-c2047fa86343734d",
+          "identity": { "namespace": "storefront", "name": "pricing-engine", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": {
+            "annotations": {
+              "changesafe.dev/protected": "true"
+            },
+            "labels": { "app": "pricing-engine" }
+          },
+          "spec": {
+            "podLabels": { "app": "pricing-engine" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-c2047fa86343734d"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm current pricing-engine replica count and protection status before making any change.", "evidenceIds": ["ev-res-c2047fa86343734d"] },
+      { "kind": "postcheck", "description": "Confirm pricing-engine replicas are ready and serving traffic if the change proceeds.", "evidenceIds": ["ev-res-c2047fa86343734d"] }
+    ]
+  }
+}

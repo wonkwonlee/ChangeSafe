@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3220 — Adjust the pricing engine replica count",
+  "summary": "A minor capacity change targets a Deployment explicitly marked protected."
+}

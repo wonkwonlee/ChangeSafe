@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-v-protected-config-change",
+  "teaches": "Kubernetes has no delete operation, so protection means the spec cannot change at all — even a single-replica bump on a resource annotated changesafe.dev/protected blocks outright.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "WARN",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "BLOCK",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": ["protected-resource-removal"]
+  }
+}

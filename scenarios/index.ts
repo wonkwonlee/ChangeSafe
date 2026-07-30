@@ -34,6 +34,9 @@ import expectationsR from "./kubernetes/scenario-r-partial-replica-reduction/exp
 import snapshotS from "./kubernetes/scenario-s-privileged-injection/incident.json";
 import fixtureS from "./kubernetes/scenario-s-privileged-injection/replay-fixture.json";
 import expectationsS from "./kubernetes/scenario-s-privileged-injection/expectations.json";
+import snapshotV from "./kubernetes/scenario-v-protected-config-change/incident.json";
+import fixtureV from "./kubernetes/scenario-v-protected-config-change/replay-fixture.json";
+import expectationsV from "./kubernetes/scenario-v-protected-config-change/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -230,6 +233,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotS,
     fixtureS,
     expectationsS,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-v-protected-config-change",
+    "CHG-3220 — Adjust the pricing engine replica count",
+    "A minor capacity change targets a Deployment explicitly marked protected.",
+    snapshotV,
+    fixtureV,
+    expectationsV,
   ),
 ];
 
