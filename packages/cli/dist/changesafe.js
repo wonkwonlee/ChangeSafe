@@ -27071,7 +27071,9 @@ function checkOne(dir, domain2) {
     return { scenarioId, ok: false, problems: ["missing replay-fixture.json"] };
   }
   try {
-    const { input } = domain2.parseInput(readJsonFile(path7.join(dir, "incident.json"), "incident"));
+    const rawIncident = readJsonFile(path7.join(dir, "incident.json"), "incident");
+    const { context, ...incident } = rawIncident;
+    const { input } = domain2.parseInput(incident, context);
     const proposal = domain2.derivesProposalFromInput ? domain2.deriveProposal?.(input) : domain2.parseProposal(
       readJsonFile(path7.join(dir, "replay-fixture.json"), "fixture"),
       input

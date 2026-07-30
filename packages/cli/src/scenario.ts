@@ -92,7 +92,11 @@ function checkOne(dir: string, domain: ReturnType<typeof resolveDomain>): Scenar
   }
 
   try {
-    const { input } = domain.parseInput(readJsonFile(path.join(dir, "incident.json"), "incident"));
+    const rawIncident = readJsonFile(path.join(dir, "incident.json"), "incident");
+    const { context, ...incident } = rawIncident as {
+      context?: { kind: string; text: string }[];
+    } & Record<string, unknown>;
+    const { input } = domain.parseInput(incident, context);
     // External-diff domains (terraform) derive the proposal from the input
     // itself — the plan already says what will change — so there is no
     // separate fixture file to parse, unlike a simulated-state domain.
