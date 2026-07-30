@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-t-blast-radius-drift",
+  "teaches": "A fleet-wide instance-type bump replacing twenty stateless instances earns two independent warnings — the replace itself and the blast radius — a second route to Terraform's HIGH path that never touches state.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "WARN",
+    "PROTECTED_RESOURCE": "PASS",
+    "REVERSIBILITY": "PASS",
+    "BLAST_RADIUS": "WARN",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "HIGH",
+  "approvable": true,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": ["excessive-blast-radius"]
+  }
+}

@@ -14,6 +14,8 @@ import planO from "./terraform/scenario-o-stateful-replace-backed-up/incident.js
 import expectationsO from "./terraform/scenario-o-stateful-replace-backed-up/expectations.json";
 import planP from "./terraform/scenario-p-injected-pr-context/incident.json";
 import expectationsP from "./terraform/scenario-p-injected-pr-context/expectations.json";
+import planT from "./terraform/scenario-t-blast-radius-drift/incident.json";
+import expectationsT from "./terraform/scenario-t-blast-radius-drift/expectations.json";
 
 import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
 import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
@@ -154,6 +156,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     planP,
     null,
     expectationsP,
+  ),
+  defineScenario(
+    "terraform",
+    "scenario-t-blast-radius-drift",
+    "CHG-2431 — Bump instance type across the worker fleet",
+    "A capacity change replaces twenty worker instances fleet-wide, well beyond a single-service scope.",
+    planT,
+    null,
+    expectationsT,
   ),
   defineScenario(
     "kubernetes",
