@@ -114,8 +114,8 @@ Important deployment limits:
   an HttpOnly authenticated session and supplies OIDC bearer tokens upstream.
 - `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` is public configuration and may
   contain no credential.
-- `changesafe serve` does not currently instantiate `DurableReviewStore`, so
-  the vNext review queue is not a turnkey deployment from that command.
+- `changesafe serve --reviews-db <file>` instantiates `DurableReviewStore`
+  and enables the vNext review queue; omit the flag to keep it disabled.
 - ChangeSafe provides no infrastructure execution endpoint.
 
 ## Answers to expected questions

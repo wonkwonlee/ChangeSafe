@@ -163,6 +163,7 @@ browser — owns the gate result and decision record:
 ```bash
 changesafe keygen --out signing-key
 changesafe serve --db decisions.db \
+  --reviews-db reviews.db \
   --oidc-issuer https://your-idp.example.com \
   --oidc-audience changesafe \
   --approver-claim groups=sre \
@@ -185,10 +186,12 @@ OIDC bearer request expected by `@changesafe/server`. The URL is public
 configuration and must contain no credential. Cleartext HTTP is accepted only
 for explicit loopback development.
 
-The repository exposes durable review primitives and endpoints, but
-`changesafe serve` currently wires only the decision/ledger API; it does not
-construct `DurableReviewStore`, so it is not yet a turnkey backend for the
-vNext queue UI. See the server README for the exact integration boundary.
+`changesafe serve` wires `DurableReviewStore` when `--reviews-db` is passed,
+enabling `POST /reviews` and `POST /reviews/:id/decisions` — the queue the
+vNext self-hosted UI expects. Omitting the flag keeps the durable queue
+disabled, matching every deployment from before the flag existed. The
+gateway/BFF that turns a browser session into a bearer token is still an
+operator responsibility; see the server README for the exact boundary.
 
 Storage is `node:sqlite` and identity is verified with Web Crypto. See
 [@changesafe/server](packages/server/README.md) and
