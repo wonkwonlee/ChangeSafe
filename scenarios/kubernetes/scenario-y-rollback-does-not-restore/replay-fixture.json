@@ -1,0 +1,70 @@
+{
+  "fixtureId": "fix-y-rollback-does-not-restore",
+  "scenarioId": "scenario-y-rollback-does-not-restore",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored ineffective rollback: the forward proposal both raises replicas (3 to 5, keeping capacity headroom) and widens the rollout budget (maxUnavailable 25% to 50%). The rollback operation restores replicas to 3 but deliberately leaves maxUnavailable at 50% instead of reverting it to 25%, so replaying the forward and rollback operations on a sandboxed copy does not reproduce the original state.",
+  "proposal": {
+    "proposalId": "scale-and-widen-notification-rollout",
+    "summary": "Scale the notification Deployment from 3 to 5 replicas and widen its rollout maxUnavailable from 25% to 50% ahead of a marketing campaign.",
+    "diagnosis": {
+      "likelyCause": "Forecast campaign traffic requires more notification capacity and a faster rollout budget to keep pace with frequent releases during the campaign window.",
+      "confidence": 0.7,
+      "evidenceIds": ["ev-res-a2deae73f4ad1c19"],
+      "assumptions": ["The campaign traffic forecast holds and the wider rollout budget is reverted once the campaign window ends."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-a2deae73f4ad1c19",
+        "value": {
+          "resourceId": "res-a2deae73f4ad1c19",
+          "evidenceId": "ev-res-a2deae73f4ad1c19",
+          "identity": { "namespace": "storefront", "name": "notification", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "notification" } },
+          "spec": {
+            "podLabels": { "app": "notification" },
+            "replicas": 5,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "50%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Scale up capacity and widen the rollout budget ahead of the marketing campaign's forecast traffic.",
+        "evidenceIds": ["ev-res-a2deae73f4ad1c19"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-a2deae73f4ad1c19",
+        "value": {
+          "resourceId": "res-a2deae73f4ad1c19",
+          "evidenceId": "ev-res-a2deae73f4ad1c19",
+          "identity": { "namespace": "storefront", "name": "notification", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "notification" } },
+          "spec": {
+            "podLabels": { "app": "notification" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "50%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-a2deae73f4ad1c19"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm current notification replica count and rollout budget before scaling up.", "evidenceIds": ["ev-res-a2deae73f4ad1c19"] },
+      { "kind": "postcheck", "description": "Confirm all 5 replicas are ready and serving notification traffic without error-rate increase after scaling up.", "evidenceIds": ["ev-res-a2deae73f4ad1c19"] }
+    ]
+  }
+}

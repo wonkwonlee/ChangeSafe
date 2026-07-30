@@ -43,6 +43,9 @@ import expectationsW from "./kubernetes/scenario-w-mutable-image-tag/expectation
 import snapshotX from "./kubernetes/scenario-x-missing-verification/incident.json";
 import fixtureX from "./kubernetes/scenario-x-missing-verification/replay-fixture.json";
 import expectationsX from "./kubernetes/scenario-x-missing-verification/expectations.json";
+import snapshotY from "./kubernetes/scenario-y-rollback-does-not-restore/incident.json";
+import fixtureY from "./kubernetes/scenario-y-rollback-does-not-restore/replay-fixture.json";
+import expectationsY from "./kubernetes/scenario-y-rollback-does-not-restore/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -266,6 +269,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotX,
     fixtureX,
     expectationsX,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-y-rollback-does-not-restore",
+    "CHG-3241 — Scale up notification service and widen its rollout budget",
+    "A capacity and rollout-budget change for the notification Deployment ships with a rollback that doesn't fully restore the prior configuration.",
+    snapshotY,
+    fixtureY,
+    expectationsY,
   ),
 ];
 

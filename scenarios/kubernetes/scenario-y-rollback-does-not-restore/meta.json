@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3241 — Scale up notification service and widen its rollout budget",
+  "summary": "A capacity and rollout-budget change for the notification Deployment ships with a rollback that doesn't fully restore the prior configuration."
+}
