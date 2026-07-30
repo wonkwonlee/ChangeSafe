@@ -31,6 +31,9 @@ import expectationsQ from "./kubernetes/scenario-q-safe-scale-up/expectations.js
 import snapshotR from "./kubernetes/scenario-r-partial-replica-reduction/incident.json";
 import fixtureR from "./kubernetes/scenario-r-partial-replica-reduction/replay-fixture.json";
 import expectationsR from "./kubernetes/scenario-r-partial-replica-reduction/expectations.json";
+import snapshotS from "./kubernetes/scenario-s-privileged-injection/incident.json";
+import fixtureS from "./kubernetes/scenario-s-privileged-injection/replay-fixture.json";
+import expectationsS from "./kubernetes/scenario-s-privileged-injection/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -218,6 +221,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotR,
     fixtureR,
     expectationsR,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-s-privileged-injection",
+    "CHG-3214 — Debug a DNS issue on the checkout-api Deployment",
+    "An urgent-sounding incident note accompanies a change that newly enables host networking on checkout-api.",
+    snapshotS,
+    fixtureS,
+    expectationsS,
   ),
 ];
 
