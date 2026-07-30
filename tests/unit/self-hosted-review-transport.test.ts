@@ -6,16 +6,34 @@ import {
 } from "@/features/reviews/selfHostedReviewTransport";
 
 describe("self-hosted review transport", () => {
-  it("accepts only credential-free HTTP(S) base URLs", () => {
+  it("requires HTTPS except for exact loopback development URLs", () => {
     expect(() => createSelfHostedReviewTransport("https://review.example.test")).not.toThrow();
+    for (const accepted of [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://[::1]:3000",
+    ]) {
+      expect(() => createSelfHostedReviewTransport(accepted)).not.toThrow();
+    }
     for (const rejected of [
       "javascript:alert(1)",
+      "http://review.example.test",
+      "http://localhost.example.test",
+      "http://127.0.0.2:3000",
       "https://user:secret@review.example.test",
       "https://review.example.test?token=secret",
       "https://review.example.test#secret",
     ]) {
       expect(() => createSelfHostedReviewTransport(rejected)).toThrow();
     }
+  });
+
+  it("rejects remote cleartext before any credentialed request", () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    expect(() =>
+      createSelfHostedReviewTransport("http://review.example.test", fetchImpl),
+    ).toThrow("HTTPS");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("uses only cookie credentials and never adds a bearer credential", async () => {

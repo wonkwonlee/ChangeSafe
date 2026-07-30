@@ -11,7 +11,9 @@ export const metadata: Metadata = {
 export default function SelfHostedWorkbenchPage() {
   return (
     <SelfHostedReviewWorkbench
-      baseUrl={process.env.CHANGESAFE_SELF_HOSTED_BASE_URL?.trim() || null}
+      publicGatewayUrl={
+        process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL?.trim() || null
+      }
     />
   );
 }

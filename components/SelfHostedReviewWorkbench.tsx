@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 
 import { SelfHostedReviewDetail } from "./SelfHostedReviewDetail";
@@ -12,10 +19,15 @@ import {
 import {
   SelfHostedReviewTransportError,
   createSelfHostedReviewTransport,
-  type SelfHostedReviewEntry,
   type SelfHostedReviewSummary,
 } from "@/features/reviews/selfHostedReviewTransport";
-import type { ReceiptProof } from "@/features/reviews/durable-review-contract";
+import {
+  INITIAL_SELF_HOSTED_REVIEW_VIEW_STATE,
+  selfHostedReviewViewReducer,
+  type ReceiptProofViewState,
+  type ReviewAttempt,
+  type ReviewResolutionStatus,
+} from "@/features/reviews/selfHostedReviewViewState";
 
 const INITIAL_EXAMPLE = SELF_HOSTED_REVIEW_EXAMPLES[0] ?? (() => {
   throw new Error("A self-hosted review example is required.");
@@ -26,12 +38,18 @@ function errorMessage(error: unknown): string {
   return "The self-hosted review request failed safely. No authority was assumed.";
 }
 
-export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null }) {
+export function SelfHostedReviewWorkbench({
+  publicGatewayUrl,
+}: {
+  publicGatewayUrl: string | null;
+}) {
   const connection = useMemo(() => {
-    if (!baseUrl) return { transport: null, configurationError: null };
+    if (!publicGatewayUrl) {
+      return { transport: null, configurationError: null };
+    }
     try {
       return {
-        transport: createSelfHostedReviewTransport(baseUrl),
+        transport: createSelfHostedReviewTransport(publicGatewayUrl),
         configurationError: null,
       };
     } catch {
@@ -41,58 +59,116 @@ export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null 
           "Self-hosted review configuration is invalid. No connection was attempted.",
       };
     }
-  }, [baseUrl]);
+  }, [publicGatewayUrl]);
   const { transport } = connection;
   const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
   const [reviews, setReviews] = useState<readonly SelfHostedReviewSummary[]>([]);
-  const [selectedReview, setSelectedReview] = useState<SelfHostedReviewEntry | null>(null);
-  const [proof, setProof] = useState<ReceiptProof | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
+  const [viewState, dispatch] = useReducer(
+    selfHostedReviewViewReducer,
+    INITIAL_SELF_HOSTED_REVIEW_VIEW_STATE,
+  );
+  const attemptToken = useRef(0);
+  const queueAttemptToken = useRef(0);
   const example = SELF_HOSTED_REVIEW_EXAMPLES.find(
     ({ sourceId }) => sourceId === selectedSourceId,
   ) ?? INITIAL_EXAMPLE;
+  const busy = queueBusy || viewState.activeAttempt !== null;
+
+  function beginAttempt(
+    kind: ReviewAttempt["kind"],
+    reviewId: string,
+  ): ReviewAttempt {
+    const attempt = {
+      token: ++attemptToken.current,
+      reviewId,
+      kind,
+    } satisfies ReviewAttempt;
+    dispatch({ type: "begin", attempt });
+    return attempt;
+  }
 
   const refreshQueue = useCallback(async () => {
     if (!transport) return;
-    setBusy(true);
-    setMessage(null);
+    const token = ++queueAttemptToken.current;
+    setQueueBusy(true);
+    setQueueMessage(null);
     try {
-      setReviews(await transport.list());
+      const nextReviews = await transport.list();
+      if (queueAttemptToken.current === token) {
+        setReviews(nextReviews);
+      }
     } catch (error) {
-      setMessage(errorMessage(error));
+      if (queueAttemptToken.current === token) {
+        setQueueMessage(errorMessage(error));
+      }
     } finally {
-      setBusy(false);
+      if (queueAttemptToken.current === token) {
+        setQueueBusy(false);
+      }
     }
   }, [transport]);
 
-  const selectReview = useCallback(async (reviewId: string) => {
+  async function selectReview(reviewId: string) {
     if (!transport) return;
-    setBusy(true);
-    setMessage(null);
+    setQueueMessage(null);
+    const attempt = beginAttempt("select", reviewId);
     try {
-      const [review, proofResult] = await Promise.all([
+      const [reviewResult, proofResult] = await Promise.allSettled([
         transport.get(reviewId),
         transport.getReceiptProof(reviewId),
       ]);
-      setSelectedReview(review);
-      setProof(proofResult.status === "resolved" ? proofResult.proof : null);
-    } catch (error) {
-      setMessage(errorMessage(error));
+      if (reviewResult.status === "rejected") {
+        dispatch({
+          type: "failed",
+          attempt,
+          message: errorMessage(reviewResult.reason),
+        });
+        return;
+      }
+
+      let resolutionStatus: ReviewResolutionStatus;
+      let proof: ReceiptProofViewState;
+      let message: string | undefined;
+      if (proofResult.status === "rejected") {
+        resolutionStatus = "unknown";
+        proof = { status: "unavailable" };
+        message = errorMessage(proofResult.reason);
+      } else if (proofResult.value.status === "resolved") {
+        resolutionStatus = "resolved";
+        proof = { status: "available", proof: proofResult.value.proof };
+      } else {
+        resolutionStatus = "pending";
+        proof = { status: "not-created" };
+      }
+      dispatch({
+        type: "selected",
+        attempt,
+        review: reviewResult.value,
+        resolutionStatus,
+        proof,
+        message,
+      });
     } finally {
-      setBusy(false);
+      dispatch({ type: "finish", attempt });
     }
-  }, [transport]);
+  }
 
   useEffect(() => {
     if (!transport) return;
     let active = true;
+    const token = ++queueAttemptToken.current;
     transport.list().then(
       (nextReviews) => {
-        if (active) setReviews(nextReviews);
+        if (active && queueAttemptToken.current === token) {
+          setReviews(nextReviews);
+        }
       },
       (error: unknown) => {
-        if (active) setMessage(errorMessage(error));
+        if (active && queueAttemptToken.current === token) {
+          setQueueMessage(errorMessage(error));
+        }
       },
     );
     return () => {
@@ -102,35 +178,69 @@ export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null 
 
   async function createReview() {
     if (!transport || example.domainId === "kubernetes") return;
-    setBusy(true);
-    setMessage(null);
+    const reviewId = `review-${crypto.randomUUID()}`;
+    setQueueMessage(null);
+    const attempt = beginAttempt("create", reviewId);
     try {
       const review = await transport.create(
-        `review-${crypto.randomUUID()}`,
+        reviewId,
         await createSelfHostedIntake(example, new Date().toISOString()),
       );
-      setSelectedReview(review);
-      setProof(null);
-      setReviews(await transport.list());
+      dispatch({ type: "created", attempt, review });
+      const nextReviews = await transport.list();
+      if (attemptToken.current === attempt.token) {
+        setReviews(nextReviews);
+      }
     } catch (error) {
-      setMessage(errorMessage(error));
+      dispatch({ type: "failed", attempt, message: errorMessage(error) });
     } finally {
-      setBusy(false);
+      dispatch({ type: "finish", attempt });
     }
   }
 
   async function decide(decision: "approve" | "reject") {
-    if (!transport || !selectedReview) return;
-    setBusy(true);
-    setMessage(null);
+    if (
+      !transport ||
+      !viewState.review ||
+      viewState.resolutionStatus !== "pending"
+    ) {
+      return;
+    }
+    const reviewId = viewState.review.reviewId;
+    setQueueMessage(null);
+    const attempt = beginAttempt("decide", reviewId);
     try {
-      await transport.decide(selectedReview.reviewId, decision);
-      const proofResult = await transport.getReceiptProof(selectedReview.reviewId);
-      setProof(proofResult.status === "resolved" ? proofResult.proof : null);
+      await transport.decide(reviewId, decision);
+      dispatch({ type: "decision-resolved", attempt });
+      try {
+        const proofResult = await transport.getReceiptProof(reviewId);
+        if (proofResult.status === "resolved") {
+          dispatch({
+            type: "proof-completed",
+            attempt,
+            proof: { status: "available", proof: proofResult.proof },
+          });
+        } else {
+          dispatch({
+            type: "proof-completed",
+            attempt,
+            proof: { status: "unavailable" },
+            message:
+              "The decision was resolved, but receipt proof is not available yet.",
+          });
+        }
+      } catch (error) {
+        dispatch({
+          type: "proof-completed",
+          attempt,
+          proof: { status: "unavailable" },
+          message: errorMessage(error),
+        });
+      }
     } catch (error) {
-      setMessage(errorMessage(error));
+      dispatch({ type: "failed", attempt, message: errorMessage(error) });
     } finally {
-      setBusy(false);
+      dispatch({ type: "finish", attempt });
     }
   }
 
@@ -152,10 +262,13 @@ export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null 
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-dim">
             Intake immutable offline artifacts, submit a human decision, and inspect independent receipt proof claims. Authentication is supplied by the self-hosted deployment; this client stores no token and never executes infrastructure.
           </p>
-          {!baseUrl || connection.configurationError ? (
+          <p className="mt-2 max-w-3xl text-xs leading-relaxed text-ink-faint">
+            The gateway URL is public, browser-visible configuration. It must use HTTPS outside explicit loopback development and must never contain credentials; authentication remains in an HttpOnly session cookie.
+          </p>
+          {!publicGatewayUrl || connection.configurationError ? (
             <p className="mt-4 rounded border border-warn/50 bg-warn/10 p-3 text-sm text-warn" role="status">
               {connection.configurationError ??
-                "Self-hosted review is not configured. Set the server-only CHANGESAFE_SELF_HOSTED_BASE_URL to the authenticated gateway HTTP(S) base URL; no credential belongs in this setting."}
+                "Self-hosted review is not configured. Set CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL to the browser-visible HTTPS gateway URL. This public setting must contain no credential; the gateway supplies authentication through an HttpOnly session cookie."}
             </p>
           ) : null}
         </div>
@@ -179,7 +292,14 @@ export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null 
         </aside>
 
         <main aria-label="Authenticated review detail">
-          <SelfHostedReviewDetail actionMessage={message} busy={busy} onDecide={(decision) => void decide(decision)} proof={proof} review={selectedReview} />
+          <SelfHostedReviewDetail
+            actionMessage={viewState.message ?? queueMessage}
+            busy={busy}
+            onDecide={(decision) => void decide(decision)}
+            proof={viewState.proof}
+            resolutionStatus={viewState.resolutionStatus}
+            review={viewState.review}
+          />
         </main>
 
         <aside className="rounded-xl border border-edge bg-surface p-4" aria-busy={busy} aria-label="Authenticated review queue">
@@ -187,7 +307,12 @@ export function SelfHostedReviewWorkbench({ baseUrl }: { baseUrl: string | null 
             <div><p className="eyebrow text-ink-faint">Owner-scoped queue</p><h2 className="mt-2 text-base font-semibold">Reviews</h2></div>
             <button className="rounded border border-edge px-3 py-2 text-xs disabled:opacity-50" disabled={busy || !transport} onClick={() => void refreshQueue()} type="button">Refresh</button>
           </div>
-          <SelfHostedReviewQueue onSelect={(reviewId) => void selectReview(reviewId)} reviews={reviews} selectedReviewId={selectedReview?.reviewId ?? null} />
+          <SelfHostedReviewQueue
+            disabled={busy}
+            onSelect={(reviewId) => void selectReview(reviewId)}
+            reviews={reviews}
+            selectedReviewId={viewState.targetReviewId}
+          />
         </aside>
       </div>
     </div>

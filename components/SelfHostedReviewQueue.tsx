@@ -3,10 +3,12 @@ import type { SelfHostedReviewSummary } from "@/features/reviews/selfHostedRevie
 export function SelfHostedReviewQueue({
   reviews,
   selectedReviewId,
+  disabled,
   onSelect,
 }: {
   reviews: readonly SelfHostedReviewSummary[];
   selectedReviewId: string | null;
+  disabled: boolean;
   onSelect: (reviewId: string) => void;
 }) {
   if (reviews.length === 0) {
@@ -25,7 +27,8 @@ export function SelfHostedReviewQueue({
         <li key={`${review.reviewId}-${review.seq}`}>
           <button
             aria-pressed={review.reviewId === selectedReviewId}
-            className="w-full rounded border border-edge px-3 py-3 text-left hover:border-active"
+            className="w-full rounded border border-edge px-3 py-3 text-left hover:border-active disabled:opacity-50"
+            disabled={disabled}
             onClick={() => onSelect(review.reviewId)}
             type="button"
           >

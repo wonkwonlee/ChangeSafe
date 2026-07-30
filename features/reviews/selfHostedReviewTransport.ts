@@ -93,17 +93,28 @@ export interface SelfHostedReviewTransport {
   ): Promise<{ readonly status: "pending" } | { readonly status: "resolved"; readonly proof: ReceiptProof }>;
 }
 
+function isExplicitLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]"
+  );
+}
+
 function normalizeBaseUrl(rawBaseUrl: string): string {
   const parsed = z.string().url().parse(rawBaseUrl);
   const url = new URL(parsed);
   if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    (url.protocol !== "https:" &&
+      !(url.protocol === "http:" && isExplicitLoopback(url.hostname))) ||
     url.username ||
     url.password ||
     url.search ||
     url.hash
   ) {
-    throw new Error("Self-hosted review base URL must be an HTTP(S) origin or path without credentials, query, or fragment.");
+    throw new Error(
+      "The public self-hosted gateway URL must use HTTPS. Cleartext HTTP is allowed only for explicit loopback development, and credentials, query, or fragment are forbidden.",
+    );
   }
   return url.toString().replace(/\/$/, "");
 }
