@@ -25,6 +25,34 @@ function block(pattern: RegExp): string {
   return match[1];
 }
 
+function relativeLuminance(hex: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+    throw new Error(`Expected a six-digit hexadecimal color, received "${hex}"`);
+  }
+  const channels = [1, 3, 5].map((offset) =>
+    Number.parseInt(hex.slice(offset, offset + 2), 16) / 255,
+  );
+  const linear = channels.map((channel) =>
+    channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  const [red = 0, green = 0, blue = 0] = linear;
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const lighter = Math.max(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  const darker = Math.min(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe("operations-console design tokens", () => {
   it("exposes the semantic color families through Tailwind", () => {
     const root = declarations(block(/:root\s*\{([\s\S]*?)\n\}/));
@@ -113,5 +141,81 @@ describe("operations-console design tokens", () => {
     expect(block(/:root\s*\{([\s\S]*?)\n\}/)).toContain("color-scheme: dark");
     expect(stylesheet).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
     expect(stylesheet).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/);
+  });
+
+  it("keeps normal semantic text and status colors at WCAG AA contrast on every console surface", () => {
+    const root = declarations(block(/:root\s*\{([\s\S]*?)\n\}/));
+    const surfaceTokens = [
+      "--canvas",
+      "--surface",
+      "--surface-elevated",
+      "--overlay",
+    ] as const;
+    const textTokens = [
+      "--text-primary",
+      "--text-secondary",
+      "--text-muted",
+      "--action-primary",
+      "--action-primary-hover",
+      "--accent-provenance",
+      "--accent-deterministic",
+      "--accent-human",
+      "--status-pass",
+      "--status-warn",
+      "--status-block",
+      "--status-info",
+    ] as const;
+
+    for (const textToken of textTokens) {
+      const foreground = root.get(textToken);
+      expect(foreground, textToken).toBeDefined();
+      if (!foreground) continue;
+      for (const surfaceToken of surfaceTokens) {
+        const background = root.get(surfaceToken);
+        expect(background, surfaceToken).toBeDefined();
+        if (!background) continue;
+        expect(
+          contrastRatio(foreground, background),
+          `${textToken} on ${surfaceToken}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
+    const primary = root.get("--text-primary");
+    const secondary = root.get("--text-secondary");
+    const muted = root.get("--text-muted");
+    expect(primary).toBeDefined();
+    expect(secondary).toBeDefined();
+    expect(muted).toBeDefined();
+    if (primary && secondary && muted) {
+      expect(relativeLuminance(primary)).toBeGreaterThan(
+        relativeLuminance(secondary),
+      );
+      expect(relativeLuminance(secondary)).toBeGreaterThan(
+        relativeLuminance(muted),
+      );
+    }
+  });
+
+  it("keeps filled control foregrounds at WCAG AA normal-text contrast", () => {
+    const root = declarations(block(/:root\s*\{([\s\S]*?)\n\}/));
+    const pairs = [
+      ["--action-primary-foreground", "--action-primary"],
+      ["--action-primary-foreground", "--action-primary-hover"],
+      ["--action-neutral-foreground", "--action-neutral"],
+      ["--action-neutral-foreground", "--action-neutral-hover"],
+    ] as const;
+
+    for (const [foregroundToken, backgroundToken] of pairs) {
+      const foreground = root.get(foregroundToken);
+      const background = root.get(backgroundToken);
+      expect(foreground, foregroundToken).toBeDefined();
+      expect(background, backgroundToken).toBeDefined();
+      if (!foreground || !background) continue;
+      expect(
+        contrastRatio(foreground, background),
+        `${foregroundToken} on ${backgroundToken}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
