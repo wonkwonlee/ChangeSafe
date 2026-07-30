@@ -319,6 +319,11 @@ describe("durable self-hosted review contracts", () => {
           chainSha256: sha("e"),
           checkedAtUtc: "2026-07-30T00:02:00.000Z",
         },
+        ledgerChain: {
+          status: "verified",
+          headChainSha256: sha("e"),
+          checkedAtUtc: "2026-07-30T00:02:00.000Z",
+        },
       });
     expect(verifyReceiptProof(acceptedRecord, proof)).toMatchObject({ outOfBandVerification: { status: "valid" } });
 
@@ -335,6 +340,7 @@ describe("durable self-hosted review contracts", () => {
           checkedAtUtc: "2026-07-30T00:02:00.000Z",
         },
         ledgerInclusion: { status: "not-checked", sequence: null, chainSha256: null, checkedAtUtc: null },
+        ledgerChain: { status: "not-checked", headChainSha256: null, checkedAtUtc: null },
       }).success,
     ).toBe(false);
   });
@@ -402,6 +408,7 @@ describe("durable self-hosted review contracts", () => {
       contentIntegrity: { status: "not-checked" as const, checkedAtUtc: null },
       signature: { present: true as const, publicKeyId: "d".repeat(32) },
       ledgerInclusion: { status: "not-checked" as const, sequence: null, chainSha256: null, checkedAtUtc: null },
+      ledgerChain: { status: "not-checked" as const, headChainSha256: null, checkedAtUtc: null },
     };
     expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "invalid", trustedPublicKeyId: "d".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(true);
     expect(ReceiptProofSchema.safeParse({ ...base, outOfBandVerification: { status: "invalid", trustedPublicKeyId: "e".repeat(32), checkedAtUtc: "2026-07-30T00:02:00.000Z" } }).success).toBe(false);

@@ -631,9 +631,12 @@ const ContentIntegrityClaimSchema = z.strictObject({
   }
 });
 
+// `null` is not "unsigned": it means the receipt record could not be read, so
+// presence itself was not checked.
 const ReceiptSignaturePresenceSchema = z.discriminatedUnion("present", [
   z.strictObject({ present: z.literal(true), publicKeyId: z.string().regex(/^[a-f0-9]{32}$/) }),
   z.strictObject({ present: z.literal(false), publicKeyId: z.null() }),
+  z.strictObject({ present: z.null(), publicKeyId: z.null() }),
 ]);
 
 const OutOfBandVerificationSchema = z.discriminatedUnion("status", [
@@ -644,14 +647,22 @@ const OutOfBandVerificationSchema = z.discriminatedUnion("status", [
 
 const LedgerInclusionClaimSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("included"), sequence: z.number().int().positive(), chainSha256: Sha256HexSchema, checkedAtUtc: TimestampSchema }),
-  z.strictObject({ status: z.enum(["not-included", "not-checked"]), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: z.null() }),
+  z.strictObject({ status: z.enum(["not-included", "unavailable"]), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: TimestampSchema }),
+  z.strictObject({ status: z.literal("not-checked"), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: z.null() }),
+]);
+
+const LedgerChainClaimSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.enum(["verified", "invalid"]), headChainSha256: Sha256HexSchema.nullable(), checkedAtUtc: TimestampSchema }),
+  z.strictObject({ status: z.literal("unavailable"), headChainSha256: z.null(), checkedAtUtc: TimestampSchema }),
+  z.strictObject({ status: z.literal("not-checked"), headChainSha256: z.null(), checkedAtUtc: z.null() }),
 ]);
 
 /**
  * Claims about a receipt are kept separate on purpose. A valid content hash
  * does not prove authorship, a signature without an out-of-band key is not
- * verified, and ledger inclusion does not make either claim true. This schema
- * does not calculate any proof; a verifier must populate it from real checks.
+ * verified, ledger inclusion does not prove the chain is intact, and none of
+ * those claims makes another true. This schema does not calculate any proof;
+ * a verifier must populate it from real checks.
  */
 export const ReceiptProofSchema = z
   .strictObject({
@@ -662,6 +673,7 @@ export const ReceiptProofSchema = z
     signature: ReceiptSignaturePresenceSchema,
     outOfBandVerification: OutOfBandVerificationSchema,
     ledgerInclusion: LedgerInclusionClaimSchema,
+    ledgerChain: LedgerChainClaimSchema,
   })
   .superRefine((proof, context) => {
     if (!proof.signature.present && proof.outOfBandVerification.status !== "not-checked") {

@@ -10,6 +10,7 @@ import {
   generateSigningKeyPair,
   hashCanonical,
   importSigningKeyPair,
+  importVerifyingKey,
 } from "@changesafe/core";
 import { normalizePlan } from "@changesafe/domain-terraform";
 import { Ledger } from "@changesafe/ledger";
@@ -68,6 +69,9 @@ beforeEach(async () => {
       appVersion: "changesafe-server-test",
       signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
     }),
+    trustedReceiptPublicKeys: new Map([
+      [pem.publicKeyId, await importVerifyingKey(pem.publicKeyPem)],
+    ]),
     now: () => `2026-07-30T05:00:0${clockTick++}.000Z`,
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -185,6 +189,12 @@ async function decideReview(reviewId: string, body: unknown, token?: string) {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
+  });
+}
+
+async function getReceiptProof(reviewId: string, token?: string) {
+  return fetch(`${context.baseUrl}/reviews/${reviewId}/receipt-proof`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
   });
 }
 
@@ -470,6 +480,55 @@ describe("durable review decision HTTP API", () => {
       receiptId: signed.receipt.receiptId,
       proposalSha256: signed.receipt.proposalSha256,
     });
+
+    const proofResponse = await getReceiptProof("review-network-decide", token);
+    expect(proofResponse.status).toBe(200);
+    expect((await proofResponse.json()) as { proof: unknown }).toMatchObject({
+      proof: {
+        reviewId: "review-network-decide",
+        receiptId: signed.receipt.receiptId,
+        receiptSha256: signed.receipt.receiptSha256,
+        contentIntegrity: { status: "verified" },
+        signature: {
+          present: true,
+          publicKeyId: signed.signature.publicKeyId,
+        },
+        outOfBandVerification: {
+          status: "valid",
+          trustedPublicKeyId: signed.signature.publicKeyId,
+        },
+        ledgerInclusion: {
+          status: "included",
+          sequence: 1,
+          chainSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+        ledgerChain: {
+          status: "verified",
+          headChainSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      },
+    });
+  });
+
+  it("authenticates and owner-scopes receipt proof before disclosing resolution state", async () => {
+    const alice = await context.idp.token();
+    const bob = await context.idp.token({ sub: "user-bob", email: "bob@example.test" });
+    expect((await postReview(await pendingNetworkReview("review-proof-owner"), alice)).status).toBe(201);
+
+    expect((await getReceiptProof("review-proof-owner")).status).toBe(401);
+    const pending = await getReceiptProof("review-proof-owner", alice);
+    expect(pending.status).toBe(409);
+
+    expect(
+      (await decideReview("review-proof-owner", { decision: "reject" }, alice)).status,
+    ).toBe(201);
+
+    const hidden = await getReceiptProof("review-proof-owner", bob);
+    const absent = await getReceiptProof("review-proof-absent", bob);
+    expect(hidden.status).toBe(404);
+    expect(absent.status).toBe(404);
+    expect(await hidden.json()).toEqual(await absent.json());
+    expect((await getReceiptProof("review-proof-owner", alice)).status).toBe(200);
   });
 
   it("derives Terraform from the stored plan and accepts only human decision intent", async () => {

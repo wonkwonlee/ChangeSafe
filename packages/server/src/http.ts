@@ -16,6 +16,7 @@ import { DecisionService, type DecisionRequest } from "./decisions";
 import { DurableReviewStore, type DurableReviewStoreEntry } from "./durable-review-store";
 import { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
 import { AuthenticationError, AuthorizationError, OidcVerifier, bearerToken } from "./oidc";
+import { buildReceiptProof } from "./receipt-proof";
 
 /** Plans and bundles are large; anything past this is not our client. */
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -76,6 +77,8 @@ export interface DecisionServerOptions {
   decisions: DecisionService;
   /** Optional during rolling upgrades; /reviews does not exist without it. */
   reviews?: DurableReviewStore;
+  /** Operator-controlled OOB keys by fingerprint; never populated from a receipt or browser. */
+  trustedReceiptPublicKeys?: ReadonlyMap<string, CryptoKey>;
   /** Injectable only for deterministic server tests; client timestamps are never queue timestamps. */
   now?: () => string;
 }
@@ -466,6 +469,47 @@ async function handle(
       sourceId: url.searchParams.get("sourceId") ?? undefined,
     }, durableReviewOwner(identity));
     send(response, 200, { reviews: reviews.map(reviewSummary) });
+    return;
+  }
+
+  const receiptProofMatch =
+    request.method === "GET"
+      ? /^\/reviews\/([^/]+)\/receipt-proof$/.exec(url.pathname)
+      : null;
+  if (receiptProofMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` },
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(receiptProofMatch[1]);
+    const owner = durableReviewOwner(identity);
+    // Resolve owner visibility before consulting either the resolution or
+    // ledger so another principal gets the same 404 as an absent review.
+    if (!options.reviews.get(reviewId, owner)) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." },
+      });
+      return;
+    }
+    const resolution = options.reviews.getResolution(reviewId, owner);
+    if (!resolution) {
+      send(response, 409, {
+        error: {
+          code: "ILLEGAL_TRANSITION",
+          message: "The requested review does not have an immutable resolution.",
+        },
+      });
+      return;
+    }
+    const proof = await buildReceiptProof(resolution.resolution, options.ledger, {
+      checkedAtUtc: serverNow(options),
+      ...(options.trustedReceiptPublicKeys
+        ? { trustedPublicKeys: options.trustedReceiptPublicKeys }
+        : {}),
+    });
+    send(response, 200, { proof });
     return;
   }
 
