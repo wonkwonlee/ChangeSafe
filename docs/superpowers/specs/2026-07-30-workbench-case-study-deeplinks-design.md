@@ -54,10 +54,40 @@ succeed.
    naming which case study a scenario is (or `null` for the other 21).
    Set per-scenario in `features/domains/network/examples.ts` (for
    `scenario-a-failover`, `scenario-b-route-leak`, `scenario-g-silent-regression`)
-   and `features/domains/terraform/examples.ts` (for
-   `scenario-p-injected-pr-context`) — domain-specific curation data stays
-   in the domain-specific file, matching how `label`/`description` are
-   already set there.
+   and `features/domains/terraform/fixtures.ts` (for
+   `scenario-p-injected-pr-context`, added as a new fixture — see below).
+
+   **Discovery during planning, resolved:** the Network public workbench
+   maps its picker directly from `NETWORK_SCENARIOS` (`scenarios/network.ts`),
+   but Terraform and Kubernetes do not — `features/domains/terraform/fixtures.ts`
+   and `features/domains/kubernetes/fixtures.ts` are separate, hand-authored
+   fixture registries (raw plan/snapshot JSON pulled from
+   `packages/domain-terraform/tests/fixtures/`), independent of
+   `scenarios/terraform/*`. The existing terraform fixture set already has a
+   thematically similar entry (`terraform-protected-and-injected`), but it is
+   not `scenario-p-injected-pr-context` and its exact policy findings are not
+   guaranteed to match. Linking `docs/CASE_STUDIES.md`'s Case 3 to a fixture
+   that isn't the one its `expectations.json` link cites would be a real
+   provenance-honesty problem (CLAUDE.md invariant #10). Resolution: add
+   `scenario-p-injected-pr-context`'s actual `incident.json` as a **new**
+   fifth entry in `TERRAFORM_PUBLIC_REPLAY_FIXTURES`, `sourceId:
+   "scenario-p-injected-pr-context"` (using the scenario's real id directly,
+   not a `terraform-*`-prefixed synthetic id, so the deep-link id in the doc
+   and the picker's id are identical). `incident.json`'s top-level shape is
+   already `{ format_version, terraform_version, resource_changes, context }`
+   — destructure `context` off it the same way `scenarios/domains.ts` and
+   `packages/cli/src/scenario.ts` already do (both fixed in the prior
+   scenario-corpus-expansion work) and pass the rest as `plan`, `context` as
+   the fixture's `context` field. This keeps a single source of truth for
+   scenario-p's content (the scenario file) rather than hand-duplicating a
+   sixth near-identical Terraform plan into the fixtures file — do not import
+   from `packages/domain-terraform/tests/fixtures/` for this one entry, the
+   existing four fixtures follow that pattern but scenario-p's canonical home
+   is already `scenarios/terraform/scenario-p-injected-pr-context/incident.json`.
+   Existing `terraform-protected-and-injected` stays exactly as-is —
+   untouched, not deduplicated, not removed. Having two thematically similar
+   but distinct fixtures is acceptable; silently substituting one for the
+   other in a document that promises "this exact scenario" is not.
 3. **`CaseStudyBadge` component** (new, shared, small): renders next to a
    picker item's label when `descriptor.caseStudy` is non-null. Style to
    match the existing `ActionBadge` pattern in
@@ -70,20 +100,28 @@ succeed.
    the file link is the actual verifiable evidence and the deep link is
    the "see it live" convenience.
 
-## Open question the implementer must resolve before writing code
+## Two questions resolved during planning
 
-`REVIEW_CONTRACT_VERSION` (`features/domains/review-contract.ts:23`) is a
-literal (`"2.0.0"`) embedded via `contractVersion: z.literal(REVIEW_CONTRACT_VERSION)`
-in several schemas including `ReviewExampleDescriptorSchema`. Before adding
-the `caseStudy` field, trace where `contractVersion` mismatches are checked
-(likely in the self-hosted transport / server round-trip) and confirm this
-addition is display-only metadata that doesn't cross that boundary in a way
-that would require a version bump. If it does cross that boundary (e.g. the
-self-hosted server independently constructs or validates
-`ReviewExampleDescriptor` objects against its own copy of the schema),
-bump `REVIEW_CONTRACT_VERSION` and follow whatever version-bump procedure
-the codebase already has (check for a changelog, test fixtures pinned to
-the old version, etc.) rather than silently leaving them out of sync.
+**`REVIEW_CONTRACT_VERSION` does not need a bump.** Traced
+`ReviewExampleDescriptor` usage in `features/reviews/controller.ts:89` —
+`rebind()`/`selectExample()` only pulls `source.session` (via
+`ReviewSessionEnvelopeSchema.parse(source.session)`) out of the descriptor
+and sends that over the wire; `label`, `description`, and the new
+`caseStudy` field are sibling properties of `session`, never nested inside
+it, and never cross the analyze-API boundary
+(`app/api/reviews/analyze/route.ts` only ever sees `session`-shaped data).
+`caseStudy` is purely client-side picker-rendering metadata. No version
+bump needed.
+
+**`useSearchParams()` does need a `Suspense` boundary.** None of the three
+`page.tsx` files (`app/page.tsx`, `app/workbench/terraform/page.tsx`,
+`app/workbench/kubernetes/page.tsx`) currently wrap their shell in
+`<Suspense>`, and none of the shells currently call `useSearchParams` (grep
+confirmed zero uses in the whole app). Next.js requires a `Suspense`
+boundary around any client-component subtree that calls `useSearchParams`
+when the parent page is otherwise eligible for static rendering, or the
+build emits an error. Each of the three `page.tsx` files needs
+`<Suspense fallback={...}>` wrapped around the shell component.
 
 ## Out of scope
 
