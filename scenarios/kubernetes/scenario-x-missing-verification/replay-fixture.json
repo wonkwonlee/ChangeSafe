@@ -1,0 +1,69 @@
+{
+  "fixtureId": "fix-x-missing-verification",
+  "scenarioId": "scenario-x-missing-verification",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored capacity increase with an incomplete verification plan: a precondition is declared but the postcheck is omitted, earning exactly one VERIFICATION_REQUIRED WARN. Replicas increase (not decrease) so K8S_WORKLOAD_AVAILABILITY stays PASS.",
+  "proposal": {
+    "proposalId": "scale-up-inventory-sync",
+    "summary": "Increase the inventory-sync Deployment from 2 to 3 replicas ahead of a stock reconciliation job.",
+    "diagnosis": {
+      "likelyCause": "The upcoming stock reconciliation job requires more concurrent capacity than the current replica count provides.",
+      "confidence": 0.68,
+      "evidenceIds": ["ev-res-fb3a173ca40f73a6"],
+      "assumptions": ["The stock reconciliation job's load estimate is accurate."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-fb3a173ca40f73a6",
+        "value": {
+          "resourceId": "res-fb3a173ca40f73a6",
+          "evidenceId": "ev-res-fb3a173ca40f73a6",
+          "identity": { "namespace": "storefront", "name": "inventory-sync", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "inventory-sync" } },
+          "spec": {
+            "podLabels": { "app": "inventory-sync" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Scale up ahead of the stock reconciliation job's forecast load.",
+        "evidenceIds": ["ev-res-fb3a173ca40f73a6"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-fb3a173ca40f73a6",
+        "value": {
+          "resourceId": "res-fb3a173ca40f73a6",
+          "evidenceId": "ev-res-fb3a173ca40f73a6",
+          "identity": { "namespace": "storefront", "name": "inventory-sync", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "inventory-sync" } },
+          "spec": {
+            "podLabels": { "app": "inventory-sync" },
+            "replicas": 2,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-fb3a173ca40f73a6"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm current inventory-sync replica count and job queue depth before scaling up.", "evidenceIds": ["ev-res-fb3a173ca40f73a6"] }
+    ]
+  }
+}

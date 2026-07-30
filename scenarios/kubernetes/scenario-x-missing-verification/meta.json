@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3233 — Scale up inventory-sync ahead of a stock reconciliation job",
+  "summary": "A replica increase for inventory-sync ships with a precondition check but no postcheck."
+}

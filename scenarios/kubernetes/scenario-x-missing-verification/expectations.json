@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-x-missing-verification",
+  "teaches": "A capacity increase with a precondition but no postcheck earns exactly one WARN — the change itself is sound, but nothing confirms it worked. The Kubernetes MEDIUM path via missing verification rather than reduced availability.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "PASS",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "WARN",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "MEDIUM",
+  "approvable": true,
+  "simulation": { "safetyPropertiesSatisfied": true },
+  "corpus": {
+    "adversarial": false,
+    "failureModes": ["missing-verification"]
+  }
+}

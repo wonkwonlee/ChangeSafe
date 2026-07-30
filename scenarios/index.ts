@@ -40,6 +40,9 @@ import expectationsV from "./kubernetes/scenario-v-protected-config-change/expec
 import snapshotW from "./kubernetes/scenario-w-mutable-image-tag/incident.json";
 import fixtureW from "./kubernetes/scenario-w-mutable-image-tag/replay-fixture.json";
 import expectationsW from "./kubernetes/scenario-w-mutable-image-tag/expectations.json";
+import snapshotX from "./kubernetes/scenario-x-missing-verification/incident.json";
+import fixtureX from "./kubernetes/scenario-x-missing-verification/replay-fixture.json";
+import expectationsX from "./kubernetes/scenario-x-missing-verification/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -254,6 +257,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotW,
     fixtureW,
     expectationsW,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-x-missing-verification",
+    "CHG-3233 — Scale up inventory-sync ahead of a stock reconciliation job",
+    "A replica increase for inventory-sync ships with a precondition check but no postcheck.",
+    snapshotX,
+    fixtureX,
+    expectationsX,
   ),
 ];
 

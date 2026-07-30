@@ -1,0 +1,34 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-storefront-inventory-sync-scale",
+  "evidenceId": "ev-snapshot-storefront-inventory-sync-scale",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-07-30T00:00:00.000Z",
+    "contextFingerprint": "context-storefront-inventory-sync-scale",
+    "namespaces": ["storefront"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "inventory-sync",
+        "namespace": "storefront",
+        "labels": { "app": "inventory-sync" }
+      },
+      "spec": {
+        "replicas": 2,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": { "maxUnavailable": "25%" }
+        },
+        "template": {
+          "metadata": { "labels": { "app": "inventory-sync" } },
+          "spec": {}
+        }
+      }
+    }
+  ]
+}
