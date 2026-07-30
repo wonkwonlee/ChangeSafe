@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveInitialScenarioId } from "./useScenarioDeepLink";
+import { resolveInitialScenarioId } from "../../components/hooks/useScenarioDeepLink";
 
 describe("resolveInitialScenarioId", () => {
   it("returns the id when the scenario query param matches an available id", () => {

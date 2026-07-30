@@ -48,7 +48,6 @@ export default defineConfig({
       "tests/unit/**/*.test.ts",
       "tests/integration/**/*.test.ts",
       "packages/*/tests/**/*.test.ts",
-      "components/**/*.test.ts",
     ],
   },
 });

@@ -117,6 +117,9 @@ Try it live: `/?scenario=scenario-g-silent-regression`
 
 ## Try it yourself
 
+The "Try it live" paths above are relative — append them to wherever you're
+running the app (`http://localhost:3000` below, or your deployed URL).
+
 ```bash
 npm run dev
 ```
