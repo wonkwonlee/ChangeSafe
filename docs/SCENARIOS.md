@@ -289,7 +289,7 @@ Kubernetes has no delete operation, so protection means the spec cannot change a
 
 **CHG-3241 — Scale up notification service and widen its rollout budget** — A capacity and rollout-budget change for the notification Deployment ships with a rollback that doesn't fully restore the prior configuration.
 
-A rollback that exists is not a rollback that works. The forward change earns one expected WARN for widening the rollout budget; the replica count is restored on rollback but maxUnavailable is left changed — replaying the change and its rollback on a sandboxed copy does not reproduce the original state, so the gate blocks regardless of that WARN.
+A rollback that exists is not a rollback that works. The gate blocks because replaying the change and its rollback on a sandboxed copy does not restore the original state — the replica count comes back but maxUnavailable is left widened. One coexisting WARN for the wider rollout budget does not change the CRITICAL, not-approvable outcome.
 
 - Risk **CRITICAL**, blocked by the gate · adversarial
 - Failure modes: `ineffective-rollback`

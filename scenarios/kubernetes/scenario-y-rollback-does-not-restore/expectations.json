@@ -1,6 +1,6 @@
 {
   "scenarioId": "scenario-y-rollback-does-not-restore",
-  "teaches": "A rollback that exists is not a rollback that works. The forward change earns one expected WARN for widening the rollout budget; the replica count is restored on rollback but maxUnavailable is left changed — replaying the change and its rollback on a sandboxed copy does not reproduce the original state, so the gate blocks regardless of that WARN.",
+  "teaches": "A rollback that exists is not a rollback that works. The gate blocks because replaying the change and its rollback on a sandboxed copy does not restore the original state — the replica count comes back but maxUnavailable is left widened. One coexisting WARN for the wider rollout budget does not change the CRITICAL, not-approvable outcome.",
   "policies": {
     "PATCH_SCHEMA": "PASS",
     "K8S_PRIVILEGE_ESCALATION": "PASS",
