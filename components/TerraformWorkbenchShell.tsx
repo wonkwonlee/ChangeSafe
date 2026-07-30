@@ -5,8 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizePlan, type TerraformInput } from "@changesafe/domain-terraform";
 import type { WorkflowState } from "@changesafe/core";
 
+import {
+  BoundedJsonBlock,
+  EvidencePager,
+} from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { boundOfflineCollection } from "@/features/domains/presentation-limit";
+import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import {
@@ -91,14 +95,6 @@ function Label({ children }: { children: React.ReactNode }) {
   return <p className="eyebrow text-ink-faint">{children}</p>;
 }
 
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="mt-3 max-h-72 overflow-auto rounded border border-edge bg-canvas p-3 text-xs leading-relaxed text-ink-dim">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
 function ActionBadge({ action }: { action: TerraformInput["changes"][number]["action"] }) {
   const tone = action === "delete" || action === "replace" ? "border-block/50 bg-block/10 text-block" : "border-active/50 bg-active/10 text-active";
   return <span className={`eyebrow rounded border px-2 py-1 ${tone}`}>{action}</span>;
@@ -157,7 +153,7 @@ function ProposalPanel({ state }: { state: WorkflowState<TerraformInput> }) {
   if (!hasFindings(state)) {
     return <p className="mt-3 text-sm text-ink-dim">No evaluated proposal is available yet.</p>;
   }
-  return <JsonBlock value={state.proposal} />;
+  return <BoundedJsonBlock label="Terraform proposal JSON" value={state.proposal} />;
 }
 
 function DecisionPanel({ state }: { state: WorkflowState<TerraformInput> }) {
@@ -190,9 +186,17 @@ export function TerraformWorkbenchShell({
   const input = useMemo(() => inputFor(fixture), [fixture]);
   const workflow = controller.state.workflow;
   const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
-  const boundedChanges = useMemo(
-    () => boundOfflineCollection(input.changes),
-    [input.changes],
+  const [changeQuery, setChangeQuery] = useState("");
+  const [changePageIndex, setChangePageIndex] = useState(0);
+  const changePage = useMemo(
+    () =>
+      searchAndPageOfflineCollection(
+        input.changes,
+        changeQuery,
+        (change) => JSON.stringify(change),
+        changePageIndex,
+      ),
+    [changePageIndex, changeQuery, input.changes],
   );
 
   const selectExample = useCallback((sourceId: string) => {
@@ -205,6 +209,8 @@ export function TerraformWorkbenchShell({
       session: nextExample.session,
     });
     setSelectedSourceId(sourceId);
+    setChangeQuery("");
+    setChangePageIndex(0);
   }, [controller]);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
@@ -241,7 +247,7 @@ export function TerraformWorkbenchShell({
       <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
         <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
-            <div><Label>External-diff replay evaluation</Label><h2 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
+            <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
             <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
           </header>
 
@@ -249,7 +255,32 @@ export function TerraformWorkbenchShell({
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy, reversibility, and context evidence</h3><FindingsPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="plan-title"><Label>Supplied Terraform plan</Label><h3 id="plan-title" className="mt-2 text-base font-semibold">{input.changes.length} actionable resource change{input.changes.length === 1 ? "" : "s"}</h3><p className="mt-2 text-sm text-ink-dim">Module, provider resource type, address, and before/after values are read from the bundled plan. No result is declared before the deterministic evaluation runs.</p></section>
-            <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="resources-title"><div className="p-4"><Label>Structured diff</Label><h3 id="resources-title" className="mt-2 text-base font-semibold">Resources and actions</h3>{boundedChanges.hiddenCount > 0 ? <p className="mt-2 text-xs text-ink-faint">Showing the first {boundedChanges.items.length} of {boundedChanges.totalCount} changes. Deterministic evaluation still covers the complete plan.</p> : null}</div><div className="overflow-x-auto"><table className="min-w-full border-collapse text-left text-xs"><caption className="sr-only">Terraform resource changes</caption><thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Module</th><th className="px-4 py-3 font-medium" scope="col">Type / address</th><th className="px-4 py-3 font-medium" scope="col">Action</th><th className="px-4 py-3 font-medium" scope="col">Before / after</th></tr></thead><tbody>{boundedChanges.items.map((change) => <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} />{change.action === "delete" || change.action === "replace" ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details><summary className="cursor-pointer text-ink-dim">Inspect values</summary><p className="mt-2 text-ink-faint">Before</p><JsonBlock value={change.before} /><p className="mt-3 text-ink-faint">After</p><JsonBlock value={change.after} /></details></td></tr>)}</tbody></table></div></section>
+            <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="resources-title">
+              <div className="p-4">
+                <Label>Structured diff</Label>
+                <h3 id="resources-title" className="mt-2 text-base font-semibold">Resources and actions</h3>
+                <p className="mt-2 text-xs text-ink-faint">Deterministic evaluation always covers all {input.changes.length} changes; search and paging bound only the rendered evidence table.</p>
+                <EvidencePager
+                  id="terraform-change-search"
+                  label="Search all Terraform changes"
+                  noun="changes"
+                  onPageChange={setChangePageIndex}
+                  onQueryChange={(query) => {
+                    setChangeQuery(query);
+                    setChangePageIndex(0);
+                  }}
+                  page={changePage}
+                  query={changeQuery}
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-left text-xs">
+                  <caption className="sr-only">Terraform resource changes</caption>
+                  <thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Module</th><th className="px-4 py-3 font-medium" scope="col">Type / address</th><th className="px-4 py-3 font-medium" scope="col">Action</th><th className="px-4 py-3 font-medium" scope="col">Before / after</th></tr></thead>
+                  <tbody>{changePage.items.map((change) => <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} />{change.action === "delete" || change.action === "replace" ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details><summary className="cursor-pointer text-ink-dim">Inspect values</summary><p className="mt-2 text-ink-faint">Before</p><BoundedJsonBlock label={`${change.address} before JSON`} value={change.before} /><p className="mt-3 text-ink-faint">After</p><BoundedJsonBlock label={`${change.address} after JSON`} value={change.after} /></details></td></tr>)}</tbody>
+                </table>
+              </div>
+            </section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="context-title"><Label>Untrusted context</Label><h3 id="context-title" className="mt-2 text-base font-semibold">Bundled plan context</h3>{input.context.length === 0 ? <p className="mt-3 text-sm text-ink-dim">No untrusted context was supplied with this plan.</p> : <ul className="mt-3 space-y-2">{input.context.map((entry) => <li className="rounded border border-edge bg-canvas p-3 text-sm" key={entry.evidenceId}><p className="font-mono text-xs">{entry.evidenceId} · {entry.kind}</p><p className="mt-2 whitespace-pre-wrap text-ink-dim">{entry.text}</p></li>)}</ul>}</section>
             <div>
               <DomainCoverageCatalog
@@ -282,7 +313,7 @@ export function TerraformWorkbenchShell({
 
         <aside aria-label="Terraform review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
           <Label>Terraform examples</Label>
-          <h1 className="mt-2 text-lg font-semibold">{fixture.label}</h1>
+          <h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Terraform examples">
             {TERRAFORM_REVIEW_EXAMPLES.map((candidate) => (
               <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>

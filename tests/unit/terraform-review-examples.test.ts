@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { deriveProposal, normalizePlan } from "@changesafe/domain-terraform";
 
 import {
+  LARGE_TERRAFORM_CHANGE_COUNT,
   TERRAFORM_PUBLIC_REPLAY_FIXTURES,
 } from "@/features/domains/terraform/fixtures";
 import { INJECTED_PULL_REQUEST_BODY } from "@/features/domains/terraform/injected-pr-body";
@@ -22,8 +23,9 @@ describe("Terraform review examples", () => {
       "terraform-safe-scale-up",
       "terraform-destroys-database",
       "terraform-protected-and-injected",
+      "terraform-large-plan-boundary",
     ]);
-    expect(new Set(ids).size).toBe(3);
+    expect(new Set(ids).size).toBe(4);
     expect(TERRAFORM_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
   });
 
@@ -91,7 +93,28 @@ describe("Terraform review examples", () => {
           provenance: "authored-red-team",
         },
       },
+      {
+        sourceId: "terraform-large-plan-boundary",
+        session: {
+          source: "authored-fixture",
+          provenance: "authored-synthetic",
+        },
+      },
     ]);
+  });
+
+  it("ships a schema-valid large plan beyond the initial presentation page", () => {
+    const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES.find(
+      (candidate) => candidate.sourceId === "terraform-large-plan-boundary",
+    );
+    expect(fixture).toBeDefined();
+    if (!fixture) return;
+
+    const input = normalizePlan(fixture.plan, { planId: fixture.inputId });
+    const proposal = deriveProposal(input);
+    expect(input.changes).toHaveLength(LARGE_TERRAFORM_CHANGE_COUNT);
+    expect(proposal.operations).toHaveLength(LARGE_TERRAFORM_CHANGE_COUNT);
+    expect(JSON.stringify(proposal).length).toBeGreaterThan(12_000);
   });
 
   it("binds the red-team provenance to the single bundled untrusted body", () => {

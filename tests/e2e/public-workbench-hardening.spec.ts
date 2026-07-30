@@ -62,6 +62,21 @@ async function expectVisibleKeyboardFocus(
 
 for (const workbench of PUBLIC_WORKBENCHES) {
   test.describe(`${workbench.path} hardening`, () => {
+    test("uses the outcome as the page title without a later competing h1", async ({
+      page,
+    }) => {
+      await page.goto(workbench.path);
+
+      await expect(
+        page.getByRole("heading", { level: 1, name: "READY" }),
+      ).toHaveCount(1);
+      await expect(
+        page
+          .getByRole("complementary", { name: workbench.contextName })
+          .getByRole("heading", { level: 1 }),
+      ).toHaveCount(0);
+    });
+
     test("keeps selection and replay controls keyboard operable with visible focus", async ({
       page,
     }) => {
@@ -79,7 +94,7 @@ for (const workbench of PUBLIC_WORKBENCHES) {
       await expectVisibleKeyboardFocus(page, runReplay);
       await page.keyboard.press("Enter");
       const outcome = page.getByRole("heading", {
-        level: 2,
+        level: 1,
         name: "BLOCKED",
       });
       await expect(outcome).toBeVisible();
@@ -143,11 +158,11 @@ for (const workbench of PUBLIC_WORKBENCHES) {
         .click();
       await page.getByRole("button", { name: "Run replay" }).click();
       await expect(
-        page.getByRole("heading", { level: 2, name: "BLOCKED" }),
+        page.getByRole("heading", { level: 1, name: "BLOCKED" }),
       ).toBeVisible();
 
       const orderedRegions = [
-        page.getByRole("heading", { level: 2, name: "BLOCKED" }),
+        page.getByRole("heading", { level: 1, name: "BLOCKED" }),
         page.getByRole("heading", {
           level: 3,
           name:
@@ -196,3 +211,98 @@ for (const workbench of PUBLIC_WORKBENCHES) {
     });
   });
 }
+
+test("keeps a schema-valid 10-change Terraform plan searchable while bounding rendered rows", async ({
+  page,
+}) => {
+  await page.goto("/workbench/terraform");
+  await page.getByRole("button", { name: /Large plan boundary/ }).click();
+
+  await expect(
+    page.getByRole("heading", {
+      level: 3,
+      name: "10 actionable resource changes",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Showing 1–8 of 10 changes.")).toBeVisible();
+  const table = page.getByRole("table", { name: "Terraform resource changes" });
+  await expect(table.locator("tbody tr")).toHaveCount(8);
+
+  await page
+    .getByLabel("Search all Terraform changes")
+    .fill("worker_009");
+  await expect(
+    page.getByText("module.boundary.aws_instance.worker_009"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Showing 1–1 of 1 matching changes from 10 total."),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Run replay" }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "APPROVAL_REQUIRED" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Previewing 12,000 of .* characters\./),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Show complete Terraform proposal JSON" })
+    .click();
+  await expect(
+    page.getByLabel("Terraform proposal JSON"),
+  ).toContainText("module.boundary.aws_instance.worker_009");
+});
+
+test("keeps large Kubernetes inventory, nested selector matches, and proposal operations searchable", async ({
+  page,
+}) => {
+  await page.goto("/workbench/kubernetes");
+
+  await expect(
+    page.getByText("Showing 1–8 of 153 resources."),
+  ).toBeVisible();
+  await page
+    .getByLabel("Search all Kubernetes resources")
+    .fill("boundary-worker-149");
+  await expect(
+    page
+      .getByRole("region", { name: "153 captured offline resources" })
+      .getByText("Deployment demo/boundary-worker-149"),
+  ).toBeVisible();
+
+  await expect(
+    page.getByText("Showing 1–20 of 150 workloads."),
+  ).toBeVisible();
+  const workerRelation = page.getByRole("row", {
+    name: /Service demo\/boundary-workers/,
+  });
+  await workerRelation
+    .getByLabel("Search matching workloads for Service demo/boundary-workers")
+    .fill("boundary-worker-149");
+  await expect(
+    workerRelation.getByText("Deployment demo/boundary-worker-149", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("button", { name: /Large manifest boundary/ })
+    .click();
+  await expect(
+    page.getByText("Showing 1–8 of 10 operations."),
+  ).toBeVisible();
+  await page
+    .getByLabel("Search all Kubernetes proposal operations")
+    .fill("boundary-proposed-009");
+  await expect(
+    page.getByText("Deployment demo/boundary-proposed-009", { exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Run replay" }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "BLOCKED" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Previewing 12,000 of .* characters\./),
+  ).toBeVisible();
+});

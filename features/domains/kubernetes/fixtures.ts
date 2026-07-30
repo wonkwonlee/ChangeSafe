@@ -7,6 +7,74 @@ import {
   type KubernetesSnapshot,
 } from "@changesafe/domain-kubernetes/offline";
 
+export const LARGE_KUBERNETES_WORKLOAD_COUNT = 150;
+export const LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT = 10;
+
+const largeManifestAnnotation =
+  "fictional-boundary-manifest-evidence-".repeat(50);
+
+function boundaryWorkerManifest(
+  index: number,
+  imageVersion: "v1" | "v2",
+  namePrefix: "boundary-worker" | "boundary-proposed",
+) {
+  const suffix = index.toString().padStart(3, "0");
+  return {
+    apiVersion: "apps/v1",
+    kind: "Deployment",
+    metadata: {
+      name: `${namePrefix}-${suffix}`,
+      namespace: "demo",
+      labels: {
+        group: namePrefix,
+        worker: suffix,
+      },
+      annotations:
+        namePrefix === "boundary-proposed"
+          ? { "example.invalid/large-evidence": largeManifestAnnotation }
+          : {},
+    },
+    spec: {
+      replicas: 1,
+      strategy: {
+        type: "RollingUpdate",
+        rollingUpdate: { maxUnavailable: 0 },
+      },
+      template: {
+        metadata: {
+          labels: {
+            group: namePrefix,
+            worker: suffix,
+          },
+        },
+        spec: {
+          containers: [
+            {
+              name: "worker",
+              image: `registry.example.invalid/boundary-worker:${imageVersion}`,
+              securityContext: {
+                allowPrivilegeEscalation: false,
+                runAsUser: 1000,
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+const boundaryWorkerSnapshotResources = Object.freeze(
+  Array.from({ length: LARGE_KUBERNETES_WORKLOAD_COUNT }, (_, index) =>
+    Object.freeze(boundaryWorkerManifest(index, "v1", "boundary-worker")),
+  ),
+);
+const boundaryWorkerProposedManifests = Object.freeze(
+  Array.from({ length: LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT }, (_, index) =>
+    Object.freeze(boundaryWorkerManifest(index, "v2", "boundary-proposed")),
+  ),
+);
+
 /**
  * Offline, fictional Kubernetes replay inputs for the public workbench.
  *
@@ -62,6 +130,17 @@ const rawSnapshot = {
       metadata: { name: "web", namespace: "demo", labels: { app: "web" } },
       spec: { selector: { app: "web" } },
     },
+    ...boundaryWorkerSnapshotResources,
+    {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata: {
+        name: "boundary-workers",
+        namespace: "demo",
+        labels: { group: "boundary-worker" },
+      },
+      spec: { selector: { group: "boundary-worker" } },
+    },
   ],
 } as const;
 
@@ -116,7 +195,10 @@ export const KUBERNETES_PUBLIC_REPLAY_SNAPSHOT: KubernetesSnapshot =
 
 export interface KubernetesPublicReplayFixture {
   readonly kind: "replay";
-  readonly sourceId: "kubernetes-safe-scale" | "kubernetes-selector-red-team";
+  readonly sourceId:
+    | "kubernetes-safe-scale"
+    | "kubernetes-selector-red-team"
+    | "kubernetes-large-manifest-boundary";
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
@@ -145,9 +227,9 @@ function deriveFixture(
   label: string,
   description: string,
   provenance: KubernetesPublicReplayFixture["provenance"],
-  manifest: unknown,
+  manifests: readonly unknown[],
 ): KubernetesPublicReplayFixture {
-  const manifestDocuments = Object.freeze([manifest]);
+  const manifestDocuments = Object.freeze([...manifests]);
   const proposal = KubernetesChangeProposalSchema.parse(
     deriveManifestProposal(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, {
       documents: [...manifestDocuments],
@@ -173,7 +255,7 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
       "Safe web scale-up",
       "A fictional offline Deployment scale-up evaluated in the Kubernetes sandbox.",
       "authored-synthetic",
-      safeScaleManifest,
+      [safeScaleManifest],
     ),
     deriveFixture(
       "kubernetes-selector-red-team",
@@ -181,7 +263,15 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
       "Service selector break",
       "A fictional red-team manifest that leaves the existing Service selector without a workload match.",
       "authored-red-team",
-      selectorBreakingManifest,
+      [selectorBreakingManifest],
+    ),
+    deriveFixture(
+      "kubernetes-large-manifest-boundary",
+      "kubernetes-large-manifest-boundary",
+      "Large manifest boundary",
+      "A fictional 10-operation manifest set with large metadata that proves bounded, searchable proposal evidence.",
+      "authored-synthetic",
+      boundaryWorkerProposedManifests,
     ),
   ]);
 

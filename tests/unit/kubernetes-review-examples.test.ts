@@ -6,6 +6,8 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT,
+  LARGE_KUBERNETES_WORKLOAD_COUNT,
   KUBERNETES_PUBLIC_REPLAY_FIXTURES,
   KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
   KUBERNETES_PUBLIC_REPLAY_SOURCES,
@@ -22,10 +24,14 @@ describe("Kubernetes review examples", () => {
   it("publishes each supported fictional replay fixture exactly once", () => {
     const ids = KUBERNETES_REVIEW_EXAMPLES.map((example) => example.sourceId);
 
-    expect(ids).toEqual(["kubernetes-safe-scale", "kubernetes-selector-red-team"]);
+    expect(ids).toEqual([
+      "kubernetes-safe-scale",
+      "kubernetes-selector-red-team",
+      "kubernetes-large-manifest-boundary",
+    ]);
     expect(new Set(ids).size).toBe(ids.length);
     expect(KUBERNETES_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
-    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(3);
+    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(4);
   });
 
   it("uses valid simulated-state public replay descriptors without durable authority", () => {
@@ -71,6 +77,9 @@ describe("Kubernetes review examples", () => {
         sourceId: "kubernetes-selector-red-team",
         evaluation: { riskLevel: "CRITICAL" },
       },
+      {
+        sourceId: "kubernetes-large-manifest-boundary",
+      },
     ]);
     expect(outcomes[0]?.evaluation.findings.some((finding) => finding.status === "BLOCK")).toBe(false);
     expect(outcomes[1]?.evaluation.findings).toContainEqual(
@@ -92,6 +101,10 @@ describe("Kubernetes review examples", () => {
     expect(KUBERNETES_REVIEW_EXAMPLES).toMatchObject([
       { sourceId: "kubernetes-safe-scale", session: { provenance: "authored-synthetic" } },
       { sourceId: "kubernetes-selector-red-team", session: { provenance: "authored-red-team" } },
+      {
+        sourceId: "kubernetes-large-manifest-boundary",
+        session: { provenance: "authored-synthetic" },
+      },
     ]);
     expect(KUBERNETES_UNSUPPORTED_PUBLIC_REPLAY_SOURCE).toMatchObject({
       sourceId: "kubernetes-unsupported-secret",
@@ -106,5 +119,25 @@ describe("Kubernetes review examples", () => {
         KUBERNETES_UNSUPPORTED_PUBLIC_REPLAY_SOURCE.sourceId,
       ),
     ).toThrow(/unsupported/i);
+  });
+
+  it("ships schema-valid large snapshot associations and a long manifest proposal", () => {
+    const largeFixture = KUBERNETES_PUBLIC_REPLAY_FIXTURES.find(
+      (fixture) => fixture.sourceId === "kubernetes-large-manifest-boundary",
+    );
+    expect(largeFixture).toBeDefined();
+    if (!largeFixture) return;
+
+    const workerResources = KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.filter(
+      (resource) =>
+        resource.identity.kind === "Deployment" &&
+        "podLabels" in resource.spec &&
+        resource.spec.podLabels?.group === "boundary-worker",
+    );
+    expect(workerResources).toHaveLength(LARGE_KUBERNETES_WORKLOAD_COUNT);
+    expect(largeFixture.proposal.operations).toHaveLength(
+      LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT,
+    );
+    expect(JSON.stringify(largeFixture.proposal).length).toBeGreaterThan(12_000);
   });
 });

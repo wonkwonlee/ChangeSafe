@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
+import { BoundedJsonBlock } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { TopologyView } from "@/components/TopologyView";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
@@ -62,14 +63,6 @@ function Label({ children }: { children: React.ReactNode }) {
   return <p className="eyebrow text-ink-faint">{children}</p>;
 }
 
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="mt-3 max-h-72 overflow-auto rounded border border-edge bg-canvas p-3 text-xs leading-relaxed text-ink-dim">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
 function StateValue({ state }: { state: WorkflowState<IncidentBundle> }) {
   switch (state.phase) {
     case "ANALYZING":
@@ -107,7 +100,7 @@ function ProposalPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
   if (state.phase === "READY" || state.phase === "ANALYZING" || state.phase === "ERROR") {
     return <p className="mt-3 text-sm text-ink-dim">No evaluated proposal is available yet.</p>;
   }
-  return <JsonBlock value={state.proposal} />;
+  return <BoundedJsonBlock label="Network proposal JSON" value={state.proposal} />;
 }
 
 function FindingsPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
@@ -237,7 +230,7 @@ export function ReviewWorkbenchShell({
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
-              <h2 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h2>
+              <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
               <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
                 <ReplayStatus state={workflow} />
@@ -252,14 +245,14 @@ export function ReviewWorkbenchShell({
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
-              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><JsonBlock value={scenario.bundle} />
+              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><BoundedJsonBlock label="Network scenario input JSON" value={scenario.bundle} />
             </section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
               <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
               <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
             </section>
             <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><BoundedJsonBlock label="Network current-state JSON" value={scenario.bundle.currentState} /></section>
             <div className="lg:col-span-2">
               <DomainCoverageCatalog
                 catalog={coverageCatalog}
@@ -291,7 +284,7 @@ export function ReviewWorkbenchShell({
 
         <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
           <Label>Network examples</Label>
-          <h1 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h1>
+          <h2 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
             {NETWORK_REVIEW_EXAMPLES.map((example) => (
               <li key={example.sourceId}>

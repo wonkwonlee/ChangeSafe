@@ -42,7 +42,7 @@ test("Kubernetes public workbench evaluates an offline manifest without cluster 
   await expect(page.getByRole("button", { name: /Unsupported Secret manifest/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "APPROVAL_REQUIRED" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "APPROVAL_REQUIRED" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Evaluated Kubernetes policy findings" })).toBeVisible();
   await expect(page.getByText(/Unavailable and not run/)).toBeVisible();
   await expect(page.getByText(/no validated simulation result/)).toBeVisible();
@@ -56,11 +56,11 @@ test("Kubernetes public workbench preserves selector red-team provenance and blo
   await page.goto("/workbench/kubernetes");
 
   await page.getByRole("button", { name: /Service selector break/ }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Service selector break" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Service selector break" })).toBeVisible();
   await expect(page.getByText("Fixture provenance").locator("..")).toContainText("authored-red-team");
   await expect(page.getByText("Current snapshot relationships")).toBeVisible();
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "BLOCKED" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "BLOCKED" })).toBeVisible();
   await expect(page.getByText(/BLOCKED by deterministic findings/)).toBeVisible();
   await expect(page.getByRole("list", { name: "Evaluated Kubernetes policy findings" })).toBeVisible();
   await expectNoAuthorityControls(page);

@@ -8,8 +8,15 @@ import type {
 } from "@changesafe/domain-kubernetes/offline";
 import type { WorkflowState } from "@changesafe/core";
 
+import {
+  BoundedJsonBlock,
+  EvidencePager,
+} from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { boundOfflineCollection } from "@/features/domains/presentation-limit";
+import {
+  MAX_VISIBLE_NESTED_ITEMS,
+  searchAndPageOfflineCollection,
+} from "@/features/domains/presentation-limit";
 import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import {
@@ -69,14 +76,6 @@ function Label({ children }: { children: React.ReactNode }) {
   return <p className="eyebrow text-ink-faint">{children}</p>;
 }
 
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="mt-3 max-h-72 overflow-auto rounded border border-edge bg-canvas p-3 text-xs leading-relaxed text-ink-dim">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
 type KubernetesResource = KubernetesSnapshot["resources"][number];
 
 function resourceName(resource: KubernetesResource): string {
@@ -132,7 +131,7 @@ function ReplayStatus({ state }: { state: WorkflowState<KubernetesSnapshot> }) {
 
 function ProposalPanel({ state }: { state: WorkflowState<KubernetesSnapshot> }) {
   if (!hasFindings(state)) return <p className="mt-3 text-sm text-ink-dim">No evaluated proposal is available yet.</p>;
-  return <JsonBlock value={state.proposal} />;
+  return <BoundedJsonBlock label="Kubernetes proposal JSON" value={state.proposal} />;
 }
 
 function FindingsPanel({ state }: { state: WorkflowState<KubernetesSnapshot> }) {
@@ -152,16 +151,91 @@ function DecisionPanel({ state }: { state: WorkflowState<KubernetesSnapshot> }) 
   return <p className="mt-3 text-sm text-ink-dim">No decision has been made.</p>;
 }
 
+function WorkloadMatches({
+  matches,
+  service,
+}: {
+  readonly matches: readonly KubernetesResource[];
+  readonly service: KubernetesResource;
+}) {
+  const [query, setQuery] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
+  const page = useMemo(
+    () =>
+      searchAndPageOfflineCollection(
+        matches,
+        query,
+        resourceName,
+        pageIndex,
+        MAX_VISIBLE_NESTED_ITEMS,
+      ),
+    [matches, pageIndex, query],
+  );
+  const serviceLabel = resourceName(service);
+
+  if (matches.length === 0) return <>No matching workload</>;
+  return (
+    <div className="min-w-72">
+      <EvidencePager
+        id={`workload-match-search-${service.resourceId}`}
+        label={`Search matching workloads for ${serviceLabel}`}
+        noun="workloads"
+        onPageChange={setPageIndex}
+        onQueryChange={(nextQuery) => {
+          setQuery(nextQuery);
+          setPageIndex(0);
+        }}
+        page={page}
+        query={query}
+      />
+      <ul className="mt-2 grid gap-1">
+        {page.items.map((workload) => (
+          <li className="font-mono" key={workload.resourceId}>
+            {resourceName(workload)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ProposedDiff({ proposal }: { proposal: KubernetesChangeProposal }) {
   const existing = new Map(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.map((resource) => [resource.resourceId, resource]));
-  return <div className="mt-3 grid gap-3">{proposal.operations.map((operation) => {
+  const [query, setQuery] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
+  const page = useMemo(
+    () =>
+      searchAndPageOfflineCollection(
+        proposal.operations,
+        query,
+        (operation) => JSON.stringify(operation),
+        pageIndex,
+      ),
+    [pageIndex, proposal.operations, query],
+  );
+
+  return <div className="mt-3 grid gap-3">
+    <p className="text-xs text-ink-faint">The complete {proposal.operations.length}-operation proposal remains available through search and paging; only the rendered operation cards are bounded.</p>
+    <EvidencePager
+      id="kubernetes-operation-search"
+      label="Search all Kubernetes proposal operations"
+      noun="operations"
+      onPageChange={setPageIndex}
+      onQueryChange={(nextQuery) => {
+        setQuery(nextQuery);
+        setPageIndex(0);
+      }}
+      page={page}
+      query={query}
+    />
+    {page.items.map((operation) => {
     const before = existing.get(operation.value.resourceId);
     return <article className="rounded border border-edge bg-canvas p-3" key={operation.path}>
       <p className="font-mono text-xs text-ink-faint">{operation.op} · {operation.path}</p>
       <p className="mt-2 text-sm font-medium">{resourceName(operation.value)}</p>
       <p className="mt-1 text-sm text-ink-dim">{operation.reason}</p>
       <p className="mt-2 text-xs text-ink-faint">Evidence: {operation.evidenceIds.join(", ")}</p>
-      <details className="mt-3"><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest</summary><div className="grid gap-3 lg:grid-cols-2"><div><p className="mt-3 text-xs text-ink-faint">Current</p><JsonBlock value={before ?? "No current resource (add)"} /></div><div><p className="mt-3 text-xs text-ink-faint">Proposed</p><JsonBlock value={operation.value} /></div></div></details>
+      <details className="mt-3"><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest</summary><div className="grid gap-3 lg:grid-cols-2"><div><p className="mt-3 text-xs text-ink-faint">Current</p><BoundedJsonBlock label={`${operation.path} current manifest JSON`} value={before ?? "No current resource (add)"} /></div><div><p className="mt-3 text-xs text-ink-faint">Proposed</p><BoundedJsonBlock label={`${operation.path} proposed manifest JSON`} value={operation.value} /></div></div></details>
     </article>;
   })}</div>;
 }
@@ -182,13 +256,29 @@ export function KubernetesWorkbenchShell({
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
   const relations = useMemo(() => selectorRelationships(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT), []);
-  const boundedResources = useMemo(
-    () => boundOfflineCollection(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources),
-    [],
+  const [resourceQuery, setResourceQuery] = useState("");
+  const [resourcePageIndex, setResourcePageIndex] = useState(0);
+  const resourcePage = useMemo(
+    () =>
+      searchAndPageOfflineCollection(
+        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources,
+        resourceQuery,
+        (resource) => JSON.stringify(resource),
+        resourcePageIndex,
+      ),
+    [resourcePageIndex, resourceQuery],
   );
-  const boundedRelations = useMemo(
-    () => boundOfflineCollection(relations),
-    [relations],
+  const [relationQuery, setRelationQuery] = useState("");
+  const [relationPageIndex, setRelationPageIndex] = useState(0);
+  const relationPage = useMemo(
+    () =>
+      searchAndPageOfflineCollection(
+        relations,
+        relationQuery,
+        (relation) => JSON.stringify(relation),
+        relationPageIndex,
+      ),
+    [relationPageIndex, relationQuery, relations],
   );
   const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
@@ -214,7 +304,7 @@ export function KubernetesWorkbenchShell({
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
           <div>
             <Label>Offline replay evaluation</Label>
-            <h2 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h2>
+            <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
             <p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p>
           </div>
@@ -226,16 +316,44 @@ export function KubernetesWorkbenchShell({
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="inventory-title">
             <Label>Namespace inventory</Label>
             <h3 id="inventory-title" className="mt-2 text-base font-semibold">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.length} captured offline resources</h3>
-            {boundedResources.hiddenCount > 0 ? <p className="mt-2 text-xs text-ink-faint">Showing the first {boundedResources.items.length} of {boundedResources.totalCount} resources. Deterministic evaluation still covers the complete snapshot.</p> : null}
-            <ul className="mt-3 grid gap-2 text-sm">{boundedResources.items.map((resource) => <li className="rounded border border-edge bg-canvas p-3" key={resource.resourceId}><p className="font-medium">{resourceName(resource)}</p><p className="mt-1 font-mono text-xs text-ink-faint">{resource.resourceId}</p>{resourceLabelEntries(resource).length ? <p className="mt-2 text-xs text-ink-dim">Labels: {resourceLabelEntries(resource).map(([key, value]) => `${key}=${value}`).join(", ")}</p> : null}</li>)}</ul>
+            <p className="mt-2 text-xs text-ink-faint">Deterministic evaluation always covers the complete snapshot; search and paging bound only the rendered inventory.</p>
+            <EvidencePager
+              id="kubernetes-resource-search"
+              label="Search all Kubernetes resources"
+              noun="resources"
+              onPageChange={setResourcePageIndex}
+              onQueryChange={(query) => {
+                setResourceQuery(query);
+                setResourcePageIndex(0);
+              }}
+              page={resourcePage}
+              query={resourceQuery}
+            />
+            <ul className="mt-3 grid gap-2 text-sm">{resourcePage.items.map((resource) => <li className="rounded border border-edge bg-canvas p-3" key={resource.resourceId}><p className="font-medium">{resourceName(resource)}</p><p className="mt-1 font-mono text-xs text-ink-faint">{resource.resourceId}</p>{resourceLabelEntries(resource).length ? <p className="mt-2 text-xs text-ink-dim">Labels: {resourceLabelEntries(resource).map(([key, value]) => `${key}=${value}`).join(", ")}</p> : null}</li>)}</ul>
           </section>
           <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="selector-title">
-            <div className="p-4"><Label>Service selector relationships</Label><h3 id="selector-title" className="mt-2 text-base font-semibold">Current snapshot relationships</h3></div>
+            <div className="p-4">
+              <Label>Service selector relationships</Label>
+              <h3 id="selector-title" className="mt-2 text-base font-semibold">Current snapshot relationships</h3>
+              <p className="mt-2 text-xs text-ink-faint">Every Service relationship and nested workload match remains searchable; table rows and each match list use separate deterministic pages.</p>
+              <EvidencePager
+                id="kubernetes-relation-search"
+                label="Search all Kubernetes Service relationships"
+                noun="relationships"
+                onPageChange={setRelationPageIndex}
+                onQueryChange={(query) => {
+                  setRelationQuery(query);
+                  setRelationPageIndex(0);
+                }}
+                page={relationPage}
+                query={relationQuery}
+              />
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-left text-xs">
                 <caption className="sr-only">Kubernetes Service selector relationships</caption>
                 <thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Service</th><th className="px-4 py-3 font-medium" scope="col">Selector</th><th className="px-4 py-3 font-medium" scope="col">Matching workloads</th></tr></thead>
-                <tbody>{boundedRelations.items.map(({ service, selector, matches }) => <tr className="border-b border-edge align-top" key={service.resourceId}><th className="px-4 py-3 font-mono font-normal" scope="row">{resourceName(service)}</th><td className="px-4 py-3">{Object.entries(selector).map(([key, value]) => `${key}=${value}`).join(", ") || "No selector"}</td><td className="px-4 py-3">{matches.length ? matches.map(resourceName).join(", ") : "No matching workload"}</td></tr>)}</tbody>
+                <tbody>{relationPage.items.map(({ service, selector, matches }) => <tr className="border-b border-edge align-top" key={service.resourceId}><th className="px-4 py-3 font-mono font-normal" scope="row">{resourceName(service)}</th><td className="px-4 py-3">{Object.entries(selector).map(([key, value]) => `${key}=${value}`).join(", ") || "No selector"}</td><td className="px-4 py-3"><WorkloadMatches matches={matches} service={service} /></td></tr>)}</tbody>
               </table>
             </div>
           </section>
@@ -246,7 +364,7 @@ export function KubernetesWorkbenchShell({
         </div>
       </main>
       <aside aria-label="Kubernetes review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1"><Label>Airlock status</Label><section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Unavailable and not run. Kubernetes has an offline sandbox capability, but public replay is decision-free and this route provides no validated simulation result.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Cluster contact or apply</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never contacts this cluster or applies infrastructure changes.</p></section></aside>
-      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h1 className="mt-2 text-lg font-semibold">{fixture.label}</h1><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
+      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
     </div>
   </div>;
 }

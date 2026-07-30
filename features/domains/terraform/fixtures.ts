@@ -6,6 +6,49 @@ import type { NormalizeOptions } from "@changesafe/domain-terraform";
 
 import { INJECTED_PULL_REQUEST_BODY } from "./injected-pr-body";
 
+export const LARGE_TERRAFORM_CHANGE_COUNT = 10;
+
+const largeConfigurationNote =
+  "fictional-boundary-setting-".repeat(60);
+
+const largeBoundaryPlan = Object.freeze({
+  format_version: "1.2",
+  terraform_version: "1.9.5",
+  resource_changes: Object.freeze(
+    Array.from({ length: LARGE_TERRAFORM_CHANGE_COUNT }, (_, index) => {
+      const suffix = index.toString().padStart(3, "0");
+      return Object.freeze({
+        address: `module.boundary.aws_instance.worker_${suffix}`,
+        module_address: "module.boundary",
+        mode: "managed",
+        type: "aws_instance",
+        name: `worker_${suffix}`,
+        provider_name: "registry.terraform.io/hashicorp/aws",
+        change: Object.freeze({
+          actions: Object.freeze(["update"]),
+          before: Object.freeze({
+            instance_type: "t3.small",
+            configuration_note: largeConfigurationNote,
+            tags: Object.freeze({
+              Name: `fictional-boundary-worker-${suffix}`,
+              Environment: "demo",
+            }),
+          }),
+          after: Object.freeze({
+            instance_type: "t3.medium",
+            configuration_note: largeConfigurationNote,
+            tags: Object.freeze({
+              Name: `fictional-boundary-worker-${suffix}`,
+              Environment: "demo",
+              ReviewedBy: "changesafe-offline-fixture",
+            }),
+          }),
+        }),
+      });
+    }),
+  ),
+});
+
 /**
  * Fictional Terraform plans used by the public replay workbench.
  *
@@ -18,7 +61,8 @@ export interface TerraformPublicReplayFixture {
   readonly sourceId:
     | "terraform-safe-scale-up"
     | "terraform-destroys-database"
-    | "terraform-protected-and-injected";
+    | "terraform-protected-and-injected"
+    | "terraform-large-plan-boundary";
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
@@ -65,5 +109,15 @@ export const TERRAFORM_PUBLIC_REPLAY_FIXTURES: readonly TerraformPublicReplayFix
           text: INJECTED_PULL_REQUEST_BODY,
         }),
       ]),
+    }),
+    Object.freeze({
+      sourceId: "terraform-large-plan-boundary",
+      inputId: "terraform-large-plan-boundary",
+      label: "Large plan boundary",
+      description:
+        "A fictional 10-change plan with large values that proves bounded, searchable external-diff presentation.",
+      provenance: "authored-synthetic",
+      plan: largeBoundaryPlan,
+      context: [],
     }),
   ]);
