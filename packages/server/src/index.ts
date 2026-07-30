@@ -28,3 +28,6 @@ export type { ApproverPolicy, Jwk, OidcConfig, VerifiedIdentity } from "./oidc";
 
 export { createDecisionServer } from "./http";
 export type { DecisionServerOptions } from "./http";
+
+export { DurableReviewStore } from "./durable-review-store";
+export type { DurableReviewStoreEntry, DurableReviewStoreListOptions } from "./durable-review-store";
