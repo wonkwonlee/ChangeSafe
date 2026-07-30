@@ -248,17 +248,17 @@ export function TerraformWorkbenchShell({
         <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
-            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
           </header>
 
           <div className="mt-5 grid gap-4">
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy, reversibility, and context evidence</h3><FindingsPanel state={workflow} /></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="plan-title"><Label>Supplied Terraform plan</Label><h3 id="plan-title" className="mt-2 text-base font-semibold">{input.changes.length} actionable resource change{input.changes.length === 1 ? "" : "s"}</h3><p className="mt-2 text-sm text-ink-dim">Module, provider resource type, address, and before/after values are read from the bundled plan. No result is declared before the deterministic evaluation runs.</p></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Policy, reversibility, and context evidence</h2><FindingsPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="plan-title"><Label>Supplied Terraform plan</Label><h2 id="plan-title" className="mt-2 text-base font-semibold">{input.changes.length} actionable resource change{input.changes.length === 1 ? "" : "s"}</h2><p className="mt-2 text-sm text-ink-dim">Module, provider resource type, address, and before/after values are read from the bundled plan. No result is declared before the deterministic evaluation runs.</p></section>
             <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="resources-title">
               <div className="p-4">
                 <Label>Structured diff</Label>
-                <h3 id="resources-title" className="mt-2 text-base font-semibold">Resources and actions</h3>
+                <h2 id="resources-title" className="mt-2 text-base font-semibold">Resources and actions</h2>
                 <p className="mt-2 text-xs text-ink-faint">Deterministic evaluation always covers all {input.changes.length} changes; search and paging bound only the rendered evidence table.</p>
                 <EvidencePager
                   id="terraform-change-search"
@@ -281,7 +281,7 @@ export function TerraformWorkbenchShell({
                 </table>
               </div>
             </section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="context-title"><Label>Untrusted context</Label><h3 id="context-title" className="mt-2 text-base font-semibold">Bundled plan context</h3>{input.context.length === 0 ? <p className="mt-3 text-sm text-ink-dim">No untrusted context was supplied with this plan.</p> : <ul className="mt-3 space-y-2">{input.context.map((entry) => <li className="rounded border border-edge bg-canvas p-3 text-sm" key={entry.evidenceId}><p className="font-mono text-xs">{entry.evidenceId} · {entry.kind}</p><p className="mt-2 whitespace-pre-wrap text-ink-dim">{entry.text}</p></li>)}</ul>}</section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="context-title"><Label>Untrusted context</Label><h2 id="context-title" className="mt-2 text-base font-semibold">Bundled plan context</h2>{input.context.length === 0 ? <p className="mt-3 text-sm text-ink-dim">No untrusted context was supplied with this plan.</p> : <ul className="mt-3 space-y-2">{input.context.map((entry) => <li className="rounded border border-edge bg-canvas p-3 text-sm" key={entry.evidenceId}><p className="font-mono text-xs">{entry.evidenceId} · {entry.kind}</p><p className="mt-2 whitespace-pre-wrap text-ink-dim">{entry.text}</p></li>)}</ul>}</section>
             <div>
               <DomainCoverageCatalog
                 catalog={coverageCatalog}

@@ -164,7 +164,7 @@ for (const workbench of PUBLIC_WORKBENCHES) {
       const orderedRegions = [
         page.getByRole("heading", { level: 1, name: "BLOCKED" }),
         page.getByRole("heading", {
-          level: 3,
+          level: 2,
           name:
             workbench.path === "/workbench"
               ? "Policy results"
@@ -173,7 +173,7 @@ for (const workbench of PUBLIC_WORKBENCHES) {
                 : "Image, security, selector, and protected-resource evidence",
         }),
         page.getByRole("heading", {
-          level: 3,
+          level: 2,
           name: workbench.evidenceHeading,
         }),
         page.getByRole("heading", { level: 2, name: "Decision" }),
@@ -220,7 +220,7 @@ test("keeps a schema-valid 10-change Terraform plan searchable while bounding re
 
   await expect(
     page.getByRole("heading", {
-      level: 3,
+      level: 2,
       name: "10 actionable resource changes",
     }),
   ).toBeVisible();

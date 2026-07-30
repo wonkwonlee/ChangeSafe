@@ -288,7 +288,7 @@ export function SelfHostedReviewWorkbench({
           {example.domainId === "kubernetes" ? (
             <p className="mt-3 rounded border border-warn/50 bg-warn/10 p-3 text-sm text-warn" role="status">Unsupported for durable self-hosted review. Use the Kubernetes public offline workbench; no cluster access or apply exists.</p>
           ) : null}
-          <button className="mt-4 w-full rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || !transport || example.domainId === "kubernetes"} onClick={() => void createReview()} type="button">Add to authenticated queue</button>
+          <button className="mt-4 w-full rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:opacity-50" disabled={busy || !transport || example.domainId === "kubernetes"} onClick={() => void createReview()} type="button">Add to authenticated queue</button>
         </aside>
 
         <main aria-label="Authenticated review detail">

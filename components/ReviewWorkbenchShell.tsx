@@ -236,23 +236,23 @@ export function ReviewWorkbenchShell({
                 <ReplayStatus state={workflow} />
               </p>
             </div>
-            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
               {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
             </button>
           </header>
 
           <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h2><FindingsPanel state={workflow} /></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
-              <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><BoundedJsonBlock label="Network scenario input JSON" value={scenario.bundle} />
+              <Label>Scenario input</Label><h2 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h2><BoundedJsonBlock label="Network scenario input JSON" value={scenario.bundle} />
             </section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
-              <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
+              <Label>Evidence</Label><h2 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h2>
               <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
             </section>
-            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><BoundedJsonBlock label="Network current-state JSON" value={scenario.bundle.currentState} /></section>
+            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h2 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h2><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h2 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h2><BoundedJsonBlock label="Network current-state JSON" value={scenario.bundle.currentState} /></section>
             <div className="lg:col-span-2">
               <DomainCoverageCatalog
                 catalog={coverageCatalog}

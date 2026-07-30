@@ -69,7 +69,7 @@ export function SelfHostedReviewDetail({
               The server recomputes policy findings and risk. BLOCK remains unapprovable.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy} onClick={() => onDecide("approve")} type="button">Approve</button>
+              <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:opacity-50" disabled={busy} onClick={() => onDecide("approve")} type="button">Approve</button>
               <button className="rounded border border-edge px-4 py-2 text-sm font-semibold disabled:opacity-50" disabled={busy} onClick={() => onDecide("reject")} type="button">Reject</button>
             </div>
           </>

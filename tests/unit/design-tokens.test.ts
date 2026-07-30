@@ -1,7 +1,16 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const stylesheet = readFileSync("app/globals.css", "utf8");
+
+function sourceFiles(directory: string): readonly string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(entryPath);
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [entryPath] : [];
+  });
+}
 
 function declarations(block: string): Map<string, string> {
   const result = new Map<string, string>();
@@ -216,6 +225,23 @@ describe("operations-console design tokens", () => {
         contrastRatio(foreground, background),
         `${foregroundToken} on ${backgroundToken}`,
       ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("binds every filled primary surface to the foreground token whose contrast is tested", () => {
+    const filledPrimaryClasses = sourceFiles("components").flatMap((filePath) => {
+      const source = readFileSync(filePath, "utf8");
+      return [...source.matchAll(/className="([^"]+)"/g)]
+        .map((match) => match[1] ?? "")
+        .filter((className) => className.split(/\s+/).includes("bg-active"));
+    });
+
+    expect(filledPrimaryClasses.length).toBeGreaterThan(0);
+    for (const className of filledPrimaryClasses) {
+      expect(className.split(/\s+/)).toContain(
+        "text-action-primary-foreground",
+      );
+      expect(className.split(/\s+/)).not.toContain("text-white");
     }
   });
 });

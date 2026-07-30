@@ -91,23 +91,105 @@ function workloadPodLabels(resource: KubernetesResource): Readonly<Record<string
   return "podLabels" in resource.spec ? resource.spec.podLabels ?? {} : {};
 }
 
-export function selectorRelationships(snapshot: KubernetesSnapshot) {
-  const workloads = snapshot.resources.filter(
-    (resource) => resource.identity.kind === "Deployment" || resource.identity.kind === "StatefulSet" || resource.identity.kind === "DaemonSet",
-  );
-  const services = snapshot.resources.filter(
+type KubernetesService = Extract<
+  KubernetesResource,
+  { identity: { kind: "Service" } }
+>;
+
+export interface SelectorRelationshipCandidate {
+  readonly service: KubernetesService;
+  readonly selector: Readonly<Record<string, string>>;
+}
+
+export interface SelectorRelationship extends SelectorRelationshipCandidate {
+  readonly matches: readonly KubernetesResource[];
+}
+
+export function selectorRelationshipCandidates(
+  snapshot: KubernetesSnapshot,
+): readonly SelectorRelationshipCandidate[] {
+  return snapshot.resources
+    .filter(
     (resource): resource is Extract<KubernetesResource, { identity: { kind: "Service" } }> =>
       resource.identity.kind === "Service",
-  );
-  return services
-    .map((service) => {
-      const selector = service.spec.selector ?? {};
-      const matches = workloads.filter((workload) =>
-        workload.identity.namespace === service.identity.namespace &&
-        Object.entries(selector).every(([key, value]) => workloadPodLabels(workload)[key] === value),
-      );
-      return { service, selector, matches };
-    });
+    )
+    .map((service) => ({
+      service,
+      selector: service.spec.selector ?? {},
+    }));
+}
+
+export function createSelectorRelationshipResolver(
+  snapshot: KubernetesSnapshot,
+): (candidate: SelectorRelationshipCandidate) => SelectorRelationship {
+  const workloadsByNamespace = new Map<string, KubernetesResource[]>();
+  const workloadsByNamespaceAndLabel = new Map<
+    string,
+    Map<string, Map<string, Set<KubernetesResource>>>
+  >();
+
+  for (const resource of snapshot.resources) {
+    if (
+      resource.identity.kind !== "Deployment" &&
+      resource.identity.kind !== "StatefulSet" &&
+      resource.identity.kind !== "DaemonSet"
+    ) {
+      continue;
+    }
+
+    const namespace = resource.identity.namespace;
+    const namespaceWorkloads = workloadsByNamespace.get(namespace) ?? [];
+    namespaceWorkloads.push(resource);
+    workloadsByNamespace.set(namespace, namespaceWorkloads);
+
+    const namespaceLabels = workloadsByNamespaceAndLabel.get(namespace) ?? new Map();
+    workloadsByNamespaceAndLabel.set(namespace, namespaceLabels);
+    for (const [key, value] of Object.entries(workloadPodLabels(resource))) {
+      const values = namespaceLabels.get(key) ?? new Map();
+      namespaceLabels.set(key, values);
+      const matchingWorkloads = values.get(value) ?? new Set();
+      matchingWorkloads.add(resource);
+      values.set(value, matchingWorkloads);
+    }
+  }
+
+  return (candidate) => {
+    const selectorEntries = Object.entries(candidate.selector);
+    const namespace = candidate.service.identity.namespace;
+    if (selectorEntries.length === 0) {
+      return {
+        ...candidate,
+        matches: workloadsByNamespace.get(namespace) ?? [],
+      };
+    }
+
+    const namespaceLabels = workloadsByNamespaceAndLabel.get(namespace);
+    const matchingSets = selectorEntries.map(([key, value]) =>
+      namespaceLabels?.get(key)?.get(value),
+    );
+    if (matchingSets.some((matches) => matches === undefined)) {
+      return { ...candidate, matches: [] };
+    }
+
+    const orderedSets = matchingSets
+      .filter((matches): matches is Set<KubernetesResource> => matches !== undefined)
+      .sort((left, right) => left.size - right.size);
+    const seed = orderedSets[0] ?? new Set<KubernetesResource>();
+    return {
+      ...candidate,
+      matches: [...seed].filter((workload) =>
+        orderedSets.every((matches) => matches.has(workload)),
+      ),
+    };
+  };
+}
+
+export function selectorRelationships(
+  snapshot: KubernetesSnapshot,
+  candidates: readonly SelectorRelationshipCandidate[],
+): readonly SelectorRelationship[] {
+  const resolve = createSelectorRelationshipResolver(snapshot);
+  return candidates.map(resolve);
 }
 
 function StateValue({ state }: { state: WorkflowState<KubernetesSnapshot> }) {
@@ -255,7 +337,14 @@ export function KubernetesWorkbenchShell({
   const fixture = useMemo(() => fixtureFor(selectedSourceId), [selectedSourceId]);
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
-  const relations = useMemo(() => selectorRelationships(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT), []);
+  const relationCandidates = useMemo(
+    () => selectorRelationshipCandidates(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT),
+    [],
+  );
+  const resolveRelationship = useMemo(
+    () => createSelectorRelationshipResolver(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT),
+    [],
+  );
   const [resourceQuery, setResourceQuery] = useState("");
   const [resourcePageIndex, setResourcePageIndex] = useState(0);
   const resourcePage = useMemo(
@@ -273,12 +362,17 @@ export function KubernetesWorkbenchShell({
   const relationPage = useMemo(
     () =>
       searchAndPageOfflineCollection(
-        relations,
+        relationCandidates,
         relationQuery,
-        (relation) => JSON.stringify(relation),
+        ({ service, selector }) =>
+          `${resourceName(service)} ${JSON.stringify(selector)}`,
         relationPageIndex,
       ),
-    [relationPageIndex, relationQuery, relations],
+    [relationCandidates, relationPageIndex, relationQuery],
+  );
+  const visibleRelations = useMemo(
+    () => relationPage.items.map(resolveRelationship),
+    [relationPage.items, resolveRelationship],
   );
   const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
@@ -308,14 +402,14 @@ export function KubernetesWorkbenchShell({
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
             <p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p>
           </div>
-          <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
+          <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
         </header>
         <div className="mt-5 grid gap-4">
-          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Image, security, selector, and protected-resource evidence</h3><FindingsPanel state={workflow} /></section>
-          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
+          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Image, security, selector, and protected-resource evidence</h2><FindingsPanel state={workflow} /></section>
+          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="inventory-title">
             <Label>Namespace inventory</Label>
-            <h3 id="inventory-title" className="mt-2 text-base font-semibold">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.length} captured offline resources</h3>
+            <h2 id="inventory-title" className="mt-2 text-base font-semibold">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.length} captured offline resources</h2>
             <p className="mt-2 text-xs text-ink-faint">Deterministic evaluation always covers the complete snapshot; search and paging bound only the rendered inventory.</p>
             <EvidencePager
               id="kubernetes-resource-search"
@@ -334,8 +428,8 @@ export function KubernetesWorkbenchShell({
           <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="selector-title">
             <div className="p-4">
               <Label>Service selector relationships</Label>
-              <h3 id="selector-title" className="mt-2 text-base font-semibold">Current snapshot relationships</h3>
-              <p className="mt-2 text-xs text-ink-faint">Every Service relationship and nested workload match remains searchable; table rows and each match list use separate deterministic pages.</p>
+              <h2 id="selector-title" className="mt-2 text-base font-semibold">Current snapshot relationships</h2>
+              <p className="mt-2 text-xs text-ink-faint">Every Service relationship remains searchable. Workload matches are indexed and materialized only for visible rows, where each complete match set has its own search and deterministic pages.</p>
               <EvidencePager
                 id="kubernetes-relation-search"
                 label="Search all Kubernetes Service relationships"
@@ -353,11 +447,11 @@ export function KubernetesWorkbenchShell({
               <table className="min-w-full border-collapse text-left text-xs">
                 <caption className="sr-only">Kubernetes Service selector relationships</caption>
                 <thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Service</th><th className="px-4 py-3 font-medium" scope="col">Selector</th><th className="px-4 py-3 font-medium" scope="col">Matching workloads</th></tr></thead>
-                <tbody>{relationPage.items.map(({ service, selector, matches }) => <tr className="border-b border-edge align-top" key={service.resourceId}><th className="px-4 py-3 font-mono font-normal" scope="row">{resourceName(service)}</th><td className="px-4 py-3">{Object.entries(selector).map(([key, value]) => `${key}=${value}`).join(", ") || "No selector"}</td><td className="px-4 py-3"><WorkloadMatches matches={matches} service={service} /></td></tr>)}</tbody>
+                <tbody>{visibleRelations.map(({ service, selector, matches }) => <tr className="border-b border-edge align-top" key={service.resourceId}><th className="px-4 py-3 font-mono font-normal" scope="row">{resourceName(service)}</th><td className="px-4 py-3">{Object.entries(selector).map(([key, value]) => `${key}=${value}`).join(", ") || "No selector"}</td><td className="px-4 py-3"><WorkloadMatches matches={matches} service={service} /></td></tr>)}</tbody>
               </table>
             </div>
           </section>
-          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="manifest-title"><Label>Current / proposed manifest diff</Label><h3 id="manifest-title" className="mt-2 text-base font-semibold">Bundled manifest proposal</h3><p className="mt-2 text-sm text-ink-dim">Image, workload security context, protected-resource labels, and Service selector effects are review evidence. Proposed manifests are data only and are never applied.</p><ProposedDiff proposal={fixture.proposal} /></section>
+          <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="manifest-title"><Label>Current / proposed manifest diff</Label><h2 id="manifest-title" className="mt-2 text-base font-semibold">Bundled manifest proposal</h2><p className="mt-2 text-sm text-ink-dim">Image, workload security context, protected-resource labels, and Service selector effects are review evidence. Proposed manifests are data only and are never applied.</p><ProposedDiff proposal={fixture.proposal} /></section>
           <div>
             <DomainCoverageCatalog catalog={coverageCatalog} evaluatedPolicyIds={hasFindings(workflow) ? workflow.findings.map((finding) => finding.policyId) : []} simulationDisclosure="Kubernetes has an offline sandbox capability, but this public replay never requests simulation because it has no decision authority." source={{ sourceId: selectedSourceId, source: example.session.source, analysisMode: example.session.analysisMode, provenance: example.session.provenance }} />
           </div>

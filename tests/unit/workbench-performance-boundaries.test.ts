@@ -41,15 +41,39 @@ function moduleReferences(
   );
   const references: ModuleReference[] = [];
 
+  function importHasRuntimeValue(node: ts.ImportDeclaration): boolean {
+    const clause = node.importClause;
+    if (!clause) return true;
+    if (clause.isTypeOnly) return false;
+    if (clause.name) return true;
+    if (!clause.namedBindings || ts.isNamespaceImport(clause.namedBindings)) {
+      return true;
+    }
+    return (
+      clause.namedBindings.elements.length === 0 ||
+      clause.namedBindings.elements.some((element) => !element.isTypeOnly)
+    );
+  }
+
+  function exportHasRuntimeValue(node: ts.ExportDeclaration): boolean {
+    if (node.isTypeOnly) return false;
+    if (!node.exportClause || !ts.isNamedExports(node.exportClause)) {
+      return true;
+    }
+    return (
+      node.exportClause.elements.length === 0 ||
+      node.exportClause.elements.some((element) => !element.isTypeOnly)
+    );
+  }
+
   function visit(node: ts.Node): void {
     if (
       (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
       node.moduleSpecifier &&
       ts.isStringLiteralLike(node.moduleSpecifier) &&
-      !(
-        (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
-        (ts.isExportDeclaration(node) && node.isTypeOnly)
-      )
+      (ts.isImportDeclaration(node)
+        ? importHasRuntimeValue(node)
+        : exportHasRuntimeValue(node))
     ) {
       references.push({
         kind: "static",
@@ -149,6 +173,18 @@ function collectStaticRuntimeDependencyGraph(
   };
 }
 
+function hasDomainPackage(
+  graph: RuntimeDependencyGraph,
+  packageRoot: string,
+): boolean {
+  const normalizedRoot = packageRoot.replace(/\/+$/, "");
+  return [...graph.packageSpecifiers].some(
+    (specifier) =>
+      specifier === normalizedRoot ||
+      specifier.startsWith(`${normalizedRoot}/`),
+  );
+}
+
 describe("workbench deterministic performance boundaries", () => {
   it("keeps every domain runtime behind the registry's lazy import boundary", () => {
     const references = moduleReferences("features/domains/registry.ts");
@@ -208,6 +244,54 @@ describe("workbench deterministic performance boundaries", () => {
     expect(graph.packageSpecifiers).toContain("@changesafe/domain-terraform");
   });
 
+  it("ignores statement and inline type-only imports and exports", () => {
+    const references = moduleReferences(
+      "components/ReviewWorkbenchShell.tsx",
+      `
+        import type { TerraformInput } from "@changesafe/domain-terraform";
+        import { type TerraformPlan } from "@changesafe/domain-terraform/offline";
+        export type { TerraformPolicyPack } from "@changesafe/domain-terraform";
+        export { type TerraformFinding } from "@changesafe/domain-terraform/internal";
+      `,
+    );
+
+    expect(references).toEqual([]);
+  });
+
+  it("retains mixed runtime imports and exports while ignoring their type-only bindings", () => {
+    const references = moduleReferences(
+      "components/ReviewWorkbenchShell.tsx",
+      `
+        import { terraformDomain, type TerraformInput } from "@changesafe/domain-terraform";
+        export { normalizePlan, type TerraformPlan } from "@changesafe/domain-terraform/offline";
+      `,
+    );
+
+    expect(references).toEqual([
+      { kind: "static", specifier: "@changesafe/domain-terraform" },
+      { kind: "static", specifier: "@changesafe/domain-terraform/offline" },
+    ]);
+  });
+
+  it("treats a package root and every normalized subpath as the same domain runtime", () => {
+    const shellPath = path.resolve("components/ReviewWorkbenchShell.tsx");
+    const originalShell = readFileSync(shellPath, "utf8");
+    const graph = collectStaticRuntimeDependencyGraph(
+      "app/workbench/page.tsx",
+      new Map([
+        [
+          shellPath,
+          `${originalShell}\nimport "@changesafe/domain-terraform/internal/adapter";\n`,
+        ],
+      ]),
+    );
+
+    expect(hasDomainPackage(graph, "@changesafe/domain-terraform")).toBe(true);
+    expect(hasDomainPackage(graph, "@changesafe/domain-terraform-extra")).toBe(
+      false,
+    );
+  });
+
   it.each([
     [
       "app/workbench/page.tsx",
@@ -227,7 +311,7 @@ describe("workbench deterministic performance boundaries", () => {
       const graph = collectStaticRuntimeDependencyGraph(entryPath);
       expect(graph.localFiles.size).toBeGreaterThan(1);
       for (const forbiddenPackage of forbiddenPackages) {
-        expect(graph.packageSpecifiers).not.toContain(forbiddenPackage);
+        expect(hasDomainPackage(graph, forbiddenPackage)).toBe(false);
       }
     },
   );

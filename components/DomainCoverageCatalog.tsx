@@ -93,12 +93,12 @@ export function DomainCoverageCatalog({
       data-domain-coverage={registration.domainId}
     >
       <p className="eyebrow text-ink-faint">Policy coverage</p>
-      <h3
+      <h2
         className="mt-2 text-base font-semibold"
         id={`${registration.domainId}-coverage-title`}
       >
         Registered, loaded, and evaluated evidence
-      </h3>
+      </h2>
       <p className="mt-2 text-sm leading-relaxed text-ink-dim">
         Registry metadata identifies the domain without loading its adapter.
         Loaded coverage comes from the deterministic runtime. A policy is
