@@ -27,6 +27,12 @@ const publicReplayCapabilities = composeSessionCapabilities(
   defineTransportCapabilitySource({ durableDecision: false }),
 );
 
+const CASE_STUDY_LABELS: Record<string, string> = {
+  "scenario-a-failover": "Case 1",
+  "scenario-b-route-leak": "Case 2",
+  "scenario-g-silent-regression": "Case 4",
+};
+
 export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
   Object.freeze(
     NETWORK_SCENARIOS.map((scenario) => {
@@ -37,6 +43,7 @@ export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         sourceId: scenario.scenarioId,
         label: scenario.label,
         description: scenario.shortDescription,
+        caseStudy: CASE_STUDY_LABELS[scenario.scenarioId] ?? null,
         session: {
           domainId: networkMetadata.domainId,
           contractVersion: networkMetadata.contractVersion,

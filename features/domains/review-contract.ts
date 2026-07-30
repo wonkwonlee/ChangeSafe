@@ -180,6 +180,10 @@ export const ReviewExampleDescriptorSchema = z
     sourceId: IdSchema,
     label: z.string().min(1).max(160),
     description: z.string().min(1).max(1000),
+    /** Non-null when this example is one of the featured case studies in
+     *  docs/CASE_STUDIES.md; names which one (e.g. "Case 2"), shown as a
+     *  small badge in the scenario picker. Null for every other example. */
+    caseStudy: z.string().min(1).max(40).nullable().default(null),
     session: ReviewSessionEnvelopeSchema,
   })
   .superRefine((descriptor, context) => {
