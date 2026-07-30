@@ -10,7 +10,7 @@ import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
 import { useReviewController } from "@/features/reviews/useReviewController";
-import { getScenario } from "@/scenarios";
+import { getScenario, type ScenarioDefinition } from "@/scenarios";
 import type { WorkflowState } from "@changesafe/core";
 import type { IncidentBundle } from "@changesafe/domain-network";
 
@@ -37,10 +37,14 @@ function hasFindings(state: WorkflowState<IncidentBundle>): state is ClassifiedW
   ].includes(state.phase);
 }
 
-function scenarioFor(sourceId: string) {
+function scenarioFor(
+  sourceId: string,
+): ScenarioDefinition & { fixture: NonNullable<ScenarioDefinition["fixture"]> } {
   const scenario = getScenario(sourceId);
-  if (!scenario) throw new Error(`Bundled Network scenario "${sourceId}" is unavailable`);
-  return scenario;
+  if (!scenario || scenario.domainId !== "network" || !scenario.fixture) {
+    throw new Error(`Bundled Network scenario "${sourceId}" is unavailable`);
+  }
+  return { ...scenario, fixture: scenario.fixture };
 }
 
 function exampleFor(sourceId: string) {
@@ -53,8 +57,8 @@ function initialSource() {
   const scenario = scenarioFor(INITIAL_EXAMPLE.sourceId);
   return {
     sourceId: scenario.scenarioId,
-    input: scenario.bundle,
-    expectedInputId: scenario.bundle.incidentId,
+    input: scenario.input as IncidentBundle,
+    expectedInputId: scenario.inputId,
     session: INITIAL_EXAMPLE.session,
   };
 }
@@ -176,8 +180,8 @@ export function ReviewWorkbenchShell({
       const nextExample = exampleFor(sourceId);
       controller.rebind({
         sourceId: nextScenario.scenarioId,
-        input: nextScenario.bundle,
-        expectedInputId: nextScenario.bundle.incidentId,
+        input: nextScenario.input as IncidentBundle,
+        expectedInputId: nextScenario.inputId,
         session: nextExample.session,
       });
       setSelectedSourceId(sourceId);
@@ -245,14 +249,14 @@ export function ReviewWorkbenchShell({
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h2><FindingsPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
-              <Label>Scenario input</Label><h2 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h2><BoundedJsonBlock label="Network scenario input JSON" value={scenario.bundle} />
+              <Label>Scenario input</Label><h2 id="input-title" className="mt-2 text-base font-semibold">{scenario.inputId}</h2><BoundedJsonBlock label="Network scenario input JSON" value={scenario.input} />
             </section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="evidence-title">
               <Label>Evidence</Label><h2 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h2>
-              <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
+              <ul className="mt-3 space-y-2 text-sm">{(scenario.input as IncidentBundle).alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
             </section>
-            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h2 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h2><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h2 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h2><BoundedJsonBlock label="Network current-state JSON" value={scenario.bundle.currentState} /></section>
+            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h2 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h2><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={(scenario.input as IncidentBundle).topology} state={(scenario.input as IncidentBundle).currentState} /></div></section>
+            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h2 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h2><BoundedJsonBlock label="Network current-state JSON" value={(scenario.input as IncidentBundle).currentState} /></section>
             <div className="lg:col-span-2">
               <DomainCoverageCatalog
                 catalog={coverageCatalog}
@@ -284,7 +288,7 @@ export function ReviewWorkbenchShell({
 
         <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
           <Label>Network examples</Label>
-          <h2 className="mt-2 text-lg font-semibold">{scenario.bundle.title}</h2>
+          <h2 className="mt-2 text-lg font-semibold">{scenario.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">
             {NETWORK_REVIEW_EXAMPLES.map((example) => (
               <li key={example.sourceId}>

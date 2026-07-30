@@ -35,8 +35,8 @@ async function pending(
   owner: typeof aliceOwner | typeof bobOwner = aliceOwner,
   createdAtUtc = "2026-07-30T01:00:00.000Z",
 ) {
-  const content = SCENARIOS[0]!.bundle;
-  const proposal = SCENARIOS[0]!.fixture.proposal;
+  const content = SCENARIOS[0]!.input;
+  const proposal = SCENARIOS[0]!.fixture!.proposal;
   const inputSha256 = await hashCanonical(content);
   const proposalSha256 = await hashCanonical(proposal);
   return {

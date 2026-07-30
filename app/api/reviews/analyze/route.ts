@@ -22,6 +22,7 @@ import {
 } from "@/features/domains/review-api-contract";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
 import { getScenario } from "@/scenarios";
+import type { IncidentBundle } from "@changesafe/domain-network";
 
 export const runtime = "nodejs";
 
@@ -208,13 +209,13 @@ async function resolvePublicReplay(
 ): Promise<PublicReplayResolution> {
   if (domainId === "network") {
     const scenario = getScenario(sourceId);
-    if (!scenario) {
+    if (!scenario || scenario.domainId !== "network" || !scenario.fixture) {
       return null;
     }
     const provenance = reviewProvenance(scenario.fixture.provenance);
     return {
-      inputId: scenario.bundle.incidentId,
-      input: scenario.bundle,
+      inputId: scenario.inputId,
+      input: scenario.input as IncidentBundle,
       proposal: scenario.fixture.proposal,
       source:
         provenance === "captured-replay" ? "bundled-replay" : "authored-fixture",
