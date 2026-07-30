@@ -5,6 +5,7 @@ import {
   JsonValueSchema,
   Sha256HexSchema,
   TimestampSchema,
+  canonicalize,
   hashCanonical,
 } from "@changesafe/core";
 import {
@@ -556,9 +557,41 @@ export const DurableReviewDecisionClaimSchema = z.strictObject({
  */
 export function bindServerResolutionToPendingReview(
   pending: PendingDurableReviewRecord,
+  claim: DurableReviewDecisionClaim,
   raw: unknown,
 ): DurableReviewResolution {
+  const acceptedClaim = DurableReviewDecisionClaimSchema.parse(claim);
+  if (
+    acceptedClaim.reviewId !== pending.reviewId ||
+    canonicalize(acceptedClaim.owner) !== canonicalize(pending.owner)
+  ) {
+    throw new Error("durable resolution decision claim does not match the immutable pending review");
+  }
   const resolution = DurableReviewResolutionSchema.parse(raw);
+  if (resolution.receipt.receiptId !== acceptedClaim.receiptId) {
+    throw new Error("durable resolution receipt does not match the immutable decision claim");
+  }
+  return bindResolutionToPendingReview(pending, resolution);
+}
+
+/**
+ * Read-only compatibility for resolutions persisted before decision claims
+ * existed. Never call this from a new-resolution write path.
+ */
+export function readLegacyPreclaimResolution(
+  pending: PendingDurableReviewRecord,
+  raw: unknown,
+): DurableReviewResolution {
+  return bindResolutionToPendingReview(
+    pending,
+    DurableReviewResolutionSchema.parse(raw),
+  );
+}
+
+function bindResolutionToPendingReview(
+  pending: PendingDurableReviewRecord,
+  resolution: DurableReviewResolution,
+): DurableReviewResolution {
   if (resolution.reviewId !== pending.reviewId) {
     throw new Error("durable resolution does not match the immutable pending review");
   }

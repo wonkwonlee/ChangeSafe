@@ -342,6 +342,15 @@ async function handle(
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
+      domain: pending.intake.domainId,
+      sourceId: pending.intake.source.sourceId,
+      input: pending.intake.input.content,
+      ...(pending.intake.proposal
+        ? { proposal: pending.intake.proposal.content }
+        : {}),
+      decision: body.decision,
+    });
     const decided = await options.reviews.resolvePending(
       reviewId,
       owner,
@@ -350,20 +359,18 @@ async function handle(
         claimedAtUtc: serverNow(options),
         approverEmail: approver.email,
       },
+      (pending) => {
+        options.decisions.preflightSigned(
+          durableDecisionRequest(pending),
+          pending.session.policyVersion,
+        );
+      },
       async (pending, claim) => {
         // Both domain choices come from the validated immutable pending
         // record. Network re-parses its hash-bound proposal artifact;
         // Terraform derives its proposal from the stored plan.
         const outcome = await options.decisions.decideSigned(
-          {
-            domain: pending.intake.domainId,
-            sourceId: pending.intake.source.sourceId,
-            input: pending.intake.input.content,
-            ...(pending.intake.proposal
-              ? { proposal: pending.intake.proposal.content }
-              : {}),
-            decision: body.decision,
-          },
+          durableDecisionRequest(pending),
           {
             subject: claim.owner.subject,
             issuer: claim.owner.issuer,

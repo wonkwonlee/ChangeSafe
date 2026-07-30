@@ -131,6 +131,25 @@ function resolution(domainId: "network" | "terraform", acceptedIntake: DurableRe
   } as const;
 }
 
+function claim(domainId: "network" | "terraform") {
+  return {
+    claimVersion: "1",
+    reviewId: `${domainId}-review`,
+    owner: {
+      tenantId: "https://idp.test",
+      issuer: "https://idp.test",
+      subject: "user-alice",
+      scope: "self-hosted-review",
+    },
+    approverEmail: "alice@example.test",
+    decision: "reject",
+    claimedAtUtc: "2026-07-30T00:01:30.000Z",
+    receiptId: `${domainId}-receipt`,
+    receiptCreatedAtUtc: "2026-07-30T00:01:30.000Z",
+    receiptSignedAtUtc: "2026-07-30T00:01:30.000Z",
+  } as const;
+}
+
 describe("durable self-hosted review contracts", () => {
   it.each(["network", "terraform"] as const)(
     "accepts a self-hosted %s offline intake and durable record",
@@ -193,6 +212,7 @@ describe("durable self-hosted review contracts", () => {
       const accepted = await acceptPendingDurableReviewRecordForPersistence(pending);
       const bound = bindServerResolutionToPendingReview(
         accepted,
+        claim(domainId),
         resolution(domainId, accepted.intake),
       );
       expect(DurableReviewResolutionSchema.parse(bound)).toMatchObject({
@@ -212,7 +232,7 @@ describe("durable self-hosted review contracts", () => {
     ).toBe(false);
 
     const accepted = await acceptPendingDurableReviewRecordForPersistence(pending);
-    expect(() => bindServerResolutionToPendingReview(accepted, {
+    expect(() => bindServerResolutionToPendingReview(accepted, claim("network"), {
       ...resolution("network", accepted.intake),
       receipt: {
         ...resolution("network", accepted.intake).receipt,

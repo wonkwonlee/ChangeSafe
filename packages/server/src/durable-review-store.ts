@@ -14,6 +14,7 @@ import {
   DurableReviewResolutionSchema,
   DurableReviewOwnerSchema,
   PendingDurableReviewRecordSchema,
+  readLegacyPreclaimResolution,
   type DurableReviewRecord,
   type DurableReviewDecisionClaim,
   type DurableReviewResolution,
@@ -110,6 +111,7 @@ export interface DurableReviewStoreEntry {
 }
 export interface DurableReviewResolutionEntry {
   seq: number; reviewId: string; resolvedAtUtc: string; receiptId: string; receiptSha256: string;
+  claimBinding: "verified-claim" | "legacy-preclaim";
   resolution: DurableReviewResolution;
 }
 export interface DurableReviewDecisionClaimEntry {
@@ -291,6 +293,7 @@ const TABLES = [
 ] as const;
 
 const RESOLUTION_PARENT_BINDING_TRIGGER = "durable_review_resolutions_parent_binding";
+const RESOLUTION_CLAIM_BINDING_TRIGGER = "durable_review_resolutions_claim_binding";
 const LEGACY_TABLE_NAME = "durable_review_records";
 const V2_TABLE_NAMES = ["durable_review_pending_records", "durable_review_resolutions"] as const;
 const QUARANTINE_TABLE_NAME = "durable_review_v2_migration_quarantine";
@@ -360,6 +363,25 @@ WHEN NOT json_valid(NEW.resolution_json)
       ${proposalBinding}
   ) BEGIN
   SELECT RAISE(ABORT, 'durable_review_resolutions requires immutable parent binding');
+END;`;
+}
+
+function resolutionClaimBindingTriggerSql(): string {
+  return `
+CREATE TRIGGER ${RESOLUTION_CLAIM_BINDING_TRIGGER} BEFORE INSERT ON durable_review_resolutions
+WHEN NOT EXISTS (
+  SELECT 1 FROM durable_review_decision_claims AS claim
+  WHERE claim.review_id = NEW.review_id
+    AND claim.owner_tenant_id = NEW.owner_tenant_id
+    AND claim.owner_issuer = NEW.owner_issuer
+    AND claim.owner_subject = NEW.owner_subject
+    AND claim.owner_scope = NEW.owner_scope
+    AND claim.receipt_id = NEW.receipt_id
+    AND json_valid(claim.claim_json)
+    AND json_extract(claim.claim_json, '$.reviewId') = NEW.review_id
+    AND json_extract(claim.claim_json, '$.receiptId') = NEW.receipt_id
+) BEGIN
+ SELECT RAISE(ABORT, 'durable_review_resolutions requires matching immutable decision claim');
 END;`;
 }
 
@@ -598,6 +620,7 @@ function installCurrentV2Triggers(db: DatabaseSync, includeQuarantine: boolean):
     db.exec(triggerSql(table, conflict));
   }
   db.exec(resolutionParentBindingTriggerSql());
+  db.exec(resolutionClaimBindingTriggerSql());
   if (includeQuarantine) db.exec(quarantineTriggerSql());
 }
 
@@ -630,6 +653,17 @@ function emptyLegacyFingerprint(): string {
 }
 
 function currentV2Fingerprint(): string {
+  return expectedFingerprint(V2_SCHEMA, V2_TABLE_NAMES, (db) => {
+    for (const { table, conflict } of TABLES.filter(({ table }) => table !== "durable_review_records")) {
+      db.exec(triggerSql(table, conflict));
+    }
+    db.exec(resolutionParentBindingTriggerSql());
+    db.exec(resolutionClaimBindingTriggerSql());
+  });
+}
+
+/** Exact claimless V2 schema shipped immediately before claim-bound resolutions. */
+function priorClaimlessCurrentV2Fingerprint(): string {
   return expectedFingerprint(V2_SCHEMA, V2_TABLE_NAMES, (db) => {
     for (const { table, conflict } of TABLES.filter(({ table }) => table !== "durable_review_records")) {
       db.exec(triggerSql(table, conflict));
@@ -707,6 +741,7 @@ function dropKnownV2Triggers(db: DatabaseSync): void {
     }
   }
   db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_PARENT_BINDING_TRIGGER}`);
+  db.exec(`DROP TRIGGER IF EXISTS ${RESOLUTION_CLAIM_BINDING_TRIGGER}`);
 }
 function dropKnownQuarantineTriggers(db: DatabaseSync): void {
   for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
@@ -949,6 +984,7 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
     const actualV2 = schemaFingerprint(db, V2_TABLE_NAMES);
     const actualQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
     const currentV2 = currentV2Fingerprint();
+    const priorClaimlessCurrentV2 = priorClaimlessCurrentV2Fingerprint();
     const priorOwnerfulV2 = priorOwnerfulV2Fingerprint();
     const historicalV2 = historicalV2Fingerprint();
     const emptyV2 = emptyV2Fingerprint();
@@ -967,12 +1003,19 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
         throw new DomainError("INTERNAL", "Historical durable review schema has an unexpected quarantine surface.");
       }
       rebuildAsQuarantine(db, historicalV2, false);
-    } else if (actualV2 === currentV2 || actualV2 === priorOwnerfulV2) {
+    } else if (
+      actualV2 === currentV2 ||
+      actualV2 === priorClaimlessCurrentV2 ||
+      actualV2 === priorOwnerfulV2
+    ) {
       if (actualQuarantine === oldQuarantine) {
         rebuildAsQuarantine(db, actualV2, true);
       } else if (actualQuarantine !== noQuarantine && actualQuarantine !== currentQuarantine) {
         throw new DomainError("INTERNAL", "Durable review quarantine schema fingerprint is unknown or weakened.");
-      } else if (actualV2 === priorOwnerfulV2) {
+      } else if (
+        actualV2 === priorClaimlessCurrentV2 ||
+        actualV2 === priorOwnerfulV2
+      ) {
         dropKnownV2Triggers(db);
         installCurrentV2Triggers(db, actualQuarantine === currentQuarantine);
       }
@@ -1045,7 +1088,11 @@ function pendingEntry(row: PendingRow): DurableReviewStoreEntry {
   }
   return { seq: row.seq, reviewId: row.review_id, createdAtUtc: row.created_at_utc, domainId: row.domain_id, sourceId: row.source_id, inputId: row.input_id, record };
 }
-function resolutionEntry(row: ResolutionRow, pending: PendingDurableReviewRecord): DurableReviewResolutionEntry {
+function resolutionEntry(
+  row: ResolutionRow,
+  pending: PendingDurableReviewRecord,
+  claim: DurableReviewDecisionClaim | null,
+): DurableReviewResolutionEntry {
   const resolution = DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json));
   if (
     resolution.reviewId !== row.review_id ||
@@ -1059,9 +1106,20 @@ function resolutionEntry(row: ResolutionRow, pending: PendingDurableReviewRecord
       scope: row.owner_scope,
     }))
   ) throw new DomainError("REQUEST_INVALID", "Stored durable resolution columns do not bind to its immutable resolution.");
-  try { bindServerResolutionToPendingReview(pending, resolution); }
+  try {
+    if (claim) bindServerResolutionToPendingReview(pending, claim, resolution);
+    else readLegacyPreclaimResolution(pending, resolution);
+  }
   catch (error) { throw new DomainError("REQUEST_INVALID", `Stored durable resolution does not bind to its immutable parent: ${error instanceof Error ? error.message : "invalid binding"}`); }
-  return { seq: row.seq, reviewId: row.review_id, resolvedAtUtc: row.resolved_at_utc, receiptId: row.receipt_id, receiptSha256: row.receipt_sha256, resolution };
+  return {
+    seq: row.seq,
+    reviewId: row.review_id,
+    resolvedAtUtc: row.resolved_at_utc,
+    receiptId: row.receipt_id,
+    receiptSha256: row.receipt_sha256,
+    claimBinding: claim ? "verified-claim" : "legacy-preclaim",
+    resolution,
+  };
 }
 function decisionClaimEntry(
   row: DecisionClaimRow,
@@ -1150,7 +1208,14 @@ export class DurableReviewStore {
   /** Append a receipt binding only after the server has recomputed its verdict. */
   async bindServerResolution(reviewId: string, owner: DurableReviewOwner, raw: unknown): Promise<DurableReviewResolutionEntry> {
     const pending = this.get(reviewId, owner); if (!pending) throw new DomainError("REQUEST_INVALID", `No pending durable review exists for ${reviewId}.`);
-    const accepted = bindServerResolutionToPendingReview(pending.record, raw);
+    const claim = this.getDecisionClaim(reviewId, owner);
+    if (!claim) {
+      throw new DomainError(
+        "ILLEGAL_TRANSITION",
+        `Review ${reviewId} has no immutable decision claim.`,
+      );
+    }
+    const accepted = bindServerResolutionToPendingReview(pending.record, claim.claim, raw);
     return this.#queue(() => this.#appendResolution(pending.record, accepted));
   }
 
@@ -1172,6 +1237,7 @@ export class DurableReviewStore {
       claimedAtUtc: string;
       approverEmail: string | null;
     },
+    preflight: (pending: PendingDurableReviewRecord) => void | Promise<void>,
     issue: (
       pending: PendingDurableReviewRecord,
       claim: DurableReviewDecisionClaim,
@@ -1183,6 +1249,7 @@ export class DurableReviewStore {
     if (!pending) {
       throw new DomainError("REQUEST_INVALID", `No pending durable review exists for ${id}.`);
     }
+    await preflight(pending.record);
     const claim = this.#claimDecision(
       pending.record,
       request.decision,
@@ -1192,6 +1259,7 @@ export class DurableReviewStore {
     const issued = await issue(pending.record, claim.claim);
     const accepted = bindServerResolutionToPendingReview(
       pending.record,
+      claim.claim,
       issued.resolution,
     );
     return {
@@ -1330,7 +1398,12 @@ export class DurableReviewStore {
     if (!row) return null;
     const pending = this.get(id, validOwner);
     if (!pending) throw new DomainError("REQUEST_INVALID", `Stored durable resolution ${id} has no immutable pending parent.`);
-    return resolutionEntry(ResolutionRowSchema.parse(row), pending.record);
+    const claim = this.getDecisionClaim(id, validOwner);
+    return resolutionEntry(
+      ResolutionRowSchema.parse(row),
+      pending.record,
+      claim?.claim ?? null,
+    );
   }
   getLegacy(reviewId: string): LegacyDurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? legacyEntry(LegacyRowSchema.parse(row)) : null; }
   list(options: DurableReviewStoreListOptions = {}, owner: DurableReviewOwner): DurableReviewStoreEntry[] {
@@ -1397,6 +1470,7 @@ export class DurableReviewStore {
     const allowedFingerprints = new Set([
       historicalV2Fingerprint(),
       priorOwnerfulV2Fingerprint(),
+      priorClaimlessCurrentV2Fingerprint(),
       currentV2Fingerprint(),
     ]);
     for (const entry of entries) {

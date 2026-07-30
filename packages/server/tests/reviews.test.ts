@@ -523,6 +523,9 @@ describe("durable review decision HTTP API", () => {
 
     expect(response.status).toBe(409);
     expect(context.ledger.count()).toBe(0);
+    expect(
+      context.reviews.getDecisionClaim("review-network-blocked", aliceOwner()),
+    ).toBeNull();
     expect(context.reviews.getResolution("review-network-blocked", aliceOwner())).toBeNull();
   });
 
@@ -548,6 +551,9 @@ describe("durable review decision HTTP API", () => {
 
     expect(response.status).toBe(400);
     expect(context.ledger.count()).toBe(0);
+    expect(
+      context.reviews.getDecisionClaim("review-stale-policy", aliceOwner()),
+    ).toBeNull();
     expect(context.reviews.getResolution("review-stale-policy", aliceOwner())).toBeNull();
   });
 

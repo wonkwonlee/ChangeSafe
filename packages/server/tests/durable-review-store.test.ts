@@ -92,6 +92,35 @@ async function currentLegacy(reviewId: string) {
 function resolution(reviewId: string, item: Awaited<ReturnType<typeof pending>>, suffix = "one") {
   return { resolutionVersion: "1", reviewId, resolvedAtUtc: "2026-07-30T02:00:00.000Z", receipt: { receiptId: `${reviewId}-receipt-${suffix}`, sourceId: item.intake.source.sourceId, inputId: item.intake.input.inputId, inputSha256: item.intake.input.inputSha256, proposalId: item.intake.proposal.proposalId, proposalSha256: item.intake.proposal.proposalSha256, policyVersion: item.session.policyVersion, receiptSha256: sha(suffix === "one" ? "c" : "d") } } as const;
 }
+async function claimedResolution(
+  store: DurableReviewStore,
+  item: Awaited<ReturnType<typeof pending>>,
+  suffix = "one",
+) {
+  await expect(store.resolvePending(
+    item.reviewId,
+    item.owner,
+    {
+      decision: "reject",
+      claimedAtUtc: "2026-07-30T01:30:00.000Z",
+      approverEmail: null,
+    },
+    () => undefined,
+    async () => {
+      throw new Error("stop after claim reservation");
+    },
+  )).rejects.toThrow(/stop after claim reservation/);
+  const claim = store.getDecisionClaim(item.reviewId, item.owner);
+  expect(claim).not.toBeNull();
+  const base = resolution(item.reviewId, item, suffix);
+  return {
+    ...base,
+    receipt: {
+      ...base.receipt,
+      receiptId: claim!.receiptId,
+    },
+  } as const;
+}
 
 function installExactHistoricalLegacyV1Guards(db: DatabaseSync): void {
   db.exec(`
@@ -287,6 +316,7 @@ describe("DurableReviewStore v2 pending queue", () => {
     const prior = new sqlite.DatabaseSync(database.path);
     try {
       prior.exec("DROP TRIGGER durable_review_resolutions_parent_binding");
+      prior.exec("DROP TRIGGER durable_review_resolutions_claim_binding");
       installPriorOwnerfulResolutionBinding(prior);
     } finally {
       prior.close();
@@ -295,11 +325,12 @@ describe("DurableReviewStore v2 pending queue", () => {
     const upgraded = DurableReviewStore.open(database.path);
     try {
       expect(upgraded.get(item.reviewId, aliceOwner)?.record).toEqual(item);
+      const claimBound = await claimedResolution(upgraded, item);
       await expect(
         upgraded.bindServerResolution(
           item.reviewId,
           aliceOwner,
-          resolution(item.reviewId, item),
+          claimBound,
         ),
       ).resolves.toMatchObject({ reviewId: item.reviewId });
     } finally {
@@ -483,6 +514,116 @@ describe("DurableReviewStore v2 pending queue", () => {
     try { const item = await pending("review-one"); const first = await store.appendPending(item); expect(await store.appendPending(item)).toEqual(first); expect(first).toMatchObject({ seq: 1, reviewId: "review-one" }); expect(store.count()).toBe(1); expect(store.get("review-one", aliceOwner)).toEqual(first); expect(store.getResolution("review-one", aliceOwner)).toBeNull(); } finally { store.close(); }
   });
 
+  it("does not reserve an immutable claim when decision preflight fails", async () => {
+    const store = DurableReviewStore.open(":memory:");
+    try {
+      const item = await pending("review-preflight-failure");
+      await store.appendPending(item);
+
+      await expect(store.resolvePending(
+        item.reviewId,
+        aliceOwner,
+        {
+          decision: "approve",
+          claimedAtUtc: "2026-07-30T01:01:00.000Z",
+          approverEmail: null,
+        },
+        async () => {
+          throw new Error("preflight rejected stale or blocked decision");
+        },
+        async () => {
+          throw new Error("must not issue");
+        },
+      )).rejects.toThrow(/preflight rejected/);
+
+      expect(store.getDecisionClaim(item.reviewId, aliceOwner)).toBeNull();
+      expect(store.getResolution(item.reviewId, aliceOwner)).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+
+  it("refuses application and raw-SQL resolutions that have no matching decision claim", async () => {
+    const database = temporaryDatabasePath();
+    const store = DurableReviewStore.open(database.path);
+    try {
+      const item = await pending("review-claimless-resolution");
+      await store.appendPending(item);
+      const fake = resolution(item.reviewId, item);
+
+      await expect(
+        store.bindServerResolution(item.reviewId, aliceOwner, fake),
+      ).rejects.toThrow(/decision claim/i);
+
+      const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+      const raw = new sqlite.DatabaseSync(database.path);
+      try {
+        expect(() => raw.prepare(
+          `INSERT INTO durable_review_resolutions
+            (review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject,
+             owner_scope, receipt_id, receipt_sha256, resolution_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          fake.reviewId,
+          fake.resolvedAtUtc,
+          ...Object.values(aliceOwner),
+          fake.receipt.receiptId,
+          fake.receipt.receiptSha256,
+          JSON.stringify(fake),
+        )).toThrow(/decision claim/i);
+      } finally {
+        raw.close();
+      }
+    } finally {
+      store.close();
+      database.remove();
+    }
+  });
+
+  it("preserves pre-claim resolutions only as explicitly labeled read compatibility", async () => {
+    const database = temporaryDatabasePath();
+    const first = DurableReviewStore.open(database.path);
+    const item = await pending("review-legacy-preclaim-resolution");
+    await first.appendPending(item);
+    first.close();
+
+    const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+    const raw = new sqlite.DatabaseSync(database.path);
+    const historical = resolution(item.reviewId, item);
+    try {
+      raw.exec("DROP TRIGGER durable_review_resolutions_claim_binding");
+      raw.prepare(
+        `INSERT INTO durable_review_resolutions
+          (review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject,
+           owner_scope, receipt_id, receipt_sha256, resolution_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        historical.reviewId,
+        historical.resolvedAtUtc,
+        ...Object.values(aliceOwner),
+        historical.receipt.receiptId,
+        historical.receipt.receiptSha256,
+        JSON.stringify(historical),
+      );
+    } finally {
+      raw.close();
+    }
+
+    const upgraded = DurableReviewStore.open(database.path);
+    try {
+      expect(upgraded.getResolution(item.reviewId, aliceOwner)).toMatchObject({
+        claimBinding: "legacy-preclaim",
+        resolution: historical,
+      });
+      await expect(
+        upgraded.bindServerResolution(item.reviewId, aliceOwner, historical),
+      ).rejects.toThrow(/no immutable decision claim/i);
+    } finally {
+      upgraded.close();
+      database.remove();
+    }
+  });
+
   it("correlates a racing cross-instance decision to one signed ledger receipt", async () => {
     const database = temporaryDatabasePath();
     const ledgerPath = join(database.path, "..", "ledger.sqlite");
@@ -554,12 +695,26 @@ describe("DurableReviewStore v2 pending queue", () => {
           item.reviewId,
           aliceOwner,
           { decision: "reject", claimedAtUtc: "2026-07-30T01:01:00.000Z", approverEmail: null },
+          () => decisions.preflightSigned({
+            domain: item.intake.domainId,
+            sourceId: item.intake.source.sourceId,
+            input: item.intake.input.content,
+            proposal: item.intake.proposal?.content,
+            decision: "reject",
+          }, item.session.policyVersion),
           issue,
         ),
         second.resolvePending(
           item.reviewId,
           aliceOwner,
           { decision: "reject", claimedAtUtc: "2026-07-30T01:01:01.000Z", approverEmail: "changed@example.test" },
+          () => decisions.preflightSigned({
+            domain: item.intake.domainId,
+            sourceId: item.intake.source.sourceId,
+            input: item.intake.input.content,
+            proposal: item.intake.proposal?.content,
+            decision: "reject",
+          }, item.session.policyVersion),
           issue,
         ),
       ]);
@@ -605,6 +760,13 @@ describe("DurableReviewStore v2 pending queue", () => {
         crashItem.reviewId,
         aliceOwner,
         { decision: "reject", claimedAtUtc: "2026-07-30T02:01:00.000Z", approverEmail: null },
+        () => decisions.preflightSigned({
+          domain: crashItem.intake.domainId,
+          sourceId: crashItem.intake.source.sourceId,
+          input: crashItem.intake.input.content,
+          proposal: crashItem.intake.proposal?.content,
+          decision: "reject",
+        }, crashItem.session.policyVersion),
         async (stored, claim) => {
           const issued = await issue(stored, claim);
           ledgeredBeforeCrash = issued.outcome.receipt.receiptId;
@@ -614,14 +776,69 @@ describe("DurableReviewStore v2 pending queue", () => {
       expect(ledger.count()).toBe(2);
       expect(first.getResolution(crashItem.reviewId, aliceOwner)).toBeNull();
 
+      const rotatedPem = await generateSigningKeyPair();
+      const rotatedDecisions = new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-rotated",
+        signingKeyPair: await importSigningKeyPair(rotatedPem.privateKeyPem),
+      });
+      const rotatedIssue = async (
+        stored: PendingDurableReviewRecord,
+        claim: DurableReviewDecisionClaim,
+      ) => {
+        const outcome = await rotatedDecisions.decideSigned(
+          {
+            domain: stored.intake.domainId,
+            sourceId: stored.intake.source.sourceId,
+            input: stored.intake.input.content,
+            proposal: stored.intake.proposal?.content,
+            decision: "reject",
+          },
+          { subject: aliceOwner.subject, issuer: aliceOwner.issuer, email: null },
+          {
+            expectedPolicyVersion: stored.session.policyVersion,
+            receiptId: claim.receiptId,
+            receiptCreatedAtUtc: claim.receiptCreatedAtUtc,
+            receiptSignedAtUtc: claim.receiptSignedAtUtc,
+          },
+        );
+        return {
+          outcome,
+          resolution: {
+            resolutionVersion: "1",
+            reviewId: stored.reviewId,
+            resolvedAtUtc: "2026-07-30T04:00:00.000Z",
+            receipt: {
+              receiptId: outcome.receipt.receiptId,
+              sourceId: outcome.receipt.sourceId,
+              inputId: outcome.receipt.inputId,
+              inputSha256: outcome.receipt.inputSha256,
+              proposalId: outcome.receipt.proposalId,
+              proposalSha256: outcome.receipt.proposalSha256,
+              policyVersion: outcome.receipt.policyVersion,
+              receiptSha256: outcome.receipt.receiptSha256,
+            },
+          },
+        } as const;
+      };
       const recovered = await second.resolvePending(
         crashItem.reviewId,
         aliceOwner,
         { decision: "reject", claimedAtUtc: "2026-07-30T04:00:00.000Z", approverEmail: "changed@example.test" },
-        issue,
+        () => rotatedDecisions.preflightSigned({
+          domain: crashItem.intake.domainId,
+          sourceId: crashItem.intake.source.sourceId,
+          input: crashItem.intake.input.content,
+          proposal: crashItem.intake.proposal?.content,
+          decision: "reject",
+        }, crashItem.session.policyVersion),
+        rotatedIssue,
       );
       expect(ledger.count()).toBe(2);
       expect(recovered.outcome.receipt.receiptId).toBe(ledgeredBeforeCrash);
+      expect(recovered.outcome.receipt.appVersion).toBe("changesafe-server-test");
+      expect(recovered.outcome.record.signature.publicKeyId).toBe(pem.publicKeyId);
+      expect(recovered.outcome.record.signature.publicKeyId).not.toBe(rotatedPem.publicKeyId);
       expect(second.getResolution(crashItem.reviewId, aliceOwner)).not.toBeNull();
     } finally {
       first.close();
@@ -692,19 +909,21 @@ describe("DurableReviewStore v2 pending queue", () => {
     const store = DurableReviewStore.open(":memory:");
     try {
       const one = await pending("review-one"); const two = await pending("review-two", "other-source"); await store.appendPending(one); await store.appendPending(two);
-      const bound = await store.bindServerResolution(one.reviewId, aliceOwner, resolution(one.reviewId, one));
-      expect(await store.bindServerResolution(one.reviewId, aliceOwner, resolution(one.reviewId, one))).toEqual(bound);
-      await expect(store.bindServerResolution(one.reviewId, aliceOwner, resolution(one.reviewId, one, "two"))).rejects.toThrow(/different immutable resolution/);
-      const conflicting = resolution(two.reviewId, two);
-      await expect(store.bindServerResolution(two.reviewId, aliceOwner, { ...conflicting, receipt: { ...conflicting.receipt, receiptId: bound.receiptId, receiptSha256: bound.receiptSha256 } })).rejects.toThrow(/already bound to review review-one/);
+      const oneResolution = await claimedResolution(store, one);
+      const bound = await store.bindServerResolution(one.reviewId, aliceOwner, oneResolution);
+      expect(await store.bindServerResolution(one.reviewId, aliceOwner, oneResolution)).toEqual(bound);
+      const different = { ...oneResolution, receipt: { ...oneResolution.receipt, receiptSha256: sha("d") } };
+      await expect(store.bindServerResolution(one.reviewId, aliceOwner, different)).rejects.toThrow(/different immutable resolution/);
+      const conflicting = await claimedResolution(store, two);
+      await expect(store.bindServerResolution(two.reviewId, aliceOwner, { ...conflicting, receipt: { ...conflicting.receipt, receiptId: bound.receiptId, receiptSha256: bound.receiptSha256 } })).rejects.toThrow(/immutable decision claim/);
       expect(store.get("review-one", aliceOwner)?.record).toEqual(one);
-      expect(store.getResolution("review-one", aliceOwner)?.resolution).toEqual(resolution(one.reviewId, one));
+      expect(store.getResolution("review-one", aliceOwner)?.resolution).toEqual(oneResolution);
     } finally { store.close(); }
   });
 
   it("requires an existing pending review and refuses a resolution whose receipt is not server-bound to it", async () => {
     const store = DurableReviewStore.open(":memory:");
-    try { const item = await pending("review-one"); await expect(store.bindServerResolution(item.reviewId, aliceOwner, resolution(item.reviewId, item))).rejects.toThrow(/No pending/); await store.appendPending(item); const forged = resolution(item.reviewId, item); await expect(store.bindServerResolution(item.reviewId, aliceOwner, { ...forged, receipt: { ...forged.receipt, inputId: "other-input" } })).rejects.toThrow(/does not match/); } finally { store.close(); }
+    try { const item = await pending("review-one"); await expect(store.bindServerResolution(item.reviewId, aliceOwner, resolution(item.reviewId, item))).rejects.toThrow(/No pending/); await store.appendPending(item); const forged = await claimedResolution(store, item); await expect(store.bindServerResolution(item.reviewId, aliceOwner, { ...forged, receipt: { ...forged.receipt, inputId: "other-input" } })).rejects.toThrow(/does not match/); } finally { store.close(); }
   });
 
   it("requires owner scope for resolution reads and writes", async () => {
@@ -714,7 +933,7 @@ describe("DurableReviewStore v2 pending queue", () => {
       await store.appendPending(item);
       await expect(store.bindServerResolution(item.reviewId, bobOwner, resolution(item.reviewId, item))).rejects.toThrow(/No pending/);
       expect(store.getResolution(item.reviewId, bobOwner)).toBeNull();
-      const bound = await store.bindServerResolution(item.reviewId, aliceOwner, resolution(item.reviewId, item));
+      const bound = await store.bindServerResolution(item.reviewId, aliceOwner, await claimedResolution(store, item));
       expect(store.getResolution(item.reviewId, bobOwner)).toBeNull();
       expect(store.getResolution(item.reviewId, aliceOwner)).toEqual(bound);
     } finally { store.close(); }
@@ -723,12 +942,12 @@ describe("DurableReviewStore v2 pending queue", () => {
   it("does not let raw INSERT OR REPLACE replace pending or resolution rows with recursive triggers off", async () => {
     const database = temporaryDatabasePath(); const store = DurableReviewStore.open(database.path);
     try {
-      const item = await pending("review-one"); await store.appendPending(item); const bound = await store.bindServerResolution(item.reviewId, aliceOwner, resolution(item.reviewId, item));
+      const item = await pending("review-one"); await store.appendPending(item); const bound = await store.bindServerResolution(item.reviewId, aliceOwner, await claimedResolution(store, item));
       const sqlite = nodeRequire("node:sqlite") as typeof import("node:sqlite"); const raw = new sqlite.DatabaseSync(database.path);
       try {
         raw.exec("PRAGMA recursive_triggers = OFF");
         expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_pending_records (seq, review_id, created_at_utc, domain_id, source_id, input_id, owner_tenant_id, owner_issuer, owner_subject, owner_scope, record_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(1, "new-review", item.createdAtUtc, "network", "new-source", "new-input", ...Object.values(aliceOwner), JSON.stringify(item))).toThrow(/append-only/);
-        expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_resolutions (seq, review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(1, "new-review", bound.resolvedAtUtc, ...Object.values(aliceOwner), "new-receipt", sha("e"), JSON.stringify(bound.resolution))).toThrow(/append-only|immutable parent binding/);
+        expect(() => raw.prepare("INSERT OR REPLACE INTO durable_review_resolutions (seq, review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(1, "new-review", bound.resolvedAtUtc, ...Object.values(aliceOwner), "new-receipt", sha("e"), JSON.stringify(bound.resolution))).toThrow(/append-only|immutable parent binding|decision claim/);
       } finally { raw.close(); }
       expect(store.get(item.reviewId, aliceOwner)?.record).toEqual(item); expect(store.getResolution(item.reviewId, aliceOwner)).toEqual(bound);
     } finally { store.close(); database.remove(); }
@@ -743,10 +962,10 @@ describe("DurableReviewStore v2 pending queue", () => {
         raw.exec("PRAGMA foreign_keys = OFF");
         const insert = raw.prepare("INSERT INTO durable_review_resolutions (review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject, owner_scope, receipt_id, receipt_sha256, resolution_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         const orphan = resolution("orphan-review", item);
-        expect(() => insert.run(orphan.reviewId, orphan.resolvedAtUtc, ...Object.values(aliceOwner), orphan.receipt.receiptId, orphan.receipt.receiptSha256, JSON.stringify(orphan))).toThrow(/immutable parent binding/);
+        expect(() => insert.run(orphan.reviewId, orphan.resolvedAtUtc, ...Object.values(aliceOwner), orphan.receipt.receiptId, orphan.receipt.receiptSha256, JSON.stringify(orphan))).toThrow(/immutable parent binding|decision claim/);
         const mismatch = resolution(item.reviewId, item);
         const forged = { ...mismatch, receipt: { ...mismatch.receipt, inputId: "other-input" } };
-        expect(() => insert.run(forged.reviewId, forged.resolvedAtUtc, ...Object.values(aliceOwner), forged.receipt.receiptId, forged.receipt.receiptSha256, JSON.stringify(forged))).toThrow(/immutable parent binding/);
+        expect(() => insert.run(forged.reviewId, forged.resolvedAtUtc, ...Object.values(aliceOwner), forged.receipt.receiptId, forged.receipt.receiptSha256, JSON.stringify(forged))).toThrow(/immutable parent binding|decision claim/);
       } finally { raw.close(); }
       expect(store.getResolution(item.reviewId, aliceOwner)).toBeNull();
     } finally { store.close(); database.remove(); }
@@ -1076,7 +1295,7 @@ describe("DurableReviewStore v2 pending queue", () => {
       expect(reopened.listMigrationQuarantine()).toEqual(firstEvidence);
       const next = await pending("after-high-water");
       expect((await reopened.appendPending(next)).seq).toBe(42);
-      expect((await reopened.bindServerResolution(next.reviewId, aliceOwner, resolution(next.reviewId, next))).seq).toBe(74);
+      expect((await reopened.bindServerResolution(next.reviewId, aliceOwner, await claimedResolution(reopened, next))).seq).toBe(74);
     } finally {
       reopened.close();
       database.remove();
