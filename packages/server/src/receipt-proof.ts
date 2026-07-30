@@ -5,7 +5,11 @@ import {
   type ChangeReceipt,
   type SignedReceipt,
 } from "@changesafe/core";
-import type { ChainVerdict, LedgerEntry } from "@changesafe/ledger";
+import {
+  LedgerCorruptionError,
+  type ChainVerdict,
+  type LedgerEntry,
+} from "@changesafe/ledger";
 
 import {
   verifyReceiptProof,
@@ -119,11 +123,11 @@ export async function buildReceiptProof(
   },
 ): Promise<ReceiptProof> {
   let entry: LedgerEntry | null = null;
-  let entryAvailable = true;
+  let entryStatus: "available" | "invalid" | "unavailable" = "available";
   try {
     entry = ledger.get(resolution.receipt.receiptId);
-  } catch {
-    entryAvailable = false;
+  } catch (error) {
+    entryStatus = error instanceof LedgerCorruptionError ? "invalid" : "unavailable";
   }
 
   const claims = entry
@@ -135,9 +139,9 @@ export async function buildReceiptProof(
       )
     : unavailableRecordClaims();
 
-  const ledgerInclusion = !entryAvailable
+  const ledgerInclusion = entryStatus !== "available"
     ? {
-        status: "unavailable" as const,
+        status: entryStatus,
         sequence: null,
         chainSha256: null,
         checkedAtUtc: options.checkedAtUtc,
@@ -176,9 +180,9 @@ export async function buildReceiptProof(
       headChainSha256: verdict.headChainSha256,
       checkedAtUtc: options.checkedAtUtc,
     };
-  } catch {
+  } catch (error) {
     ledgerChain = {
-      status: "unavailable",
+      status: error instanceof LedgerCorruptionError ? "invalid" : "unavailable",
       headChainSha256: null,
       checkedAtUtc: options.checkedAtUtc,
     };

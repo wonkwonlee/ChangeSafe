@@ -1,3 +1,7 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,7 +12,7 @@ import {
   type ChangeReceipt,
   type SignedReceipt,
 } from "@changesafe/core";
-import type { ChainVerdict, LedgerEntry } from "@changesafe/ledger";
+import { Ledger, type ChainVerdict, type LedgerEntry } from "@changesafe/ledger";
 
 import type { DurableReviewResolution } from "../../../features/reviews/durable-review-contract";
 import { buildReceiptProof, type ReceiptProofLedger } from "../src/receipt-proof";
@@ -216,6 +220,52 @@ describe("durable receipt proof assembly", () => {
       ledgerChain: { status: "unavailable" },
     });
   });
+
+  it.each([
+    ["malformed JSON", "{"],
+    ["schema-invalid JSON", "{}"],
+  ])(
+    "reports stored record_json corruption as invalid rather than unavailable: %s",
+    async (_caseName, corruptedRecordJson) => {
+      const directory = mkdtempSync(path.join(tmpdir(), "changesafe-receipt-proof-"));
+      const file = path.join(directory, "ledger.db");
+      const { receipt, record } = await signedFixture();
+      const ledger = Ledger.open(file);
+
+      try {
+        await ledger.append(record);
+      } finally {
+        ledger.close();
+      }
+
+      const raw = new DatabaseSync(file);
+      try {
+        raw.exec("DROP TRIGGER receipts_no_update");
+        raw
+          .prepare("UPDATE receipts SET record_json = ? WHERE receipt_id = ?")
+          .run(corruptedRecordJson, receipt.receiptId);
+      } finally {
+        raw.close();
+      }
+
+      const corrupted = Ledger.open(file);
+      try {
+        const proof = await buildReceiptProof(resolutionFor(receipt), corrupted, {
+          checkedAtUtc,
+        });
+        expect(proof).toMatchObject({
+          contentIntegrity: { status: "not-checked" },
+          signature: { present: null, publicKeyId: null },
+          outOfBandVerification: { status: "not-checked" },
+          ledgerInclusion: { status: "invalid" },
+          ledgerChain: { status: "invalid" },
+        });
+      } finally {
+        corrupted.close();
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("reports an unsigned record as absent without inventing an OOB check", async () => {
     const receipt = await someReceipt();

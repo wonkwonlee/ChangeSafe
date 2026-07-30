@@ -647,7 +647,7 @@ const OutOfBandVerificationSchema = z.discriminatedUnion("status", [
 
 const LedgerInclusionClaimSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("included"), sequence: z.number().int().positive(), chainSha256: Sha256HexSchema, checkedAtUtc: TimestampSchema }),
-  z.strictObject({ status: z.enum(["not-included", "unavailable"]), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: TimestampSchema }),
+  z.strictObject({ status: z.enum(["not-included", "invalid", "unavailable"]), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: TimestampSchema }),
   z.strictObject({ status: z.literal("not-checked"), sequence: z.null(), chainSha256: z.null(), checkedAtUtc: z.null() }),
 ]);
 
