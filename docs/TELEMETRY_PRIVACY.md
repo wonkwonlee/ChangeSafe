@@ -1,9 +1,9 @@
 # Telemetry Privacy Boundary
 
-ChangeSafe does not mount client analytics or real-user telemetry collectors.
-The application therefore sends no infrastructure artifacts, proposal or
-finding contents, receipts, review identifiers, approver identities, model or
-provider metadata, or secrets to a telemetry service.
+ChangeSafe does not install or mount client analytics or real-user telemetry
+collectors. The application therefore sends no infrastructure artifacts,
+proposal or finding contents, receipts, review identifiers, approver
+identities, model or provider metadata, or secrets to a telemetry service.
 
 ## Why Speed Insights is not mounted
 
@@ -31,9 +31,12 @@ Official references:
 
 ## Enforcement
 
-`tests/unit/telemetry-privacy.test.ts` walks the browser-facing application
-source and rejects Vercel analytics imports, Speed Insights injection, global
-collector calls, and hard-coded Vercel telemetry endpoints.
+`tests/unit/telemetry-privacy.test.ts` verifies the dependency manifest and
+walks browser-facing application source using the repository's TypeScript
+static-import parser. It also checks project-root and `src/`
+`instrumentation-client.*` entry points plus browser-delivered scripts under
+`public/`. The guard rejects Vercel analytics imports, Speed Insights
+injection, global collector calls, and hard-coded Vercel telemetry endpoints.
 
 Performance work remains evidence-based through local and CI-controlled tests:
 production builds, bundle budgets, Playwright interaction and reflow checks,

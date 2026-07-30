@@ -39,7 +39,7 @@ async function sourceModules(directory: string): Promise<string[]> {
   return modules.flat().sort();
 }
 
-function importedModules(
+export function findImportedModules(
   filePath: string,
   source: string,
 ): ReadonlyArray<{ line: number; specifier: string }> {
@@ -115,7 +115,7 @@ export async function findPresentationBoundaryViolations(
       .relative(repositoryRoot, filePath)
       .split(path.sep)
       .join("/");
-    for (const importedModule of importedModules(filePath, source)) {
+    for (const importedModule of findImportedModules(filePath, source)) {
       if (isForbiddenPresentationModule(importedModule.specifier)) {
         violations.push(
           `${relativePath}:${importedModule.line} imports forbidden presentation module "${importedModule.specifier}"`,
