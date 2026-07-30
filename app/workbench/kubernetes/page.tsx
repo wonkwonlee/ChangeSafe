@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { KubernetesWorkbenchShell } from "@/components/KubernetesWorkbenchShell";
 import { loadDomainCoverageCatalog } from "@/features/domains/registry";
@@ -12,9 +11,5 @@ export const metadata: Metadata = {
 
 export default async function KubernetesWorkbenchPage() {
   const coverageCatalog = await loadDomainCoverageCatalog("kubernetes");
-  return (
-    <Suspense fallback={null}>
-      <KubernetesWorkbenchShell coverageCatalog={coverageCatalog} />
-    </Suspense>
-  );
+  return <KubernetesWorkbenchShell coverageCatalog={coverageCatalog} />;
 }

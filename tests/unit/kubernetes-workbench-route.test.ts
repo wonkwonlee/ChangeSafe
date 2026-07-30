@@ -1,13 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-
-// KubernetesWorkbenchShell reads the ?scenario deep-link via next/navigation's
-// client hooks. Outside a real Next.js app router (as here, rendering
-// straight to static markup) those hooks throw without this mock.
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => null,
-  useRouter: () => ({ replace: () => {} }),
-}));
 
 import KubernetesWorkbenchPage, { metadata } from "../../app/workbench/kubernetes/page";
 

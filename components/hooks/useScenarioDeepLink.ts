@@ -1,7 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useCallback } from "react";
 
 /**
  * Pure lookup, split out from the hook so it's testable without a React
@@ -18,44 +17,48 @@ export function resolveInitialScenarioId(
 }
 
 /**
- * Reads `?scenario=<id>` on mount to seed the initial scenario selection,
- * and keeps the URL in sync as the visitor picks a different scenario —
- * every scenario becomes a copy-able link, not just the featured ones.
+ * Reads `?scenario=<id>` from the current address bar to seed the initial
+ * scenario selection. Deliberately does not use next/navigation's
+ * `useSearchParams`: that hook forces Next.js to bail the enclosing
+ * Suspense subtree out of static prerendering (emitting
+ * `BAILOUT_TO_CLIENT_SIDE_RENDERING` instead of real markup), which would
+ * mean the public workbench routes ship no server-rendered HTML. Reading
+ * `window.location` from a client-only mount effect has no such effect on
+ * prerendering — it never runs during the server render or in the
+ * `renderToStaticMarkup`-based unit tests, only in a real browser.
  *
- * Must be called from a component rendered under a <Suspense> boundary
- * (Next.js requirement for useSearchParams in an otherwise-static page).
+ * Returns null during SSR/static rendering (`window` is undefined); callers
+ * invoke this from their own mount effect and fall back to their default
+ * example when it returns null.
  */
-export function useScenarioDeepLink(availableIds: readonly string[]): {
-  readonly initialScenarioId: string | null;
+export function readInitialScenarioId(availableIds: readonly string[]): string | null {
+  if (typeof window === "undefined") return null;
+  return resolveInitialScenarioId(new URLSearchParams(window.location.search), availableIds);
+}
+
+/**
+ * Keeps the URL in sync as the visitor picks a different scenario — every
+ * scenario becomes a copy-able link, not just the featured ones.
+ *
+ * Deliberately bypasses next/navigation's router: router.replace() (even
+ * with scroll: false) issues a real RSC fetch to re-render the route on
+ * every scenario click. The URL update here is cosmetic bookkeeping only —
+ * making the current selection a copy-able link — and no server-rendered
+ * content depends on it, so a plain History API call updates the address
+ * bar with no network request and no re-render.
+ */
+export function useScenarioDeepLink(): {
   readonly setScenarioInUrl: (id: string) => void;
 } {
-  const searchParams = useSearchParams();
-
-  const initialScenarioId = useMemo(
-    () => resolveInitialScenarioId(searchParams, availableIds),
-    // Only resolved once per mount's initial params — intentionally not
-    // re-derived as the URL changes afterward, since setScenarioInUrl is
-    // the only writer once the component is interactive.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const setScenarioInUrl = (id: string) => {
-    const next = new URLSearchParams(searchParams?.toString() ?? "");
+  const setScenarioInUrl = useCallback((id: string) => {
+    const next = new URLSearchParams(window.location.search);
     next.set("scenario", id);
-    // Deliberately bypasses next/navigation's router: this page is forced
-    // into dynamic rendering by useSearchParams, so router.replace() (even
-    // with scroll: false) issues a real RSC fetch to re-render the route on
-    // every scenario click. The URL update here is cosmetic bookkeeping
-    // only — making the current selection a copy-able link — and no
-    // server-rendered content depends on it, so a plain History API call
-    // updates the address bar with no network request and no re-render.
     window.history.replaceState(
       window.history.state,
       "",
-      `${window.location.pathname}?${next.toString()}`,
+      `${window.location.pathname}?${next.toString()}${window.location.hash}`,
     );
-  };
+  }, []);
 
-  return { initialScenarioId, setScenarioInUrl };
+  return { setScenarioInUrl };
 }

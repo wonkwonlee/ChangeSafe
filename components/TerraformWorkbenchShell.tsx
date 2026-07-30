@@ -12,7 +12,7 @@ import {
 } from "@/components/BoundedEvidence";
 import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
+import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
@@ -183,12 +183,8 @@ export function TerraformWorkbenchShell({
     ...initialSource(),
     transport: publicReplayTransport,
   });
-  const { initialScenarioId, setScenarioInUrl } = useScenarioDeepLink(
-    TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId),
-  );
-  const [selectedSourceId, setSelectedSourceId] = useState(
-    initialScenarioId ?? INITIAL_EXAMPLE.sourceId,
-  );
+  const { setScenarioInUrl } = useScenarioDeepLink();
+  const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
   const fixture = useMemo(() => fixtureFor(selectedSourceId), [selectedSourceId]);
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const input = useMemo(() => inputFor(fixture), [fixture]);
@@ -225,11 +221,13 @@ export function TerraformWorkbenchShell({
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
 
   useEffect(() => {
+    // Reads the ?scenario= deep link from window.location (client-only, no
+    // next/navigation hook involved) and, if it names a valid example,
+    // syncs it into workflow state once on mount.
+    const initialScenarioId = readInitialScenarioId(
+      TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId),
+    );
     if (initialScenarioId) {
-      // One-time sync from the URL's ?scenario= deep link into workflow
-      // state on mount, not a cascading re-render: initialScenarioId is
-      // frozen for the component's lifetime (see useScenarioDeepLink), so
-      // this effect fires at most once.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       selectExample(initialScenarioId);
     }

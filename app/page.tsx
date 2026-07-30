@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { ReviewWorkbenchShell } from "@/components/ReviewWorkbenchShell";
 import { loadDomainCoverageCatalog } from "@/features/domains/registry";
@@ -12,9 +11,5 @@ export const metadata: Metadata = {
 
 export default async function Page() {
   const coverageCatalog = await loadDomainCoverageCatalog("network");
-  return (
-    <Suspense fallback={null}>
-      <ReviewWorkbenchShell coverageCatalog={coverageCatalog} />
-    </Suspense>
-  );
+  return <ReviewWorkbenchShell coverageCatalog={coverageCatalog} />;
 }
