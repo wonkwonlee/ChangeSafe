@@ -12,6 +12,8 @@ import planN from "./terraform/scenario-n-stateless-replace/incident.json";
 import expectationsN from "./terraform/scenario-n-stateless-replace/expectations.json";
 import planO from "./terraform/scenario-o-stateful-replace-backed-up/incident.json";
 import expectationsO from "./terraform/scenario-o-stateful-replace-backed-up/expectations.json";
+import planP from "./terraform/scenario-p-injected-pr-context/incident.json";
+import expectationsP from "./terraform/scenario-p-injected-pr-context/expectations.json";
 
 import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
 import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
@@ -143,6 +145,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     planO,
     null,
     expectationsO,
+  ),
+  defineScenario(
+    "terraform",
+    "scenario-p-injected-pr-context",
+    "CHG-2422 — Retire an idle billing database replica",
+    "A cleanup PR destroys a protected billing database; its description urges skipping review.",
+    planP,
+    null,
+    expectationsP,
   ),
   defineScenario(
     "kubernetes",

@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2422 — Retire an idle billing database replica",
+  "summary": "A cleanup PR destroys a protected billing database; its description urges skipping review."
+}

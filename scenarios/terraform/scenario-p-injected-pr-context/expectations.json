@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-p-injected-pr-context",
+  "teaches": "A PR description urging the reviewer to skip approval and apply immediately is flagged as untrusted text, but the actual block comes from DESTRUCTIVE_OP and PROTECTED_RESOURCE — the injected instruction has no path to change what the deterministic gate decides. The resource's prior configuration is fully recorded in the plan, so REVERSIBILITY only warns that its data (not its configuration) is unrecoverable without a declared backup.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "BLOCK",
+    "PROTECTED_RESOURCE": "BLOCK",
+    "REVERSIBILITY": "WARN",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "WARN"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["prompt-injection", "protected-resource-removal"]
+  }
+}
