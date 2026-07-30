@@ -36,6 +36,29 @@ const DurableReviewSourceSchema = z.discriminatedUnion("domainId", [
   }),
 ]);
 
+/**
+ * Byte-for-byte compatibility schema for resolved records written before the
+ * HTTP intake boundary distinguished a caller's artifact time from the
+ * server's queue acceptance time. Historical rows remain readable, but this
+ * shape is never accepted by the current POST /reviews endpoint.
+ */
+const HistoricalDurableReviewSourceSchema = z.discriminatedUnion("domainId", [
+  z.strictObject({
+    domainId: z.literal("network"),
+    sourceId: IdSchema,
+    sourceKind: z.literal("network-incident-bundle"),
+    origin: z.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    collectedAtUtc: TimestampSchema,
+  }),
+  z.strictObject({
+    domainId: z.literal("terraform"),
+    sourceId: IdSchema,
+    sourceKind: z.literal("terraform-show-json"),
+    origin: z.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    collectedAtUtc: TimestampSchema,
+  }),
+]);
+
 const DurableReviewInputEnvelopeSchema = z.strictObject({
   inputId: IdSchema,
   inputSha256: Sha256HexSchema,
@@ -72,6 +95,31 @@ export const DurableReviewIntakeSchema = z
         code: "custom",
         path: ["input", "content"],
         message: `durable ${intake.domainId} intake content must satisfy its domain schema`,
+      });
+    }
+  });
+
+const HistoricalDurableReviewIntakeSchema = z
+  .strictObject({
+    domainId: DurableReviewDomainIdSchema,
+    source: HistoricalDurableReviewSourceSchema,
+    input: DurableReviewInputEnvelopeSchema,
+  })
+  .superRefine((intake, context) => {
+    if (intake.domainId !== intake.source.domainId) {
+      context.addIssue({
+        code: "custom",
+        path: ["source", "domainId"],
+        message: "historical durable intake source domain must match the intake domain",
+      });
+    }
+    const domainSchema =
+      intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+    if (!domainSchema.safeParse(intake.input.content).success) {
+      context.addIssue({
+        code: "custom",
+        path: ["input", "content"],
+        message: `historical durable ${intake.domainId} intake content must satisfy its domain schema`,
       });
     }
   });
@@ -201,6 +249,73 @@ function bindPendingRecord(
   }
 }
 
+function bindHistoricalRecord(
+  record: {
+    session: z.infer<typeof DurableReviewSessionBindingSchema>;
+    intake: z.infer<typeof HistoricalDurableReviewIntakeSchema>;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (record.session.domainId !== record.intake.domainId) {
+    context.addIssue({
+      code: "custom",
+      path: ["intake", "domainId"],
+      message: "historical record session and intake must name the same domain",
+    });
+  }
+  if (
+    record.session.source !== record.intake.source.origin ||
+    record.session.provenance !== record.intake.source.origin
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["session", "source"],
+      message: "historical durable session provenance must bind to the intake origin",
+    });
+  }
+}
+
+function bindReceipt(
+  record: {
+    session: z.infer<typeof DurableReviewSessionBindingSchema>;
+    intake: {
+      source: { sourceId: string };
+      input: { inputId: string; inputSha256: string };
+    };
+    receipt: z.infer<typeof DurableReceiptBindingSchema>;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (record.receipt.sourceId !== record.intake.source.sourceId) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "sourceId"],
+      message: "receipt source must bind to the immutable intake source",
+    });
+  }
+  if (record.receipt.inputId !== record.intake.input.inputId) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "inputId"],
+      message: "receipt input must bind to the immutable intake input",
+    });
+  }
+  if (record.receipt.inputSha256 !== record.intake.input.inputSha256) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "inputSha256"],
+      message: "receipt input hash must bind to the immutable intake input",
+    });
+  }
+  if (record.receipt.policyVersion !== record.session.policyVersion) {
+    context.addIssue({
+      code: "custom",
+      path: ["receipt", "policyVersion"],
+      message: "receipt policy version must bind to the evaluating session",
+    });
+  }
+}
+
 /**
  * Immutable queue item written at authenticated self-hosted intake time.
  *
@@ -239,7 +354,7 @@ export const DurableReviewResolutionSchema = z
  * migrated. New intake endpoints must create PendingDurableReviewRecordSchema
  * records and later append DurableReviewResolutionSchema separately.
  */
-export const DurableReviewRecordSchema = z
+const CurrentDurableReviewRecordSchema = z
   .strictObject({
     recordVersion: z.literal("1"),
     reviewId: IdSchema,
@@ -251,35 +366,29 @@ export const DurableReviewRecordSchema = z
   })
   .superRefine((record, context) => {
     bindPendingRecord(record, context);
-    if (record.receipt.sourceId !== record.intake.source.sourceId) {
-      context.addIssue({
-        code: "custom",
-        path: ["receipt", "sourceId"],
-        message: "receipt source must bind to the immutable intake source",
-      });
-    }
-    if (record.receipt.inputId !== record.intake.input.inputId) {
-      context.addIssue({
-        code: "custom",
-        path: ["receipt", "inputId"],
-        message: "receipt input must bind to the immutable intake input",
-      });
-    }
-    if (record.receipt.inputSha256 !== record.intake.input.inputSha256) {
-      context.addIssue({
-        code: "custom",
-        path: ["receipt", "inputSha256"],
-        message: "receipt input hash must bind to the immutable intake input",
-      });
-    }
-    if (record.receipt.policyVersion !== record.session.policyVersion) {
-      context.addIssue({
-        code: "custom",
-        path: ["receipt", "policyVersion"],
-        message: "receipt policy version must bind to the evaluating session",
-      });
-    }
+    bindReceipt(record, context);
   });
+
+export const HistoricalDurableReviewRecordSchema = z
+  .strictObject({
+    recordVersion: z.literal("1"),
+    reviewId: IdSchema,
+    createdAtUtc: TimestampSchema,
+    session: DurableReviewSessionBindingSchema,
+    intake: HistoricalDurableReviewIntakeSchema,
+    receipt: DurableReceiptBindingSchema,
+    storage: z.strictObject({ kind: z.literal("append-only-ledger") }),
+  })
+  .superRefine((record, context) => {
+    bindHistoricalRecord(record, context);
+    bindReceipt(record, context);
+  });
+
+/** Current and historical resolved-v1 rows are both read-only compatibility data. */
+export const DurableReviewRecordSchema = z.union([
+  CurrentDurableReviewRecordSchema,
+  HistoricalDurableReviewRecordSchema,
+]);
 
 /**
  * The only durable-record acceptance boundary.  A persistence adapter must
@@ -295,11 +404,16 @@ export async function acceptDurableReviewRecordForPersistence(
   // Extract the untrusted intake without accepting the rest of the record so
   // hash/domain verification is necessarily completed before receipt binding.
   const candidate = z.object({ intake: z.unknown() }).passthrough().parse(raw);
-  const intake = await verifyDurableReviewIntake(candidate.intake);
+  const parsedIntake = z
+    .union([DurableReviewIntakeSchema, HistoricalDurableReviewIntakeSchema])
+    .parse(candidate.intake);
+  if (await hashCanonical(parsedIntake.input.content) !== parsedIntake.input.inputSha256) {
+    throw new Error("durable intake inputSha256 does not match canonical input content");
+  }
 
   // The record schema then binds the verified intake to the authenticated
   // session and every immutable receipt identity/hash field.
-  return DurableReviewRecordSchema.parse({ ...candidate, intake });
+  return DurableReviewRecordSchema.parse({ ...candidate, intake: parsedIntake });
 }
 
 /**

@@ -35,6 +35,7 @@ beforeEach(async () => {
   const idp = await FakeIdp.create();
   const ledger = Ledger.open(":memory:");
   const reviews = DurableReviewStore.open(":memory:");
+  let clockTick = 0;
   const server = createDecisionServer({
     ledger,
     reviews,
@@ -43,7 +44,7 @@ beforeEach(async () => {
       { fetch: idp.fetch() },
     ),
     decisions: new DecisionService({ ledger, appVersion: "changesafe-server-test" }),
-    now: () => "2026-07-30T05:00:00.000Z",
+    now: () => `2026-07-30T05:00:0${clockTick++}.000Z`,
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
@@ -288,13 +289,20 @@ describe("durable review intake HTTP API", () => {
     expect(missing.status).toBe(404);
   });
 
-  it("scopes create retries, list, and detail to the authenticated OIDC principal", async () => {
+  it("keeps advancing-clock retries idempotent and gives each principal its own review-id namespace", async () => {
     const alice = await context.idp.token();
     const bob = await context.idp.token({ sub: "user-bob", email: "bob@example.test" });
     const intake = await pendingNetworkReview("review-owner-bound");
-    expect((await postReview(intake, alice)).status).toBe(201);
-    // Same owner + immutable request is the only idempotent retry.
-    expect((await postReview(intake, alice)).status).toBe(201);
+    const [first, retry] = await Promise.all([
+      postReview(intake, alice),
+      postReview(intake, alice),
+    ]);
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(201);
+    const firstBody = (await first.json()) as { review: { createdAtUtc: string } };
+    const retryBody = (await retry.json()) as { review: { createdAtUtc: string } };
+    expect(retryBody.review.createdAtUtc).toBe(firstBody.review.createdAtUtc);
+    expect(context.reviews.count()).toBe(1);
 
     const bobList = await fetch(`${context.baseUrl}/reviews`, { headers: { authorization: `Bearer ${bob}` } });
     expect(bobList.status).toBe(200);
@@ -302,10 +310,18 @@ describe("durable review intake HTTP API", () => {
     const bobDetail = await fetch(`${context.baseUrl}/reviews/review-owner-bound`, { headers: { authorization: `Bearer ${bob}` } });
     expect(bobDetail.status).toBe(404);
 
-    // A conflicting id under another owner is deliberately generic. It leaks
-    // neither the prior intake nor its owner and is not treated as a retry.
+    // The same caller-chosen id is unused inside Bob's namespace. Creating it
+    // has exactly the same response shape/status as creating any fresh id.
     const bobCreate = await postReview(intake, bob);
-    expect(bobCreate.status).toBe(400);
-    expect(context.reviews.count()).toBe(1);
+    expect(bobCreate.status).toBe(201);
+    expect(Object.keys((await bobCreate.json()) as object)).toEqual(["review"]);
+    expect(context.reviews.count()).toBe(2);
+
+    const aliceDetail = await fetch(`${context.baseUrl}/reviews/review-owner-bound`, { headers: { authorization: `Bearer ${alice}` } });
+    const bobOwnDetail = await fetch(`${context.baseUrl}/reviews/review-owner-bound`, { headers: { authorization: `Bearer ${bob}` } });
+    expect(aliceDetail.status).toBe(200);
+    expect(bobOwnDetail.status).toBe(200);
+    expect(((await aliceDetail.json()) as { review: { record: { owner: { subject: string } } } }).review.record.owner.subject).toBe("user-alice");
+    expect(((await bobOwnDetail.json()) as { review: { record: { owner: { subject: string } } } }).review.record.owner.subject).toBe("user-bob");
   });
 });
