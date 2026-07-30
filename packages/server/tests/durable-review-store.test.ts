@@ -302,9 +302,10 @@ function installPriorOwnerfulResolutionBinding(db: DatabaseSync): void {
 }
 
 describe("DurableReviewStore v2 pending queue", () => {
-  it("upgrades the exact prior owner-scoped proposal-unbound trigger in place", async () => {
+  it("stamps exact pre-claim historical resolutions during their recognized upgrade", async () => {
     const database = temporaryDatabasePath();
     const item = await pending("prior-ownerful-trigger");
+    const historical = resolution(item.reviewId, item);
     const first = DurableReviewStore.open(database.path);
     try {
       await first.appendPending(item);
@@ -317,7 +318,22 @@ describe("DurableReviewStore v2 pending queue", () => {
     try {
       prior.exec("DROP TRIGGER durable_review_resolutions_parent_binding");
       prior.exec("DROP TRIGGER durable_review_resolutions_claim_binding");
+      prior.exec("DROP TABLE durable_review_decision_claims");
+      prior.exec("DROP TABLE durable_review_legacy_preclaim_provenance");
       installPriorOwnerfulResolutionBinding(prior);
+      prior.prepare(
+        `INSERT INTO durable_review_resolutions
+          (review_id, resolved_at_utc, owner_tenant_id, owner_issuer, owner_subject,
+           owner_scope, receipt_id, receipt_sha256, resolution_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        historical.reviewId,
+        historical.resolvedAtUtc,
+        ...Object.values(aliceOwner),
+        historical.receipt.receiptId,
+        historical.receipt.receiptSha256,
+        JSON.stringify(historical),
+      );
     } finally {
       prior.close();
     }
@@ -325,14 +341,17 @@ describe("DurableReviewStore v2 pending queue", () => {
     const upgraded = DurableReviewStore.open(database.path);
     try {
       expect(upgraded.get(item.reviewId, aliceOwner)?.record).toEqual(item);
-      const claimBound = await claimedResolution(upgraded, item);
+      expect(upgraded.getResolution(item.reviewId, aliceOwner)).toMatchObject({
+        claimBinding: "verified-legacy-migration",
+        resolution: historical,
+      });
       await expect(
         upgraded.bindServerResolution(
           item.reviewId,
           aliceOwner,
-          claimBound,
+          historical,
         ),
-      ).resolves.toMatchObject({ reviewId: item.reviewId });
+      ).rejects.toThrow(/decision claim/i);
     } finally {
       upgraded.close();
     }
@@ -580,7 +599,7 @@ describe("DurableReviewStore v2 pending queue", () => {
     }
   });
 
-  it("preserves pre-claim resolutions only as explicitly labeled read compatibility", async () => {
+  it("rejects a current database whose claim trigger was removed", async () => {
     const database = temporaryDatabasePath();
     const first = DurableReviewStore.open(database.path);
     const item = await pending("review-legacy-preclaim-resolution");
@@ -609,19 +628,10 @@ describe("DurableReviewStore v2 pending queue", () => {
       raw.close();
     }
 
-    const upgraded = DurableReviewStore.open(database.path);
-    try {
-      expect(upgraded.getResolution(item.reviewId, aliceOwner)).toMatchObject({
-        claimBinding: "legacy-preclaim",
-        resolution: historical,
-      });
-      await expect(
-        upgraded.bindServerResolution(item.reviewId, aliceOwner, historical),
-      ).rejects.toThrow(/no immutable decision claim/i);
-    } finally {
-      upgraded.close();
-      database.remove();
-    }
+    expect(() => DurableReviewStore.open(database.path)).toThrow(
+      /claimless schema is not an exact recognized historical upgrade/i,
+    );
+    database.remove();
   });
 
   it("correlates a racing cross-instance decision to one signed ledger receipt", async () => {
@@ -629,7 +639,9 @@ describe("DurableReviewStore v2 pending queue", () => {
     const ledgerPath = join(database.path, "..", "ledger.sqlite");
     const first = DurableReviewStore.open(database.path);
     const second = DurableReviewStore.open(database.path);
-    const ledger = Ledger.open(ledgerPath);
+    const firstLedger = Ledger.open(ledgerPath);
+    const secondLedger = Ledger.open(ledgerPath);
+    let reopenedLedger: Ledger | null = null;
     try {
       const base = await pending("review-cross-instance-decision");
       const item = {
@@ -645,15 +657,21 @@ describe("DurableReviewStore v2 pending queue", () => {
       } as const;
       await first.appendPending(item);
       const pem = await generateSigningKeyPair();
-      const decisions = new DecisionService({
-        ledger,
+      const signingKeyPair = await importSigningKeyPair(pem.privateKeyPem);
+      const firstDecisions = new DecisionService({
+        ledger: firstLedger,
         appVersion: "changesafe-server-test",
-        signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
+        signingKeyPair,
       });
-      const issue = async (
-        stored: PendingDurableReviewRecord,
-        claim: DurableReviewDecisionClaim,
-      ) => {
+      const secondDecisions = new DecisionService({
+        ledger: secondLedger,
+        appVersion: "changesafe-server-test",
+        signingKeyPair,
+      });
+      const issue = (decisions: DecisionService) => async (
+          stored: PendingDurableReviewRecord,
+          claim: DurableReviewDecisionClaim,
+        ) => {
         const outcome = await decisions.decideSigned(
           {
             domain: stored.intake.domainId,
@@ -695,31 +713,31 @@ describe("DurableReviewStore v2 pending queue", () => {
           item.reviewId,
           aliceOwner,
           { decision: "reject", claimedAtUtc: "2026-07-30T01:01:00.000Z", approverEmail: null },
-          () => decisions.preflightSigned({
+          () => firstDecisions.preflightSigned({
             domain: item.intake.domainId,
             sourceId: item.intake.source.sourceId,
             input: item.intake.input.content,
             proposal: item.intake.proposal?.content,
             decision: "reject",
           }, item.session.policyVersion),
-          issue,
+          issue(firstDecisions),
         ),
         second.resolvePending(
           item.reviewId,
           aliceOwner,
           { decision: "reject", claimedAtUtc: "2026-07-30T01:01:01.000Z", approverEmail: "changed@example.test" },
-          () => decisions.preflightSigned({
+          () => secondDecisions.preflightSigned({
             domain: item.intake.domainId,
             sourceId: item.intake.source.sourceId,
             input: item.intake.input.content,
             proposal: item.intake.proposal?.content,
             decision: "reject",
           }, item.session.policyVersion),
-          issue,
+          issue(secondDecisions),
         ),
       ]);
 
-      expect(ledger.count()).toBe(1);
+      expect(firstLedger.count()).toBe(1);
       expect(new Set(results.map(({ outcome }) => outcome.receipt.receiptId)).size).toBe(1);
       expect(first.getDecisionClaim(item.reviewId, aliceOwner)?.receiptId).toBe(
         results[0]!.outcome.receipt.receiptId,
@@ -760,7 +778,7 @@ describe("DurableReviewStore v2 pending queue", () => {
         crashItem.reviewId,
         aliceOwner,
         { decision: "reject", claimedAtUtc: "2026-07-30T02:01:00.000Z", approverEmail: null },
-        () => decisions.preflightSigned({
+        () => firstDecisions.preflightSigned({
           domain: crashItem.intake.domainId,
           sourceId: crashItem.intake.source.sourceId,
           input: crashItem.intake.input.content,
@@ -768,19 +786,25 @@ describe("DurableReviewStore v2 pending queue", () => {
           decision: "reject",
         }, crashItem.session.policyVersion),
         async (stored, claim) => {
-          const issued = await issue(stored, claim);
+          const issued = await issue(firstDecisions)(stored, claim);
           ledgeredBeforeCrash = issued.outcome.receipt.receiptId;
           throw new Error("simulated crash after ledger append");
         },
       )).rejects.toThrow(/simulated crash/);
-      expect(ledger.count()).toBe(2);
+      expect(firstLedger.count()).toBe(2);
       expect(first.getResolution(crashItem.reviewId, aliceOwner)).toBeNull();
 
+      firstLedger.close();
+      secondLedger.close();
+      reopenedLedger = Ledger.open(ledgerPath);
       const rotatedPem = await generateSigningKeyPair();
       const rotatedDecisions = new DecisionService({
-        ledger,
+        ledger: reopenedLedger,
         appVersion: "changesafe-server-rotated",
         signingKeyPair: await importSigningKeyPair(rotatedPem.privateKeyPem),
+        trustedReceiptPublicKeys: new Map([
+          [pem.publicKeyId, signingKeyPair.publicKey],
+        ]),
       });
       const rotatedIssue = async (
         stored: PendingDurableReviewRecord,
@@ -834,7 +858,7 @@ describe("DurableReviewStore v2 pending queue", () => {
         }, crashItem.session.policyVersion),
         rotatedIssue,
       );
-      expect(ledger.count()).toBe(2);
+      expect(reopenedLedger.count()).toBe(2);
       expect(recovered.outcome.receipt.receiptId).toBe(ledgeredBeforeCrash);
       expect(recovered.outcome.receipt.appVersion).toBe("changesafe-server-test");
       expect(recovered.outcome.record.signature.publicKeyId).toBe(pem.publicKeyId);
@@ -843,7 +867,11 @@ describe("DurableReviewStore v2 pending queue", () => {
     } finally {
       first.close();
       second.close();
-      ledger.close();
+      reopenedLedger?.close();
+      if (!reopenedLedger) {
+        firstLedger.close();
+        secondLedger.close();
+      }
       database.remove();
     }
   });

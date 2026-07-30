@@ -53,6 +53,17 @@ const DecisionClaimRowSchema = z.strictObject({
   receipt_id: IdSchema,
   claim_json: z.string(),
 });
+const LegacyPreclaimProvenanceRowSchema = z.strictObject({
+  review_id: IdSchema,
+  owner_tenant_id: z.string(),
+  owner_issuer: z.string(),
+  owner_subject: z.string(),
+  owner_scope: z.literal("self-hosted-review"),
+  receipt_id: IdSchema,
+  receipt_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  source_schema_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  resolution_row_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
 const LegacyRowSchema = z.strictObject({
   seq: z.number().int().positive(), review_id: IdSchema, created_at_utc: z.string(),
   domain_id: z.enum(["network", "terraform"]), source_id: IdSchema, input_id: IdSchema,
@@ -61,6 +72,7 @@ const LegacyRowSchema = z.strictObject({
 type PendingRow = z.infer<typeof PendingRowSchema>;
 type ResolutionRow = z.infer<typeof ResolutionRowSchema>;
 type DecisionClaimRow = z.infer<typeof DecisionClaimRowSchema>;
+type LegacyPreclaimProvenanceRow = z.infer<typeof LegacyPreclaimProvenanceRowSchema>;
 type LegacyRow = z.infer<typeof LegacyRowSchema>;
 const MigrationPendingRowSchema = z.strictObject({
   seq: z.number().int(),
@@ -111,7 +123,7 @@ export interface DurableReviewStoreEntry {
 }
 export interface DurableReviewResolutionEntry {
   seq: number; reviewId: string; resolvedAtUtc: string; receiptId: string; receiptSha256: string;
-  claimBinding: "verified-claim" | "legacy-preclaim";
+  claimBinding: "verified-claim" | "verified-legacy-migration";
   resolution: DurableReviewResolution;
 }
 export interface DurableReviewDecisionClaimEntry {
@@ -249,6 +261,23 @@ CREATE TABLE durable_review_decision_claims (
 );
 `;
 
+const LEGACY_PRECLAIM_PROVENANCE_SCHEMA = `
+CREATE TABLE durable_review_legacy_preclaim_provenance (
+  review_id TEXT NOT NULL,
+  owner_tenant_id TEXT NOT NULL,
+  owner_issuer TEXT NOT NULL,
+  owner_subject TEXT NOT NULL,
+  owner_scope TEXT NOT NULL,
+  receipt_id TEXT NOT NULL UNIQUE,
+  receipt_sha256 TEXT NOT NULL UNIQUE,
+  source_schema_fingerprint TEXT NOT NULL,
+  resolution_row_sha256 TEXT NOT NULL,
+  PRIMARY KEY (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id),
+  FOREIGN KEY (owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
+    REFERENCES durable_review_resolutions(owner_tenant_id, owner_issuer, owner_subject, owner_scope, review_id)
+);
+`;
+
 const HISTORICAL_OWNERLESS_V2_SCHEMA = `
 CREATE TABLE durable_review_pending_records (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, created_at_utc TEXT NOT NULL,
@@ -298,6 +327,8 @@ const LEGACY_TABLE_NAME = "durable_review_records";
 const V2_TABLE_NAMES = ["durable_review_pending_records", "durable_review_resolutions"] as const;
 const QUARANTINE_TABLE_NAME = "durable_review_v2_migration_quarantine";
 const DECISION_CLAIM_TABLE_NAME = "durable_review_decision_claims";
+const LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME =
+  "durable_review_legacy_preclaim_provenance";
 
 function triggerSql(table: string, conflict: string): string {
   const names = { update: `${table}_no_update`, delete: `${table}_no_delete`, insert: `${table}_no_conflicting_insert` };
@@ -383,6 +414,44 @@ WHEN NOT EXISTS (
 ) BEGIN
  SELECT RAISE(ABORT, 'durable_review_resolutions requires matching immutable decision claim');
 END;`;
+}
+
+function legacyPreclaimProvenanceTriggerSql(): string {
+  return `
+CREATE TRIGGER durable_review_legacy_preclaim_provenance_no_update
+BEFORE UPDATE ON durable_review_legacy_preclaim_provenance BEGIN
+ SELECT RAISE(ABORT, 'durable review legacy preclaim provenance is append-only: rows cannot be updated'); END;
+CREATE TRIGGER durable_review_legacy_preclaim_provenance_no_delete
+BEFORE DELETE ON durable_review_legacy_preclaim_provenance BEGIN
+ SELECT RAISE(ABORT, 'durable review legacy preclaim provenance is append-only: rows cannot be deleted'); END;
+CREATE TRIGGER durable_review_legacy_preclaim_provenance_no_conflicting_insert
+BEFORE INSERT ON durable_review_legacy_preclaim_provenance
+WHEN EXISTS (
+  SELECT 1 FROM durable_review_legacy_preclaim_provenance
+  WHERE (
+    owner_tenant_id = NEW.owner_tenant_id
+    AND owner_issuer = NEW.owner_issuer
+    AND owner_subject = NEW.owner_subject
+    AND owner_scope = NEW.owner_scope
+    AND review_id = NEW.review_id
+  )
+  OR receipt_id = NEW.receipt_id
+  OR receipt_sha256 = NEW.receipt_sha256
+) BEGIN
+ SELECT RAISE(ABORT, 'durable review legacy preclaim provenance is append-only: existing bindings cannot be replaced'); END;
+CREATE TRIGGER durable_review_legacy_preclaim_provenance_resolution_binding
+BEFORE INSERT ON durable_review_legacy_preclaim_provenance
+WHEN NOT EXISTS (
+  SELECT 1 FROM durable_review_resolutions AS resolution
+  WHERE resolution.review_id = NEW.review_id
+    AND resolution.owner_tenant_id = NEW.owner_tenant_id
+    AND resolution.owner_issuer = NEW.owner_issuer
+    AND resolution.owner_subject = NEW.owner_subject
+    AND resolution.owner_scope = NEW.owner_scope
+    AND resolution.receipt_id = NEW.receipt_id
+    AND resolution.receipt_sha256 = NEW.receipt_sha256
+) BEGIN
+ SELECT RAISE(ABORT, 'durable review legacy preclaim provenance requires an exact resolution binding'); END;`;
 }
 
 function historicalTriggerSql(table: "durable_review_pending_records" | "durable_review_resolutions"): string {
@@ -716,6 +785,18 @@ function emptyDecisionClaimFingerprint(): string {
   return expectedFingerprint("", [DECISION_CLAIM_TABLE_NAME]);
 }
 
+function currentLegacyPreclaimProvenanceFingerprint(): string {
+  return expectedFingerprint(
+    LEGACY_PRECLAIM_PROVENANCE_SCHEMA,
+    [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME],
+    (db) => db.exec(legacyPreclaimProvenanceTriggerSql()),
+  );
+}
+
+function emptyLegacyPreclaimProvenanceFingerprint(): string {
+  return expectedFingerprint("", [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME]);
+}
+
 function dropKnownLegacyTriggers(db: DatabaseSync): void {
   for (const suffix of ["no_update", "no_delete", "no_conflicting_insert"]) {
     db.exec(`DROP TRIGGER IF EXISTS durable_review_records_${suffix}`);
@@ -749,10 +830,58 @@ function dropKnownQuarantineTriggers(db: DatabaseSync): void {
   }
 }
 
+function dropKnownLegacyPreclaimProvenance(db: DatabaseSync): void {
+  for (const suffix of [
+    "no_update",
+    "no_delete",
+    "no_conflicting_insert",
+    "resolution_binding",
+  ]) {
+    db.exec(
+      `DROP TRIGGER IF EXISTS durable_review_legacy_preclaim_provenance_${suffix}`,
+    );
+  }
+  db.exec("DROP TABLE IF EXISTS durable_review_legacy_preclaim_provenance");
+}
+
 type QuarantineEvidenceEnvelope = Omit<DurableReviewQuarantineEntry, "quarantineId" | "rowSha256">;
 
 function quarantineEnvelopeSha256(envelope: QuarantineEvidenceEnvelope): string {
   return createHash("sha256").update(canonicalize(envelope)).digest("hex");
+}
+
+function resolutionRowSha256(row: ResolutionRow): string {
+  return createHash("sha256").update(canonicalize(row)).digest("hex");
+}
+
+function installLegacyPreclaimProvenance(
+  db: DatabaseSync,
+  sourceSchemaFingerprint: string,
+): void {
+  db.exec(LEGACY_PRECLAIM_PROVENANCE_SCHEMA);
+  db.exec(legacyPreclaimProvenanceTriggerSql());
+  const insert = db.prepare(
+    `INSERT INTO durable_review_legacy_preclaim_provenance
+      (review_id, owner_tenant_id, owner_issuer, owner_subject, owner_scope,
+       receipt_id, receipt_sha256, source_schema_fingerprint, resolution_row_sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const rows = db.prepare(
+    "SELECT * FROM durable_review_resolutions ORDER BY seq",
+  ).all().map((row) => ResolutionRowSchema.parse(row));
+  for (const row of rows) {
+    insert.run(
+      row.review_id,
+      row.owner_tenant_id,
+      row.owner_issuer,
+      row.owner_subject,
+      row.owner_scope,
+      row.receipt_id,
+      row.receipt_sha256,
+      sourceSchemaFingerprint,
+      resolutionRowSha256(row),
+    );
+  }
 }
 
 function quarantineRow(
@@ -822,6 +951,27 @@ function rebuildAsQuarantine(
   sourceSchemaFingerprint: string,
   correctiveOwnerfulMigration: boolean,
 ): void {
+  const legacyPreclaimFingerprint = schemaFingerprint(
+    db,
+    [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME],
+  );
+  if (legacyPreclaimFingerprint !== emptyLegacyPreclaimProvenanceFingerprint()) {
+    if (
+      legacyPreclaimFingerprint !==
+        currentLegacyPreclaimProvenanceFingerprint() ||
+      z.strictObject({ count: z.number().int().nonnegative() }).parse(
+        db.prepare(
+          "SELECT count(*) AS count FROM durable_review_legacy_preclaim_provenance",
+        ).get(),
+      ).count !== 0
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review ownership migration cannot rewrite non-empty or unknown legacy preclaim provenance.",
+      );
+    }
+    dropKnownLegacyPreclaimProvenance(db);
+  }
   const decisionClaimFingerprint = schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]);
   if (decisionClaimFingerprint !== emptyDecisionClaimFingerprint()) {
     if (
@@ -983,6 +1133,17 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
 
     const actualV2 = schemaFingerprint(db, V2_TABLE_NAMES);
     const actualQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
+    const actualDecisionClaims = schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]);
+    const noDecisionClaims = emptyDecisionClaimFingerprint();
+    const currentDecisionClaims = currentDecisionClaimFingerprint();
+    const actualLegacyPreclaimProvenance = schemaFingerprint(
+      db,
+      [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME],
+    );
+    const noLegacyPreclaimProvenance =
+      emptyLegacyPreclaimProvenanceFingerprint();
+    const currentLegacyPreclaimProvenance =
+      currentLegacyPreclaimProvenanceFingerprint();
     const currentV2 = currentV2Fingerprint();
     const priorClaimlessCurrentV2 = priorClaimlessCurrentV2Fingerprint();
     const priorOwnerfulV2 = priorOwnerfulV2Fingerprint();
@@ -991,6 +1152,42 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
     const currentQuarantine = currentQuarantineFingerprint();
     const oldQuarantine = legacyQuarantineFingerprint();
     const noQuarantine = emptyQuarantineFingerprint();
+    const recognizedClaimlessMigration =
+      (actualV2 === priorClaimlessCurrentV2 ||
+        actualV2 === priorOwnerfulV2) &&
+      actualDecisionClaims === noDecisionClaims &&
+      actualLegacyPreclaimProvenance === noLegacyPreclaimProvenance &&
+      actualQuarantine !== oldQuarantine;
+
+    if (
+      actualLegacyPreclaimProvenance !== noLegacyPreclaimProvenance &&
+      actualLegacyPreclaimProvenance !== currentLegacyPreclaimProvenance
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review legacy preclaim provenance schema fingerprint is unknown or weakened.",
+      );
+    }
+    if (
+      (actualV2 === priorClaimlessCurrentV2 ||
+        actualV2 === priorOwnerfulV2) &&
+      !recognizedClaimlessMigration &&
+      actualQuarantine !== oldQuarantine
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review claimless schema is not an exact recognized historical upgrade.",
+      );
+    }
+    if (
+      actualV2 === currentV2 &&
+      actualDecisionClaims !== currentDecisionClaims
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review current schema is missing its exact decision-claim surface.",
+      );
+    }
 
     if (actualV2 === emptyV2) {
       if (actualQuarantine !== noQuarantine) {
@@ -1023,13 +1220,36 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
       throw new DomainError("INTERNAL", "Durable review schema fingerprint is unknown or weakened.");
     }
 
-    const actualDecisionClaims = schemaFingerprint(db, [DECISION_CLAIM_TABLE_NAME]);
-    const noDecisionClaims = emptyDecisionClaimFingerprint();
-    const currentDecisionClaims = currentDecisionClaimFingerprint();
-    if (actualDecisionClaims === noDecisionClaims) {
+    const migratedLegacyPreclaimProvenance = schemaFingerprint(
+      db,
+      [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME],
+    );
+    if (
+      migratedLegacyPreclaimProvenance === noLegacyPreclaimProvenance
+    ) {
+      if (recognizedClaimlessMigration) {
+        installLegacyPreclaimProvenance(db, actualV2);
+      } else {
+        db.exec(LEGACY_PRECLAIM_PROVENANCE_SCHEMA);
+        db.exec(legacyPreclaimProvenanceTriggerSql());
+      }
+    } else if (
+      migratedLegacyPreclaimProvenance !== currentLegacyPreclaimProvenance
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review legacy preclaim provenance changed during migration.",
+      );
+    }
+
+    const migratedDecisionClaims = schemaFingerprint(
+      db,
+      [DECISION_CLAIM_TABLE_NAME],
+    );
+    if (migratedDecisionClaims === noDecisionClaims) {
       db.exec(DECISION_CLAIM_SCHEMA);
       db.exec(decisionClaimTriggerSql());
-    } else if (actualDecisionClaims !== currentDecisionClaims) {
+    } else if (migratedDecisionClaims !== currentDecisionClaims) {
       throw new DomainError(
         "INTERNAL",
         "Durable review decision-claim schema fingerprint is unknown or weakened.",
@@ -1049,6 +1269,15 @@ function initializeSchema(db: DatabaseSync, options: DurableReviewStoreOpenOptio
       throw new DomainError(
         "INTERNAL",
         "Durable review migration did not install the exact decision-claim schema.",
+      );
+    }
+    if (
+      schemaFingerprint(db, [LEGACY_PRECLAIM_PROVENANCE_TABLE_NAME]) !==
+      currentLegacyPreclaimProvenance
+    ) {
+      throw new DomainError(
+        "INTERNAL",
+        "Durable review migration did not install exact legacy preclaim provenance.",
       );
     }
     const finalQuarantine = schemaFingerprint(db, [QUARANTINE_TABLE_NAME]);
@@ -1092,6 +1321,7 @@ function resolutionEntry(
   row: ResolutionRow,
   pending: PendingDurableReviewRecord,
   claim: DurableReviewDecisionClaim | null,
+  legacyProvenance: LegacyPreclaimProvenanceRow | null,
 ): DurableReviewResolutionEntry {
   const resolution = DurableReviewResolutionSchema.parse(JSON.parse(row.resolution_json));
   if (
@@ -1108,7 +1338,37 @@ function resolutionEntry(
   ) throw new DomainError("REQUEST_INVALID", "Stored durable resolution columns do not bind to its immutable resolution.");
   try {
     if (claim) bindServerResolutionToPendingReview(pending, claim, resolution);
-    else readLegacyPreclaimResolution(pending, resolution);
+    else {
+      if (!legacyProvenance) {
+        throw new DomainError(
+          "REQUEST_INVALID",
+          "The resolution has neither an immutable decision claim nor verified historical migration provenance.",
+        );
+      }
+      const allowedSourceFingerprints = new Set([
+        priorClaimlessCurrentV2Fingerprint(),
+        priorOwnerfulV2Fingerprint(),
+      ]);
+      if (
+        legacyProvenance.review_id !== row.review_id ||
+        legacyProvenance.owner_tenant_id !== row.owner_tenant_id ||
+        legacyProvenance.owner_issuer !== row.owner_issuer ||
+        legacyProvenance.owner_subject !== row.owner_subject ||
+        legacyProvenance.owner_scope !== row.owner_scope ||
+        legacyProvenance.receipt_id !== row.receipt_id ||
+        legacyProvenance.receipt_sha256 !== row.receipt_sha256 ||
+        legacyProvenance.resolution_row_sha256 !== resolutionRowSha256(row) ||
+        !allowedSourceFingerprints.has(
+          legacyProvenance.source_schema_fingerprint,
+        )
+      ) {
+        throw new DomainError(
+          "REQUEST_INVALID",
+          "The resolution does not match its verified historical migration provenance.",
+        );
+      }
+      readLegacyPreclaimResolution(pending, resolution);
+    }
   }
   catch (error) { throw new DomainError("REQUEST_INVALID", `Stored durable resolution does not bind to its immutable parent: ${error instanceof Error ? error.message : "invalid binding"}`); }
   return {
@@ -1117,7 +1377,7 @@ function resolutionEntry(
     resolvedAtUtc: row.resolved_at_utc,
     receiptId: row.receipt_id,
     receiptSha256: row.receipt_sha256,
-    claimBinding: claim ? "verified-claim" : "legacy-preclaim",
+    claimBinding: claim ? "verified-claim" : "verified-legacy-migration",
     resolution,
   };
 }
@@ -1399,10 +1659,23 @@ export class DurableReviewStore {
     const pending = this.get(id, validOwner);
     if (!pending) throw new DomainError("REQUEST_INVALID", `Stored durable resolution ${id} has no immutable pending parent.`);
     const claim = this.getDecisionClaim(id, validOwner);
+    const legacyProvenance = claim
+      ? null
+      : this.#db.prepare(
+        `SELECT * FROM durable_review_legacy_preclaim_provenance
+         WHERE review_id = ?
+           AND owner_tenant_id = ?
+           AND owner_issuer = ?
+           AND owner_subject = ?
+           AND owner_scope = ?`,
+      ).get(id, ...ownerValues(validOwner));
     return resolutionEntry(
       ResolutionRowSchema.parse(row),
       pending.record,
       claim?.claim ?? null,
+      legacyProvenance
+        ? LegacyPreclaimProvenanceRowSchema.parse(legacyProvenance)
+        : null,
     );
   }
   getLegacy(reviewId: string): LegacyDurableReviewStoreEntry | null { const row = this.#db.prepare("SELECT * FROM durable_review_records WHERE review_id = ?").get(IdSchema.parse(reviewId)); return row ? legacyEntry(LegacyRowSchema.parse(row)) : null; }

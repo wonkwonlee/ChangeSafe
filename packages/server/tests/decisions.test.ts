@@ -4,7 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ChangeReceiptSchema, generateSigningKeyPair, importSigningKeyPair } from "@changesafe/core";
+import {
+  ChangeReceiptSchema,
+  generateSigningKeyPair,
+  importSigningKeyPair,
+  type SignedReceipt,
+} from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
 import { Ledger } from "@changesafe/ledger";
 
 import { DecisionService } from "../src/decisions";
@@ -165,6 +171,103 @@ describe("deciding", () => {
     expect(response.status).toBe(201);
     const entry = context.ledger.list()[0];
     expect(entry?.decision).toBe("rejected");
+  });
+});
+
+describe("durable receipt recovery authorship", () => {
+  const issuance = {
+    expectedPolicyVersion: networkDomain.policyVersion,
+    receiptId: "rcpt-recovery-authorship",
+    receiptCreatedAtUtc: "2026-07-30T02:00:00.000Z",
+    receiptSignedAtUtc: "2026-07-30T02:00:00.000Z",
+  } as const;
+  const approver = {
+    subject: "user-alice",
+    issuer: "https://idp.test",
+    email: null,
+  };
+
+  async function signedRecoveryRecord() {
+    const pem = await generateSigningKeyPair();
+    const keyPair = await importSigningKeyPair(pem.privateKeyPem);
+    const ledger = Ledger.open(":memory:");
+    try {
+      const service = new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-historical",
+        signingKeyPair: keyPair,
+      });
+      const outcome = await service.decideSigned(
+        { ...safeApproval, decision: "reject" },
+        approver,
+        issuance,
+      );
+      return { pem, keyPair, record: outcome.record };
+    } finally {
+      ledger.close();
+    }
+  }
+
+  async function recover(
+    record: SignedReceipt | SignedReceipt["receipt"],
+    trustedReceiptPublicKeys?: ReadonlyMap<string, CryptoKey>,
+  ) {
+    const ledger = Ledger.open(":memory:");
+    const rotated = await generateSigningKeyPair();
+    try {
+      await ledger.append(record);
+      const service = new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-rotated",
+        signingKeyPair: await importSigningKeyPair(rotated.privateKeyPem),
+        ...(trustedReceiptPublicKeys ? { trustedReceiptPublicKeys } : {}),
+      });
+      return await service.decideSigned(
+        { ...safeApproval, decision: "reject" },
+        approver,
+        issuance,
+      );
+    } finally {
+      ledger.close();
+    }
+  }
+
+  it("fails closed when the historical signing key is absent or unknown", async () => {
+    const historical = await signedRecoveryRecord();
+    await expect(recover(historical.record.receipt)).rejects.toThrow();
+    await expect(recover(historical.record)).rejects.toThrow(
+      /unknown signing key/i,
+    );
+  });
+
+  it("rejects a keyring entry whose key does not match its publicKeyId", async () => {
+    const historical = await signedRecoveryRecord();
+    const wrong = await generateSigningKeyPair();
+    const wrongPair = await importSigningKeyPair(wrong.privateKeyPem);
+    await expect(
+      recover(
+        historical.record,
+        new Map([[historical.pem.publicKeyId, wrongPair.publicKey]]),
+      ),
+    ).rejects.toThrow(/signature verification/i);
+  });
+
+  it("rejects a schema-valid forged signature even with the correct historical key", async () => {
+    const historical = await signedRecoveryRecord();
+    const signature = historical.record.signature.signature;
+    const forged = {
+      ...historical.record,
+      signature: {
+        ...historical.record.signature,
+        signature: `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`,
+      },
+    };
+    await expect(
+      recover(
+        forged,
+        new Map([[historical.pem.publicKeyId, historical.keyPair.publicKey]]),
+      ),
+    ).rejects.toThrow(/signature verification/i);
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   canonicalize,
+  computePublicKeyId,
   DomainError,
   SignedReceiptSchema,
   createReceipt,
@@ -10,6 +11,7 @@ import {
   transition,
   validateProposalEvidence,
   verifyReceiptHash,
+  verifyReceiptSignature,
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
@@ -55,6 +57,12 @@ export interface DecisionServiceOptions {
   appVersion: string;
   /** When present, every issued receipt is signed with it. */
   signingKeyPair?: { privateKey: CryptoKey; publicKey: CryptoKey };
+  /**
+   * Operator-controlled historical verifying keys, indexed by their
+   * out-of-band fingerprint. Required to recover a ledgered receipt after
+   * the active signing key has rotated.
+   */
+  trustedReceiptPublicKeys?: ReadonlyMap<string, CryptoKey>;
   /** Injectable for deterministic tests. */
   now?: () => string;
 }
@@ -293,6 +301,25 @@ export class DecisionService {
         `Stored receipt ${issuance.receiptId} failed its content-integrity check.`,
       );
     }
+    const trustedPublicKey = await this.#trustedRecoveryKey(
+      record.signature.publicKeyId,
+    );
+    if (!trustedPublicKey) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} names an unknown signing key.`,
+      );
+    }
+    const signatureVerdict = await verifyReceiptSignature(
+      record,
+      trustedPublicKey,
+    );
+    if (signatureVerdict !== "valid") {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `Stored receipt ${issuance.receiptId} failed out-of-band signature verification.`,
+      );
+    }
     const expected = await createReceipt({
       sourceId: prepared.request.sourceId,
       inputId: prepared.inputId,
@@ -337,5 +364,13 @@ export class DecisionService {
       ledgerSeq: entry.seq,
       chainSha256: entry.chainSha256,
     };
+  }
+
+  async #trustedRecoveryKey(publicKeyId: string): Promise<CryptoKey | undefined> {
+    const historical = this.#options.trustedReceiptPublicKeys?.get(publicKeyId);
+    if (historical) return historical;
+    const active = this.#options.signingKeyPair?.publicKey;
+    if (active && (await computePublicKeyId(active)) === publicKeyId) return active;
+    return undefined;
   }
 }
