@@ -11,15 +11,20 @@ import {
 } from "@changesafe/core";
 import { networkDomain, runSimulation } from "@changesafe/domain-network";
 import { NETWORK_REGRESSION_MANIFEST } from "@/tests/helpers/network-regression-manifest";
-import { getScenario, type ScenarioDefinition } from "@/scenarios";
+import { NETWORK_SCENARIOS, type NetworkScenarioDefinition } from "@/scenarios";
+import type { IncidentBundle } from "@changesafe/domain-network";
 
-function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
+function networkScenario(scenarioId: string): NetworkScenarioDefinition | undefined {
+  return NETWORK_SCENARIOS.find((scenario) => scenario.scenarioId === scenarioId);
+}
+
+function advanceToDecision(scenario: NetworkScenarioDefinition): WorkflowState {
   const { findings, riskLevel } = evaluatePolicies(
     networkDomain,
-    scenario.bundle,
+    scenario.input as IncidentBundle,
     scenario.fixture.proposal,
   );
-  let state: WorkflowState = initialState(scenario.scenarioId, scenario.bundle);
+  let state: WorkflowState = initialState(scenario.scenarioId, scenario.input as IncidentBundle);
   state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
   state = transition(state, {
     type: "PROPOSAL_RECEIVED",
@@ -64,7 +69,7 @@ describe("current network regression manifest", () => {
   it.each(NETWORK_REGRESSION_MANIFEST)(
     "$scenarioId preserves its literal replay and gate contract",
     (expected) => {
-      const scenario = getScenario(expected.scenarioId);
+      const scenario = networkScenario(expected.scenarioId);
       expect(
         scenario,
         `${expected.scenarioId} must remain in the production scenario registry`,
@@ -73,14 +78,14 @@ describe("current network regression manifest", () => {
 
       const { findings, riskLevel } = evaluatePolicies(
         networkDomain,
-        scenario.bundle,
+        scenario.input as IncidentBundle,
         scenario.fixture.proposal,
       );
       const decisionState = advanceToDecision(scenario);
-      const safeDonor = getScenario("scenario-a-failover");
+      const safeDonor = networkScenario("scenario-a-failover");
       if (!safeDonor) throw new Error("safe simulation donor missing");
       const knownValidSimulation = runSimulation(
-        safeDonor.bundle,
+        safeDonor.input as IncidentBundle,
         safeDonor.fixture.proposal,
       );
       const approvalAttempt = attemptApproval(decisionState);

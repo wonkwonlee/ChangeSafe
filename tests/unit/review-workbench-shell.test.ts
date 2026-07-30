@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ReviewWorkbenchShell } from "../../components/ReviewWorkbenchShell";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import { loadDomainCoverageCatalog } from "@/features/domains/registry";
-import { SCENARIOS } from "../../scenarios";
+import { NETWORK_SCENARIOS } from "../../scenarios";
 
 async function renderShell() {
   const coverageCatalog = await loadDomainCoverageCatalog("network");
@@ -53,11 +53,12 @@ describe("ReviewWorkbenchShell", () => {
   });
 
   it("shows bundled input truth while keeping unevaluated output distinct from declared expectations", async () => {
-    const scenario = SCENARIOS[0];
+    const scenario = NETWORK_SCENARIOS[0];
     if (!scenario) throw new Error("Expected a bundled scenario");
     const markup = await renderShell();
-    expect(markup).toContain(scenario.bundle.incidentId);
-    expect(markup).toContain(scenario.bundle.alerts[0]?.evidenceId);
+    expect(markup).toContain(scenario.inputId);
+    const alerts = (scenario.input as { alerts: { evidenceId: string }[] }).alerts;
+    expect(markup).toContain(alerts[0]?.evidenceId);
     expect(markup).toContain("No evaluated proposal is available yet.");
     expect(markup).toContain("Findings appear only after replay evaluation.");
     expect(markup).toContain("Not evaluated");

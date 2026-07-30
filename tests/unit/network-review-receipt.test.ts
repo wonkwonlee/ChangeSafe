@@ -29,13 +29,13 @@ import {
   startReview,
   type ReviewControllerState,
 } from "@/features/reviews/controller";
-import { getScenario } from "@/scenarios";
+import { NETWORK_SCENARIOS } from "@/scenarios";
 
 const APP_VERSION = "0.3.1";
 const CREATED_AT = "2026-07-29T00:00:00.000Z";
 
 function scenarioOrThrow(scenarioId: string) {
-  const scenario = getScenario(scenarioId);
+  const scenario = NETWORK_SCENARIOS.find((candidate) => candidate.scenarioId === scenarioId);
   if (!scenario) throw new Error(`missing ${scenarioId}`);
   return scenario;
 }
@@ -82,8 +82,8 @@ function activeReview(
   const session = sessionFor(scenarioId, scenario.fixture.provenance);
   let state = initialReviewControllerState({
     sourceId: scenario.scenarioId,
-    expectedInputId: scenario.bundle.incidentId,
-    input: scenario.bundle,
+    expectedInputId: scenario.inputId,
+    input: scenario.input as IncidentBundle,
     session,
   });
   state = reviewControllerReducer(state, startReview("attempt-network-receipt"));
@@ -93,7 +93,7 @@ function activeReview(
       "attempt-network-receipt",
       analysisFor(
         scenario.scenarioId,
-        scenario.bundle,
+        scenario.input as IncidentBundle,
         scenario.fixture.proposal,
         session,
         scenario.fixture,

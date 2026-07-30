@@ -13,7 +13,7 @@ import {
   hashCanonical,
   importSigningKeyPair,
 } from "@changesafe/core";
-import { networkDomain } from "@changesafe/domain-network";
+import { networkDomain, type IncidentBundle } from "@changesafe/domain-network";
 import { Ledger } from "@changesafe/ledger";
 import type {
   DurableReviewDecisionClaim,
@@ -35,7 +35,7 @@ async function pending(
   owner: typeof aliceOwner | typeof bobOwner = aliceOwner,
   createdAtUtc = "2026-07-30T01:00:00.000Z",
 ) {
-  const content = SCENARIOS[0]!.input;
+  const content = SCENARIOS[0]!.input as IncidentBundle;
   const proposal = SCENARIOS[0]!.fixture!.proposal;
   const inputSha256 = await hashCanonical(content);
   const proposalSha256 = await hashCanonical(proposal);

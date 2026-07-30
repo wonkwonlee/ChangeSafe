@@ -1,7 +1,7 @@
 import type { FixtureProvenance } from "@changesafe/core";
 import { POLICY_VERSION } from "@changesafe/domain-network";
 
-import { SCENARIOS } from "../../../scenarios";
+import { NETWORK_SCENARIOS } from "../../../scenarios/network";
 import { DOMAIN_REGISTRY } from "../registry";
 import {
   ReviewExampleDescriptorSchema,
@@ -29,7 +29,7 @@ const publicReplayCapabilities = composeSessionCapabilities(
 
 export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
   Object.freeze(
-    SCENARIOS.map((scenario) => {
+    NETWORK_SCENARIOS.map((scenario) => {
       const origin = reviewOrigin(scenario.fixture.provenance);
       const descriptor = ReviewExampleDescriptorSchema.parse({
         domainId: networkMetadata.domainId,

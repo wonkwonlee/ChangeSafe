@@ -26,19 +26,19 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const scenarios = path.resolve(here, "../../../scenarios");
 
 const networkInput = JSON.parse(
-  readFileSync(path.join(scenarios, "scenario-a-failover", "incident.json"), "utf8"),
+  readFileSync(path.join(scenarios, "network", "scenario-a-failover", "incident.json"), "utf8"),
 ) as unknown;
 const networkProposal = (
   JSON.parse(
-    readFileSync(path.join(scenarios, "scenario-a-failover", "replay-fixture.json"), "utf8"),
+    readFileSync(path.join(scenarios, "network", "scenario-a-failover", "replay-fixture.json"), "utf8"),
   ) as { proposal: unknown }
 ).proposal;
 const blockedNetworkInput = JSON.parse(
-  readFileSync(path.join(scenarios, "scenario-b-route-leak", "incident.json"), "utf8"),
+  readFileSync(path.join(scenarios, "network", "scenario-b-route-leak", "incident.json"), "utf8"),
 ) as unknown;
 const blockedNetworkProposal = (
   JSON.parse(
-    readFileSync(path.join(scenarios, "scenario-b-route-leak", "replay-fixture.json"), "utf8"),
+    readFileSync(path.join(scenarios, "network", "scenario-b-route-leak", "replay-fixture.json"), "utf8"),
   ) as { proposal: unknown }
 ).proposal;
 

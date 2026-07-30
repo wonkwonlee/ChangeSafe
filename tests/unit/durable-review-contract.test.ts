@@ -14,22 +14,23 @@ import {
   verifyDurableReviewIntake,
   verifyReceiptProof,
 } from "@/features/reviews/durable-review-contract";
-import { SCENARIOS } from "@/scenarios";
+import { NETWORK_SCENARIOS } from "@/scenarios";
 import { normalizePlan } from "@changesafe/domain-terraform";
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
 import { hashCanonical } from "@changesafe/core";
 
 const sha = (character: string) => character.repeat(64);
 
 function content(domainId: "network" | "terraform") {
-  if (domainId === "network") return SCENARIOS[0]!.bundle;
+  if (domainId === "network") return NETWORK_SCENARIOS[0]!.input as IncidentBundle;
   const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!;
   return normalizePlan(fixture.plan, { planId: fixture.inputId, context: [...fixture.context] });
 }
 
 async function intake(domainId: "network" | "terraform") {
   const input = content(domainId);
-  const proposal = domainId === "network" ? SCENARIOS[0]!.fixture.proposal : null;
+  const proposal = domainId === "network" ? NETWORK_SCENARIOS[0]!.fixture.proposal : null;
   return {
     domainId,
     source: {
@@ -389,8 +390,8 @@ describe("durable self-hosted review contracts", () => {
       },
       input: { inputId: "network-input", content: content("network") },
       proposal: {
-        proposalId: SCENARIOS[0]!.fixture.proposal.proposalId,
-        content: SCENARIOS[0]!.fixture.proposal,
+        proposalId: NETWORK_SCENARIOS[0]!.fixture.proposal.proposalId,
+        content: NETWORK_SCENARIOS[0]!.fixture.proposal,
       },
     });
     expect(built.input.inputSha256).toBe(accepted.input.inputSha256);

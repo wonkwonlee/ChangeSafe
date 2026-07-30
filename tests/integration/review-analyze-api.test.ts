@@ -44,7 +44,7 @@ describe("POST /api/reviews/analyze bundled Network replay", () => {
       expect(response.status).toBe(200);
       const payload = ReviewAnalyzeSuccessV1Schema.parse(await response.json());
       const scenario = getScenario(sourceId);
-      if (!scenario) throw new Error(`Missing bundled scenario ${sourceId}`);
+      if (!scenario || !scenario.fixture) throw new Error(`Missing bundled scenario ${sourceId}`);
 
       expect(payload.result.proposal).toEqual(scenario.fixture.proposal);
       expect(payload.result.riskLevel).toBe(expectedRisk);

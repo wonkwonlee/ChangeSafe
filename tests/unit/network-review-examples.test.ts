@@ -5,7 +5,7 @@ import type { FixtureProvenance } from "@changesafe/core";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import { ReviewExampleDescriptorSchema } from "@/features/domains/review-contract";
 import { REVIEW_CONTRACT_VERSION } from "@/features/domains/review-contract";
-import { SCENARIOS } from "@/scenarios";
+import { NETWORK_SCENARIOS } from "@/scenarios";
 
 function expectedOrigin(provenance: FixtureProvenance) {
   switch (provenance) {
@@ -24,7 +24,7 @@ describe("Network review examples", () => {
 
     expect(ids).toHaveLength(9);
     expect(new Set(ids).size).toBe(9);
-    expect(ids).toEqual(SCENARIOS.map((scenario) => scenario.scenarioId));
+    expect(ids).toEqual(NETWORK_SCENARIOS.map((scenario) => scenario.scenarioId));
   });
 
   it("publishes schema-valid public replay descriptors with Network metadata", () => {
@@ -80,7 +80,7 @@ describe("Network review examples", () => {
 
   it("matches server-route source and provenance classification for every fixture", () => {
     for (const descriptor of NETWORK_REVIEW_EXAMPLES) {
-      const scenario = SCENARIOS.find(
+      const scenario = NETWORK_SCENARIOS.find(
         (candidate) => candidate.scenarioId === descriptor.sourceId,
       );
       expect(scenario, descriptor.sourceId).toBeDefined();

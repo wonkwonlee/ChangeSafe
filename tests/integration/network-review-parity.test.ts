@@ -11,9 +11,9 @@ import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import { REVIEW_ANALYZE_API_VERSION, ReviewAnalyzeSuccessV1Schema } from "@/features/domains/review-api-contract";
 import { approveReview, completeReviewSimulation, initialReviewControllerState, receiveReviewTransport, recordReviewReceipt, rejectReview, reviewControllerReducer, startReview } from "@/features/reviews/controller";
-import { SCENARIOS, type ScenarioDefinition } from "@/scenarios";
+import { NETWORK_SCENARIOS, type NetworkScenarioDefinition } from "@/scenarios";
 
-function exampleFor(scenario: ScenarioDefinition) {
+function exampleFor(scenario: NetworkScenarioDefinition) {
   const example = NETWORK_REVIEW_EXAMPLES.find(
     (candidate) => candidate.sourceId === scenario.scenarioId,
   );
@@ -21,7 +21,7 @@ function exampleFor(scenario: ScenarioDefinition) {
   return example;
 }
 
-function replayRequest(scenario: ScenarioDefinition): Request {
+function replayRequest(scenario: NetworkScenarioDefinition): Request {
   const example = exampleFor(scenario);
   return new Request("http://localhost/api/reviews/analyze", {
     method: "POST",
@@ -36,7 +36,7 @@ function replayRequest(scenario: ScenarioDefinition): Request {
   });
 }
 
-async function replayResult(scenario: ScenarioDefinition) {
+async function replayResult(scenario: NetworkScenarioDefinition) {
   const response = await reviewPost(replayRequest(scenario));
   expect(response.status, scenario.scenarioId).toBe(200);
   return ReviewAnalyzeSuccessV1Schema.parse(await response.json()).result;
@@ -56,7 +56,7 @@ function expectedReplayClassification(
 }
 
 describe("Network public replay parity", () => {
-  it.each(SCENARIOS.map((scenario) => [scenario.scenarioId, scenario] as const))(
+  it.each(NETWORK_SCENARIOS.map((scenario) => [scenario.scenarioId, scenario] as const))(
     "%s preserves the fixture's exact deterministic outcome while the V1 public controller remains decision-free",
     async (_scenarioId, scenario) => {
       const example = exampleFor(scenario);
@@ -73,7 +73,7 @@ describe("Network public replay parity", () => {
       });
       const expected = evaluatePolicies(
         networkDomain,
-        scenario.bundle,
+        scenario.input as IncidentBundle,
         scenario.fixture.proposal,
       );
 
@@ -97,8 +97,8 @@ describe("Network public replay parity", () => {
 
       let state = initialReviewControllerState<IncidentBundle>({
         sourceId: scenario.scenarioId,
-        input: scenario.bundle,
-        expectedInputId: scenario.bundle.incidentId,
+        input: scenario.input as IncidentBundle,
+        expectedInputId: scenario.inputId,
         session: example.session,
       });
       const attemptId = `attempt-parity-${scenario.scenarioId}`;

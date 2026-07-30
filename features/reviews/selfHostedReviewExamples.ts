@@ -1,9 +1,10 @@
 import { hashCanonical } from "@changesafe/core";
 import { normalizePlan } from "@changesafe/domain-terraform";
 
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
 import type { DurableReviewIntake } from "@/features/reviews/durable-review-contract";
-import { SCENARIOS } from "@/scenarios";
+import { NETWORK_SCENARIOS } from "@/scenarios";
 
 export type SelfHostedExampleDomain = "network" | "terraform" | "kubernetes";
 
@@ -15,7 +16,7 @@ export interface SelfHostedReviewExample {
 }
 export const SELF_HOSTED_REVIEW_EXAMPLES: readonly SelfHostedReviewExample[] =
   Object.freeze([
-    ...SCENARIOS.map((scenario) =>
+    ...NETWORK_SCENARIOS.map((scenario) =>
       Object.freeze({
         domainId: "network" as const,
         sourceId: scenario.scenarioId,
@@ -48,7 +49,7 @@ export async function createSelfHostedIntake(
     throw new Error("Kubernetes durable self-hosted intake is unsupported.");
   }
   if (example.domainId === "network") {
-    const scenario = SCENARIOS.find(({ scenarioId }) => scenarioId === example.sourceId);
+    const scenario = NETWORK_SCENARIOS.find(({ scenarioId }) => scenarioId === example.sourceId);
     if (!scenario) throw new Error("The selected Network artifact is unavailable.");
     return {
       domainId: "network",
@@ -60,9 +61,9 @@ export async function createSelfHostedIntake(
         untrustedArtifactObservedAtUtc: observedAtUtc,
       },
       input: {
-        inputId: scenario.bundle.incidentId,
-        inputSha256: await hashCanonical(scenario.bundle),
-        content: scenario.bundle,
+        inputId: scenario.inputId,
+        inputSha256: await hashCanonical(scenario.input),
+        content: scenario.input as IncidentBundle,
       },
       proposal: {
         proposalId: scenario.fixture.proposal.proposalId,

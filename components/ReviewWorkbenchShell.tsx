@@ -10,7 +10,7 @@ import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
 import { useReviewController } from "@/features/reviews/useReviewController";
-import { getScenario, type ScenarioDefinition } from "@/scenarios";
+import { getNetworkScenario, type NetworkScenarioDefinition } from "@/scenarios/network";
 import type { WorkflowState } from "@changesafe/core";
 import type { IncidentBundle } from "@changesafe/domain-network";
 
@@ -37,14 +37,12 @@ function hasFindings(state: WorkflowState<IncidentBundle>): state is ClassifiedW
   ].includes(state.phase);
 }
 
-function scenarioFor(
-  sourceId: string,
-): ScenarioDefinition & { fixture: NonNullable<ScenarioDefinition["fixture"]> } {
-  const scenario = getScenario(sourceId);
-  if (!scenario || scenario.domainId !== "network" || !scenario.fixture) {
+function scenarioFor(sourceId: string): NetworkScenarioDefinition {
+  const scenario = getNetworkScenario(sourceId);
+  if (!scenario) {
     throw new Error(`Bundled Network scenario "${sourceId}" is unavailable`);
   }
-  return { ...scenario, fixture: scenario.fixture };
+  return scenario;
 }
 
 function exampleFor(sourceId: string) {
