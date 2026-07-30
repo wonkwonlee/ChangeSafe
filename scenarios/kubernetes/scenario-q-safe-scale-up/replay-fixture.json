@@ -1,0 +1,70 @@
+{
+  "fixtureId": "fix-q-safe-scale-up",
+  "scenarioId": "scenario-q-safe-scale-up",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored clean capacity increase: replicas only, no privilege, selector, or availability impact.",
+  "proposal": {
+    "proposalId": "scale-up-product-catalog",
+    "summary": "Increase the product-catalog Deployment from 3 to 6 replicas ahead of a promotion.",
+    "diagnosis": {
+      "likelyCause": "Traffic forecast for an upcoming promotion exceeds current catalog service capacity.",
+      "confidence": 0.7,
+      "evidenceIds": ["ev-res-2a8ee56717fc4c73"],
+      "assumptions": ["The forecast traffic increase is accurate."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-2a8ee56717fc4c73",
+        "value": {
+          "resourceId": "res-2a8ee56717fc4c73",
+          "evidenceId": "ev-res-2a8ee56717fc4c73",
+          "identity": { "namespace": "storefront", "name": "product-catalog", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "product-catalog" } },
+          "spec": {
+            "podLabels": { "app": "product-catalog" },
+            "replicas": 6,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "10%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Scale up ahead of forecast promotion traffic, tightening the rollout disruption budget so it does not widen at the higher replica count.",
+        "evidenceIds": ["ev-res-2a8ee56717fc4c73"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-2a8ee56717fc4c73",
+        "value": {
+          "resourceId": "res-2a8ee56717fc4c73",
+          "evidenceId": "ev-res-2a8ee56717fc4c73",
+          "identity": { "namespace": "storefront", "name": "product-catalog", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "product-catalog" } },
+          "spec": {
+            "podLabels": { "app": "product-catalog" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-2a8ee56717fc4c73"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm current catalog replica count and CPU headroom before scaling.", "evidenceIds": ["ev-res-2a8ee56717fc4c73"] },
+      { "kind": "postcheck", "description": "Confirm all 6 replicas are ready and serving traffic after scaling.", "evidenceIds": ["ev-res-2a8ee56717fc4c73"] }
+    ]
+  }
+}

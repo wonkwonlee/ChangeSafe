@@ -25,6 +25,9 @@ import expectationsL from "./kubernetes/scenario-l-replica-zero/expectations.jso
 import snapshotM from "./kubernetes/scenario-m-selector-drift/incident.json";
 import fixtureM from "./kubernetes/scenario-m-selector-drift/replay-fixture.json";
 import expectationsM from "./kubernetes/scenario-m-selector-drift/expectations.json";
+import snapshotQ from "./kubernetes/scenario-q-safe-scale-up/incident.json";
+import fixtureQ from "./kubernetes/scenario-q-safe-scale-up/replay-fixture.json";
+import expectationsQ from "./kubernetes/scenario-q-safe-scale-up/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -194,6 +197,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotM,
     fixtureM,
     expectationsM,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-q-safe-scale-up",
+    "CHG-3201 — Scale up the product-catalog Deployment",
+    "A forecast traffic increase ahead of a promotion prompts a routine replica increase for the catalog service.",
+    snapshotQ,
+    fixtureQ,
+    expectationsQ,
   ),
 ];
 
