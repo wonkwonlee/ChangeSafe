@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-r-partial-replica-reduction",
+  "teaches": "Reducing the cart Deployment from 5 to 2 replicas — real capacity loss, but not to zero — earns exactly one WARN. The Kubernetes MEDIUM path: the human approves knowing capacity dropped, not blind to it.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "WARN",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "MEDIUM",
+  "approvable": true,
+  "simulation": { "safetyPropertiesSatisfied": true },
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

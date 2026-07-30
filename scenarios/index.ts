@@ -28,6 +28,9 @@ import expectationsM from "./kubernetes/scenario-m-selector-drift/expectations.j
 import snapshotQ from "./kubernetes/scenario-q-safe-scale-up/incident.json";
 import fixtureQ from "./kubernetes/scenario-q-safe-scale-up/replay-fixture.json";
 import expectationsQ from "./kubernetes/scenario-q-safe-scale-up/expectations.json";
+import snapshotR from "./kubernetes/scenario-r-partial-replica-reduction/incident.json";
+import fixtureR from "./kubernetes/scenario-r-partial-replica-reduction/replay-fixture.json";
+import expectationsR from "./kubernetes/scenario-r-partial-replica-reduction/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -206,6 +209,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotQ,
     fixtureQ,
     expectationsQ,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-r-partial-replica-reduction",
+    "CHG-3208 — Reduce cart service replicas during a low-traffic window",
+    "A cost-driven capacity reduction cuts the cart Deployment from 5 to 2 replicas, not to zero.",
+    snapshotR,
+    fixtureR,
+    expectationsR,
   ),
 ];
 
