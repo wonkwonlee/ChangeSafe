@@ -1,0 +1,46 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-payments-relabel",
+  "evidenceId": "ev-snapshot-payments-relabel",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-07-29T00:00:00.000Z",
+    "contextFingerprint": "context-payments-relabel",
+    "namespaces": ["payments"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "payments",
+        "namespace": "payments",
+        "labels": { "app": "payments" }
+      },
+      "spec": {
+        "replicas": 3,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": { "maxUnavailable": "25%" }
+        },
+        "template": {
+          "metadata": { "labels": { "app": "payments" } },
+          "spec": {}
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "payments",
+        "namespace": "payments"
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": { "app": "payments" }
+      }
+    }
+  ]
+}

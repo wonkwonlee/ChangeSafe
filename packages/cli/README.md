@@ -12,7 +12,7 @@ require you to say so explicitly. Neither can change a verdict.
 
 ```bash
 npm run build:cli                                   # build the bundled binary
-node packages/cli/dist/changesafe.js gate --scenario scenarios/scenario-b-route-leak
+node packages/cli/dist/changesafe.js gate --scenario scenarios/network/scenario-b-route-leak
 ```
 
 ```text
@@ -56,7 +56,7 @@ proposal gets no shortcut for having been produced locally.
 
 ```bash
 export ANTHROPIC_API_KEY=...
-changesafe analyze --scenario scenarios/scenario-b-route-leak --provider anthropic
+changesafe analyze --scenario scenarios/network/scenario-b-route-leak --provider anthropic
 ```
 
 A failed or unusable model call exits `2`, never `0`: an analysis that did not

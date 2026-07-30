@@ -1,0 +1,90 @@
+{
+  "fixtureId": "fix-m-selector-drift",
+  "scenarioId": "scenario-m-selector-drift",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored to exercise K8S_SERVICE_SELECTOR: the Deployment's pod labels drift away from the untouched Service's selector.",
+  "proposal": {
+    "proposalId": "relabel-payments-deployment",
+    "summary": "Relabel the payments Deployment's pod template as part of a labeling cleanup.",
+    "diagnosis": {
+      "likelyCause": "The submitted change relabels the payments Deployment's pod template from app=payments to app=payments-v2 without updating the payments Service that selects on the old label.",
+      "confidence": 0.5,
+      "evidenceIds": ["ev-res-9f1b7a0e38fb9048"],
+      "assumptions": [
+        "The relabel was intended as a cosmetic cleanup and the author did not intend to detach the Service from the Deployment."
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-9f1b7a0e38fb9048",
+        "value": {
+          "resourceId": "res-9f1b7a0e38fb9048",
+          "evidenceId": "ev-res-9f1b7a0e38fb9048",
+          "identity": {
+            "namespace": "payments",
+            "name": "payments",
+            "apiVersion": "apps/v1",
+            "kind": "Deployment"
+          },
+          "metadata": { "annotations": {}, "labels": { "app": "payments" } },
+          "spec": {
+            "podLabels": { "app": "payments-v2" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Relabel the payments Deployment's pod template as part of a labeling cleanup.",
+        "evidenceIds": ["ev-res-9f1b7a0e38fb9048"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-9f1b7a0e38fb9048",
+        "value": {
+          "resourceId": "res-9f1b7a0e38fb9048",
+          "evidenceId": "ev-res-9f1b7a0e38fb9048",
+          "identity": {
+            "namespace": "payments",
+            "name": "payments",
+            "apiVersion": "apps/v1",
+            "kind": "Deployment"
+          },
+          "metadata": { "annotations": {}, "labels": { "app": "payments" } },
+          "spec": {
+            "podLabels": { "app": "payments" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change pod template labels.",
+        "evidenceIds": ["ev-res-9f1b7a0e38fb9048"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm the payments Service currently routes to the payments Deployment before applying the relabel.",
+        "evidenceIds": ["ev-res-9f1b7a0e38fb9048"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm the payments Service still has matching endpoints after the relabel.",
+        "evidenceIds": ["ev-res-9f1b7a0e38fb9048"]
+      }
+    ]
+  }
+}

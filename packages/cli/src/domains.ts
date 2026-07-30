@@ -12,6 +12,7 @@ import {
 } from "@changesafe/domain-terraform";
 import {
   KubernetesManifestSetSchema,
+  KubernetesReplayFixtureSchema,
   deriveManifestProposal,
   normalizeSnapshot,
   parseManifestDocuments,
@@ -117,10 +118,29 @@ const kubernetes: CliDomain = {
   },
 
   readProposalFile(filePath) {
-    return parseManifestDocuments(readTextFile(filePath, "Kubernetes proposal"));
+    const text = readTextFile(filePath, "Kubernetes proposal");
+    // A replay fixture (bundled scenarios, `gate --scenario`) is JSON
+    // wrapping an already-derived proposal; real manifests are YAML or JSON
+    // documents with no such wrapper. Try the fixture shape first since it is
+    // unambiguous, and fall back to manifest parsing otherwise.
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (hasProposalKey(parsed)) return parsed;
+    } catch {
+      // Not JSON at all — definitely manifest documents.
+    }
+    return parseManifestDocuments(text);
   },
 
   parseProposal(raw, input) {
+    if (hasProposalKey(raw)) {
+      const fixture = parseOrThrow(KubernetesReplayFixtureSchema, raw, "replay fixture");
+      return {
+        proposal: fixture.proposal,
+        provenance: fixture.provenance,
+        fixtureId: fixture.fixtureId,
+      };
+    }
     const manifestSet = KubernetesManifestSetSchema.parse(raw);
     if (!input) throw new UsageError("Kubernetes proposal parsing requires a snapshot input");
     const derived = deriveManifestProposal(

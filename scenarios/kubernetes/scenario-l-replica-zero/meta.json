@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3110 — Scale down the checkout Deployment",
+  "summary": "A capacity-reduction change sets checkout's replica count to zero instead of the intended partial scale-down."
+}

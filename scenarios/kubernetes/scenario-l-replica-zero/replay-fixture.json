@@ -1,0 +1,90 @@
+{
+  "fixtureId": "fix-l-replica-zero",
+  "scenarioId": "scenario-l-replica-zero",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored to exercise K8S_WORKLOAD_AVAILABILITY's zero-replica block on an otherwise unremarkable capacity-reduction request.",
+  "proposal": {
+    "proposalId": "scale-down-checkout",
+    "summary": "Reduce the checkout Deployment to zero replicas as part of a capacity-reduction change.",
+    "diagnosis": {
+      "likelyCause": "The submitted change request asks to reduce checkout capacity; the patch under review sets replicas to zero rather than a partial reduction.",
+      "confidence": 0.5,
+      "evidenceIds": ["ev-res-55c0a6fbddc05f62"],
+      "assumptions": [
+        "The zero-replica value in the submitted manifest is what was actually intended for review, not a drafting error."
+      ]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-55c0a6fbddc05f62",
+        "value": {
+          "resourceId": "res-55c0a6fbddc05f62",
+          "evidenceId": "ev-res-55c0a6fbddc05f62",
+          "identity": {
+            "namespace": "checkout",
+            "name": "checkout",
+            "apiVersion": "apps/v1",
+            "kind": "Deployment"
+          },
+          "metadata": { "annotations": {}, "labels": { "app": "checkout" } },
+          "spec": {
+            "podLabels": { "app": "checkout" },
+            "replicas": 0,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Requested capacity-reduction change for the checkout Deployment.",
+        "evidenceIds": ["ev-res-55c0a6fbddc05f62"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-55c0a6fbddc05f62",
+        "value": {
+          "resourceId": "res-55c0a6fbddc05f62",
+          "evidenceId": "ev-res-55c0a6fbddc05f62",
+          "identity": {
+            "namespace": "checkout",
+            "name": "checkout",
+            "apiVersion": "apps/v1",
+            "kind": "Deployment"
+          },
+          "metadata": { "annotations": {}, "labels": { "app": "checkout" } },
+          "spec": {
+            "podLabels": { "app": "checkout" },
+            "replicas": 3,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-55c0a6fbddc05f62"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm the current checkout replica count and traffic level before applying the change.",
+        "evidenceIds": ["ev-res-55c0a6fbddc05f62"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm checkout still serves traffic at the intended replica count after the change.",
+        "evidenceIds": ["ev-res-55c0a6fbddc05f62"]
+      }
+    ]
+  }
+}

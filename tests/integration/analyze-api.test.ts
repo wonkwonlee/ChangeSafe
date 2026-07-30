@@ -35,7 +35,7 @@ describe("POST /api/analyze in replay mode (no API key required)", () => {
     // the opt-in live smoke test), so it must be labeled as such, not as
     // authored, and must carry the model that actually produced it.
     expect(payload.provenance).toBe("captured");
-    expect(payload.model).toBe(capturedScenarioA.fixture.model);
+    expect(payload.model).toBe(capturedScenarioA.fixture?.model);
     expect(payload.model).not.toBeNull();
     expect(payload.proposal.operations.length).toBeGreaterThan(0);
   });

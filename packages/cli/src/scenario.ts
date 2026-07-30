@@ -14,7 +14,7 @@ import { resolveDomain } from "./domains";
 import { UsageError, parseOrThrow, readJsonFile } from "./io";
 import { EXIT_BLOCKED, EXIT_OK, paint, type Console } from "./output";
 
-const REQUIRED_FILES = ["incident.json", "replay-fixture.json", "expectations.json"];
+const REQUIRED_FILES = ["incident.json", "expectations.json"];
 
 export interface ScenarioCheckOptions {
   dir: string;
@@ -87,12 +87,24 @@ function checkOne(dir: string, domain: ReturnType<typeof resolveDomain>): Scenar
       return { scenarioId, ok: false, problems: [`missing ${file}`] };
     }
   }
+  if (!domain.derivesProposalFromInput && !existsSync(path.join(dir, "replay-fixture.json"))) {
+    return { scenarioId, ok: false, problems: ["missing replay-fixture.json"] };
+  }
 
   try {
     const { input } = domain.parseInput(readJsonFile(path.join(dir, "incident.json"), "incident"));
-    const { proposal } = domain.parseProposal(
-      readJsonFile(path.join(dir, "replay-fixture.json"), "fixture"),
-    );
+    // External-diff domains (terraform) derive the proposal from the input
+    // itself — the plan already says what will change — so there is no
+    // separate fixture file to parse, unlike a simulated-state domain.
+    const proposal = domain.derivesProposalFromInput
+      ? domain.deriveProposal?.(input)
+      : domain.parseProposal(
+          readJsonFile(path.join(dir, "replay-fixture.json"), "fixture"),
+          input,
+        ).proposal;
+    if (!proposal) {
+      throw new UsageError(`the ${domain.id} domain could not derive a proposal from the input`);
+    }
     const expectations = parseOrThrow(
       ScenarioExpectationsSchema,
       readJsonFile(path.join(dir, "expectations.json"), "expectations"),

@@ -5,6 +5,7 @@ import {
   type ApiErrorCode,
 } from "@/lib/domain/api";
 import { isDomainError } from "@changesafe/core";
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { analyzeLive, isLiveConfigured } from "@/lib/ai/live";
 import { analyzeReplay } from "@/lib/ai/replay";
 import { clientKey, liveRateLimiter, livePolicyFromEnv } from "@/lib/rate-limit";
@@ -49,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
   const { scenarioId, mode } = parsedRequest.data;
 
   const scenario = getScenario(scenarioId);
-  if (!scenario) {
+  if (!scenario || scenario.domainId !== "network") {
     return errorResponse(404, "SCENARIO_UNKNOWN", `Unknown scenario "${scenarioId}".`);
   }
 
@@ -79,7 +80,7 @@ export async function POST(request: Request): Promise<Response> {
           { "retry-after": String(verdict.retryAfterSeconds) },
         );
       }
-      const { proposal, model, provider } = await analyzeLive(scenario.bundle);
+      const { proposal, model, provider } = await analyzeLive(scenario.input as IncidentBundle);
       return Response.json(
         AnalyzeSuccessSchema.parse({
           mode: "live",

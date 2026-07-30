@@ -12,7 +12,7 @@ import type { ChangeProposal } from "@changesafe/core";
  * and identifier constraints that actually stress schema translation.
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
-const scenarioDir = path.resolve(here, "../../../scenarios/scenario-a-failover");
+const scenarioDir = path.resolve(here, "../../../scenarios/network/scenario-a-failover");
 
 function readJson(file: string): unknown {
   return JSON.parse(readFileSync(path.join(scenarioDir, file), "utf8")) as unknown;
