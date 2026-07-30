@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
   evaluatePolicies,
+  PolicyPackSchema,
   policyOrder,
   resolvePolicyPack,
+  UNIVERSAL_POLICY_IDS,
   type ChangeProposal,
   type DomainAdapter,
   type PolicyEvaluation,
@@ -59,7 +61,7 @@ const RuntimeMetadataSchema = z.strictObject({
 });
 
 const RuntimePolicySkipSchema = z.strictObject({
-  policyId: z.string().min(1).max(128),
+  policyId: z.enum(UNIVERSAL_POLICY_IDS),
   because: z.string().min(1).max(1000),
   replacedBy: z.string().min(1).max(160),
 });
@@ -240,6 +242,16 @@ function defineRuntimePolicyCoverage<
 >(
   config: RuntimeConfig<TInput, TState, TProposal>,
 ): RuntimePolicyCoverage {
+  const skippedPolicies = (config.adapter.skippedUniversalPolicies ?? []).map(
+    (skip) => Object.freeze(RuntimePolicySkipSchema.parse(skip)),
+  );
+  const skippedPolicyIds = skippedPolicies.map((skip) => skip.policyId);
+  if (new Set(skippedPolicyIds).size !== skippedPolicyIds.length) {
+    throw new Error(
+      `runtime domain "${config.domainId}" declares duplicate universal policy skips`,
+    );
+  }
+
   const orderedPolicyIds = policyOrder(config.adapter).map((policyId) =>
     z.string().min(1).max(128).parse(policyId),
   );
@@ -249,11 +261,12 @@ function defineRuntimePolicyCoverage<
     );
   }
 
-  const skippedPolicies = (config.adapter.skippedUniversalPolicies ?? []).map(
-    (skip) => Object.freeze(RuntimePolicySkipSchema.parse(skip)),
-  );
+  const baselinePack =
+    config.adapter.defaultPolicyPack === undefined
+      ? undefined
+      : PolicyPackSchema.parse(config.adapter.defaultPolicyPack);
   const baselineParameters = ResolvedPolicyPackSchema.parse(
-    resolvePolicyPack(config.adapter.defaultPolicyPack),
+    resolvePolicyPack(baselinePack),
   );
   const limitations = (config.limitations ?? []).map((limitation) =>
     z.string().min(1).max(1000).parse(limitation),
@@ -263,10 +276,10 @@ function defineRuntimePolicyCoverage<
     orderedPolicyIds: Object.freeze(orderedPolicyIds),
     skippedPolicies: Object.freeze(skippedPolicies),
     baselinePack: Object.freeze({
-      source: config.adapter.defaultPolicyPack
-        ? "domain-default"
-        : "core-default",
-      name: config.adapter.defaultPolicyPack?.name ?? "ChangeSafe core defaults",
+      source: baselinePack ? "domain-default" : "core-default",
+      name:
+        baselinePack?.name ??
+        (baselinePack ? "Unnamed domain defaults" : "ChangeSafe core defaults"),
       parameters: Object.freeze({
         blastRadius: Object.freeze({
           ...baselineParameters.blastRadius,

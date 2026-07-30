@@ -331,6 +331,152 @@ describe("closed domain registry", () => {
     expect(adapterAccessed).toBe(false);
   });
 
+  it("rejects universal-policy skip declarations that could hide evaluated domain policies", () => {
+    const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
+    type Input = z.infer<typeof InputSchema>;
+    const adapter: DomainAdapter<Input, Input> = {
+      domainId: "test-domain",
+      policyVersion: "test-v1",
+      stateOf: (input) => input,
+      applyOperations: (state) => ({ nextState: state, diff: [] }),
+      blastRadiusUnit: () => null,
+      untrustedTexts: () => [],
+      knownEvidenceIds: () => new Set(),
+      policies: [
+        {
+          id: "TEST_POLICY",
+          evaluate: () => ({
+            policyId: "TEST_POLICY",
+            status: "PASS",
+            title: "Test policy",
+            explanation: "The domain policy evaluated.",
+            affectedResources: [],
+            remediation: null,
+          }),
+        },
+      ],
+    };
+    Object.defineProperty(adapter, "skippedUniversalPolicies", {
+      value: [
+        {
+          policyId: "TEST_POLICY",
+          because: "A malformed adapter tries to hide its own policy.",
+          replacedBy: "TEST_POLICY",
+        },
+      ],
+    });
+
+    expect(() =>
+      defineSimulatedRuntime({
+        domainId: "test-domain",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        capabilities: presentationCapabilities,
+        inputSchema: InputSchema,
+        proposalSchema: ChangeProposalSchema,
+        adapter,
+        simulate: () => ({
+          status: "completed",
+          changedResourceIds: [],
+          diff: [],
+          safetyProperties: [],
+          summary: "No real infrastructure was contacted.",
+        }),
+      }),
+    ).toThrow(/PATCH_SCHEMA|BLAST_RADIUS|ROLLBACK_COMPLETE|VERIFICATION_REQUIRED|UNTRUSTED_INSTRUCTION/);
+  });
+
+  it("rejects duplicate universal-policy skips", () => {
+    const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
+    type Input = z.infer<typeof InputSchema>;
+    const adapter: DomainAdapter<Input, Input> = {
+      domainId: "test-domain",
+      policyVersion: "test-v1",
+      stateOf: (input) => input,
+      applyOperations: (state) => ({ nextState: state, diff: [] }),
+      blastRadiusUnit: () => null,
+      untrustedTexts: () => [],
+      knownEvidenceIds: () => new Set(),
+      policies: [],
+      skippedUniversalPolicies: [
+        {
+          policyId: "ROLLBACK_COMPLETE",
+          because: "The supplied diff is external.",
+          replacedBy: "REVERSIBILITY",
+        },
+        {
+          policyId: "ROLLBACK_COMPLETE",
+          because: "A duplicate declaration is ambiguous.",
+          replacedBy: "REVERSIBILITY",
+        },
+      ],
+    };
+
+    expect(() =>
+      defineExternalDiffRuntime({
+        domainId: "test-domain",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        capabilities: {
+          ...presentationCapabilities,
+          sandboxSimulation: false,
+        },
+        inputSchema: InputSchema,
+        proposalSchema: ChangeProposalSchema,
+        adapter,
+      }),
+    ).toThrow(/duplicate universal policy skips/i);
+  });
+
+  it.each([
+    [
+      "empty name",
+      {
+        name: "",
+        blastRadius: { warnAt: 2, blockAbove: 2 },
+      },
+    ],
+    [
+      "inverted thresholds",
+      {
+        name: "invalid-thresholds",
+        blastRadius: { warnAt: 5, blockAbove: 2 },
+      },
+    ],
+  ])("rejects an invalid domain policy pack with %s", (_label, invalidPack) => {
+    const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
+    type Input = z.infer<typeof InputSchema>;
+    const adapter: DomainAdapter<Input, Input> = {
+      domainId: "test-domain",
+      policyVersion: "test-v1",
+      stateOf: (input) => input,
+      applyOperations: (state) => ({ nextState: state, diff: [] }),
+      blastRadiusUnit: () => null,
+      untrustedTexts: () => [],
+      knownEvidenceIds: () => new Set(),
+      policies: [],
+    };
+    Object.defineProperty(adapter, "defaultPolicyPack", {
+      value: invalidPack,
+    });
+
+    expect(() =>
+      defineSimulatedRuntime({
+        domainId: "test-domain",
+        contractVersion: REVIEW_CONTRACT_VERSION,
+        capabilities: presentationCapabilities,
+        inputSchema: InputSchema,
+        proposalSchema: ChangeProposalSchema,
+        adapter,
+        simulate: () => ({
+          status: "completed",
+          changedResourceIds: [],
+          diff: [],
+          safetyProperties: [],
+          summary: "No real infrastructure was contacted.",
+        }),
+      }),
+    ).toThrow();
+  });
+
   it("rejects sandbox declarations that contradict runtime shape and behavior", async () => {
     const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
     type Input = z.infer<typeof InputSchema>;
