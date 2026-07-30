@@ -1,0 +1,260 @@
+import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { hashCanonical } from "@changesafe/core";
+import { normalizePlan } from "@changesafe/domain-terraform";
+import { Ledger } from "@changesafe/ledger";
+
+import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "../../../features/domains/terraform/fixtures";
+import { DecisionService } from "../src/decisions";
+import { DurableReviewStore } from "../src/durable-review-store";
+import { createDecisionServer } from "../src/http";
+import { OidcVerifier } from "../src/oidc";
+import { FakeIdp } from "./helpers";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const scenarios = path.resolve(here, "../../../scenarios");
+
+const networkInput = JSON.parse(
+  readFileSync(path.join(scenarios, "scenario-a-failover", "incident.json"), "utf8"),
+) as unknown;
+
+let context: {
+  idp: FakeIdp;
+  ledger: Ledger;
+  reviews: DurableReviewStore;
+  baseUrl: string;
+  close: () => Promise<void>;
+};
+
+beforeEach(async () => {
+  const idp = await FakeIdp.create();
+  const ledger = Ledger.open(":memory:");
+  const reviews = DurableReviewStore.open(":memory:");
+  const server = createDecisionServer({
+    ledger,
+    reviews,
+    verifier: new OidcVerifier(
+      { issuer: idp.issuer, audience: "changesafe", jwksUri: `${idp.issuer}/jwks` },
+      { fetch: idp.fetch() },
+    ),
+    decisions: new DecisionService({ ledger, appVersion: "changesafe-server-test" }),
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  context = {
+    idp,
+    ledger,
+    reviews,
+    baseUrl: `http://127.0.0.1:${port}`,
+    close: async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      reviews.close();
+      ledger.close();
+    },
+  };
+});
+
+afterEach(async () => context.close());
+
+async function pendingNetworkReview(reviewId = "review-network-one") {
+  return {
+    reviewId,
+    createdAtUtc: "2026-07-30T04:00:00.000Z",
+    intake: {
+      domainId: "network",
+      source: {
+        domainId: "network",
+        sourceId: "network-source-one",
+        sourceKind: "network-incident-bundle",
+        origin: "uploaded-offline-artifact",
+        collectedAtUtc: "2026-07-30T03:00:00.000Z",
+      },
+      input: {
+        inputId: "inc-uplink-degraded-4821",
+        inputSha256: await hashCanonical(networkInput),
+        content: networkInput,
+      },
+    },
+  };
+}
+
+async function pendingTerraformReview(reviewId = "review-terraform-one") {
+  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!;
+  const content = normalizePlan(fixture.plan, {
+    planId: fixture.inputId,
+    context: [...fixture.context],
+  });
+  return {
+    reviewId,
+    createdAtUtc: "2026-07-30T04:00:00.000Z",
+    intake: {
+      domainId: "terraform",
+      source: {
+        domainId: "terraform",
+        sourceId: "terraform-source-one",
+        sourceKind: "terraform-show-json",
+        origin: "read-only-collector",
+        collectedAtUtc: "2026-07-30T03:00:00.000Z",
+      },
+      input: {
+        inputId: fixture.inputId,
+        inputSha256: await hashCanonical(content),
+        content,
+      },
+    },
+  };
+}
+
+async function postReview(body: unknown, token?: string) {
+  return fetch(`${context.baseUrl}/reviews`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("durable review intake HTTP API", () => {
+  it("authenticates before reading an intake body or queue", async () => {
+    const response = await postReview({ not: "a valid intake" });
+
+    expect(response.status).toBe(401);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("does not expose the queue to anonymous callers", async () => {
+    expect((await fetch(`${context.baseUrl}/reviews`)).status).toBe(401);
+    expect((await fetch(`${context.baseUrl}/reviews/review-network-one`)).status).toBe(401);
+    expect(context.reviews.count()).toBe(0);
+  });
+
+  it("accepts a verified Network intake and constructs its self-hosted session server-side", async () => {
+    const token = await context.idp.token();
+    const response = await postReview(await pendingNetworkReview(), token);
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { review: { record: Record<string, unknown> } };
+    expect(body.review.record).toMatchObject({
+      recordVersion: "2",
+      storage: { kind: "append-only-review-store" },
+      session: {
+        runtimeMode: "self-hosted",
+        analysisMode: "offline",
+        source: "uploaded-offline-artifact",
+        provenance: "uploaded-offline-artifact",
+        capabilities: { durableDecision: true },
+      },
+    });
+    expect(body.review.record).not.toHaveProperty("receipt");
+    expect(context.reviews.count()).toBe(1);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("rejects caller-supplied session, receipt, findings, and risk claims before queueing", async () => {
+    const intake = await pendingNetworkReview();
+    const response = await postReview(
+      {
+        ...intake,
+        session: { runtimeMode: "public-replay" },
+        receipt: { receiptId: "forged-receipt" },
+        findings: [],
+        riskLevel: "LOW",
+      },
+      await context.idp.token(),
+    );
+
+    expect(response.status).toBe(422);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("accepts a verified Terraform external-diff intake without simulation authority", async () => {
+    const response = await postReview(await pendingTerraformReview(), await context.idp.token());
+
+    expect(response.status).toBe(201);
+    expect((await response.json()) as { review: { record: unknown } }).toMatchObject({
+      review: {
+        record: {
+          session: {
+            domainId: "terraform",
+            domainShape: "external-diff",
+            source: "read-only-collector",
+            provenance: "read-only-collector",
+            capabilities: { sandboxSimulation: false, durableDecision: true },
+          },
+        },
+      },
+    });
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("rejects unsupported Kubernetes intake before a queue or ledger write", async () => {
+    const intake = await pendingNetworkReview("review-kubernetes-one");
+    const response = await postReview(
+      {
+        ...intake,
+        intake: {
+          ...intake.intake,
+          domainId: "kubernetes",
+          source: { ...intake.intake.source, domainId: "kubernetes" },
+        },
+      },
+      await context.idp.token(),
+    );
+
+    expect(response.status).toBe(422);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("rejects an intake id that does not name the validated domain input", async () => {
+    const intake = await pendingNetworkReview("review-network-wrong-input");
+    const response = await postReview(
+      {
+        ...intake,
+        intake: {
+          ...intake.intake,
+          input: { ...intake.intake.input, inputId: "caller-invented-input" },
+        },
+      },
+      await context.idp.token(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.reviews.count()).toBe(0);
+    expect(context.ledger.count()).toBe(0);
+  });
+
+  it("lists bounded pending reviews and reads one by immutable id", async () => {
+    const token = await context.idp.token();
+    await postReview(await pendingNetworkReview("review-network-one"), token);
+    await postReview(await pendingNetworkReview("review-network-two"), token);
+
+    const listed = await fetch(`${context.baseUrl}/reviews?domainId=network&limit=1`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as { reviews: unknown[] }).reviews).toHaveLength(1);
+
+    const detail = await fetch(`${context.baseUrl}/reviews/review-network-one`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(detail.status).toBe(200);
+    expect((await detail.json()) as { review: { reviewId: string } }).toMatchObject({
+      review: { reviewId: "review-network-one" },
+    });
+
+    const missing = await fetch(`${context.baseUrl}/reviews/review-not-present`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(missing.status).toBe(404);
+  });
+});

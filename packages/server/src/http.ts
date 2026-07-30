@@ -1,11 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { DomainError, isDomainError } from "@changesafe/core";
+import { DomainError, IdSchema, TimestampSchema, isDomainError } from "@changesafe/core";
+import { TerraformInputSchema } from "@changesafe/domain-terraform";
 import type { Ledger } from "@changesafe/ledger";
 
+import {
+  DurableReviewIntakeSchema,
+  type DurableReviewIntake,
+} from "../../../features/reviews/durable-review-contract";
+import { REVIEW_CONTRACT_VERSION } from "../../../features/domains/review-contract";
 import { DecisionService, type DecisionRequest } from "./decisions";
-import { SERVER_DOMAIN_IDS } from "./domains";
+import { DurableReviewStore, type DurableReviewStoreEntry } from "./durable-review-store";
+import { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
 import { AuthenticationError, AuthorizationError, OidcVerifier, bearerToken } from "./oidc";
 
 /** Plans and bundles are large; anything past this is not our client. */
@@ -42,10 +49,73 @@ const DecisionBodySchema = z.strictObject({
   decision: z.enum(["approve", "reject"]),
 });
 
+/**
+ * The client may submit only an offline read-only intake. Session authority,
+ * policy metadata, workflow state, findings, risk, and any receipt are all
+ * server-owned concerns and are deliberately absent from this body.
+ */
+const ReviewIntakeBodySchema = z.strictObject({
+  reviewId: IdSchema,
+  createdAtUtc: TimestampSchema,
+  intake: DurableReviewIntakeSchema,
+});
+
 export interface DecisionServerOptions {
   ledger: Ledger;
   verifier: OidcVerifier;
   decisions: DecisionService;
+  /** Optional during rolling upgrades; /reviews does not exist without it. */
+  reviews?: DurableReviewStore;
+}
+
+function pendingReviewSession(intake: DurableReviewIntake) {
+  const network = intake.domainId === "network";
+  return {
+    domainId: intake.domainId,
+    contractVersion: REVIEW_CONTRACT_VERSION,
+    policyVersion: resolveServerDomain(intake.domainId).adapter.policyVersion,
+    domainShape: network ? "simulated-state" : "external-diff",
+    capabilities: {
+      sandboxSimulation: network,
+      resourceGraph: true,
+      structuredDiff: true,
+      untrustedContext: true,
+      durableDecision: true,
+    },
+    runtimeMode: "self-hosted",
+    source: intake.source.origin,
+    analysisMode: "offline",
+    provenance: intake.source.origin,
+  } as const;
+}
+
+/**
+ * The intake contract proves content integrity; the server also proves that
+ * the caller did not attach that content to an invented input identity.  This
+ * deliberately stops before policy evaluation: queueing is not a decision.
+ */
+function assertIntakeInputIdentity(intake: DurableReviewIntake): void {
+  const inputId =
+    intake.domainId === "terraform"
+      ? TerraformInputSchema.parse(intake.input.content).planId
+      : resolveServerDomain(intake.domainId).parseInput(intake.input.content).inputId;
+  if (inputId !== intake.input.inputId) {
+    throw new DomainError(
+      "REQUEST_INVALID",
+      "The durable intake inputId does not match the validated domain input.",
+    );
+  }
+}
+
+function reviewSummary(entry: DurableReviewStoreEntry) {
+  return {
+    seq: entry.seq,
+    reviewId: entry.reviewId,
+    createdAtUtc: entry.createdAtUtc,
+    domainId: entry.domainId,
+    sourceId: entry.sourceId,
+    inputId: entry.inputId,
+  };
 }
 
 function send(response: ServerResponse, status: number, body: unknown): void {
@@ -177,6 +247,31 @@ async function handle(
     return;
   }
 
+  if (route === "POST /reviews") {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` },
+      });
+      return;
+    }
+    const body = ReviewIntakeBodySchema.parse(await readBody(request));
+    assertIntakeInputIdentity(body.intake);
+    // `appendPending` recomputes the canonical content hash and revalidates
+    // the domain schema before its immutable database append.  The explicit
+    // server construction here prevents a client from claiming public or
+    // legacy authority, findings/risk, or a receipt that does not exist yet.
+    const review = await options.reviews.appendPending({
+      recordVersion: "2",
+      reviewId: body.reviewId,
+      createdAtUtc: body.createdAtUtc,
+      session: pendingReviewSession(body.intake),
+      intake: body.intake,
+      storage: { kind: "append-only-review-store" },
+    });
+    send(response, 201, { review });
+    return;
+  }
+
   if (route === "GET /decisions") {
     // A query string is caller input: "limit=abc" is Number -> NaN, which the
     // ledger would otherwise carry into SQL. Absent and unreadable both mean
@@ -202,6 +297,51 @@ async function handle(
           signatureKeyId: entry.signatureKeyId,
         })),
     });
+    return;
+  }
+
+  if (route === "GET /reviews") {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` },
+      });
+      return;
+    }
+    const requestedLimit = url.searchParams.get("limit");
+    const parsedLimit = requestedLimit === null ? Number.NaN : Number(requestedLimit);
+    const limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
+    const requestedDomainId = url.searchParams.get("domainId");
+    // Parse here, rather than handing arbitrary string values to SQLite's
+    // filter layer. Kubernetes is intentionally unsupported for durable
+    // self-hosted intake at this stage.
+    const reviews = options.reviews.list({
+      limit,
+      ...(requestedDomainId === null
+        ? {}
+        : { domainId: z.enum(["network", "terraform"]).parse(requestedDomainId) }),
+      sourceId: url.searchParams.get("sourceId") ?? undefined,
+    });
+    send(response, 200, { reviews: reviews.map(reviewSummary) });
+    return;
+  }
+
+  const reviewMatch = request.method === "GET" ? /^\/reviews\/([^/]+)$/.exec(url.pathname) : null;
+  if (reviewMatch) {
+    if (!options.reviews) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: `No route for ${route}.` },
+      });
+      return;
+    }
+    const reviewId = IdSchema.parse(reviewMatch[1]);
+    const review = options.reviews.get(reviewId);
+    if (!review) {
+      send(response, 404, {
+        error: { code: "REQUEST_INVALID", message: "The requested review was not found." },
+      });
+      return;
+    }
+    send(response, 200, { review });
     return;
   }
 
