@@ -126,7 +126,7 @@ harness, which evaluates scenario p and its checked expectation:
 
 ```bash
 npm run build:cli
-node packages/cli/dist/changesafe.js scenario check
+node packages/cli/dist/changesafe.js scenario check --domain terraform
 ```
 
 Scenario p is not currently exposed in the browser workbench picker, so the
