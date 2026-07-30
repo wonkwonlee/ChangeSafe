@@ -5,7 +5,9 @@ import { useCallback, useMemo, useState } from "react";
 import { normalizePlan, type TerraformInput } from "@changesafe/domain-terraform";
 import type { WorkflowState } from "@changesafe/core";
 
+import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
+import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import {
   TERRAFORM_PUBLIC_REPLAY_FIXTURES,
   type TerraformPublicReplayFixture,
@@ -172,7 +174,11 @@ function DecisionPanel({ state }: { state: WorkflowState<TerraformInput> }) {
  * read-only evidence: this component neither runs Terraform nor asks the
  * domain to simulate a state transition.
  */
-export function TerraformWorkbenchShell() {
+export function TerraformWorkbenchShell({
+  coverageCatalog,
+}: {
+  readonly coverageCatalog: LoadedDomainCoverageCatalog;
+}) {
   const controller = useReviewController<TerraformInput>({
     ...initialSource(),
     transport: publicReplayTransport,
@@ -252,6 +258,21 @@ export function TerraformWorkbenchShell() {
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="context-title"><Label>Untrusted context</Label><h3 id="context-title" className="mt-2 text-base font-semibold">Bundled plan context</h3>{input.context.length === 0 ? <p className="mt-3 text-sm text-ink-dim">No untrusted context was supplied with this plan.</p> : <ul className="mt-3 space-y-2">{input.context.map((entry) => <li className="rounded border border-edge bg-canvas p-3 text-sm" key={entry.evidenceId}><p className="font-mono text-xs">{entry.evidenceId} · {entry.kind}</p><p className="mt-2 whitespace-pre-wrap text-ink-dim">{entry.text}</p></li>)}</ul>}</section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy, reversibility, and context evidence</h3><FindingsPanel state={workflow} /></section>
+            <DomainCoverageCatalog
+              catalog={coverageCatalog}
+              evaluatedPolicyIds={
+                hasFindings(workflow)
+                  ? workflow.findings.map((finding) => finding.policyId)
+                  : []
+              }
+              simulationDisclosure="Terraform is external-diff only. ChangeSafe evaluates the supplied plan and never claims to simulate it."
+              source={{
+                sourceId: selectedSourceId,
+                source: example.session.source,
+                analysisMode: example.session.analysisMode,
+                provenance: example.session.provenance,
+              }}
+            />
           </div>
         </main>
 

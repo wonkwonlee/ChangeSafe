@@ -5,14 +5,22 @@ import { describe, expect, it } from "vitest";
 
 import { KubernetesWorkbenchShell, selectorRelationships } from "../../components/KubernetesWorkbenchShell";
 import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/examples";
+import { loadDomainCoverageCatalog } from "@/features/domains/registry";
 import {
   KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
 } from "@/features/domains/kubernetes/fixtures";
 import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes/offline";
 
+async function renderShell() {
+  const coverageCatalog = await loadDomainCoverageCatalog("kubernetes");
+  return renderToStaticMarkup(
+    createElement(KubernetesWorkbenchShell, { coverageCatalog }),
+  );
+}
+
 describe("KubernetesWorkbenchShell", () => {
-  it("renders every supported offline replay without declaring an outcome", () => {
-    const markup = renderToStaticMarkup(createElement(KubernetesWorkbenchShell));
+  it("renders every supported offline replay without declaring an outcome", async () => {
+    const markup = await renderShell();
     expect(markup).toContain('<main aria-busy="false" aria-label="Kubernetes review canvas"');
     expect(markup).toContain('<aside aria-label="Kubernetes review context"');
     expect(markup).toContain("No evaluated proposal is available yet.");
@@ -20,10 +28,13 @@ describe("KubernetesWorkbenchShell", () => {
     expect(markup).toContain("Not evaluated");
     expect((markup.match(/aria-pressed=/g) ?? [])).toHaveLength(KUBERNETES_REVIEW_EXAMPLES.length);
     for (const example of KUBERNETES_REVIEW_EXAMPLES) expect(markup).toContain(example.label);
+    expect(markup).toContain("K8S_PRIVILEGE_ESCALATION");
+    expect(markup).toContain("authored-synthetic");
+    expect(markup).toContain("never contacts a Kubernetes API");
   });
 
-  it("states the offline, no-contact, no-apply, decision-free boundaries", () => {
-    const markup = renderToStaticMarkup(createElement(KubernetesWorkbenchShell));
+  it("states the offline, no-contact, no-apply, decision-free boundaries", async () => {
+    const markup = await renderShell();
     expect(markup).toContain("No cluster is contacted");
     expect(markup).toContain("no manifest is applied");
     expect(markup).toContain("Unavailable and not run");

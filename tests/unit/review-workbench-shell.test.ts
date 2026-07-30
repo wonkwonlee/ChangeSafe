@@ -5,23 +5,35 @@ import { describe, expect, it } from "vitest";
 
 import { ReviewWorkbenchShell } from "../../components/ReviewWorkbenchShell";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
+import { loadDomainCoverageCatalog } from "@/features/domains/registry";
 import { SCENARIOS } from "../../scenarios";
 
+async function renderShell() {
+  const coverageCatalog = await loadDomainCoverageCatalog("network");
+  return renderToStaticMarkup(
+    createElement(ReviewWorkbenchShell, { coverageCatalog }),
+  );
+}
+
 describe("ReviewWorkbenchShell", () => {
-  it("renders every bundled Network replay as an accessible interactive selector", () => {
-    const markup = renderToStaticMarkup(createElement(ReviewWorkbenchShell));
+  it("renders every bundled Network replay as an accessible interactive selector", async () => {
+    const markup = await renderShell();
     expect(markup).toContain('<main aria-busy="false" aria-label="Review canvas"');
     expect(markup).toContain('<aside aria-label="Review context"');
     expect(markup).toContain('<aside aria-label="Review authority"');
     expect(markup).toContain("Run replay");
     expect(markup).toContain('<ul class="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">');
-    expect((markup.match(/<li>/g) ?? [])).toHaveLength(NETWORK_REVIEW_EXAMPLES.length);
     expect((markup.match(/aria-pressed=/g) ?? [])).toHaveLength(NETWORK_REVIEW_EXAMPLES.length);
     for (const example of NETWORK_REVIEW_EXAMPLES) expect(markup).toContain(example.label);
+    expect(markup).toContain("Registered metadata");
+    expect(markup).toContain("Loaded deterministic coverage");
+    expect(markup).toContain("MGMT_REACHABILITY");
+    expect(markup).toContain("loaded · not yet evaluated");
+    expect(markup).toContain("captured-replay");
   });
 
-  it("announces only trusted replay lifecycle copy and marks an active replay busy", () => {
-    const markup = renderToStaticMarkup(createElement(ReviewWorkbenchShell));
+  it("announces only trusted replay lifecycle copy and marks an active replay busy", async () => {
+    const markup = await renderShell();
     expect(markup).toContain('role="status"');
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('aria-atomic="true"');
@@ -35,10 +47,10 @@ describe("ReviewWorkbenchShell", () => {
     expect(source).not.toContain("<p aria-atomic=\"true\" aria-live=\"polite\" className=\"sr-only\" role=\"status\">\n                <StateValue");
   });
 
-  it("shows bundled input truth while keeping unevaluated output distinct from declared expectations", () => {
+  it("shows bundled input truth while keeping unevaluated output distinct from declared expectations", async () => {
     const scenario = SCENARIOS[0];
     if (!scenario) throw new Error("Expected a bundled scenario");
-    const markup = renderToStaticMarkup(createElement(ReviewWorkbenchShell));
+    const markup = await renderShell();
     expect(markup).toContain(scenario.bundle.incidentId);
     expect(markup).toContain(scenario.bundle.alerts[0]?.evidenceId);
     expect(markup).toContain("No evaluated proposal is available yet.");

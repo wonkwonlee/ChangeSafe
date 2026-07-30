@@ -5,10 +5,18 @@ import { describe, expect, it } from "vitest";
 
 import { TerraformWorkbenchShell } from "../../components/TerraformWorkbenchShell";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
+import { loadDomainCoverageCatalog } from "@/features/domains/registry";
+
+async function renderShell() {
+  const coverageCatalog = await loadDomainCoverageCatalog("terraform");
+  return renderToStaticMarkup(
+    createElement(TerraformWorkbenchShell, { coverageCatalog }),
+  );
+}
 
 describe("TerraformWorkbenchShell", () => {
-  it("renders every bundled external-diff replay without declaring an outcome", () => {
-    const markup = renderToStaticMarkup(createElement(TerraformWorkbenchShell));
+  it("renders every bundled external-diff replay without declaring an outcome", async () => {
+    const markup = await renderShell();
     expect(markup).toContain('<main aria-busy="false" aria-label="Terraform review canvas"');
     expect(markup).toContain('<aside aria-label="Terraform review context"');
     expect(markup).toContain("No evaluated proposal is available yet.");
@@ -16,10 +24,14 @@ describe("TerraformWorkbenchShell", () => {
     expect(markup).toContain("Not evaluated");
     expect((markup.match(/aria-pressed=/g) ?? [])).toHaveLength(TERRAFORM_REVIEW_EXAMPLES.length);
     for (const example of TERRAFORM_REVIEW_EXAMPLES) expect(markup).toContain(example.label);
+    expect(markup).toContain("terraform-defaults");
+    expect(markup).toContain("Explicit policy skips");
+    expect(markup).toContain("ROLLBACK_COMPLETE");
+    expect(markup).toContain("Replacement: REVERSIBILITY");
   });
 
-  it("states the external-diff and no-execution boundaries", () => {
-    const markup = renderToStaticMarkup(createElement(TerraformWorkbenchShell));
+  it("states the external-diff and no-execution boundaries", async () => {
+    const markup = await renderShell();
     expect(markup).toContain("Terraform is not run");
     expect(markup).toContain("simulation is unavailable");
     expect(markup).toContain("ChangeSafe never runs Terraform");

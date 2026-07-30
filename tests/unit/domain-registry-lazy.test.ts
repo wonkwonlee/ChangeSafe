@@ -53,4 +53,36 @@ describe("lazy domain registry loading", () => {
       expect(importedModules).toEqual([expectedModule]);
     },
   );
+
+  it.each([
+    ["network", "@changesafe/domain-network"],
+    ["terraform", "@changesafe/domain-terraform"],
+    ["kubernetes", "@changesafe/domain-kubernetes/offline"],
+  ] as const)(
+    "loads only the %s adapter when building its policy coverage catalog",
+    async (domainId, expectedModule) => {
+      const importedModules: string[] = [];
+
+      for (const moduleId of domainModules) {
+        vi.doMock(moduleId, async () => {
+          importedModules.push(moduleId);
+          return vi.importActual(moduleId);
+        });
+      }
+      vi.resetModules();
+
+      const { loadDomainCoverageCatalog } = await import(
+        "@/features/domains/registry"
+      );
+      expect(importedModules).toEqual([]);
+
+      const catalog = await loadDomainCoverageCatalog(domainId);
+
+      expect(catalog.registration.domainId).toBe(domainId);
+      expect(catalog.runtime.policyCoverage.orderedPolicyIds.length).toBeGreaterThan(
+        0,
+      );
+      expect(importedModules).toEqual([expectedModule]);
+    },
+  );
 });

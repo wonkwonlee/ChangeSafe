@@ -8,6 +8,7 @@ import {
   defineSimulatedRuntime,
   type DomainStaticCapabilities,
   type DomainRuntimeDefinition,
+  type RuntimePolicyCoverage,
 } from "./runtime";
 import {
   defineDomainPresentation,
@@ -36,6 +37,18 @@ export interface DomainRegistry {
     domainId: string,
     contractVersion: string,
   ): DomainRegistryResolution | ReviewContractErrorResult;
+}
+
+export interface LoadedDomainCoverageCatalog {
+  readonly registration: DomainPresentationDefinition;
+  readonly runtime: Readonly<{
+    domainId: string;
+    contractVersion: typeof REVIEW_CONTRACT_VERSION;
+    domainShape: DomainRuntimeDefinition["domainShape"];
+    policyVersion: string;
+    capabilities: DomainStaticCapabilities;
+    policyCoverage: RuntimePolicyCoverage;
+  }>;
 }
 
 const capabilityKeys: readonly (keyof DomainStaticCapabilities)[] = [
@@ -102,6 +115,37 @@ export function defineDomainRegistry(
         load: entry.load,
       };
     },
+  });
+}
+
+/**
+ * Load deterministic policy evidence for one already-registered domain.
+ *
+ * Registry metadata remains available without importing a domain package.
+ * Calling this helper is the explicit boundary that loads one runtime and
+ * turns registered capability claims into inspectable policy coverage.
+ */
+export async function loadDomainCoverageCatalog(
+  domainId: string,
+): Promise<LoadedDomainCoverageCatalog> {
+  const resolution = DOMAIN_REGISTRY.resolve(
+    domainId,
+    REVIEW_CONTRACT_VERSION,
+  );
+  if (!resolution.ok) {
+    throw new Error(`registered domain "${domainId}" is unavailable`);
+  }
+  const { runtime } = await resolution.load();
+  return Object.freeze({
+    registration: resolution.metadata,
+    runtime: Object.freeze({
+      domainId: runtime.domainId,
+      contractVersion: runtime.contractVersion,
+      domainShape: runtime.domainShape,
+      policyVersion: runtime.policyVersion,
+      capabilities: runtime.capabilities,
+      policyCoverage: runtime.policyCoverage,
+    }),
   });
 }
 
@@ -239,6 +283,9 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
           proposalSchema: NetworkChangeProposalSchema,
           adapter: networkDomain,
           simulate: runSimulation,
+          limitations: [
+            "Evaluates declarative Network artifacts only; it never contacts or executes against network infrastructure.",
+          ],
         }),
         presentation: defineDomainPresentation(networkMetadata),
       };
@@ -260,6 +307,10 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
           inputSchema: TerraformInputSchema,
           proposalSchema: TerraformChangeProposalSchema,
           adapter: terraformDomain,
+          limitations: [
+            "Consumes a supplied Terraform plan as an external diff; Terraform execution is outside this runtime and unsupported.",
+            "Sandbox simulation is unavailable because the domain has no mutable declarative state inside ChangeSafe.",
+          ],
         }),
         presentation: defineDomainPresentation(terraformMetadata),
       };
@@ -283,6 +334,9 @@ export const DOMAIN_REGISTRY = defineDomainRegistry([
           proposalSchema: KubernetesChangeProposalSchema,
           adapter: kubernetesDomain,
           simulate: runKubernetesSimulation,
+          limitations: [
+            "Evaluates validated offline snapshots only; it never contacts a Kubernetes API or applies a manifest.",
+          ],
         }),
         presentation: defineDomainPresentation(kubernetesMetadata),
       };

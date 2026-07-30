@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TerraformWorkbenchShell } from "@/components/TerraformWorkbenchShell";
+import { loadDomainCoverageCatalog } from "@/features/domains/registry";
 
 export const metadata: Metadata = {
   title: "ChangeSafe Terraform Workbench — Public Replay",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
     "Inspect schema-validated bundled Terraform external diffs in an ephemeral public replay. Terraform is never run and ChangeSafe never executes infrastructure changes.",
 };
 
-export default function TerraformWorkbenchPage() {
-  return <TerraformWorkbenchShell />;
+export default async function TerraformWorkbenchPage() {
+  const coverageCatalog = await loadDomainCoverageCatalog("terraform");
+  return <TerraformWorkbenchShell coverageCatalog={coverageCatalog} />;
 }

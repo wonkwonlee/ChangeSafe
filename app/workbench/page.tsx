@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ReviewWorkbenchShell } from "@/components/ReviewWorkbenchShell";
+import { loadDomainCoverageCatalog } from "@/features/domains/registry";
 
 export const metadata: Metadata = {
   title: "ChangeSafe Workbench — Public Replay",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
     "Run schema-validated bundled Network replays in an ephemeral workbench. No decisions are recorded, and ChangeSafe never executes infrastructure changes.",
 };
 
-export default function WorkbenchPage() {
-  return <ReviewWorkbenchShell />;
+export default async function WorkbenchPage() {
+  const coverageCatalog = await loadDomainCoverageCatalog("network");
+  return <ReviewWorkbenchShell coverageCatalog={coverageCatalog} />;
 }

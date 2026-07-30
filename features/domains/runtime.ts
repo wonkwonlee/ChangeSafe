@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
   evaluatePolicies,
+  policyOrder,
+  resolvePolicyPack,
   type ChangeProposal,
   type DomainAdapter,
   type PolicyEvaluation,
+  type ResolvedPolicyPack,
   type SimulationResult,
 } from "@changesafe/core";
 
@@ -55,6 +58,38 @@ const RuntimeMetadataSchema = z.strictObject({
   capabilities: DomainStaticCapabilitiesSchema,
 });
 
+const RuntimePolicySkipSchema = z.strictObject({
+  policyId: z.string().min(1).max(128),
+  because: z.string().min(1).max(1000),
+  replacedBy: z.string().min(1).max(160),
+});
+
+const ResolvedPolicyPackSchema = z.strictObject({
+  blastRadius: z.strictObject({
+    warnAt: z.number().int().min(1).max(1000),
+    blockAbove: z.number().int().min(1).max(1000),
+  }),
+  verification: z.strictObject({
+    requirePrecondition: z.boolean(),
+    requirePostcheck: z.boolean(),
+  }),
+});
+
+export interface RuntimePolicyCoverage {
+  readonly orderedPolicyIds: readonly string[];
+  readonly skippedPolicies: readonly Readonly<{
+    policyId: string;
+    because: string;
+    replacedBy: string;
+  }>[];
+  readonly baselinePack: Readonly<{
+    source: "core-default" | "domain-default";
+    name: string;
+    parameters: Readonly<ResolvedPolicyPack>;
+  }>;
+  readonly limitations: readonly string[];
+}
+
 export interface RuntimeCapabilitySource {
   readonly capabilities: DomainStaticCapabilities;
 }
@@ -64,6 +99,8 @@ interface RuntimeDefinitionBase extends RuntimeCapabilitySource {
   readonly contractVersion: typeof REVIEW_CONTRACT_VERSION;
   /** The exact deterministic policy set used by this runtime. */
   readonly policyVersion: string;
+  /** Loaded policy evidence. Registered presentation metadata never guesses this. */
+  readonly policyCoverage: RuntimePolicyCoverage;
   evaluate(rawInput: unknown, rawProposal: unknown): PolicyEvaluation;
 }
 
@@ -91,6 +128,7 @@ interface RuntimeConfig<
   readonly inputSchema: z.ZodType<TInput>;
   readonly proposalSchema: z.ZodType<TProposal>;
   readonly adapter: DomainAdapter<TInput, TState>;
+  readonly limitations?: readonly string[];
 }
 
 interface SimulatedRuntimeConfig<
@@ -178,6 +216,7 @@ function validateRuntimeMetadata<
   const policyVersion = z.string().min(1).max(32).parse(
     config.adapter.policyVersion,
   );
+  const policyCoverage = defineRuntimePolicyCoverage(config);
   if (
     metadata.capabilities.sandboxSimulation !==
     (domainShape === "simulated-state")
@@ -189,8 +228,56 @@ function validateRuntimeMetadata<
   return {
     ...metadata,
     policyVersion,
+    policyCoverage,
     capabilities: Object.freeze({ ...metadata.capabilities }),
   };
+}
+
+function defineRuntimePolicyCoverage<
+  TInput,
+  TState,
+  TProposal extends ChangeProposal,
+>(
+  config: RuntimeConfig<TInput, TState, TProposal>,
+): RuntimePolicyCoverage {
+  const orderedPolicyIds = policyOrder(config.adapter).map((policyId) =>
+    z.string().min(1).max(128).parse(policyId),
+  );
+  if (new Set(orderedPolicyIds).size !== orderedPolicyIds.length) {
+    throw new Error(
+      `runtime domain "${config.domainId}" declares duplicate policy ids`,
+    );
+  }
+
+  const skippedPolicies = (config.adapter.skippedUniversalPolicies ?? []).map(
+    (skip) => Object.freeze(RuntimePolicySkipSchema.parse(skip)),
+  );
+  const baselineParameters = ResolvedPolicyPackSchema.parse(
+    resolvePolicyPack(config.adapter.defaultPolicyPack),
+  );
+  const limitations = (config.limitations ?? []).map((limitation) =>
+    z.string().min(1).max(1000).parse(limitation),
+  );
+
+  return Object.freeze({
+    orderedPolicyIds: Object.freeze(orderedPolicyIds),
+    skippedPolicies: Object.freeze(skippedPolicies),
+    baselinePack: Object.freeze({
+      source: config.adapter.defaultPolicyPack
+        ? "domain-default"
+        : "core-default",
+      name: config.adapter.defaultPolicyPack?.name ?? "ChangeSafe core defaults",
+      parameters: Object.freeze({
+        blastRadius: Object.freeze({
+          ...baselineParameters.blastRadius,
+        }),
+        verification: Object.freeze({
+          ...baselineParameters.verification,
+        }),
+      }),
+    }),
+    limitations: Object.freeze(limitations),
+  });
 }
 
 function parseBoundary<

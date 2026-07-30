@@ -10,6 +10,7 @@ import {
 import {
   DOMAIN_REGISTRY,
   defineDomainRegistry,
+  loadDomainCoverageCatalog,
 } from "@/features/domains/registry";
 import { defineDomainPresentation } from "@/features/domains/presentation";
 import {
@@ -151,6 +152,83 @@ describe("closed domain registry", () => {
 
     expect(entry.runtime.domainShape).toBe("external-diff");
     expect("simulate" in entry.runtime).toBe(false);
+  });
+
+  it("exposes immutable loaded policy order, baseline packs, skips, and limitations", async () => {
+    const [network, terraform, kubernetes] = await Promise.all([
+      loadDomainCoverageCatalog("network"),
+      loadDomainCoverageCatalog("terraform"),
+      loadDomainCoverageCatalog("kubernetes"),
+    ]);
+
+    expect(network.runtime.policyCoverage.orderedPolicyIds).toEqual([
+      "PATCH_SCHEMA",
+      "MGMT_REACHABILITY",
+      "PROTECTED_RESOURCE",
+      "BLAST_RADIUS",
+      "ROLLBACK_COMPLETE",
+      "VERIFICATION_REQUIRED",
+      "UNTRUSTED_INSTRUCTION",
+    ]);
+    expect(network.runtime.policyCoverage.baselinePack).toMatchObject({
+      source: "core-default",
+      parameters: {
+        blastRadius: { warnAt: 2, blockAbove: 2 },
+      },
+    });
+    expect(terraform.runtime.policyCoverage.orderedPolicyIds).toEqual([
+      "PATCH_SCHEMA",
+      "DESTRUCTIVE_OP",
+      "PROTECTED_RESOURCE",
+      "REVERSIBILITY",
+      "BLAST_RADIUS",
+      "UNTRUSTED_INSTRUCTION",
+    ]);
+    expect(terraform.runtime.policyCoverage.baselinePack).toMatchObject({
+      source: "domain-default",
+      name: "terraform-defaults",
+      parameters: {
+        blastRadius: { warnAt: 15, blockAbove: 60 },
+      },
+    });
+    expect(
+      terraform.runtime.policyCoverage.skippedPolicies.map(
+        (skip) => skip.policyId,
+      ),
+    ).toEqual(["ROLLBACK_COMPLETE", "VERIFICATION_REQUIRED"]);
+    expect(terraform.runtime.policyCoverage.skippedPolicies[0]).toMatchObject({
+      replacedBy: "REVERSIBILITY",
+    });
+    expect(kubernetes.runtime.policyCoverage.orderedPolicyIds).toEqual([
+      "PATCH_SCHEMA",
+      "K8S_PRIVILEGE_ESCALATION",
+      "K8S_WORKLOAD_AVAILABILITY",
+      "K8S_SERVICE_SELECTOR",
+      "K8S_PROTECTED_RESOURCE",
+      "K8S_MUTABLE_IMAGE",
+      "BLAST_RADIUS",
+      "ROLLBACK_COMPLETE",
+      "VERIFICATION_REQUIRED",
+      "UNTRUSTED_INSTRUCTION",
+    ]);
+    expect(kubernetes.runtime.policyCoverage.limitations.join(" ")).toContain(
+      "never contacts a Kubernetes API",
+    );
+
+    expect(
+      Reflect.set(
+        network.runtime.policyCoverage.orderedPolicyIds,
+        "0",
+        "FORGED_POLICY",
+      ),
+    ).toBe(false);
+    expect(
+      Reflect.set(
+        terraform.runtime.policyCoverage.baselinePack.parameters.blastRadius,
+        "warnAt",
+        1,
+      ),
+    ).toBe(false);
   });
 
   it.each([

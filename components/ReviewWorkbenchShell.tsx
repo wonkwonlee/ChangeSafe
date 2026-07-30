@@ -3,7 +3,9 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
+import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
 import { useReviewController } from "@/features/reviews/useReviewController";
 import { getScenario } from "@/scenarios";
@@ -159,7 +161,11 @@ function DecisionPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
  * receipt writes deliberately remain unavailable, so this client UI cannot
  * expand the public trust boundary.
  */
-export function ReviewWorkbenchShell() {
+export function ReviewWorkbenchShell({
+  coverageCatalog,
+}: {
+  readonly coverageCatalog: LoadedDomainCoverageCatalog;
+}) {
   const controller = useReviewController<IncidentBundle>({
     ...initialSource(),
     transport: publicReplayTransport,
@@ -276,6 +282,21 @@ export function ReviewWorkbenchShell() {
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>
+            <DomainCoverageCatalog
+              catalog={coverageCatalog}
+              evaluatedPolicyIds={
+                hasFindings(workflow)
+                  ? workflow.findings.map((finding) => finding.policyId)
+                  : []
+              }
+              simulationDisclosure="This public replay never requests sandbox simulation because it has no decision authority."
+              source={{
+                sourceId: selectedSourceId,
+                source: selectedExample.session.source,
+                analysisMode: selectedExample.session.analysisMode,
+                provenance: selectedExample.session.provenance,
+              }}
+            />
           </div>
         </main>
 
