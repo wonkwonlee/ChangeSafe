@@ -319,7 +319,6 @@ export function reviewCanSimulate<TInput>(
 function reviewCanUseReviewLifecycle(
   session: ReviewSessionEnvelope,
 ): boolean {
-  if (session.runtimeMode === "legacy-local") return true;
   return session.runtimeMode === "self-hosted" && session.capabilities.durableDecision;
 }
 

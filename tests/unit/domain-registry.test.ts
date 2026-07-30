@@ -234,17 +234,14 @@ describe("closed domain registry", () => {
   it.each([
     ["network", "public-replay", durableServerTransport, false],
     ["network", "public-replay", nonDurableTransport, false],
-    ["network", "legacy-local", durableServerTransport, false],
     ["network", "self-hosted", durableServerTransport, true],
     ["network", "self-hosted", nonDurableTransport, false],
     ["terraform", "public-replay", durableServerTransport, false],
     ["terraform", "public-replay", nonDurableTransport, false],
-    ["terraform", "legacy-local", durableServerTransport, false],
     ["terraform", "self-hosted", durableServerTransport, true],
     ["terraform", "self-hosted", nonDurableTransport, false],
     ["kubernetes", "public-replay", durableServerTransport, false],
     ["kubernetes", "public-replay", nonDurableTransport, false],
-    ["kubernetes", "legacy-local", durableServerTransport, false],
     ["kubernetes", "self-hosted", durableServerTransport, true],
     ["kubernetes", "self-hosted", nonDurableTransport, false],
   ] as const)(

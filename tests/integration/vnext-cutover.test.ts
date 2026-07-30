@@ -46,4 +46,12 @@ describe("vNext default-route cutover", () => {
     expect(source).toContain("StatusResponseSchema");
     expect(source).toContain("ReviewAnalyzeRequestV1Schema");
   });
+
+  it("removes the retired legacy-local contract and lifecycle authority", () => {
+    const contract = readFileSync("features/domains/review-contract.ts", "utf8");
+    const controller = readFileSync("features/reviews/controller.ts", "utf8");
+
+    expect(contract).not.toContain("legacy-local");
+    expect(controller).not.toContain("legacy-local");
+  });
 });

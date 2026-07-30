@@ -39,16 +39,7 @@ export const ReviewCapabilitiesSchema = z.strictObject({
   durableDecision: z.boolean(),
 });
 
-/**
- * `legacy-local` is the established browser-console lifecycle. It can create
- * a local deterministic receipt, but is not an authenticated self-hosted
- * decision service and therefore never advertises durable authority.
- */
-export const ReviewRuntimeModeSchema = z.enum([
-  "public-replay",
-  "legacy-local",
-  "self-hosted",
-]);
+export const ReviewRuntimeModeSchema = z.enum(["public-replay", "self-hosted"]);
 
 export const ReviewSourceSchema = z.enum([
   "bundled-replay",
@@ -129,15 +120,6 @@ export const ReviewSessionEnvelopeSchema = ReviewSessionEnvelopeBaseSchema.super
       context.addIssue({
         code: "custom",
         message: "public replay cannot advertise durable decision support",
-        path: ["capabilities", "durableDecision"],
-      });
-    }
-
-    if (session.runtimeMode === "legacy-local" && session.capabilities.durableDecision) {
-      context.addIssue({
-        code: "custom",
-        message:
-          "legacy local reviews cannot advertise authenticated durable decision support",
         path: ["capabilities", "durableDecision"],
       });
     }

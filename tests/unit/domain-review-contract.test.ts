@@ -141,21 +141,11 @@ describe("ReviewSessionEnvelopeSchema", () => {
     ).toBe(false);
   });
 
-  it("accepts the explicit legacy-local mode but rejects a false durable claim", () => {
+  it("rejects the retired legacy-local runtime mode", () => {
     expect(
       ReviewSessionEnvelopeSchema.safeParse({
         ...networkSession,
         runtimeMode: "legacy-local",
-      }).success,
-    ).toBe(true);
-    expect(
-      ReviewSessionEnvelopeSchema.safeParse({
-        ...networkSession,
-        runtimeMode: "legacy-local",
-        capabilities: {
-          ...networkSession.capabilities,
-          durableDecision: true,
-        },
       }).success,
     ).toBe(false);
   });

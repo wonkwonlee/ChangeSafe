@@ -260,7 +260,7 @@ describe("durable self-hosted review contracts", () => {
     },
   );
 
-  it("rejects Kubernetes, public replay, and legacy-local durable record claims", async () => {
+  it("rejects Kubernetes and public replay durable record claims", async () => {
     const networkIntake = await intake("network");
     expect(
       DurableReviewIntakeSchema.safeParse({
@@ -270,18 +270,16 @@ describe("durable self-hosted review contracts", () => {
       }).success,
     ).toBe(false);
 
-    for (const runtimeMode of ["public-replay", "legacy-local"] as const) {
-      expect(
-        DurableReviewRecordSchema.safeParse({
-          ...(await record("network")),
-          session: {
-            ...session("network"),
-            runtimeMode,
-            capabilities: { ...session("network").capabilities, durableDecision: false },
-          },
-        }).success,
-      ).toBe(false);
-    }
+    expect(
+      DurableReviewRecordSchema.safeParse({
+        ...(await record("network")),
+        session: {
+          ...session("network"),
+          runtimeMode: "public-replay",
+          capabilities: { ...session("network").capabilities, durableDecision: false },
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects receipt bindings that contradict the immutable intake or session", async () => {

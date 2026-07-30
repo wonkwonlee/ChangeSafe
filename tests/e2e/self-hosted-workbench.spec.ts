@@ -15,9 +15,6 @@ test("self-hosted workbench is a separate safe mode when no gateway is configure
   await expect(page).toHaveTitle(
     "ChangeSafe Workbench — Authenticated Self-Hosted",
   );
-  await expect(page.getByRole("navigation", { name: "Runtime navigation" })).not.toContainText(
-    "Legacy local",
-  );
   await expect(page.getByRole("navigation", { name: "Runtime navigation" })).toContainText(
     "Public replay",
   );
