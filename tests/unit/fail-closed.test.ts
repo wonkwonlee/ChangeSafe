@@ -22,10 +22,10 @@ import { matchesAddress } from "@changesafe/domain-terraform";
  */
 
 const bundle = IncidentBundleSchema.parse(
-  JSON.parse(readFileSync("scenarios/scenario-a-failover/incident.json", "utf8")),
+  JSON.parse(readFileSync("scenarios/network/scenario-a-failover/incident.json", "utf8")),
 );
 const fixture = JSON.parse(
-  readFileSync("scenarios/scenario-a-failover/replay-fixture.json", "utf8"),
+  readFileSync("scenarios/network/scenario-a-failover/replay-fixture.json", "utf8"),
 ) as { proposal: ChangeProposal };
 
 function proposalWithOperations(operations: ChangeProposal["operations"]): ChangeProposal {

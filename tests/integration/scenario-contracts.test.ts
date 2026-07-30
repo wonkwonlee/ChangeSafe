@@ -2,29 +2,34 @@ import { readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DomainError, IllegalTransitionError , policyOrder } from "@changesafe/core";
+import { DomainError, IllegalTransitionError, policyOrder } from "@changesafe/core";
 
 import { initialState, transition, type WorkflowState } from "@changesafe/core";
 import { validateProposalEvidence } from "@changesafe/core";
-import { runSimulation , networkDomain , POLICY_VERSION } from "@changesafe/domain-network";
 import { evaluatePolicies } from "@changesafe/core";
 import { createReceipt, verifyReceiptHash } from "@changesafe/core";
 import { SCENARIOS, getScenario, type ScenarioDefinition } from "@/scenarios";
+import { SCENARIO_DOMAIN_IDS, resolveScenarioDomain } from "@/scenarios/domains";
 
 /**
  * The scenario harness. Every bundled scenario declares its expected gate
  * outcome in `expectations.json`; this file proves the engine agrees, for
- * every scenario, without per-scenario test code. Adding a scenario is
- * therefore a content change whose claims CI verifies.
+ * every scenario in every domain, without per-scenario test code. Adding a
+ * scenario is therefore a content change whose claims CI verifies.
  */
 
 const SCENARIOS_DIR = path.join(process.cwd(), "scenarios");
 
 function scenarioDirectoriesOnDisk(): string[] {
-  return readdirSync(SCENARIOS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  const ids: string[] = [];
+  for (const domainId of SCENARIO_DOMAIN_IDS) {
+    const domainDir = path.join(SCENARIOS_DIR, domainId);
+    if (!existsSync(domainDir)) continue;
+    for (const entry of readdirSync(domainDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) ids.push(entry.name);
+    }
+  }
+  return ids.sort();
 }
 
 describe("scenario registry completeness", () => {
@@ -33,12 +38,15 @@ describe("scenario registry completeness", () => {
     expect(scenarioDirectoriesOnDisk()).toEqual(registered);
   });
 
-  it("ships the three required files for every registered scenario", () => {
+  it("ships the required files for every registered scenario", () => {
     for (const scenario of SCENARIOS) {
-      for (const file of ["incident.json", "replay-fixture.json", "expectations.json"]) {
-        const filePath = path.join(SCENARIOS_DIR, scenario.scenarioId, file);
-        expect(existsSync(filePath), `${scenario.scenarioId}/${file}`).toBe(true);
+      const dir = path.join(SCENARIOS_DIR, scenario.domainId, scenario.scenarioId);
+      for (const file of ["incident.json", "expectations.json"]) {
+        expect(existsSync(path.join(dir, file)), `${scenario.scenarioId}/${file}`).toBe(true);
       }
+      // Only a domain that ships fixtures (network, kubernetes) has one;
+      // an external-diff domain (terraform) derives its proposal instead.
+      expect(existsSync(path.join(dir, "replay-fixture.json"))).toBe(scenario.fixture !== null);
     }
   });
 
@@ -55,32 +63,32 @@ describe("scenario registry completeness", () => {
 
 describe("scenario integrity (all scenarios)", () => {
   it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
-    "%s cites only evidence that exists in its bundle",
+    "%s cites only evidence that exists in its input",
     (_id, scenario) => {
+      const { adapter } = resolveScenarioDomain(scenario.domainId);
       expect(() =>
-        validateProposalEvidence(networkDomain, scenario.bundle, scenario.fixture.proposal),
+        validateProposalEvidence(adapter, scenario.input as never, scenario.proposal),
       ).not.toThrow();
     },
   );
 
-  it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
-    "%s declares honest fixture provenance",
-    (_id, scenario) => {
-      const { provenance, model, capturedAtUtc } = scenario.fixture;
-      if (provenance === "captured") {
-        expect(model).not.toBeNull();
-        expect(capturedAtUtc).not.toBeNull();
-      } else {
-        // Authored content is never attributed to a model.
-        expect(model).toBeNull();
-      }
-    },
-  );
+  it.each(
+    SCENARIOS.filter((s) => s.fixture !== null).map((s) => [s.scenarioId, s] as const),
+  )("%s declares honest fixture provenance", (_id, scenario) => {
+    const { provenance, model, capturedAtUtc } = scenario.fixture!;
+    if (provenance === "captured") {
+      expect(model).not.toBeNull();
+      expect(capturedAtUtc).not.toBeNull();
+    } else {
+      // Authored content is never attributed to a model.
+      expect(model).toBeNull();
+    }
+  });
 
   it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
     "%s uses documentation address ranges only",
     (_id, scenario) => {
-      const serialized = JSON.stringify(scenario.bundle);
+      const serialized = JSON.stringify(scenario.input);
       const ipv4 = serialized.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g) ?? [];
       const documentationRange = /^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0$)/;
       for (const address of ipv4) {
@@ -94,10 +102,11 @@ describe("scenario integrity (all scenarios)", () => {
   it("rejects invented evidence ids", () => {
     const scenario = SCENARIOS[0];
     if (!scenario) throw new Error("no scenarios registered");
-    const proposal = structuredClone(scenario.fixture.proposal);
+    const { adapter } = resolveScenarioDomain(scenario.domainId);
+    const proposal = structuredClone(scenario.proposal);
     proposal.diagnosis.evidenceIds.push("ev-ghost-claim");
     try {
-      validateProposalEvidence(networkDomain, scenario.bundle, proposal);
+      validateProposalEvidence(adapter, scenario.input as never, proposal);
       expect.fail("expected EVIDENCE_UNKNOWN");
     } catch (error) {
       expect(error).toBeInstanceOf(DomainError);
@@ -110,15 +119,16 @@ describe("declared expectations hold (all scenarios)", () => {
   it.each(SCENARIOS.map((s) => [s.scenarioId, s] as const))(
     "%s produces exactly its declared policy verdicts and risk",
     (_id, scenario) => {
-      const { findings, riskLevel } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
+      const { adapter } = resolveScenarioDomain(scenario.domainId);
+      const { findings, riskLevel } = evaluatePolicies(adapter, scenario.input as never, scenario.proposal);
 
-      expect(findings.map((finding) => finding.policyId)).toEqual(policyOrder(networkDomain));
+      expect(findings.map((finding) => finding.policyId)).toEqual(policyOrder(adapter));
 
       // Policy ids are open across domains, so exhaustiveness is proven here
       // rather than in the schema: a scenario must declare a verdict for every
       // policy this domain evaluates, and no others.
       expect(Object.keys(scenario.expectations.policies).sort()).toEqual(
-        [...policyOrder(networkDomain)].sort(),
+        [...policyOrder(adapter)].sort(),
       );
 
       for (const finding of findings) {
@@ -137,7 +147,8 @@ describe("declared expectations hold (all scenarios)", () => {
     (_id, scenario) => {
       const declared = scenario.expectations.affectedResources;
       if (!declared) return;
-      const { findings } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
+      const { adapter } = resolveScenarioDomain(scenario.domainId);
+      const { findings } = evaluatePolicies(adapter, scenario.input as never, scenario.proposal);
 
       for (const [policyId, resources] of Object.entries(declared)) {
         const finding = findings.find((candidate) => candidate.policyId === policyId);
@@ -146,18 +157,30 @@ describe("declared expectations hold (all scenarios)", () => {
       }
     },
   );
+
+  it.each(
+    SCENARIOS.filter((s) => resolveScenarioDomain(s.domainId).simulate === undefined).map(
+      (s) => [s.scenarioId, s] as const,
+    ),
+  )("%s (external-diff domain) never declares a simulation outcome", (_id, scenario) => {
+    // An external-diff domain (terraform) never simulates — the plan already
+    // is the simulation — so a declared simulation outcome here would assert
+    // a capability the domain does not have.
+    expect(scenario.expectations.simulation).toBeNull();
+  });
 });
 
 /** Walk a scenario to the point where the human decision is required. */
 function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
-  const { findings, riskLevel } = evaluatePolicies(networkDomain, scenario.bundle, scenario.fixture.proposal);
-  let state: WorkflowState = initialState(scenario.scenarioId, scenario.bundle);
+  const { adapter } = resolveScenarioDomain(scenario.domainId);
+  const { findings, riskLevel } = evaluatePolicies(adapter, scenario.input as never, scenario.proposal);
+  let state: WorkflowState = initialState(scenario.scenarioId, scenario.input);
   state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
   state = transition(state, {
     type: "PROPOSAL_RECEIVED",
-    proposal: scenario.fixture.proposal,
+    proposal: scenario.proposal,
     mode: "replay",
-    provenance: scenario.fixture.provenance,
+    provenance: scenario.fixture?.provenance ?? null,
   });
   state = transition(state, { type: "VALIDATION_COMPLETED", findings, riskLevel });
   return transition(state, { type: "CLASSIFY" });
@@ -166,15 +189,27 @@ function advanceToDecision(scenario: ScenarioDefinition): WorkflowState {
 const approvableScenarios = SCENARIOS.filter((s) => s.expectations.approvable);
 const blockedScenarios = SCENARIOS.filter((s) => !s.expectations.approvable);
 
-describe.runIf(approvableScenarios.length > 0)("approvable scenarios", () => {
-  it.each(approvableScenarios.map((s) => [s.scenarioId, s] as const))(
+// Simulated-state domains (network, kubernetes) walk the full human
+// approve → simulate → receipt path the app drives. An external-diff domain
+// (terraform) has no simulation step at all — its receipt path is the
+// deterministic-gate one below, matching what `changesafe gate` actually does.
+const simulableApprovable = approvableScenarios.filter(
+  (s) => resolveScenarioDomain(s.domainId).simulate !== undefined,
+);
+const derivedApprovable = approvableScenarios.filter(
+  (s) => resolveScenarioDomain(s.domainId).simulate === undefined,
+);
+
+describe.runIf(simulableApprovable.length > 0)("approvable scenarios (simulated-state domains)", () => {
+  it.each(simulableApprovable.map((s) => [s.scenarioId, s] as const))(
     "%s runs approve → simulate → verified receipt",
     async (_id, scenario) => {
+      const domain = resolveScenarioDomain(scenario.domainId);
       let state = advanceToDecision(scenario);
       expect(state.phase).toBe("APPROVAL_REQUIRED");
 
       state = transition(state, { type: "APPROVE" });
-      const simulation = runSimulation(scenario.bundle, scenario.fixture.proposal);
+      const simulation = domain.simulate!(scenario.input, scenario.proposal);
       expect(simulation.safetyProperties.every((property) => property.satisfied)).toBe(
         scenario.expectations.simulation?.safetyPropertiesSatisfied,
       );
@@ -183,14 +218,14 @@ describe.runIf(approvableScenarios.length > 0)("approvable scenarios", () => {
       if (state.phase !== "SIMULATED") throw new Error("expected SIMULATED");
       const receipt = await createReceipt({
         sourceId: scenario.scenarioId,
-        inputId: scenario.bundle.incidentId,
-        input: scenario.bundle,
+        inputId: scenario.inputId,
+        input: scenario.input,
         appVersion: "test",
-        policyVersion: POLICY_VERSION,
-        proposal: scenario.fixture.proposal,
+        policyVersion: domain.adapter.policyVersion,
+        proposal: scenario.proposal,
         mode: "replay",
-        model: scenario.fixture.model,
-        fixtureProvenance: scenario.fixture.provenance,
+        model: scenario.fixture?.model ?? null,
+        fixtureProvenance: scenario.fixture?.provenance ?? null,
         findings: state.findings,
         riskLevel: state.riskLevel,
         decision: "approved",
@@ -204,11 +239,45 @@ describe.runIf(approvableScenarios.length > 0)("approvable scenarios", () => {
     },
   );
 
-  it.each(approvableScenarios.map((s) => [s.scenarioId, s] as const))(
+  it.each(simulableApprovable.map((s) => [s.scenarioId, s] as const))(
     "%s can also be rejected by the human",
     (_id, scenario) => {
       const state = transition(advanceToDecision(scenario), { type: "REJECT" });
       expect(state.phase).toBe("REJECTED");
+    },
+  );
+});
+
+describe.runIf(derivedApprovable.length > 0)("approvable scenarios (external-diff domains)", () => {
+  it.each(derivedApprovable.map((s) => [s.scenarioId, s] as const))(
+    "%s gates clean with a null-simulation, gate_only receipt",
+    async (_id, scenario) => {
+      const domain = resolveScenarioDomain(scenario.domainId);
+      const { findings, riskLevel } = evaluatePolicies(
+        domain.adapter,
+        scenario.input as never,
+        scenario.proposal,
+      );
+      expect(findings.some((finding) => finding.status === "BLOCK")).toBe(false);
+
+      const receipt = await createReceipt({
+        sourceId: scenario.scenarioId,
+        inputId: scenario.inputId,
+        input: scenario.input,
+        appVersion: "test",
+        policyVersion: domain.adapter.policyVersion,
+        proposal: scenario.proposal,
+        mode: "offline",
+        model: null,
+        fixtureProvenance: null,
+        findings,
+        riskLevel,
+        decision: "gate_only",
+        simulation: null,
+      });
+      expect(receipt.riskLevel).toBe(scenario.expectations.riskLevel);
+      expect(receipt.simulation).toBeNull();
+      expect(await verifyReceiptHash(receipt)).toBe(true);
     },
   );
 });
@@ -224,9 +293,10 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
 
       // Even a well-formed simulation payload cannot be injected into a
       // blocked workflow.
-      const donor = approvableScenarios[0];
+      const donor = simulableApprovable[0];
       if (donor) {
-        const simulation = runSimulation(donor.bundle, donor.fixture.proposal);
+        const donorDomain = resolveScenarioDomain(donor.domainId);
+        const simulation = donorDomain.simulate!(donor.input, donor.proposal);
         expect(() =>
           transition(state, { type: "SIMULATION_COMPLETED", simulation }),
         ).toThrow(IllegalTransitionError);
@@ -237,19 +307,23 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
   it.each(blockedScenarios.map((s) => [s.scenarioId, s] as const))(
     "%s issues a blocked receipt with no simulation and rejects an approved one",
     async (_id, scenario) => {
+      const domain = resolveScenarioDomain(scenario.domainId);
       const state = advanceToDecision(scenario);
       if (state.phase !== "BLOCKED") throw new Error("expected BLOCKED");
+      // A domain with no fixture (terraform) was never "replayed" — its
+      // proposal was handed to the gate directly, exactly as `gate.ts` does.
+      const mode = scenario.fixture ? "replay" : "offline";
 
       const receipt = await createReceipt({
         sourceId: scenario.scenarioId,
-        inputId: scenario.bundle.incidentId,
-        input: scenario.bundle,
+        inputId: scenario.inputId,
+        input: scenario.input,
         appVersion: "test",
-        policyVersion: POLICY_VERSION,
-        proposal: scenario.fixture.proposal,
-        mode: "replay",
-        model: scenario.fixture.model,
-        fixtureProvenance: scenario.fixture.provenance,
+        policyVersion: domain.adapter.policyVersion,
+        proposal: scenario.proposal,
+        mode,
+        model: scenario.fixture?.model ?? null,
+        fixtureProvenance: scenario.fixture?.provenance ?? null,
         findings: state.findings,
         riskLevel: state.riskLevel,
         decision: "blocked",
@@ -262,14 +336,14 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
       await expect(
         createReceipt({
           sourceId: scenario.scenarioId,
-          inputId: scenario.bundle.incidentId,
-          input: scenario.bundle,
+          inputId: scenario.inputId,
+          input: scenario.input,
           appVersion: "test",
-          policyVersion: POLICY_VERSION,
-          proposal: scenario.fixture.proposal,
-          mode: "replay",
-          model: scenario.fixture.model,
-          fixtureProvenance: scenario.fixture.provenance,
+          policyVersion: domain.adapter.policyVersion,
+          proposal: scenario.proposal,
+          mode,
+          model: scenario.fixture?.model ?? null,
+          fixtureProvenance: scenario.fixture?.provenance ?? null,
           findings: state.findings,
           riskLevel: state.riskLevel,
           decision: "approved",
@@ -324,6 +398,15 @@ describe("flagship scenarios remain present", () => {
         scenario.expectations.corpus.failureModes.length,
         `${scenario.scenarioId} names no failure mode`,
       ).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps at least one scenario for every registered domain", () => {
+    for (const domainId of SCENARIO_DOMAIN_IDS) {
+      expect(
+        SCENARIOS.some((s) => s.domainId === domainId),
+        `no scenario registered for domain "${domainId}"`,
+      ).toBe(true);
     }
   });
 });

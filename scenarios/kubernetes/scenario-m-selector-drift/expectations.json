@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-m-selector-drift",
+  "teaches": "A Deployment-only relabel can silently detach a Service that never appears in the diff; the gate must catch the cross-resource break, not just validate the resource that was actually touched.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "PASS",
+    "K8S_SERVICE_SELECTOR": "BLOCK",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

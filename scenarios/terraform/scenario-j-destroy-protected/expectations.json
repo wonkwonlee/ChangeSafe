@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-j-destroy-protected",
+  "teaches": "A Terraform plan that reads as routine cleanup — dropping an apparently idle database — must still be blocked when the resource carries the protected tag and holds state, even though its prior configuration is fully recorded in the plan.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "BLOCK",
+    "PROTECTED_RESOURCE": "BLOCK",
+    "REVERSIBILITY": "WARN",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["protected-resource-removal"]
+  }
+}

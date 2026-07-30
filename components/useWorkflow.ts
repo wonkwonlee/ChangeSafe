@@ -24,7 +24,7 @@ import {
   type IncidentBundle,
 } from "@changesafe/domain-network";
 import { APP_VERSION } from "@/lib/domain/version";
-import { SCENARIOS, getScenario } from "@/scenarios";
+import { NETWORK_SCENARIOS, getScenario } from "@/scenarios";
 
 /** Fixture metadata shown alongside a replay analysis; null in live mode. */
 export interface AnalysisMeta {
@@ -58,8 +58,8 @@ export function providerLabel(id: string | null | undefined): string | null {
 }
 
 const FIRST_SCENARIO = (() => {
-  const first = SCENARIOS[0];
-  if (!first) throw new Error("no bundled scenarios");
+  const first = NETWORK_SCENARIOS[0];
+  if (!first) throw new Error("no bundled network scenarios");
   return first;
 })();
 
@@ -77,7 +77,7 @@ function reducer(
 export function useWorkflow() {
   const [state, dispatch] = useReducer(
     reducer,
-    initialState(FIRST_SCENARIO.scenarioId, FIRST_SCENARIO.bundle),
+    initialState(FIRST_SCENARIO.scenarioId, FIRST_SCENARIO.input as IncidentBundle),
   );
   const [liveAvailable, setLiveAvailable] = useState<boolean | null>(null);
   const [liveProvider, setLiveProvider] = useState<LiveProviderInfo | null>(null);
@@ -110,7 +110,7 @@ export function useWorkflow() {
     if (!scenario) return;
     setAnalysisMeta(null);
     setReplayOffer(false);
-    dispatch({ type: "RESET", sourceId: scenario.scenarioId, input: scenario.bundle });
+    dispatch({ type: "RESET", sourceId: scenario.scenarioId, input: scenario.input as IncidentBundle });
   }, []);
 
   const reset = useCallback(() => {
@@ -246,7 +246,7 @@ export function useWorkflow() {
 
   return {
     state,
-    scenarios: SCENARIOS,
+    scenarios: NETWORK_SCENARIOS,
     liveAvailable,
     liveProvider,
     analysisMeta,

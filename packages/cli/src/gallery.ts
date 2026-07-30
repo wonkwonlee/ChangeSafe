@@ -21,6 +21,7 @@ export interface GalleryOptions {
 
 interface GalleryEntry {
   scenarioId: string;
+  domainId: string;
   title: string;
   summary: string;
   expectations: ScenarioExpectations;
@@ -40,12 +41,9 @@ export function runGallery(options: GalleryOptions, console: Console): number {
   const root = path.resolve(options.dir);
   if (!existsSync(root)) throw new UsageError(`scenario directory does not exist: ${root}`);
 
-  const entries = readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => existsSync(path.join(root, name, "expectations.json")))
+  const entries = findScenarioDirs(root)
     .sort()
-    .map((name) => readEntry(path.join(root, name)));
+    .map((dir) => readEntry(dir, root));
 
   if (entries.length === 0) throw new UsageError(`no scenarios found in ${root}`);
 
@@ -90,20 +88,68 @@ export function runGallery(options: GalleryOptions, console: Console): number {
   return EXIT_OK;
 }
 
-function readEntry(dir: string): GalleryEntry {
+/**
+ * Scenario directories live either directly under `root` or one level down,
+ * grouped by domain (`scenarios/network/scenario-a-failover`). Two levels
+ * covers every layout this repository uses without an unbounded walk.
+ */
+function findScenarioDirs(root: string): string[] {
+  const topLevel = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+  const leaves: string[] = [];
+  for (const name of topLevel) {
+    const full = path.join(root, name);
+    if (existsSync(path.join(full, "expectations.json"))) {
+      leaves.push(full);
+      continue;
+    }
+    const nested = readdirSync(full, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    for (const nestedName of nested) {
+      const nestedFull = path.join(full, nestedName);
+      if (existsSync(path.join(nestedFull, "expectations.json"))) {
+        leaves.push(nestedFull);
+      }
+    }
+  }
+  return leaves;
+}
+
+function readEntry(dir: string, root: string): GalleryEntry {
   const expectations = parseOrThrow(
     ScenarioExpectationsSchema,
     readJsonFile(path.join(dir, "expectations.json"), "expectations"),
     "expectations",
   );
+  // The input file is shaped however the domain shapes it (an incident
+  // bundle, a Terraform plan, a Kubernetes snapshot) and most of those carry
+  // no human-facing title or summary, so an optional sibling `meta.json`
+  // supplies one without pretending the input file is something it is not.
   const incident = readJsonFile(path.join(dir, "incident.json"), "incident bundle") as {
     title?: unknown;
     summary?: unknown;
   };
+  const metaPath = path.join(dir, "meta.json");
+  const meta = existsSync(metaPath)
+    ? (readJsonFile(metaPath, "scenario meta") as { title?: unknown; summary?: unknown })
+    : {};
+  const domainId = path.dirname(dir) === root ? "network" : path.basename(path.dirname(dir));
   return {
     scenarioId: expectations.scenarioId,
-    title: typeof incident.title === "string" ? incident.title : expectations.scenarioId,
-    summary: typeof incident.summary === "string" ? incident.summary : "",
+    domainId,
+    title:
+      (typeof meta.title === "string" && meta.title) ||
+      (typeof incident.title === "string" && incident.title) ||
+      expectations.scenarioId,
+    summary:
+      (typeof meta.summary === "string" && meta.summary) ||
+      (typeof incident.summary === "string" && incident.summary) ||
+      "",
     expectations,
   };
 }
@@ -146,8 +192,8 @@ function render(entries: GalleryEntry[]): string {
 
   lines.push("## By outcome");
   lines.push("");
-  lines.push("| Scenario | Incident | Risk | Outcome |");
-  lines.push("| --- | --- | --- | --- |");
+  lines.push("| Scenario | Domain | Incident | Risk | Outcome |");
+  lines.push("| --- | --- | --- | --- | --- |");
   const sorted = [...entries].sort(
     (a, b) =>
       RISK_ORDER.indexOf(a.expectations.riskLevel) - RISK_ORDER.indexOf(b.expectations.riskLevel) ||
@@ -155,7 +201,7 @@ function render(entries: GalleryEntry[]): string {
   );
   for (const entry of sorted) {
     lines.push(
-      `| \`${entry.scenarioId}\` | ${entry.title} | ${entry.expectations.riskLevel} | ${outcome(entry)} |`,
+      `| \`${entry.scenarioId}\` | ${entry.domainId} | ${entry.title} | ${entry.expectations.riskLevel} | ${outcome(entry)} |`,
     );
   }
   lines.push("");

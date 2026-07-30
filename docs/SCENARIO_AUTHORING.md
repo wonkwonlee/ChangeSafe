@@ -9,12 +9,26 @@ A good scenario **teaches one thing**. Before writing files, finish this
 sentence: *"This scenario shows that ..."*. If the answer duplicates an
 existing scenario, look at the coverage gaps below instead.
 
+## Domains
+
+This guide walks through the **network** domain — the richest example, and
+the one most contributors reach for. Terraform and Kubernetes scenarios
+follow the same three-file shape but with domain-specific input and
+proposal contracts; read an existing scenario under `scenarios/terraform/`
+or `scenarios/kubernetes/` as the reference rather than this guide's field
+tables, which are network-only. All three share `expectations.json` and the
+failure-mode taxonomy below unchanged.
+
 ## Anatomy
 
 ```text
-scenarios/<scenario-id>/
-  incident.json        the untrusted input: alerts, notes, topology, state
-  replay-fixture.json  one proposed change, with honest provenance
+scenarios/<domain>/<scenario-id>/
+  incident.json        the untrusted input (network: alerts/notes/topology;
+                        terraform: `terraform show -json` plan; kubernetes:
+                        an offline cluster snapshot)
+  replay-fixture.json  one proposed change, with honest provenance — absent
+                        for terraform, which derives its proposal from the
+                        plan itself instead of shipping a separate fixture
   expectations.json    what the gate must do — verified in CI
 ```
 
@@ -109,13 +123,18 @@ wrote it.
 }
 ```
 
-All seven policies must be declared — you cannot leave a verdict
-unconsidered. `riskLevel` and `approvable` are redundant on purpose: the
-schema checks them against the declared statuses (any BLOCK → `CRITICAL`
-and not approvable; ≥2 WARN → `HIGH`; 1 WARN → `MEDIUM`; else `LOW`), so an
-inconsistent file fails before the engine even runs. `simulation` is
-non-null exactly when the scenario is approvable. `affectedResources` is
-optional and asserts the exact resource set on a finding.
+Every policy the domain evaluates must be declared (seven for network) —
+you cannot leave a verdict unconsidered. `riskLevel` and `approvable` are
+redundant on purpose: the schema checks them against the declared statuses
+(any BLOCK → `CRITICAL` and not approvable; ≥2 WARN → `HIGH`; 1 WARN →
+`MEDIUM`; else `LOW`), so an inconsistent file fails before the engine even
+runs. For a simulated-state domain (network, kubernetes), `simulation` is
+non-null exactly when the scenario is approvable. An external-diff domain
+(terraform) never simulates — the plan already is the simulation — so its
+`simulation` is always `null`, even when approvable; the scenario harness,
+not this schema, enforces that direction since only it knows the domain
+shape. `affectedResources` is optional and asserts the exact resource set on
+a finding.
 
 ## 4. Verify
 

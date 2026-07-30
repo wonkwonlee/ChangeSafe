@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3187 — Relabel the payments Deployment",
+  "summary": "A labeling cleanup on the payments Deployment drifts its pod template away from the Service selector that routes to it."
+}

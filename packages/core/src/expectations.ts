@@ -104,13 +104,12 @@ export const ScenarioExpectationsSchema = z
         message: "only approvable scenarios reach simulation",
       });
     }
-    if (expectations.approvable && expectations.simulation === null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["simulation"],
-        message: "approvable scenarios must declare their simulation outcome",
-      });
-    }
+    // Whether an *approvable* scenario must declare a non-null simulation
+    // outcome depends on the domain shape: a simulated-state domain always
+    // simulates, but an external-diff domain (the plan already is the
+    // simulation) never does — see docs/OSS_ROADMAP.md §5. This schema has
+    // no domain context, so that direction is enforced by the harness
+    // instead, which does.
 
     const { adversarial, failureModes } = expectations.corpus;
 

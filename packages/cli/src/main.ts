@@ -264,7 +264,10 @@ export async function main(argv: string[], console: Console): Promise<number> {
         {
           provider: values.provider,
           model: values.model,
-          dir: values.dir ?? "scenarios",
+          // eval measures a model, and only the network domain has model
+          // analysis (see packages/ai/src/domains.ts) — terraform and
+          // kubernetes proposals are derived mechanically, not proposed.
+          dir: values.dir ?? "scenarios/network",
           runs,
           report: values.report,
           format,
@@ -342,7 +345,11 @@ export async function main(argv: string[], console: Console): Promise<number> {
       const sub = positionals[1];
       if (sub === "check") {
         return runScenarioCheck(
-          { dir: positionals[2] ?? values.dir ?? "scenarios", domain: values.domain, format },
+          {
+            dir: positionals[2] ?? values.dir ?? `scenarios/${values.domain}`,
+            domain: values.domain,
+            format,
+          },
           console,
         );
       }

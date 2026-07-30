@@ -1,6 +1,7 @@
 import { networkAnalysisPrompt, validateModelProposal } from "@changesafe/ai";
 import { DomainError } from "@changesafe/core";
 import type { ChangeProposal, FixtureProvenance } from "@changesafe/core";
+import type { IncidentBundle } from "@changesafe/domain-network";
 import { getScenario } from "@/scenarios";
 
 export interface ReplayAnalysis {
@@ -19,12 +20,16 @@ export interface ReplayAnalysis {
  */
 export function analyzeReplay(scenarioId: string): ReplayAnalysis {
   const scenario = getScenario(scenarioId);
-  if (!scenario) {
+  if (!scenario || scenario.domainId !== "network" || !scenario.fixture) {
     throw new DomainError("REQUEST_INVALID", `Unknown scenario "${scenarioId}".`);
   }
 
   const { fixture } = scenario;
-  const proposal = validateModelProposal(networkAnalysisPrompt, scenario.bundle, fixture.proposal);
+  const proposal = validateModelProposal(
+    networkAnalysisPrompt,
+    scenario.input as IncidentBundle,
+    fixture.proposal,
+  );
 
   return {
     proposal,

@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-k-capacity-scale-up",
+  "teaches": "A benign Terraform plan — an in-place instance-type bump plus a new alarm, nothing destroyed — clears every policy and stays approvable with a null simulation, proving the external-diff domain's approvable-without-simulation path.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "PASS",
+    "PROTECTED_RESOURCE": "PASS",
+    "REVERSIBILITY": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "LOW",
+  "approvable": true,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

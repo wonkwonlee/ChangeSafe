@@ -83,7 +83,11 @@ export async function runGate(options: GateOptions, console: Console): Promise<n
 
   if (options.scenario) {
     inputPath ??= path.join(options.scenario, "incident.json");
-    proposalPath ??= path.join(options.scenario, "replay-fixture.json");
+    // A domain that derives its proposal from the input (terraform) has no
+    // fixture file to default to — deriving it is the whole point.
+    if (!domain.derivesProposalFromInput) {
+      proposalPath ??= path.join(options.scenario, "replay-fixture.json");
+    }
     sourceId ??= path.basename(path.resolve(options.scenario));
   }
 

@@ -221,10 +221,16 @@ describe("ScenarioExpectationsSchema self-consistency", () => {
     ).toBe(false);
   });
 
-  it("requires an approvable scenario to declare its simulation outcome", () => {
+  it("allows an approvable scenario to declare a null simulation outcome", () => {
+    // Whether an approvable scenario must declare a non-null simulation
+    // depends on the domain shape: a simulated-state domain always
+    // simulates, an external-diff domain (the plan already is the
+    // simulation) never does. This schema has no domain context, so that
+    // direction is enforced by the scenario harness instead — see
+    // tests/integration/scenario-contracts.test.ts.
     expect(
       ScenarioExpectationsSchema.safeParse({ ...base, simulation: null }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("rejects malformed policy ids", () => {

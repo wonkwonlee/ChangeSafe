@@ -6,11 +6,14 @@ import {
   createScenarioReport,
   type ScenarioReport,
 } from "../src/eval";
-import { SCENARIOS } from "../../../scenarios";
+import { NETWORK_SCENARIOS } from "../../../scenarios";
 
 describe("eval report corpus semantics", () => {
   it("maps the validated corpus taxonomy independently from BLOCK expectations", () => {
-    const reports: ScenarioReport[] = SCENARIOS.map(({ expectations }) => {
+    // eval only ever measures the network domain — the AI layer proposes for
+    // network alone (see packages/ai/src/domains.ts); terraform and
+    // kubernetes proposals are derived mechanically, never model-authored.
+    const reports: ScenarioReport[] = NETWORK_SCENARIOS.map(({ expectations }) => {
       const report = createScenarioReport(expectations, 1);
       report.outcomes.accepted = 1;
       if (report.expectsBlock) report.blocked = 1;
