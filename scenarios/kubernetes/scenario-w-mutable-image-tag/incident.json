@@ -1,0 +1,38 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-storefront-recommendation-image",
+  "evidenceId": "ev-snapshot-storefront-recommendation-image",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-07-30T00:00:00.000Z",
+    "contextFingerprint": "context-storefront-recommendation-image",
+    "namespaces": ["storefront"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "recommendation",
+        "namespace": "storefront",
+        "labels": { "app": "recommendation" }
+      },
+      "spec": {
+        "replicas": 4,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": { "maxUnavailable": "25%" }
+        },
+        "template": {
+          "metadata": { "labels": { "app": "recommendation" } },
+          "spec": {
+            "containers": [
+              { "name": "recommendation", "image": "registry.example.internal/recommendation:2026.07.15" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

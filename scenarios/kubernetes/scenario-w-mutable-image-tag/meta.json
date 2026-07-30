@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3227 — Roll recommendation service to a floating tag during a capacity trim",
+  "summary": "A cost-saving replica reduction ships alongside a switch to a mutable image tag."
+}

@@ -1,0 +1,76 @@
+{
+  "fixtureId": "fix-w-mutable-image-tag",
+  "scenarioId": "scenario-w-mutable-image-tag",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored floating-tag rollout stacked with a partial replica reduction: the container image moves from a dated, immutable-looking tag to :latest, and replicas drop from 4 to 2 (not to zero). Each change trips its own independent WARN.",
+  "proposal": {
+    "proposalId": "float-recommendation-image-and-trim-replicas",
+    "summary": "Roll the recommendation Deployment to a floating :latest image tag while trimming replicas from 4 to 2 during a capacity review.",
+    "diagnosis": {
+      "likelyCause": "The recommendation service's pinned release tag is stale and the team wants automatic pickup of the newest build while also trimming capacity.",
+      "confidence": 0.6,
+      "evidenceIds": ["ev-res-49ac9212cbe80e8d"],
+      "assumptions": ["The upstream image registry always publishes a working image under the :latest tag.", "The reduced capacity window will hold long enough to justify 2 replicas."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-49ac9212cbe80e8d",
+        "value": {
+          "resourceId": "res-49ac9212cbe80e8d",
+          "evidenceId": "ev-res-49ac9212cbe80e8d",
+          "identity": { "namespace": "storefront", "name": "recommendation", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "recommendation" } },
+          "spec": {
+            "podLabels": { "app": "recommendation" },
+            "containers": [
+              { "name": "recommendation", "image": "registry.example.internal/recommendation:latest" }
+            ],
+            "replicas": 2,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Move the recommendation image to the floating :latest tag and trim replicas from 4 to 2 for the capacity review window.",
+        "evidenceIds": ["ev-res-49ac9212cbe80e8d"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-49ac9212cbe80e8d",
+        "value": {
+          "resourceId": "res-49ac9212cbe80e8d",
+          "evidenceId": "ev-res-49ac9212cbe80e8d",
+          "identity": { "namespace": "storefront", "name": "recommendation", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "recommendation" } },
+          "spec": {
+            "podLabels": { "app": "recommendation" },
+            "containers": [
+              { "name": "recommendation", "image": "registry.example.internal/recommendation:2026.07.15" }
+            ],
+            "replicas": 4,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pinned release tag and the pre-change replica count.",
+        "evidenceIds": ["ev-res-49ac9212cbe80e8d"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm the :latest tag in the registry currently resolves to a build that passed the recommendation service's release checks before rolling it out.", "evidenceIds": ["ev-res-49ac9212cbe80e8d"] },
+      { "kind": "postcheck", "description": "Confirm the remaining 2 replicas are ready and serving recommendation traffic without error-rate increase after the rollout.", "evidenceIds": ["ev-res-49ac9212cbe80e8d"] }
+    ]
+  }
+}

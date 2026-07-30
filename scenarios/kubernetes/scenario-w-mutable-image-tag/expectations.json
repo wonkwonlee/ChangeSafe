@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-w-mutable-image-tag",
+  "teaches": "Moving to a mutable :latest tag while also trimming replicas earns two independent warnings — image mutability and reduced availability — a second route to Kubernetes' HIGH path that never touches privilege or protection.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "WARN",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "WARN",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "HIGH",
+  "approvable": true,
+  "simulation": { "safetyPropertiesSatisfied": true },
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

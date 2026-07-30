@@ -37,6 +37,9 @@ import expectationsS from "./kubernetes/scenario-s-privileged-injection/expectat
 import snapshotV from "./kubernetes/scenario-v-protected-config-change/incident.json";
 import fixtureV from "./kubernetes/scenario-v-protected-config-change/replay-fixture.json";
 import expectationsV from "./kubernetes/scenario-v-protected-config-change/expectations.json";
+import snapshotW from "./kubernetes/scenario-w-mutable-image-tag/incident.json";
+import fixtureW from "./kubernetes/scenario-w-mutable-image-tag/replay-fixture.json";
+import expectationsW from "./kubernetes/scenario-w-mutable-image-tag/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -242,6 +245,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotV,
     fixtureV,
     expectationsV,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-w-mutable-image-tag",
+    "CHG-3227 — Roll recommendation service to a floating tag during a capacity trim",
+    "A cost-saving replica reduction ships alongside a switch to a mutable image tag.",
+    snapshotW,
+    fixtureW,
+    expectationsW,
   ),
 ];
 
