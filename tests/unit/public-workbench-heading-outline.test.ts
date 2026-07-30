@@ -1,6 +1,14 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// ReviewWorkbenchShell (network) reads the ?scenario deep-link via
+// next/navigation's client hooks, which throw outside a mounted Next.js
+// app router — as here, rendering straight to static markup.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => null,
+  useRouter: () => ({ replace: () => {} }),
+}));
 
 import { KubernetesWorkbenchShell } from "@/components/KubernetesWorkbenchShell";
 import { ReviewWorkbenchShell } from "@/components/ReviewWorkbenchShell";

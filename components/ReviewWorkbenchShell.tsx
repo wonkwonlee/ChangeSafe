@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { BoundedJsonBlock } from "@/components/BoundedEvidence";
+import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { TopologyView } from "@/components/TopologyView";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
@@ -166,7 +168,12 @@ export function ReviewWorkbenchShell({
     ...initialSource(),
     transport: publicReplayTransport,
   });
-  const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
+  const { initialScenarioId, setScenarioInUrl } = useScenarioDeepLink(
+    NETWORK_REVIEW_EXAMPLES.map((example) => example.sourceId),
+  );
+  const [selectedSourceId, setSelectedSourceId] = useState(
+    initialScenarioId ?? INITIAL_EXAMPLE.sourceId,
+  );
   const scenario = useMemo(() => scenarioFor(selectedSourceId), [selectedSourceId]);
   const selectedExample = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
@@ -183,9 +190,25 @@ export function ReviewWorkbenchShell({
         session: nextExample.session,
       });
       setSelectedSourceId(sourceId);
+      setScenarioInUrl(sourceId);
     },
-    [controller],
+    [controller, setScenarioInUrl],
   );
+
+  useEffect(() => {
+    if (initialScenarioId) {
+      // One-time sync from the URL's ?scenario= deep link into workflow
+      // state on mount, not a cascading re-render: initialScenarioId is
+      // frozen for the component's lifetime (see useScenarioDeepLink), so
+      // this effect fires at most once.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialScenarioId);
+    }
+    // Intentionally runs once on mount only — selectExample itself updates
+    // selectedSourceId and the URL, and re-running this on every
+    // selectExample identity change would fight the user's own clicks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
 
@@ -298,7 +321,10 @@ export function ReviewWorkbenchShell({
                   type="button"
                   aria-pressed={example.sourceId === selectedSourceId}
                 >
-                  <span className="block font-medium text-ink">{example.label}</span>
+                  <span className="block font-medium text-ink">
+                    {example.label}
+                    {example.caseStudy ? <CaseStudyBadge label={example.caseStudy} /> : null}
+                  </span>
                   <span className="mt-1 block text-xs">{example.description}</span>
                 </button>
               </li>
