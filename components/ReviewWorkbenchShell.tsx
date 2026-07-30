@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { TopologyView } from "@/components/TopologyView";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
@@ -270,7 +271,7 @@ export function ReviewWorkbenchShell({
             </button>
           </header>
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="input-title">
               <Label>Scenario input</Label><h3 id="input-title" className="mt-2 text-base font-semibold">{scenario.bundle.incidentId}</h3><JsonBlock value={scenario.bundle} />
             </section>
@@ -278,7 +279,7 @@ export function ReviewWorkbenchShell({
               <Label>Evidence</Label><h3 id="evidence-title" className="mt-2 text-base font-semibold">Untrusted incident data</h3>
               <ul className="mt-3 space-y-2 text-sm">{scenario.bundle.alerts.map((alert) => <li className="rounded border border-edge p-3" key={alert.evidenceId}><span className="font-mono text-xs">{alert.evidenceId}</span><p className="mt-1 text-ink-dim">{alert.message}</p></li>)}</ul>
             </section>
-            <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><JsonBlock value={scenario.bundle.topology} /></section>
+            <section className="min-w-0 rounded-lg border border-edge bg-raised p-4 lg:col-span-2" aria-labelledby="topology-title"><Label>Topology</Label><h3 id="topology-title" className="mt-2 text-base font-semibold">Bundled topology</h3><div className="mt-3 min-w-0 rounded border border-edge bg-canvas p-3"><TopologyView topology={scenario.bundle.topology} state={scenario.bundle.currentState} /></div></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="state-title"><Label>Current state</Label><h3 id="state-title" className="mt-2 text-base font-semibold">Read-only declarative model</h3><JsonBlock value={scenario.bundle.currentState} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h3 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h3><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h3 id="findings-title" className="mt-2 text-base font-semibold">Policy results</h3><FindingsPanel state={workflow} /></section>

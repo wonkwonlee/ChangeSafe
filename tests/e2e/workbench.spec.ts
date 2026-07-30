@@ -73,6 +73,44 @@ test("public workbench renders a safe replay result without granting its availab
   await expectNoDecisionOrExecutionControls(page);
 });
 
+test("network topology has a keyboard-operable equivalent table view", async ({ page }) => {
+  await page.goto("/workbench");
+
+  const redTeamExample = page.getByRole("button", { name: /INC-4977/ });
+  await redTeamExample.focus();
+  await expect(redTeamExample).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(redTeamExample).toBeFocused();
+  await expect(
+    page.getByRole("heading", { level: 1, name: /Suspected route leak/ }),
+  ).toBeVisible();
+
+  const topologyTables = page.locator("summary", {
+    hasText: "Accessible topology tables",
+  });
+  const nodes = page.getByRole("table", { name: "Network nodes" });
+  const links = page.getByRole("table", { name: "Network links" });
+  await expect(nodes).toBeVisible();
+  await expect(links).toBeVisible();
+
+  await topologyTables.focus();
+  await expect(topologyTables).toBeFocused();
+  await expect
+    .poll(() =>
+      topologyTables.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.outlineStyle} ${style.outlineWidth}`;
+      }),
+    )
+    .toBe("solid 2px");
+  await page.keyboard.press("Enter");
+  await expect(nodes).toBeHidden();
+  await expect(links).toBeHidden();
+  await page.keyboard.press("Enter");
+  await expect(nodes).toBeVisible();
+  await expect(links).toBeVisible();
+});
+
 test.describe("mobile workbench", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -84,5 +122,46 @@ test.describe("mobile workbench", () => {
     expect(mobileColumnCount).toBe(1);
     await expect(page.getByRole("button", { name: "Run replay" })).toBeVisible();
     await expectNoDecisionOrExecutionControls(page);
+  });
+});
+
+test.describe("network workbench accessibility preferences", () => {
+  test("reflows without document-level horizontal scrolling at a 200% equivalent viewport", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 640, height: 720 });
+    await page.goto("/workbench");
+
+    const hasDocumentOverflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
+    );
+    expect(hasDocumentOverflow).toBe(false);
+    await expect(
+      page.locator("summary", { hasText: "Accessible topology tables" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Run replay" })).toBeVisible();
+  });
+
+  test("honors reduced-motion preferences", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/workbench");
+
+    const motionDurations = await page
+      .getByRole("button", { name: "Run replay" })
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          animation: style.animationDuration,
+          transition: style.transitionDuration,
+        };
+      });
+    expect(Number.parseFloat(motionDurations.animation)).toBeLessThanOrEqual(
+      0.00001,
+    );
+    expect(Number.parseFloat(motionDurations.transition)).toBeLessThanOrEqual(
+      0.00001,
+    );
   });
 });

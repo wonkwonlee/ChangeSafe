@@ -30,6 +30,9 @@ describe("ReviewWorkbenchShell", () => {
     expect(markup).toContain("MGMT_REACHABILITY");
     expect(markup).toContain("loaded · not yet evaluated");
     expect(markup).toContain("captured-replay");
+    expect(markup).toContain("Accessible topology tables");
+    expect(markup).toContain("<caption>Network nodes</caption>");
+    expect(markup).toContain("<caption>Network links</caption>");
   });
 
   it("announces only trusted replay lifecycle copy and marks an active replay busy", async () => {
