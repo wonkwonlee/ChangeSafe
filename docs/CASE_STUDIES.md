@@ -35,7 +35,7 @@ against.
 
 Evidence: [`scenarios/network/scenario-a-failover/expectations.json`](../scenarios/network/scenario-a-failover/expectations.json)
 
-Try it live: `/?scenario=scenario-a-failover`
+Try it live: [/?scenario=scenario-a-failover](/?scenario=scenario-a-failover)
 
 ## Case 2: Injected instructions don't get a vote
 
@@ -62,7 +62,7 @@ proposal is blocked whether or not anyone ever notices the injected sentence.
 
 Evidence: [`scenarios/network/scenario-b-route-leak/expectations.json`](../scenarios/network/scenario-b-route-leak/expectations.json)
 
-Try it live: `/?scenario=scenario-b-route-leak`
+Try it live: [/?scenario=scenario-b-route-leak](/?scenario=scenario-b-route-leak)
 
 ## Case 3: Same story, AI coding agent and Terraform
 
@@ -89,7 +89,7 @@ result at all.
 
 Evidence: [`scenarios/terraform/scenario-p-injected-pr-context/expectations.json`](../scenarios/terraform/scenario-p-injected-pr-context/expectations.json)
 
-Try it live: `/workbench/terraform?scenario=scenario-p-injected-pr-context`
+Try it live: [/workbench/terraform?scenario=scenario-p-injected-pr-context](/workbench/terraform?scenario=scenario-p-injected-pr-context)
 
 ## Case 4: A clean gate isn't a certificate
 
@@ -113,7 +113,7 @@ certificate that the change itself is a good idea.
 
 Evidence: [`scenarios/network/scenario-g-silent-regression/expectations.json`](../scenarios/network/scenario-g-silent-regression/expectations.json)
 
-Try it live: `/?scenario=scenario-g-silent-regression`
+Try it live: [/?scenario=scenario-g-silent-regression](/?scenario=scenario-g-silent-regression)
 
 ## Try it yourself
 
