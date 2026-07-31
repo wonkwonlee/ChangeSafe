@@ -103,16 +103,17 @@ list still cannot approve a BLOCK.
 | `GET /ledger/verify` | bearer | Recompute the hash chain (409 if broken) |
 | `POST /reviews` | bearer | Queue a validated owner-scoped Network/Terraform intake |
 | `GET /reviews` | bearer | List the authenticated owner's pending reviews |
-| `GET /reviews/:id` | bearer | Read one owner-scoped pending review |
+| `GET /reviews/:id` | bearer | Read one owner-scoped pending review, plus findings/risk recomputed at response time |
 | `POST /reviews/:id/decisions` | bearer | Recompute and resolve a pending review |
 | `GET /reviews/:id/receipt-proof` | bearer | Report integrity, signature, OOB verification, and ledger claims independently |
 
 The `/reviews` family exists only when `createDecisionServer` receives a
-`DurableReviewStore`. It is absent otherwise. `changesafe serve` currently
-constructs the decision service and ledger but does **not** construct/pass the
-durable store, so that command is not yet a turnkey backend for the vNext
-review queue. Durable intake currently supports Network and Terraform;
-Kubernetes is rejected rather than silently downgraded.
+`DurableReviewStore`. It is absent otherwise. `changesafe serve` constructs
+one when invoked with `--reviews-db <file>`, which is what makes it a turnkey
+backend for the vNext review queue; without the flag, the durable store stays
+unconstructed and `/reviews` behaves as if it never existed. Durable intake
+currently supports Network and Terraform; Kubernetes is rejected rather than
+silently downgraded.
 
 The decision is appended to the ledger **before** the response is returned: a
 decision the caller was told about but the ledger never saw is exactly the gap
@@ -129,9 +130,11 @@ same door it is written through.
   is browser-visible and must contain no credential.
 - **No TLS.** Bind to localhost and terminate TLS at your proxy.
 - **No session or login flow.** Bring a token.
-- **No turnkey durable queue from `changesafe serve`.** Integrators must wire
-  `DurableReviewStore` into `createDecisionServer` and own the gateway,
-  cookie/origin/CSRF policy, and deployment lifecycle.
+- **No browser gateway/cookie handling from `changesafe serve` even with the
+  durable queue wired.** `--reviews-db` gets the `/reviews` API running;
+  integrators still own the gateway/BFF, cookie/origin/CSRF policy, and
+  deployment lifecycle that turn a browser session into the bearer token this
+  server expects.
 
 ## License
 

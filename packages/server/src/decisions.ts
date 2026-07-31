@@ -67,6 +67,16 @@ export interface DecisionServiceOptions {
   now?: () => string;
 }
 
+interface EvaluatedRequest {
+  domain: ReturnType<typeof resolveServerDomain>;
+  input: unknown;
+  inputId: string;
+  proposal: ChangeProposal;
+  policyVersion: string;
+  findings: PolicyFinding[];
+  riskLevel: RiskLevel;
+}
+
 interface PreparedDecision {
   request: DecisionRequest;
   input: unknown;
@@ -76,6 +86,22 @@ interface PreparedDecision {
   findings: PolicyFinding[];
   riskLevel: RiskLevel;
   simulation: SimulationResult | null;
+}
+
+/**
+ * What the deterministic gate says about a pending change, recomputed for a
+ * read.
+ *
+ * This is derived at response time and never stored on a durable record: the
+ * state machine and the policy set remain the authority, so a projection
+ * persisted beside the artifact could only go stale or be tampered with.
+ */
+export interface DecisionProjection {
+  readonly policyVersion: string;
+  readonly findings: readonly PolicyFinding[];
+  readonly riskLevel: RiskLevel;
+  /** False when a BLOCK finding makes approval impossible for anyone. */
+  readonly approvable: boolean;
 }
 
 /**
@@ -208,10 +234,33 @@ export class DecisionService {
     }
   }
 
-  #prepare(
-    request: DecisionRequest,
+  /**
+   * Recompute findings and risk for a pending change without deciding it.
+   *
+   * A human asked to approve or reject must be shown what the gate found, and
+   * showing them a value the client supplied would defeat the reason the
+   * decision moved server-side at all. This runs exactly the same evaluation
+   * the decision path runs, and writes nothing: no receipt, no ledger entry,
+   * no workflow transition.
+   */
+  project(
+    request: Omit<DecisionRequest, "decision">,
     expectedPolicyVersion?: string,
-  ): PreparedDecision {
+  ): DecisionProjection {
+    const evaluated = this.#evaluate(request, expectedPolicyVersion);
+    return Object.freeze({
+      policyVersion: evaluated.policyVersion,
+      findings: Object.freeze([...evaluated.findings]),
+      riskLevel: evaluated.riskLevel,
+      approvable: !hasBlockingFinding(evaluated.findings),
+    });
+  }
+
+  /** The shared recomputation behind both the read projection and a decision. */
+  #evaluate(
+    request: Omit<DecisionRequest, "decision">,
+    expectedPolicyVersion?: string,
+  ): EvaluatedRequest {
     const domain = resolveServerDomain(request.domain);
     if (
       expectedPolicyVersion &&
@@ -230,6 +279,24 @@ export class DecisionService {
 
     // Recomputed here. Nothing the caller sent about findings is consulted.
     const { findings, riskLevel } = evaluatePolicies(domain.adapter, input as never, proposal);
+
+    return {
+      domain,
+      input,
+      inputId,
+      proposal: proposal as ChangeProposal,
+      policyVersion: domain.adapter.policyVersion,
+      findings,
+      riskLevel,
+    };
+  }
+
+  #prepare(
+    request: DecisionRequest,
+    expectedPolicyVersion?: string,
+  ): PreparedDecision {
+    const { domain, input, inputId, proposal, policyVersion, findings, riskLevel } =
+      this.#evaluate(request, expectedPolicyVersion);
 
     let state: WorkflowState<unknown> = initialState(request.sourceId, input);
     state = transition(state, { type: "START_ANALYSIS", mode: "offline" });
@@ -280,8 +347,8 @@ export class DecisionService {
       request,
       input,
       inputId,
-      proposal: proposal as ChangeProposal,
-      policyVersion: domain.adapter.policyVersion,
+      proposal,
+      policyVersion,
       findings,
       riskLevel,
       simulation,

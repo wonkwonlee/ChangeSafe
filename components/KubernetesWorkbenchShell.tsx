@@ -13,9 +13,7 @@ import {
   BoundedJsonBlock,
   EvidencePager,
 } from "@/components/BoundedEvidence";
-import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import {
   MAX_VISIBLE_NESTED_ITEMS,
   searchAndPageOfflineCollection,
@@ -336,7 +334,6 @@ export function KubernetesWorkbenchShell({
   readonly coverageCatalog: LoadedDomainCoverageCatalog;
 }) {
   const controller = useReviewController<KubernetesSnapshot>({ ...initialSource(), transport: publicReplayTransport });
-  const { setScenarioInUrl } = useScenarioDeepLink();
   const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
   const fixture = useMemo(() => fixtureFor(selectedSourceId), [selectedSourceId]);
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
@@ -386,25 +383,7 @@ export function KubernetesWorkbenchShell({
     const nextExample = exampleFor(sourceId);
     controller.rebind({ sourceId: nextFixture.sourceId, input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, expectedInputId: nextFixture.inputId, session: nextExample.session });
     setSelectedSourceId(sourceId);
-    setScenarioInUrl(sourceId);
-  }, [controller, setScenarioInUrl]);
-
-  useEffect(() => {
-    // Reads the ?scenario= deep link from window.location (client-only, no
-    // next/navigation hook involved) and, if it names a valid example,
-    // syncs it into workflow state once on mount.
-    const initialScenarioId = readInitialScenarioId(
-      KUBERNETES_REVIEW_EXAMPLES.map((example) => example.sourceId),
-    );
-    if (initialScenarioId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      selectExample(initialScenarioId);
-    }
-    // Intentionally runs once on mount only — selectExample itself updates
-    // selectedSourceId and the URL, and re-running this on every
-    // selectExample identity change would fight the user's own clicks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [controller]);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
@@ -480,7 +459,7 @@ export function KubernetesWorkbenchShell({
         </div>
       </main>
       <aside aria-label="Kubernetes review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1"><Label>Airlock status</Label><section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Unavailable and not run. Kubernetes has an offline sandbox capability, but public replay is decision-free and this route provides no validated simulation result.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Cluster contact or apply</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never contacts this cluster or applies infrastructure changes.</p></section></aside>
-      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}{candidate.caseStudy ? <CaseStudyBadge label={candidate.caseStudy} /> : null}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
+      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
     </div>
   </div>;
 }

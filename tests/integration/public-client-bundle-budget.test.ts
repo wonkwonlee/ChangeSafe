@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   CLIENT_BUNDLE_MARKER_CONTRACTS,
+  DOMAIN_ISOLATED_PUBLIC_ROUTES,
   PUBLIC_WORKBENCH_BUDGET_BYTES,
   PUBLIC_WORKBENCH_ROUTES,
   inspectPublicClientSourceDependencies,
@@ -58,11 +59,20 @@ describe("public client bundle verifier", () => {
       "/",
       "/workbench/terraform",
       "/workbench/kubernetes",
+      "/workbench/self-hosted",
     ]);
     expect(PUBLIC_WORKBENCH_ROUTES[0]?.htmlPath).toBe("server/app/index.html");
+    // Every single-domain route proves its isolation claim. The self-hosted
+    // queue is cross-domain by design and declares no such claim rather than
+    // asserting one it does not hold.
     for (const route of PUBLIC_WORKBENCH_ROUTES) {
-      expect(route.forbiddenRuntimeMarkers.length).toBeGreaterThan(0);
+      expect(route.forbiddenRuntimeMarkers.length > 0).toBe(
+        DOMAIN_ISOLATED_PUBLIC_ROUTES.includes(route.route),
+      );
     }
+    expect(
+      PUBLIC_WORKBENCH_ROUTES.map(({ route }) => route),
+    ).toEqual(expect.arrayContaining([...DOMAIN_ISOLATED_PUBLIC_ROUTES]));
 
     const packageManifest = JSON.parse(readFileSync("package.json", "utf8"));
     expect(packageManifest.scripts["verify:client-bundles"]).toBe(
@@ -271,6 +281,78 @@ describe("public client bundle verifier", () => {
     ).toThrow(
       "public client bundle verification failed: server-only client content reached an emitted chunk",
     );
+  });
+
+  it.each([
+    ["source map", "static/chunks/app.js.map"],
+    ["build manifest", "static/chunks/build-manifest.json"],
+    ["ES module chunk", "static/chunks/lazy.mjs"],
+    ["stylesheet", "static/css/app.css"],
+  ])("rejects a credential canary embedded in an emitted %s", (_kind, relativePath) => {
+    const secret = "sk-ant-non-js-asset-must-not-print";
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(buildRoot, relativePath, `leaked:${secret}`);
+    writeRoute(buildRoot, "server/app/workbench.html", [
+      "/_next/static/chunks/initial.js",
+    ]);
+
+    let message = "";
+    try {
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+        secretCanaries: [{ label: "ANTHROPIC_API_KEY", value: secret }],
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe(
+      "public client bundle verification failed: a provider credential canary reached a client chunk",
+    );
+    expect(message).not.toContain(secret);
+  });
+
+  it("rejects a credential canary inlined into emitted route HTML", () => {
+    const secret = "sk-test-inlined-into-route-html";
+    const buildRoot = temporaryBuild();
+    writeBuildFile(buildRoot, "static/chunks/initial.js", "safe initial");
+    writeBuildFile(
+      buildRoot,
+      "server/app/workbench.html",
+      `<script src="/_next/static/chunks/initial.js"></script><script>self.__NEXT_DATA__={"key":"${secret}"}</script>`,
+    );
+
+    let message = "";
+    try {
+      inspectPublicClientBuild({
+        buildRoot,
+        budgetBytes: 10_000,
+        routes: [
+          {
+            route: "/workbench",
+            htmlPath: "server/app/workbench.html",
+            forbiddenRuntimeMarkers: [],
+          },
+        ],
+        secretCanaries: [{ label: "OPENAI_API_KEY", value: secret }],
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe(
+      "public client bundle verification failed: a provider credential canary reached a client chunk",
+    );
+    expect(message).not.toContain(secret);
   });
 
   it("rejects a credential canary from an unreferenced emitted chunk without echoing it", () => {

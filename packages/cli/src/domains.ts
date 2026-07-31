@@ -29,6 +29,7 @@ import { UsageError, parseOrThrow, readTextFile } from "./io";
  */
 export interface CliDomain {
   readonly id: string;
+  readonly domainShape: "simulated-state" | "external-diff";
   readonly adapter: DomainAdapter<never, never>;
   /** Parse and validate the analyzed input (a bundle, a plan, a snapshot). */
   parseInput(raw: unknown, context?: { kind: string; text: string }[]): {
@@ -59,6 +60,7 @@ function hasProposalKey(raw: unknown): raw is { proposal: unknown } {
 
 const network: CliDomain = {
   id: "network",
+  domainShape: "simulated-state",
   adapter: networkDomain as unknown as DomainAdapter<never, never>,
   inputDescription: "an incident bundle (scenarios/*/incident.json)",
 
@@ -85,6 +87,7 @@ const network: CliDomain = {
 
 const terraform: CliDomain = {
   id: "terraform",
+  domainShape: "external-diff",
   adapter: terraformDomain as unknown as DomainAdapter<never, never>,
   inputDescription: "terraform show -json output",
   derivesProposalFromInput: true,
@@ -109,6 +112,7 @@ const terraform: CliDomain = {
 
 const kubernetes: CliDomain = {
   id: "kubernetes",
+  domainShape: "simulated-state",
   adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
   inputDescription: "a changesafe-kubernetes-snapshot/v1 JSON file",
 

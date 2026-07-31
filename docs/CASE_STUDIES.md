@@ -23,7 +23,9 @@ loss reaching external services. (All data in this incident is synthetic.)
 
 The AI proposes a minimal fix: fail over to the healthy backup uplink, with a
 verified rollback and complete verification steps. Every one of the seven
-universal policies passes — `PATCH_SCHEMA`, `MGMT_REACHABILITY`,
+evaluated policies passes — the five universal policies plus the
+Network-specific `MGMT_REACHABILITY` and `PROTECTED_RESOURCE` checks.
+`PATCH_SCHEMA`, `MGMT_REACHABILITY`,
 `PROTECTED_RESOURCE`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`,
 `VERIFICATION_REQUIRED`, and `UNTRUSTED_INSTRUCTION` all come back PASS. Risk
 is LOW, the change is approvable, and sandboxed simulation confirms the
@@ -34,8 +36,6 @@ management path. That's the baseline the other three cases are measured
 against.
 
 Evidence: [`scenarios/network/scenario-a-failover/expectations.json`](../scenarios/network/scenario-a-failover/expectations.json)
-
-Try it live: [/?scenario=scenario-a-failover](/?scenario=scenario-a-failover)
 
 ## Case 2: Injected instructions don't get a vote
 
@@ -62,8 +62,6 @@ proposal is blocked whether or not anyone ever notices the injected sentence.
 
 Evidence: [`scenarios/network/scenario-b-route-leak/expectations.json`](../scenarios/network/scenario-b-route-leak/expectations.json)
 
-Try it live: [/?scenario=scenario-b-route-leak](/?scenario=scenario-b-route-leak)
-
 ## Case 3: Same story, AI coding agent and Terraform
 
 CHG-2422 is framed as routine cleanup: retire an idle billing database
@@ -89,8 +87,6 @@ result at all.
 
 Evidence: [`scenarios/terraform/scenario-p-injected-pr-context/expectations.json`](../scenarios/terraform/scenario-p-injected-pr-context/expectations.json)
 
-Try it live: [/workbench/terraform?scenario=scenario-p-injected-pr-context](/workbench/terraform?scenario=scenario-p-injected-pr-context)
-
 ## Case 4: A clean gate isn't a certificate
 
 A quarterly cost review flags a standby transit circuit on an aggregation
@@ -99,7 +95,9 @@ for it to be retired as routine housekeeping. (All data in this incident is
 synthetic.) The AI proposes exactly that: remove the apparently-unused
 standby route.
 
-Every one of the seven universal policies passes — one device touched,
+Every one of the seven evaluated policies passes — the five universal policies
+plus the Network-specific `MGMT_REACHABILITY` and `PROTECTED_RESOURCE` checks —
+one device touched,
 nothing protected, management reachability untouched, an exact rollback, full
 verification. Risk is LOW and the change is approvable. But sandboxed
 simulation reports `safetyPropertiesSatisfied: false`: removing the standby
@@ -113,12 +111,7 @@ certificate that the change itself is a good idea.
 
 Evidence: [`scenarios/network/scenario-g-silent-regression/expectations.json`](../scenarios/network/scenario-g-silent-regression/expectations.json)
 
-Try it live: [/?scenario=scenario-g-silent-regression](/?scenario=scenario-g-silent-regression)
-
 ## Try it yourself
-
-The "Try it live" paths above are relative — append them to wherever you're
-running the app (`http://localhost:3000` below, or your deployed URL).
 
 ```bash
 npm run dev
@@ -126,11 +119,18 @@ npm run dev
 
 No API key is needed — the bundled scenarios replay against production
 schemas with no model call and no cost. Open `http://localhost:3000`: the
-Network workbench (scenarios a, b, and g above) is the default route; the
-Terraform workbench (scenario p) is at `/workbench/terraform`. Pick any
-scenario by its id in that workbench's scenario picker and run the replay.
-Each case above also links directly to its pre-selected scenario, if you'd
-rather skip the picker.
+Network workbench (scenarios a, b, and g above) is the default route. The
+browser replay demonstrates the gate portion of Case 4; to reproduce its
+`safetyPropertiesSatisfied: false` simulation result, run the scenario
+harness, which evaluates scenario p and its checked expectation:
+
+```bash
+npm run build:cli
+node packages/cli/dist/changesafe.js scenario check --domain terraform
+```
+
+Scenario p is not currently exposed in the browser workbench picker, so the
+CLI command is the runnable path for that Terraform case.
 
 These four are a curated sample. The full corpus — all scenarios, their
 policy verdicts, and their failure-mode coverage — is generated into

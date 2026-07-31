@@ -149,6 +149,13 @@ function checkOne(dir: string, domain: ReturnType<typeof resolveDomain>): Scenar
     if (riskLevel !== expectations.riskLevel) {
       problems.push(`risk: expected ${expectations.riskLevel}, got ${riskLevel}`);
     }
+
+    if (expectations.approvable && domain.domainShape === "simulated-state" && expectations.simulation === null) {
+      problems.push("approvable simulated-state scenarios must declare a simulation outcome");
+    }
+    if (domain.domainShape === "external-diff" && expectations.simulation !== null) {
+      problems.push("external-diff scenarios must declare simulation: null");
+    }
   } catch (error) {
     problems.push(error instanceof Error ? error.message : "unexpected failure");
   }
