@@ -4,6 +4,7 @@ import {
   createReceipt,
   hashCanonical,
   IllegalTransitionError,
+  type Approver,
   type ChangeReceipt,
   type SimulationResult,
 } from "@changesafe/core";
@@ -22,7 +23,6 @@ import {
   receiveReviewTransport,
   recordReviewReceipt,
   rejectReview,
-  reviewCanSimulate,
   reviewControllerReducer,
   startReview,
   type ReviewControllerState,
@@ -235,6 +235,7 @@ function simulatedState() {
 
 async function buildBoundReceipt(
   state: ReviewControllerState<typeof input>,
+  approver: Approver | null = null,
 ): Promise<ChangeReceipt> {
   const { workflow } = state;
   if (
@@ -263,6 +264,7 @@ async function buildBoundReceipt(
     findings: workflow.findings,
     riskLevel: workflow.riskLevel,
     decision,
+    approver,
     simulation: workflow.phase === "SIMULATED" ? workflow.simulation : null,
     receiptId: `receipt-${decision}`,
     createdAtUtc: "2026-07-29T12:00:00Z",
@@ -344,7 +346,6 @@ describe("pure review controller", () => {
     );
 
     expect(state.workflow.phase).toBe("BLOCKED");
-    expect(reviewCanSimulate(state)).toBe(false);
   });
 
   it("retains a validated transport error and its replay metadata", () => {
@@ -545,7 +546,6 @@ describe("pure review controller", () => {
       completeReviewSimulation(simulation),
     );
     expect(state).toBe(reviewed);
-    expect(reviewCanSimulate(state)).toBe(false);
 
     await expect(
       recordReviewReceipt(
@@ -571,6 +571,81 @@ describe("pure review controller", () => {
     if (state.workflow.phase === "RECEIPT_ISSUED") {
       expect(state.workflow.receipt).toEqual(receipt);
     }
+  });
+
+  describe("authenticated approver binding", () => {
+    const sessionApprover: Approver = {
+      subject: "sub-self-hosted-approver",
+      issuer: "https://issuer.example.test",
+      email: "approver@example.test",
+    };
+
+    function blockedStateFor(approver: Approver | null) {
+      return reviewControllerReducer(
+        reviewControllerReducer(
+          initialReviewControllerState({
+            sourceId: "scenario-one",
+            input,
+            expectedInputId: input.incidentId,
+            session: networkSession,
+            approver,
+          }),
+          startReview(FIRST_ATTEMPT_ID),
+        ),
+        receiveReviewTransport(
+          FIRST_ATTEMPT_ID,
+          buildAnalysis(networkSession, "BLOCK", {
+            kind: "sandbox-simulation",
+          }),
+        ),
+      );
+    }
+
+    it("records a signed server receipt that names the session's approver", async () => {
+      const blocked = blockedStateFor(sessionApprover);
+      const receipt = await buildBoundReceipt(blocked, sessionApprover);
+      expect(receipt.approver).toEqual(sessionApprover);
+
+      const state = reviewControllerReducer(
+        blocked,
+        await recordReviewReceipt(blocked, receipt),
+      );
+
+      expect(state.workflow.phase).toBe("RECEIPT_ISSUED");
+    });
+
+    it.each([
+      [
+        "a different authenticated identity",
+        { ...sessionApprover, subject: "sub-somebody-else" },
+      ],
+      ["no approver at all", null],
+    ] as const)("refuses a receipt naming %s", async (_label, approver) => {
+      const blocked = blockedStateFor(sessionApprover);
+      const receipt = await buildBoundReceipt(blocked, approver);
+
+      const state = reviewControllerReducer(
+        blocked,
+        await recordReviewReceipt(blocked, receipt),
+      );
+
+      expect(state.workflow).toMatchObject({
+        phase: "ERROR",
+        userMessage: "Review receipt could not be verified safely.",
+      });
+    });
+
+    it("refuses an approver-bearing receipt when no identity was established", async () => {
+      const blocked = blockedStateFor(null);
+      const receipt = await buildBoundReceipt(blocked, sessionApprover);
+
+      const state = reviewControllerReducer(
+        blocked,
+        await recordReviewReceipt(blocked, receipt),
+      );
+
+      expect(state.workflow).toMatchObject({ phase: "ERROR" });
+    });
   });
 
   it.each([
@@ -880,10 +955,8 @@ describe("pure review controller", () => {
         }),
       ),
     );
-    expect(reviewCanSimulate(state)).toBe(false);
 
     state = reviewControllerReducer(state, approveReview());
-    expect(reviewCanSimulate(state)).toBe(true);
     state = reviewControllerReducer(
       state,
       completeReviewSimulation(simulation),
@@ -927,7 +1000,6 @@ describe("pure review controller", () => {
         }),
       ),
     );
-    expect(reviewCanSimulate(state)).toBe(false);
 
     state = reviewControllerReducer(state, approveReview());
     expect(state.workflow.phase).toBe("APPROVED");

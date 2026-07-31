@@ -80,7 +80,32 @@ analysis.
 Collectors are read-only ingestion surfaces. Unsupported sources and unknown
 future domains fail closed with an explicit contract error.
 
-## 5. Reuse the generic coverage fallback
+## 5. Add the route and edit every sibling shell's navigation
+
+Registry registration alone does not make a domain reachable. Cross-domain
+navigation is currently hardcoded in each workbench shell rather than derived
+from `DOMAIN_REGISTRY`, so onboarding a domain costs one new route plus one
+edit per existing sibling:
+
+1. add `app/workbench/<domainId>/page.tsx`, modeled on
+   `app/workbench/terraform/page.tsx` (the Network domain owns `app/page.tsx`);
+2. add the new link to the `Runtime navigation` block of **every** existing
+   shell — `components/ReviewWorkbenchShell.tsx`,
+   `components/TerraformWorkbenchShell.tsx`,
+   `components/KubernetesWorkbenchShell.tsx`, and
+   `components/SelfHostedReviewWorkbench.tsx` — and add the sibling links to
+   the new shell;
+3. extend the public client-bundle contract in
+   `scripts/verify-public-client-bundles.mjs`: a `PUBLIC_ROUTE_ENTRY_PATHS`
+   entry for the source scan, and a `PUBLIC_WORKBENCH_ROUTES` entry carrying
+   the emitted `htmlPath` and the foreign policy markers the route must not
+   contain.
+
+This is an accepted, deliberately visible cost: navigation is presentation,
+not authority, and the deterministic gate never branches on it. Record it
+here rather than in a shell so the checklist matches the code.
+
+## 6. Reuse the generic coverage fallback
 
 Render `components/DomainCoverageCatalog.tsx` with the registry metadata,
 loaded runtime catalog, current source provenance, and policy identifiers
@@ -95,7 +120,7 @@ The generic renderer deliberately distinguishes:
 
 Do not mark a policy evaluated merely because it exists in the ordered catalog.
 
-## 6. Required proof
+## 7. Required proof
 
 Before production registration, add:
 

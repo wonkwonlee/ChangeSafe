@@ -13,7 +13,7 @@ RECEIPT_PATH="$DEMO_DIR/replay-receipt.json"
 printf 'Running deterministic replay gate...\n\n'
 set +e
 node packages/cli/dist/changesafe.js gate \
-  --scenario scenarios/scenario-b-route-leak \
+  --scenario scenarios/network/scenario-b-route-leak \
   --receipt "$RECEIPT_PATH"
 GATE_RC=$?
 set -e

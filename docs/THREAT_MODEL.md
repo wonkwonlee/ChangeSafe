@@ -70,12 +70,10 @@ OIDC bearer token upstream. `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` is
 browser-visible and must contain no credential, query, or fragment. Cleartext
 HTTP is accepted only for explicit loopback development.
 
-The repository does not currently provide a turnkey BFF. In addition,
-`changesafe serve` does not instantiate `DurableReviewStore`, so its default
-server exposes the authenticated decision/ledger API but not the vNext durable
-queue endpoints. Operators integrating the queue must wire
-`createDecisionServer({ reviews })` explicitly and own TLS, cookie security,
-CSRF/origin policy, and BFF-to-server token handling.
+The repository does not currently provide a turnkey BFF. `changesafe serve`
+instantiates `DurableReviewStore` when `--reviews-db` is passed; without that
+flag the durable queue endpoints remain disabled. Operators still own TLS,
+cookie security, CSRF/origin policy, and BFF-to-server token handling.
 
 ## Known limitations
 

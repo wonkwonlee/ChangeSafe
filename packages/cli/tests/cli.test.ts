@@ -468,6 +468,34 @@ describe("changesafe scenario", () => {
     expect(await main(["scenario", "check", dir, "--format", "json"], check)).toBe(0);
   });
 
+  it("uses the selected domain directory when no init directory is supplied", async () => {
+    const dir = temporaryDir();
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir);
+    try {
+      await main(
+        ["scenario", "init", "scenario-domain-default", "--domain", "kubernetes"],
+        createCapture(),
+      );
+      expect(existsSync(path.join(dir, "scenarios", "kubernetes", "scenario-domain-default"))).toBe(true);
+      expect(existsSync(path.join(dir, "scenarios", "scenario-domain-default"))).toBe(false);
+    } finally {
+      cwd.mockRestore();
+    }
+  });
+
+  it("rejects an approvable simulated-state scenario without a simulation expectation", async () => {
+    const dir = temporaryDir();
+    await main(["scenario", "init", "scenario-missing-simulation", "--dir", dir], createCapture());
+    const expectationsPath = path.join(dir, "scenario-missing-simulation", "expectations.json");
+    const expectations = JSON.parse(readFileSync(expectationsPath, "utf8"));
+    expectations.simulation = null;
+    writeFileSync(expectationsPath, JSON.stringify(expectations));
+
+    const capture = createCapture();
+    expect(await main(["scenario", "check", dir, "--format", "json"], capture)).toBe(1);
+    expect(capture.stdout).toContain("must declare a simulation outcome");
+  });
+
   it("refuses a name that is not a valid scenario id", async () => {
     const dir = temporaryDir();
     await expect(

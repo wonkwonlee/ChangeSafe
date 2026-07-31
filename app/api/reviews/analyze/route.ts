@@ -93,15 +93,10 @@ export async function POST(request: Request): Promise<Response> {
     return registryError(resolution);
   }
 
-  const parsedRequest = ReviewAnalyzeRequestV1Schema.safeParse(body.value);
-  if (!parsedRequest.success) {
-    return requestInvalid(
-      400,
-      "Request must match the versioned review analysis contract.",
-    );
-  }
-
-  const { domainId, sourceId, analysisMode } = parsedRequest.data;
+  // `ReviewAnalyzeResolutionRequestSchema` extends the versioned request
+  // contract, so its parse result already satisfies it. Re-parsing would be
+  // validation that can never fail.
+  const { domainId, sourceId, analysisMode } = resolutionRequest.data;
   let replayResolution: PublicReplayResolution;
   try {
     replayResolution = await resolvePublicReplay(domainId, sourceId);
@@ -244,7 +239,7 @@ async function resolvePublicReplay(
       return { kind: "unsupported" };
     }
     return {
-      inputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
+      inputId: source.inputId,
       input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
       proposal: source.proposal,
       source: "authored-fixture",

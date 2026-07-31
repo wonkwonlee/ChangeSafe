@@ -1,11 +1,10 @@
 # ChangeSafe vNext Demo Script
 
-Target runtime: **2 minutes 30 seconds**. Record from a local checkout of the
-vNext branch at desktop width. The hosted Vercel deployment may still show the
-previous release and must not be used as cutover evidence until deployment is
-verified.
+Target runtime: **2 minutes 30 seconds**. Record at desktop width, either from
+the hosted deployment (https://change-safe.vercel.app/, verified to serve the
+vNext workbench per `docs/LAUNCH.md`) or from a local checkout.
 
-Preparation:
+Preparation for a local recording:
 
 ```bash
 npm install

@@ -309,9 +309,11 @@ and ephemeral: it evaluates but does not decide, simulate, or issue receipts.
   answering. A BLOCK is still unapprovable — by anyone, authenticated or not.
 - Postgres remains optional and unbuilt; SQLite covers the self-hoster.
 - vNext durable review primitives and owner-scoped endpoints are implemented,
-  but `changesafe serve` does not yet wire `DurableReviewStore`. The browser
-  queue additionally requires an operator-owned HTTPS gateway/BFF with an
-  HttpOnly session; this is an explicit integration gap, not a turnkey claim.
+  and `changesafe serve --reviews-db <file>` now wires `DurableReviewStore`
+  into the decision server, so the vNext queue is reachable from a plain CLI
+  deployment. The browser queue still requires an operator-owned HTTPS
+  gateway/BFF with an HttpOnly session — that piece remains an explicit
+  integration gap, not a turnkey claim.
 
 ### P7 — Benchmark + community (ongoing) — **first pass done**
 
