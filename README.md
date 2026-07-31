@@ -10,14 +10,12 @@
 
 **A deterministic airlock for AI-proposed infrastructure changes.**
 
-The vNext workbench is available from this branch locally at `/`. It presents
-the Network public replay by default, with Terraform at
-`/workbench/terraform`, Kubernetes at `/workbench/kubernetes`, and the
-optional self-hosted client at `/workbench/self-hosted`.
+**[↗ Try the live workbench](https://change-safe.vercel.app/)** — the Network
+public replay is the default view, with Terraform at `/workbench/terraform`,
+Kubernetes at `/workbench/kubernetes`, and the optional self-hosted client at
+`/workbench/self-hosted`.
 
-The hosted Vercel URL may still serve the previous release until this branch
-is deployed. Do not use the hosted UI as evidence that the vNext cutover is
-live.
+![The Network public replay workbench: evidence, topology, and policy coverage for a bundled incident, before any replay has run](docs/screenshots/workbench-network-home.png)
 
 **[↗ Read the portfolio case study](https://wonkwonlee.github.io/changesafe-portfolio/)** — an engineering overview of ChangeSafe's trust boundary, safety controls, and implementation evidence.
 
@@ -46,10 +44,12 @@ must survive deterministic policies and an explicit human decision. **The
 model's 91%-confident proposal buys it nothing** — confidence is displayed,
 never used. Safety never depends on the model resisting injection.
 
-In the vNext Network workbench, select `INC-4977 — Suspected route leak` and
-press **Run replay**. The proposal echoes an injected instruction, but the
+In the Network workbench, select `INC-4977 — Suspected route leak` and press
+**Run replay**. The proposal echoes an injected instruction, but the
 deterministic gate still produces CRITICAL/BLOCKED findings. The UI explicitly
 states that no decision or receipt was created.
+
+![The same incident after replay: MGMT_REACHABILITY and PROTECTED_RESOURCE both BLOCK, UNTRUSTED_INSTRUCTION flags the injected note as data, and risk reads CRITICAL / BLOCKED with no decision or receipt created](docs/screenshots/workbench-network-blocked.png)
 
 ## Quickstart (no API key needed)
 
@@ -163,6 +163,7 @@ browser — owns the gate result and decision record:
 ```bash
 changesafe keygen --out signing-key
 changesafe serve --db decisions.db \
+  --reviews-db reviews.db \
   --oidc-issuer https://your-idp.example.com \
   --oidc-audience changesafe \
   --approver-claim groups=sre \
@@ -185,10 +186,12 @@ OIDC bearer request expected by `@changesafe/server`. The URL is public
 configuration and must contain no credential. Cleartext HTTP is accepted only
 for explicit loopback development.
 
-The repository exposes durable review primitives and endpoints, but
-`changesafe serve` currently wires only the decision/ledger API; it does not
-construct `DurableReviewStore`, so it is not yet a turnkey backend for the
-vNext queue UI. See the server README for the exact integration boundary.
+`changesafe serve` wires `DurableReviewStore` when `--reviews-db` is passed,
+enabling `POST /reviews` and `POST /reviews/:id/decisions` — the queue the
+vNext self-hosted UI expects. Omitting the flag keeps the durable queue
+disabled, matching every deployment from before the flag existed. The
+gateway/BFF that turns a browser session into a bearer token is still an
+operator responsibility; see the server README for the exact boundary.
 
 Storage is `node:sqlite` and identity is verified with Web Crypto. See
 [@changesafe/server](packages/server/README.md) and

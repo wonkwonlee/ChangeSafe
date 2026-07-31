@@ -47,6 +47,28 @@ describe("vNext default-route cutover", () => {
     expect(source).toContain("ReviewAnalyzeRequestV1Schema");
   });
 
+  it("stops advertising an app-level live analysis capability in /api/status", async () => {
+    const { StatusResponseSchema } = await import("../../lib/domain/api");
+    const { GET } = await import("../../app/api/status/route");
+
+    expect(
+      StatusResponseSchema.safeParse({
+        appVersion: "0.0.0-test",
+        liveAvailable: true,
+      }).success,
+    ).toBe(false);
+
+    const body: unknown = await GET().json();
+    expect(StatusResponseSchema.parse(body)).toEqual({
+      appVersion: expect.any(String) as unknown as string,
+    });
+    expect(Object.keys(body as object)).toEqual(["appVersion"]);
+
+    const routeSource = readFileSync("app/api/status/route.ts", "utf8");
+    expect(routeSource).not.toContain("liveAvailable");
+    expect(routeSource).not.toContain("@/lib/ai/live");
+  });
+
   it("removes the retired legacy-local contract and lifecycle authority", () => {
     const contract = readFileSync("features/domains/review-contract.ts", "utf8");
     const controller = readFileSync("features/reviews/controller.ts", "utf8");

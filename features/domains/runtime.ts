@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   evaluatePolicies,
+  validateProposalEvidence,
   PolicyPackSchema,
   policyOrder,
   resolvePolicyPack,
@@ -304,5 +305,6 @@ function parseBoundary<
 ): { input: TInput; proposal: TProposal } {
   const input = config.inputSchema.parse(rawInput);
   const proposal = config.proposalSchema.parse(rawProposal);
+  validateProposalEvidence(config.adapter, input, proposal);
   return { input, proposal };
 }

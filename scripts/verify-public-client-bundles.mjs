@@ -59,6 +59,24 @@ export const PUBLIC_WORKBENCH_ROUTES = Object.freeze([
       "REVERSIBILITY",
     ]),
   }),
+  // The self-hosted queue is deliberately cross-domain: it lists reviews from
+  // every registered domain and names Kubernetes explicitly to refuse it, so
+  // every domain's policy identifiers legitimately reach this graph. Claiming
+  // a domain-isolation contract here would be a check that only ever passed
+  // by accident. What this route is held to is the shared byte budget and the
+  // server-only/credential sweep every emitted asset gets.
+  Object.freeze({
+    route: "/workbench/self-hosted",
+    htmlPath: "server/app/workbench/self-hosted.html",
+    forbiddenRuntimeMarkers: Object.freeze([]),
+  }),
+]);
+
+/** Routes that carry a single-domain isolation claim, and must prove it. */
+export const DOMAIN_ISOLATED_PUBLIC_ROUTES = Object.freeze([
+  "/",
+  "/workbench/terraform",
+  "/workbench/kubernetes",
 ]);
 
 const PUBLIC_ROUTE_ENTRY_PATHS = Object.freeze([
@@ -139,7 +157,23 @@ function resolveClientScript(buildRoot, realStaticRoot, source, route) {
   return realPath;
 }
 
-function emittedJavascriptFiles(realStaticRoot) {
+/**
+ * Every emitted extension a credential could survive in.
+ *
+ * A secret does not become safe by landing in a source map, a build manifest,
+ * or a stylesheet instead of a script — all of them are served to any browser
+ * that asks. Scanning only `.js` would have been a coverage claim the sweep
+ * did not actually make.
+ */
+const SCANNED_EMITTED_EXTENSIONS = Object.freeze([
+  ".js",
+  ".mjs",
+  ".json",
+  ".map",
+  ".css",
+]);
+
+function emittedScannableFiles(realStaticRoot) {
   const files = new Set();
   const visitedDirectories = new Set();
 
@@ -176,7 +210,14 @@ function emittedJavascriptFiles(realStaticRoot) {
         visit(realPath);
         continue;
       }
-      if (!stats.isFile() || !entry.name.endsWith(".js")) continue;
+      if (
+        !stats.isFile() ||
+        !SCANNED_EMITTED_EXTENSIONS.some((extension) =>
+          entry.name.endsWith(extension),
+        )
+      ) {
+        continue;
+      }
       if (!isStrictDescendant(realStaticRoot, realPath)) {
         throw failure("emitted client chunk escapes the static directory");
       }
@@ -188,13 +229,12 @@ function emittedJavascriptFiles(realStaticRoot) {
   return [...files].sort();
 }
 
-function assertNoServerOnlyClientContent(files, secretCanaries) {
+function assertNoServerOnlyClientContent(bodies, secretCanaries) {
   const serverOnlyMarkers = [
     ...CLIENT_BUNDLE_MARKER_CONTRACTS.promptMarkers,
     ...CLIENT_BUNDLE_MARKER_CONTRACTS.providerEndpointMarkers,
   ];
-  for (const filePath of files) {
-    const body = readFileSync(filePath, "utf8");
+  for (const body of bodies) {
     if (serverOnlyMarkers.some((marker) => body.includes(marker))) {
       throw failure("server-only client content reached an emitted chunk");
     }
@@ -434,6 +474,7 @@ export function inspectPublicClientBuild({
   }
 
   const initialFiles = new Set();
+  const routeHtmlBodies = [];
   const routeReports = routes.map((routeConfig) => {
     let html;
     try {
@@ -454,6 +495,7 @@ export function inspectPublicClientBuild({
       }
       throw failure(`${routeConfig.route} emitted HTML is unavailable`);
     }
+    routeHtmlBodies.push(html);
     const files = [
       ...new Set(
         initialClientScriptSources(html, routeConfig.route).map((source) =>
@@ -498,8 +540,16 @@ export function inspectPublicClientBuild({
   });
 
   const resolvedInitialFiles = [...initialFiles].sort();
-  const allEmittedFiles = emittedJavascriptFiles(realStaticRoot);
-  assertNoServerOnlyClientContent(allEmittedFiles, secretCanaries);
+  const allEmittedFiles = emittedScannableFiles(realStaticRoot);
+  // Emitted route HTML is swept alongside the static assets: inlined bootstrap
+  // payloads are shipped to the browser exactly like a chunk is.
+  assertNoServerOnlyClientContent(
+    [
+      ...allEmittedFiles.map((filePath) => readFileSync(filePath, "utf8")),
+      ...routeHtmlBodies,
+    ],
+    secretCanaries,
+  );
 
   return Object.freeze({
     budgetBytes,
@@ -536,7 +586,7 @@ function printReport(report) {
     );
   }
   process.stdout.write(
-    `Client security scan: ${report.scannedChunkCount} canonical emitted JavaScript chunks clean.\n`,
+    `Client security scan: ${report.scannedChunkCount} canonical emitted client assets clean.\n`,
   );
 }
 

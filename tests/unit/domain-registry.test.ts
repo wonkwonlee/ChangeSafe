@@ -328,6 +328,53 @@ describe("closed domain registry", () => {
     expect(adapterAccessed).toBe(false);
   });
 
+  it("rejects proposals with unknown evidence before evaluation or simulation", () => {
+    const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
+    type Input = z.infer<typeof InputSchema>;
+    const adapter: DomainAdapter<Input, Input> = {
+      domainId: "test-domain",
+      policyVersion: "test-v1",
+      stateOf: (input) => input,
+      applyOperations: (state) => ({ nextState: state, diff: [] }),
+      blastRadiusUnit: () => null,
+      untrustedTexts: () => [],
+      knownEvidenceIds: () => new Set(["ev-known"]),
+      policies: [
+        {
+          id: "TEST_POLICY",
+          evaluate: () => ({
+            policyId: "TEST_POLICY",
+            status: "PASS",
+            title: "Test policy",
+            explanation: "The validated test input is accepted.",
+            affectedResources: [],
+            remediation: null,
+          }),
+        },
+      ],
+    };
+    const runtime = defineSimulatedRuntime({
+      domainId: "test-domain",
+      contractVersion: REVIEW_CONTRACT_VERSION,
+      capabilities: presentationCapabilities,
+      inputSchema: InputSchema,
+      proposalSchema: ChangeProposalSchema,
+      adapter,
+      simulate: () => ({
+        status: "completed",
+        changedResourceIds: [],
+        diff: [],
+        safetyProperties: [],
+        summary: "No real infrastructure was contacted.",
+      }),
+    });
+    const forged = structuredClone(validProposal);
+    forged.diagnosis.evidenceIds = ["ev-ghost"];
+
+    expect(() => runtime.evaluate({ inputId: "valid-input" }, forged)).toThrow(/evidence/i);
+    expect(() => runtime.simulate({ inputId: "valid-input" }, forged)).toThrow(/evidence/i);
+  });
+
   it("rejects universal-policy skip declarations that could hide evaluated domain policies", () => {
     const InputSchema = z.strictObject({ inputId: z.literal("valid-input") });
     type Input = z.infer<typeof InputSchema>;
