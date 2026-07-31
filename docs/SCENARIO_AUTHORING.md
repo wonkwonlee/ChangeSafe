@@ -24,13 +24,23 @@ failure-mode taxonomy below unchanged.
 ```text
 scenarios/<domain>/<scenario-id>/
   incident.json        the untrusted input (network: alerts/notes/topology;
-                        terraform: `terraform show -json` plan; kubernetes:
-                        an offline cluster snapshot)
+                        terraform: `terraform show -json` plan, optionally
+                        with a top-level `context[]`; kubernetes: an offline
+                        cluster snapshot)
   replay-fixture.json  one proposed change, with honest provenance — absent
                         for terraform, which derives its proposal from the
                         plan itself instead of shipping a separate fixture
   expectations.json    what the gate must do — verified in CI
 ```
+
+A terraform `incident.json` may carry an optional top-level
+`"context": [{ "kind": "...", "text": "..." }]` array alongside the plan.
+Each entry is untrusted PR/commit text (e.g. `pull_request_description`)
+that `UNTRUSTED_INSTRUCTION` scans for injected instructions — the
+terraform-domain equivalent of the network domain's `operatorNotes[]`. Omit
+it entirely unless the scenario is a red-team/injection one; see
+`scenarios/terraform/scenario-p-injected-pr-context/incident.json` for a
+worked example.
 
 Then register it in `scenarios/index.ts` (a five-line entry). A directory
 that exists on disk but is not registered fails CI, so nothing is silently

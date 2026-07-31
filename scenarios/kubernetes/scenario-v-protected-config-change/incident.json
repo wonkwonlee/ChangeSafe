@@ -1,0 +1,37 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-storefront-pricing-engine-protected",
+  "evidenceId": "ev-snapshot-storefront-pricing-engine-protected",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-07-30T00:00:00.000Z",
+    "contextFingerprint": "context-storefront-pricing-engine-protected",
+    "namespaces": ["storefront"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "pricing-engine",
+        "namespace": "storefront",
+        "labels": { "app": "pricing-engine" },
+        "annotations": {
+          "changesafe.dev/protected": "true"
+        }
+      },
+      "spec": {
+        "replicas": 3,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": { "maxUnavailable": "25%" }
+        },
+        "template": {
+          "metadata": { "labels": { "app": "pricing-engine" } },
+          "spec": {}
+        }
+      }
+    }
+  ]
+}

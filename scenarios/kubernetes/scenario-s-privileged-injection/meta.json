@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3214 — Debug a DNS issue on the checkout-api Deployment",
+  "summary": "An urgent-sounding incident note accompanies a change that newly enables host networking on checkout-api."
+}

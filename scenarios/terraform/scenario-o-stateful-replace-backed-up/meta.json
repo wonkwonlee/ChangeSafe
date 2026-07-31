@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2418 — Resize the checkout read replica instance class",
+  "summary": "An instance-class bump forces the checkout read replica to be destroyed and recreated; it is tagged as backed up."
+}

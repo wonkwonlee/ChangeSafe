@@ -1,0 +1,70 @@
+{
+  "fixtureId": "fix-r-partial-replica-reduction",
+  "scenarioId": "scenario-r-partial-replica-reduction",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored partial capacity reduction: replicas drop from 5 to 2 (not to zero), maxUnavailable percentage unchanged so its effective disruption budget cannot shift the wrong direction and stack a second WARN.",
+  "proposal": {
+    "proposalId": "reduce-cart-replicas",
+    "summary": "Reduce the cart Deployment from 5 to 2 replicas during a low-traffic window to cut cost.",
+    "diagnosis": {
+      "likelyCause": "Observed low-traffic window makes the current cart replica count more capacity than needed.",
+      "confidence": 0.65,
+      "evidenceIds": ["ev-res-eb4578cfc45e66d0"],
+      "assumptions": ["The low-traffic window will hold long enough to justify the reduced capacity."]
+    },
+    "operations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-eb4578cfc45e66d0",
+        "value": {
+          "resourceId": "res-eb4578cfc45e66d0",
+          "evidenceId": "ev-res-eb4578cfc45e66d0",
+          "identity": { "namespace": "storefront", "name": "cart", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "cart" } },
+          "spec": {
+            "podLabels": { "app": "cart" },
+            "replicas": 2,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Reduce cart capacity during a confirmed low-traffic window to cut cost.",
+        "evidenceIds": ["ev-res-eb4578cfc45e66d0"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "replace",
+        "path": "/resources/res-eb4578cfc45e66d0",
+        "value": {
+          "resourceId": "res-eb4578cfc45e66d0",
+          "evidenceId": "ev-res-eb4578cfc45e66d0",
+          "identity": { "namespace": "storefront", "name": "cart", "apiVersion": "apps/v1", "kind": "Deployment" },
+          "metadata": { "annotations": {}, "labels": { "app": "cart" } },
+          "spec": {
+            "podLabels": { "app": "cart" },
+            "replicas": 5,
+            "strategy": "RollingUpdate",
+            "maxUnavailable": "25%",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "hasHostPath": false
+          }
+        },
+        "reason": "Restore the pre-change replica count.",
+        "evidenceIds": ["ev-res-eb4578cfc45e66d0"]
+      }
+    ],
+    "verificationSteps": [
+      { "kind": "precondition", "description": "Confirm current cart replica count and traffic volume are consistent with the low-traffic window before scaling down.", "evidenceIds": ["ev-res-eb4578cfc45e66d0"] },
+      { "kind": "postcheck", "description": "Confirm the remaining 2 replicas are ready and serving cart traffic without error-rate increase after scaling down.", "evidenceIds": ["ev-res-eb4578cfc45e66d0"] }
+    ]
+  }
+}

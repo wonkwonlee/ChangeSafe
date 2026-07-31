@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3208 — Reduce cart service replicas during a low-traffic window",
+  "summary": "A cost-driven capacity reduction cuts the cart Deployment from 5 to 2 replicas, not to zero."
+}

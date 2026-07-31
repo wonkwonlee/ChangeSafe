@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3201 — Scale up the product-catalog Deployment",
+  "summary": "A forecast traffic increase ahead of a promotion prompts a routine replica increase for the catalog service."
+}

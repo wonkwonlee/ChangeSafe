@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-n-stateless-replace",
+  "teaches": "A stateless compute replace (AMI update forcing recreation) earns exactly one DESTRUCTIVE_OP warning and nothing else — the Terraform MEDIUM path, where the loss is capacity, not data.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "WARN",
+    "PROTECTED_RESOURCE": "PASS",
+    "REVERSIBILITY": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "MEDIUM",
+  "approvable": true,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

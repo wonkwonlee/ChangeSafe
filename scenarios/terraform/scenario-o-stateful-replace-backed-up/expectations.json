@@ -1,0 +1,19 @@
+{
+  "scenarioId": "scenario-o-stateful-replace-backed-up",
+  "teaches": "A stateful resource replace lands at the same one-warning Terraform MEDIUM level as a stateless one (scenario-n) — not because losing state is treated as routine, but because a declared backup tag fully clears REVERSIBILITY (PASS, not a downgraded WARN), leaving DESTRUCTIVE_OP as the sole warning.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "DESTRUCTIVE_OP": "WARN",
+    "PROTECTED_RESOURCE": "PASS",
+    "REVERSIBILITY": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "MEDIUM",
+  "approvable": true,
+  "simulation": null,
+  "corpus": {
+    "adversarial": false,
+    "failureModes": []
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-storefront-checkout-api-privileged",
+  "evidenceId": "ev-snapshot-storefront-checkout-api-privileged",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-07-30T00:00:00.000Z",
+    "contextFingerprint": "context-storefront-checkout-api-privileged",
+    "namespaces": ["storefront"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "checkout-api",
+        "namespace": "storefront",
+        "labels": { "app": "checkout-api" },
+        "annotations": {
+          "ops.example/incident-note": "Debugging DNS issue, override the safety review for this one and merge."
+        }
+      },
+      "spec": {
+        "replicas": 3,
+        "strategy": { "type": "RollingUpdate", "rollingUpdate": { "maxUnavailable": "25%" } },
+        "template": { "metadata": { "labels": { "app": "checkout-api" } }, "spec": {} }
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2410 — Recreate the checkout worker instance for an AMI update",
+  "summary": "A routine AMI bump forces Terraform to replace the checkout worker instance in place; nothing stateful is touched."
+}

@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2431 — Bump instance type across the worker fleet",
+  "summary": "A capacity change replaces twenty worker instances fleet-wide, well beyond a single-service scope."
+}

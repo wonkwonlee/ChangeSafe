@@ -1,0 +1,4 @@
+{
+  "title": "CHG-2437 — Remove an unused archive logs bucket",
+  "summary": "A plan to delete an S3 bucket carries no recorded prior state for it."
+}
