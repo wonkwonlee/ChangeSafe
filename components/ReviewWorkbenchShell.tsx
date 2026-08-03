@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BoundedJsonBlock } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { RiskValue, StatusBadge } from "@/components/StatusTone";
 import { TopologyView } from "@/components/TopologyView";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
@@ -115,7 +116,7 @@ function FindingsPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
         <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-mono text-xs">{finding.policyId}</span>
-            <span className="eyebrow rounded border border-edge px-2 py-1">{finding.status}</span>
+            <StatusBadge status={finding.status} />
           </div>
           <p className="mt-2 font-medium text-ink">{finding.title}</p>
           <p className="mt-1 text-ink-dim">{finding.explanation}</p>
@@ -268,7 +269,7 @@ export function ReviewWorkbenchShell({
 
         <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1">
           <Label>Airlock status</Label>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Not run. Public replay cannot approve a proposal, so no sandbox simulation is requested.</p></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section>
@@ -282,7 +283,7 @@ export function ReviewWorkbenchShell({
             {NETWORK_REVIEW_EXAMPLES.map((example) => (
               <li key={example.sourceId}>
                 <button
-                  className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait"
+                  className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${example.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`}
                   disabled={workflow.phase === "ANALYZING"}
                   onClick={() => selectExample(example.sourceId)}
                   type="button"
