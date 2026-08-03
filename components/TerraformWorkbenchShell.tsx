@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 
 import { normalizePlan, type TerraformInput } from "@changesafe/domain-terraform";
 import type { WorkflowState } from "@changesafe/core";
@@ -11,6 +10,7 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
@@ -225,15 +225,7 @@ export function TerraformWorkbenchShell({
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <header className="border-b border-edge bg-surface">
-        <nav aria-label="Product navigation" className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
-          <Link className="mr-auto text-base font-bold tracking-tight text-ink" href="/">ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span></Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Home</Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Network</Link>
-          <span aria-current="page" className="inline-flex rounded-md border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Terraform</span>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/kubernetes">Kubernetes</Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/self-hosted">Authenticated self-hosted</Link>
-          <a className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="#sources">Sources</a>
-        </nav>
+        <WorkbenchNav active="terraform" showSources />
       </header>
 
       <section className="border-b border-edge bg-overlay" aria-labelledby="runtime-title">
