@@ -1,0 +1,7 @@
+[mcp_servers.workspace-mcp]
+command = "uvx"
+args = [
+    "workspace-mcp",
+    "--tool-tier",
+    "core",
+]
