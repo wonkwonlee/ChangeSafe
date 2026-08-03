@@ -5,6 +5,7 @@ interface PublicWorkbench {
   readonly mainName: string;
   readonly contextName: string;
   readonly authorityName: string;
+  readonly initialOutcomeName: string;
   readonly blockedExampleName: RegExp;
   readonly evidenceHeading: string;
   readonly tableName: string;
@@ -17,6 +18,7 @@ const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
     mainName: "Review canvas",
     contextName: "Review context",
     authorityName: "Review authority",
+    initialOutcomeName: "INC-4821 — Degraded primary uplink",
     blockedExampleName: /INC-4977/,
     evidenceHeading: "Untrusted incident data",
     tableName: "Network nodes",
@@ -27,6 +29,7 @@ const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
     mainName: "Terraform review canvas",
     contextName: "Terraform review context",
     authorityName: "Terraform review authority",
+    initialOutcomeName: "Safe scale-up",
     blockedExampleName: /Protected resource with injected PR text/,
     evidenceHeading: "Resources and actions",
     tableName: "Terraform resource changes",
@@ -37,6 +40,7 @@ const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
     mainName: "Kubernetes review canvas",
     contextName: "Kubernetes review context",
     authorityName: "Kubernetes review authority",
+    initialOutcomeName: "Safe web scale-up",
     blockedExampleName: /Service selector break/,
     evidenceHeading: "Current snapshot relationships",
     tableName: "Kubernetes Service selector relationships",
@@ -68,13 +72,14 @@ for (const workbench of PUBLIC_WORKBENCHES) {
       await page.goto(workbench.path);
 
       await expect(
-        page.getByRole("heading", { level: 1, name: "READY" }),
+        page.getByRole("heading", { level: 1, name: workbench.initialOutcomeName }),
       ).toHaveCount(1);
       await expect(
         page
           .getByRole("complementary", { name: workbench.contextName })
           .getByRole("heading", { level: 1 }),
       ).toHaveCount(0);
+      await expect(page.locator('[data-phase="READY"]')).toBeVisible();
     });
 
     test("keeps selection and replay controls keyboard operable with visible focus", async ({
@@ -93,10 +98,7 @@ for (const workbench of PUBLIC_WORKBENCHES) {
       const runReplay = page.getByRole("button", { name: "Run replay" });
       await expectVisibleKeyboardFocus(page, runReplay);
       await page.keyboard.press("Enter");
-      const outcome = page.getByRole("heading", {
-        level: 1,
-        name: "BLOCKED",
-      });
+      const outcome = page.locator('[data-phase="BLOCKED"]');
       await expect(outcome).toBeVisible();
       await expect(outcome).toBeFocused();
     });
@@ -157,12 +159,10 @@ for (const workbench of PUBLIC_WORKBENCHES) {
         .getByRole("button", { name: workbench.blockedExampleName })
         .click();
       await page.getByRole("button", { name: "Run replay" }).click();
-      await expect(
-        page.getByRole("heading", { level: 1, name: "BLOCKED" }),
-      ).toBeVisible();
+      await expect(page.locator('[data-phase="BLOCKED"]')).toBeVisible();
 
       const orderedRegions = [
-        page.getByRole("heading", { level: 1, name: "BLOCKED" }),
+        page.getByRole("heading", { level: 1 }),
         page.getByRole("heading", {
           level: 2,
           name:
@@ -240,7 +240,7 @@ test("keeps a schema-valid 10-change Terraform plan searchable while bounding re
 
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "APPROVAL_REQUIRED" }),
+    page.locator('[data-phase="APPROVAL_REQUIRED"]'),
   ).toBeVisible();
   await expect(
     page.getByText(/Previewing 12,000 of .* characters\./),
@@ -299,9 +299,7 @@ test("keeps large Kubernetes inventory, nested selector matches, and proposal op
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "BLOCKED" }),
-  ).toBeVisible();
+  await expect(page.locator('[data-phase="BLOCKED"]')).toBeVisible();
   await expect(
     page.getByText(/Previewing 12,000 of .* characters\./),
   ).toBeVisible();

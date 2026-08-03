@@ -10,7 +10,7 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { RiskValue, StatusBadge } from "@/components/StatusTone";
+import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
@@ -187,7 +187,7 @@ export function TerraformWorkbenchShell({
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const input = useMemo(() => inputFor(fixture), [fixture]);
   const workflow = controller.state.workflow;
-  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const [changeQuery, setChangeQuery] = useState("");
   const [changePageIndex, setChangePageIndex] = useState(0);
   const changePage = useMemo(
@@ -246,7 +246,7 @@ export function TerraformWorkbenchShell({
       <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
         <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
-            <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
+            <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold">{example.label}</h1><PhasePill phase={workflow.phase} ref={outcomeHeadingRef} /><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
             <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
           </header>
 

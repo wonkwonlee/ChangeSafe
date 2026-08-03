@@ -13,7 +13,7 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { RiskValue, StatusBadge } from "@/components/StatusTone";
+import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import {
   MAX_VISIBLE_NESTED_ITEMS,
@@ -376,7 +376,7 @@ export function KubernetesWorkbenchShell({
     () => relationPage.items.map(resolveRelationship),
     [relationPage.items, resolveRelationship],
   );
-  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
 
   const selectExample = useCallback((sourceId: string) => {
@@ -400,7 +400,8 @@ export function KubernetesWorkbenchShell({
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
           <div>
             <Label>Offline replay evaluation</Label>
-            <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
+            <h1 className="mt-2 text-xl font-semibold">{example.label}</h1>
+            <PhasePill phase={workflow.phase} ref={outcomeHeadingRef} />
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
             <p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p>
           </div>

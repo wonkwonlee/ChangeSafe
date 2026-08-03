@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BoundedJsonBlock } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { RiskValue, StatusBadge } from "@/components/StatusTone";
+import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { TopologyView } from "@/components/TopologyView";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
@@ -171,7 +171,7 @@ export function ReviewWorkbenchShell({
   const scenario = useMemo(() => scenarioFor(selectedSourceId), [selectedSourceId]);
   const selectedExample = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
-  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
 
   const selectExample = useCallback(
     (sourceId: string) => {
@@ -224,7 +224,8 @@ export function ReviewWorkbenchShell({
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
-              <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
+              <h1 className="mt-2 text-xl font-semibold">{selectedExample.label}</h1>
+              <PhasePill phase={workflow.phase} ref={outcomeHeadingRef} />
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
               <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
                 <ReplayStatus state={workflow} />
