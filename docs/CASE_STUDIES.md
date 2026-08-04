@@ -35,7 +35,7 @@ competing with a schema violation, an unverifiable rollback, or a severed
 management path. That's the baseline the other three cases are measured
 against.
 
-Evidence: [`scenarios/network/scenario-a-failover/expectations.json`](../scenarios/network/scenario-a-failover/expectations.json)
+Evidence: [`scenarios/network/scenario-a-failover/expectations.json`](../scenarios/network/scenario-a-failover/expectations.json) · [see it live](https://change-safe.vercel.app/?scenario=scenario-a-failover)
 
 ## Case 2: Injected instructions don't get a vote
 
@@ -60,7 +60,7 @@ would this route's removal cut off reachability to a protected device — not
 from the gate reading the injected text and deciding to be suspicious. The
 proposal is blocked whether or not anyone ever notices the injected sentence.
 
-Evidence: [`scenarios/network/scenario-b-route-leak/expectations.json`](../scenarios/network/scenario-b-route-leak/expectations.json)
+Evidence: [`scenarios/network/scenario-b-route-leak/expectations.json`](../scenarios/network/scenario-b-route-leak/expectations.json) · [see it live](https://change-safe.vercel.app/?scenario=scenario-b-route-leak)
 
 ## Case 3: Same story, AI coding agent and Terraform
 
@@ -85,7 +85,7 @@ blocked before reaching it, but it would read `null` even for an approvable
 Terraform change, since Terraform scenarios never populate a simulation
 result at all.
 
-Evidence: [`scenarios/terraform/scenario-p-injected-pr-context/expectations.json`](../scenarios/terraform/scenario-p-injected-pr-context/expectations.json)
+Evidence: [`scenarios/terraform/scenario-p-injected-pr-context/expectations.json`](../scenarios/terraform/scenario-p-injected-pr-context/expectations.json) · [see it live](https://change-safe.vercel.app/workbench/terraform?scenario=scenario-p-injected-pr-context)
 
 ## Case 4: A clean gate isn't a certificate
 
@@ -109,7 +109,7 @@ the other asks "does the resulting state still satisfy what we declared must
 stay true." A clean gate is an input to a human's decision, never a
 certificate that the change itself is a good idea.
 
-Evidence: [`scenarios/network/scenario-g-silent-regression/expectations.json`](../scenarios/network/scenario-g-silent-regression/expectations.json)
+Evidence: [`scenarios/network/scenario-g-silent-regression/expectations.json`](../scenarios/network/scenario-g-silent-regression/expectations.json) · [see it live](https://change-safe.vercel.app/?scenario=scenario-g-silent-regression)
 
 ## Try it yourself
 
