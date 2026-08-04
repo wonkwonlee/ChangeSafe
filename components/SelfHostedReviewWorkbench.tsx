@@ -8,10 +8,9 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
-
 import { SelfHostedReviewDetail } from "./SelfHostedReviewDetail";
 import { SelfHostedReviewQueue } from "./SelfHostedReviewQueue";
+import { WorkbenchNav } from "./WorkbenchNav";
 import {
   SELF_HOSTED_REVIEW_EXAMPLES,
   createSelfHostedIntake,
@@ -270,11 +269,7 @@ export function SelfHostedReviewWorkbench({
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <header className="border-b border-edge bg-surface">
-        <nav aria-label="Runtime navigation" className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-2 px-4 py-3 sm:px-6">
-          <Link className="mr-auto font-bold" href="/">ChangeSafe</Link>
-          <Link className="rounded px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Public replay</Link>
-          <span aria-current="page" className="rounded border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Authenticated self-hosted</span>
-        </nav>
+        <WorkbenchNav active="self-hosted" />
       </header>
 
       <section className="border-b border-edge bg-overlay">

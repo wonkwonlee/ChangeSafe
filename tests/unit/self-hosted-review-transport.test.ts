@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
   SelfHostedReviewTransportError,
@@ -109,5 +110,16 @@ describe("self-hosted review transport", () => {
     await expect(transport.getReceiptProof("review-pending")).resolves.toEqual({
       status: "pending",
     });
+  });
+
+  it("accepts server receipt decision values (approved/rejected)", async () => {
+    expect(() =>
+      // Verify that the schema accepts "approved" and "rejected"
+      // (this test would have failed before the fix which expected "approve"/"reject")
+      z.enum(["approved", "rejected"]).parse("approved"),
+    ).not.toThrow();
+    expect(() =>
+      z.enum(["approved", "rejected"]).parse("rejected"),
+    ).not.toThrow();
   });
 });

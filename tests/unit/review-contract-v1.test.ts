@@ -120,6 +120,7 @@ describe("v1 review registry and analysis contracts", () => {
         sourceId: "scenario-one",
         label: "Network failover",
         description: "A fictional replay for deterministic review.",
+        caseStudy: null,
         session: networkSession,
       }),
     ).toMatchObject({ domainId: "network", sourceId: "scenario-one" });
@@ -140,6 +141,7 @@ describe("v1 review registry and analysis contracts", () => {
         sourceId: "scenario-one",
         label: "Future domain",
         description: "Must not masquerade as a registered network example.",
+        caseStudy: null,
         session: networkSession,
       }).success,
     ).toBe(false);

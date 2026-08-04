@@ -239,7 +239,7 @@ async function resolvePublicReplay(
       return { kind: "unsupported" };
     }
     return {
-      inputId: source.inputId,
+      inputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
       input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
       proposal: source.proposal,
       source: "authored-fixture",

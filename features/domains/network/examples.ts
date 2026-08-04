@@ -27,6 +27,13 @@ const publicReplayCapabilities = composeSessionCapabilities(
   defineTransportCapabilitySource({ durableDecision: false }),
 );
 
+/** Scenario ids featured in `docs/CASE_STUDIES.md`, mapped to that doc's case heading. */
+const NETWORK_CASE_STUDIES: Readonly<Record<string, string>> = Object.freeze({
+  "scenario-a-failover": "Case 1: The gate lets a good change through",
+  "scenario-b-route-leak": "Case 2: Injected instructions don't get a vote",
+  "scenario-g-silent-regression": "Case 4: A clean gate isn't a certificate",
+});
+
 export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
   Object.freeze(
     NETWORK_SCENARIOS.map((scenario) => {
@@ -37,6 +44,7 @@ export const NETWORK_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         sourceId: scenario.scenarioId,
         label: scenario.label,
         description: scenario.shortDescription,
+        caseStudy: NETWORK_CASE_STUDIES[scenario.scenarioId] ?? null,
         session: {
           domainId: networkMetadata.domainId,
           contractVersion: networkMetadata.contractVersion,

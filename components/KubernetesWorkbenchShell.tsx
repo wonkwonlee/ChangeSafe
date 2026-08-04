@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 
 import type {
   KubernetesChangeProposal,
@@ -14,6 +13,9 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
+import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
+import { WorkbenchNav } from "@/components/WorkbenchNav";
 import {
   MAX_VISIBLE_NESTED_ITEMS,
   searchAndPageOfflineCollection,
@@ -221,7 +223,7 @@ function FindingsPanel({ state }: { state: WorkflowState<KubernetesSnapshot> }) 
   if (!hasFindings(state)) return <p className="mt-3 text-sm text-ink-dim">Policy evidence appears only after replay evaluation.</p>;
   return <ul className="mt-3 space-y-2" aria-label="Evaluated Kubernetes policy findings">{state.findings.map((finding) => (
     <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
-      <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-mono text-xs">{finding.policyId}</span><span className="eyebrow rounded border border-edge px-2 py-1">{finding.status}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-mono text-xs">{finding.policyId}</span><StatusBadge status={finding.status} /></div>
       <p className="mt-2 font-medium text-ink">{finding.title}</p><p className="mt-1 text-ink-dim">{finding.explanation}</p>
       {finding.affectedResources.length > 0 ? <p className="mt-2 text-xs text-ink-faint">Affected: {finding.affectedResources.join(", ")}</p> : null}
     </li>
@@ -318,7 +320,7 @@ function ProposedDiff({ proposal }: { proposal: KubernetesChangeProposal }) {
       <p className="mt-2 text-sm font-medium">{resourceName(operation.value)}</p>
       <p className="mt-1 text-sm text-ink-dim">{operation.reason}</p>
       <p className="mt-2 text-xs text-ink-faint">Evidence: {operation.evidenceIds.join(", ")}</p>
-      <details className="mt-3"><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest</summary><div className="grid gap-3 lg:grid-cols-2"><div><p className="mt-3 text-xs text-ink-faint">Current</p><BoundedJsonBlock label={`${operation.path} current manifest JSON`} value={before ?? "No current resource (add)"} /></div><div><p className="mt-3 text-xs text-ink-faint">Proposed</p><BoundedJsonBlock label={`${operation.path} proposed manifest JSON`} value={operation.value} /></div></div></details>
+      <details className="mt-3"><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest</summary><div className="grid gap-3 lg:grid-cols-2"><div className="min-w-0"><p className="mt-3 text-xs text-ink-faint">Current</p><BoundedJsonBlock label={`${operation.path} current manifest JSON`} value={before ?? "No current resource (add)"} /></div><div className="min-w-0"><p className="mt-3 text-xs text-ink-faint">Proposed</p><BoundedJsonBlock label={`${operation.path} proposed manifest JSON`} value={operation.value} /></div></div></details>
     </article>;
   })}</div>;
 }
@@ -375,15 +377,29 @@ export function KubernetesWorkbenchShell({
     () => relationPage.items.map(resolveRelationship),
     [relationPage.items, resolveRelationship],
   );
-  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+  const { setScenarioInUrl } = useScenarioDeepLink();
 
   const selectExample = useCallback((sourceId: string) => {
     const nextFixture = fixtureFor(sourceId);
     const nextExample = exampleFor(sourceId);
     controller.rebind({ sourceId: nextFixture.sourceId, input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, expectedInputId: nextFixture.inputId, session: nextExample.session });
     setSelectedSourceId(sourceId);
-  }, [controller]);
+    setScenarioInUrl(sourceId);
+  }, [controller, setScenarioInUrl]);
+
+  useEffect(() => {
+    const initialId = readInitialScenarioId(KUBERNETES_REVIEW_EXAMPLES.map((example) => example.sourceId));
+    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+      // Deep-link resolution: sync initial selection from the URL, once on
+      // mount only. window.location is unavailable during SSR, so this can't
+      // move into the useState initializer without a hydration mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
@@ -392,20 +408,21 @@ export function KubernetesWorkbenchShell({
   }, [workflow]);
 
   return <div className="min-h-screen bg-canvas text-ink">
-    <header className="border-b border-edge bg-surface"><nav aria-label="Product navigation" className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6"><Link className="mr-auto text-base font-bold tracking-tight text-ink" href="/">ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span></Link><Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Home</Link><Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Network</Link><Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/terraform">Terraform</Link><span aria-current="page" className="inline-flex rounded-md border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Kubernetes</span><Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/self-hosted">Authenticated self-hosted</Link><a className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="#sources">Sources</a></nav></header>
+    <header className="border-b border-edge bg-surface"><WorkbenchNav active="kubernetes" showSources /></header>
     <section className="border-b border-edge bg-overlay" aria-labelledby="runtime-title"><div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]"><div><p id="runtime-title" className="eyebrow text-ai">Public replay · Kubernetes offline sandbox</p><p className="mt-1 max-w-3xl text-sm leading-relaxed text-ink-dim">Inspect a schema-validated bundled Kubernetes snapshot and proposed manifest through the deterministic gate. No cluster is contacted, no manifest is applied, and this ephemeral surface cannot make or store a decision.</p></div><div role="group" aria-labelledby="runtime-variants-title" className="rounded-lg border border-edge bg-surface p-3"><p id="runtime-variants-title" className="eyebrow text-ink-faint">Runtime variant</p><p className="mt-2 rounded border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Examples / public replay · available</p><p className="mt-2 text-xs text-warn">Offline snapshot · no cluster contact · no durable review record</p></div></div></section>
     <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
       <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Kubernetes review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
           <div>
             <Label>Offline replay evaluation</Label>
-            <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
+            <h1 className="mt-2 text-xl font-semibold">{example.label}</h1>
+            <PhasePill phase={workflow.phase} ref={outcomeHeadingRef} />
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
             <p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p>
           </div>
           <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
         </header>
-        <div className="mt-5 grid gap-4">
+        <div className="mt-5 grid min-w-0 grid-cols-1 gap-4">
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Image, security, selector, and protected-resource evidence</h2><FindingsPanel state={workflow} /></section>
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="inventory-title">
@@ -458,8 +475,8 @@ export function KubernetesWorkbenchShell({
           </div>
         </div>
       </main>
-      <aside aria-label="Kubernetes review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1"><Label>Airlock status</Label><section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Unavailable and not run. Kubernetes has an offline sandbox capability, but public replay is decision-free and this route provides no validated simulation result.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Cluster contact or apply</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never contacts this cluster or applies infrastructure changes.</p></section></aside>
-      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait" disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
+      <aside aria-label="Kubernetes review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1"><Label>Airlock status</Label><section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Unavailable and not run. Kubernetes has an offline sandbox capability, but public replay is decision-free and this route provides no validated simulation result.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Cluster contact or apply</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never contacts this cluster or applies infrastructure changes.</p></section></aside>
+      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${candidate.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`} disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
     </div>
   </div>;
 }

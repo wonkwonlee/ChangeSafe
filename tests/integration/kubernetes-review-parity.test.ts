@@ -116,7 +116,7 @@ describe("Kubernetes public replay parity", () => {
       let state = initialReviewControllerState<KubernetesSnapshot>({
         sourceId: fixture.sourceId,
         input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-        expectedInputId: fixture.inputId,
+        expectedInputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
         session: example.session,
       });
       const attemptId = `attempt-kubernetes-parity-${fixture.sourceId}`;

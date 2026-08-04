@@ -13,8 +13,8 @@ describe("/workbench/self-hosted route", () => {
     delete process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL;
     try {
       const markup = renderToStaticMarkup(createElement(SelfHostedWorkbenchPage));
-      expect(markup).toContain('aria-label="Runtime navigation"');
-      expect(markup).toContain("Public replay");
+      expect(markup).toContain('aria-label="Product navigation"');
+      expect(markup).toContain("Network");
       expect(markup).toContain('href="/"');
       expect(markup).not.toContain('href="/workbench"');
       expect(markup).toContain("Authenticated self-hosted");

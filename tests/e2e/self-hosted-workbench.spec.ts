@@ -15,8 +15,8 @@ test("self-hosted workbench is a separate safe mode when no gateway is configure
   await expect(page).toHaveTitle(
     "ChangeSafe Workbench — Authenticated Self-Hosted",
   );
-  await expect(page.getByRole("navigation", { name: "Runtime navigation" })).toContainText(
-    "Public replay",
+  await expect(page.getByRole("navigation", { name: "Product navigation" })).toContainText(
+    "Network",
   );
   await expect(page.getByRole("main", { name: "Authenticated review detail" })).toBeVisible();
   await expect(page.getByText("Self-hosted review is not configured")).toBeVisible();

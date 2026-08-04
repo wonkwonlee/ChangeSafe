@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 
 import { BoundedJsonBlock } from "@/components/BoundedEvidence";
+import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
+import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { TopologyView } from "@/components/TopologyView";
+import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
@@ -115,7 +118,7 @@ function FindingsPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
         <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-mono text-xs">{finding.policyId}</span>
-            <span className="eyebrow rounded border border-edge px-2 py-1">{finding.status}</span>
+            <StatusBadge status={finding.status} />
           </div>
           <p className="mt-2 font-medium text-ink">{finding.title}</p>
           <p className="mt-1 text-ink-dim">{finding.explanation}</p>
@@ -170,7 +173,8 @@ export function ReviewWorkbenchShell({
   const scenario = useMemo(() => scenarioFor(selectedSourceId), [selectedSourceId]);
   const selectedExample = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
-  const outcomeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
+  const { setScenarioInUrl } = useScenarioDeepLink();
 
   const selectExample = useCallback(
     (sourceId: string) => {
@@ -183,11 +187,24 @@ export function ReviewWorkbenchShell({
         session: nextExample.session,
       });
       setSelectedSourceId(sourceId);
+      setScenarioInUrl(sourceId);
     },
-    [controller],
+    [controller, setScenarioInUrl],
   );
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+
+  useEffect(() => {
+    const initialId = readInitialScenarioId(NETWORK_REVIEW_EXAMPLES.map((example) => example.sourceId));
+    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+      // Deep-link resolution: sync initial selection from the URL, once on
+      // mount only. window.location is unavailable during SSR, so this can't
+      // move into the useState initializer without a hydration mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
@@ -198,17 +215,7 @@ export function ReviewWorkbenchShell({
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <header className="border-b border-edge bg-surface">
-        <nav aria-label="Product navigation" className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
-          <Link className="mr-auto text-base font-bold tracking-tight text-ink" href="/">
-            ChangeSafe <span className="ml-2 text-xs font-normal text-ink-dim">infrastructure change airlock</span>
-          </Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/">Home</Link>
-          <span aria-current="page" className="inline-flex rounded-md border border-active/50 bg-active/10 px-3 py-2 text-sm text-active">Network</span>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/terraform">Terraform</Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/kubernetes">Kubernetes</Link>
-          <Link className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="/workbench/self-hosted">Authenticated self-hosted</Link>
-          <a className="inline-flex rounded-md px-3 py-2 text-sm text-ink-dim hover:text-ink" href="#sources">Sources</a>
-        </nav>
+        <WorkbenchNav active="network" showSources />
       </header>
 
       <section className="border-b border-edge bg-overlay" aria-labelledby="runtime-title">
@@ -233,7 +240,8 @@ export function ReviewWorkbenchShell({
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
-              <h1 className="mt-2 text-xl font-semibold" ref={outcomeHeadingRef} tabIndex={-1}>{workflow.phase}</h1>
+              <h1 className="mt-2 text-xl font-semibold">{selectedExample.label}</h1>
+              <PhasePill phase={workflow.phase} ref={outcomeHeadingRef} />
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p>
               <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
                 <ReplayStatus state={workflow} />
@@ -278,7 +286,7 @@ export function ReviewWorkbenchShell({
 
         <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1">
           <Label>Airlock status</Label>
-          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><p className="mt-2 text-sm text-ink-dim">{hasFindings(workflow) ? workflow.riskLevel : "Not evaluated"}</p></section>
+          <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Not run. Public replay cannot approve a proposal, so no sandbox simulation is requested.</p></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section>
@@ -292,13 +300,16 @@ export function ReviewWorkbenchShell({
             {NETWORK_REVIEW_EXAMPLES.map((example) => (
               <li key={example.sourceId}>
                 <button
-                  className="w-full rounded border border-edge px-3 py-2 text-left text-sm text-ink-dim hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait"
+                  className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${example.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`}
                   disabled={workflow.phase === "ANALYZING"}
                   onClick={() => selectExample(example.sourceId)}
                   type="button"
                   aria-pressed={example.sourceId === selectedSourceId}
                 >
-                  <span className="block font-medium text-ink">{example.label}</span>
+                  <span className="block font-medium text-ink">
+                    {example.label}
+                    {example.caseStudy ? <CaseStudyBadge label={example.caseStudy} /> : null}
+                  </span>
                   <span className="mt-1 block text-xs">{example.description}</span>
                 </button>
               </li>

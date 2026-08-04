@@ -180,6 +180,8 @@ export const ReviewExampleDescriptorSchema = z
     sourceId: IdSchema,
     label: z.string().min(1).max(160),
     description: z.string().min(1).max(1000),
+    /** Which `docs/CASE_STUDIES.md` case this scenario is, or null for the rest. Purely client-side picker-rendering metadata — never crosses the analyze-API boundary. */
+    caseStudy: z.string().min(1).max(80).nullable(),
     session: ReviewSessionEnvelopeSchema,
   })
   .superRefine((descriptor, context) => {

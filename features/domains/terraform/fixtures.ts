@@ -1,10 +1,23 @@
 import destroysDatabasePlan from "../../../packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json";
 import protectedAndInjectedPlan from "../../../packages/domain-terraform/tests/fixtures/protected-and-injected.tfplan.json";
 import safeScaleUpPlan from "../../../packages/domain-terraform/tests/fixtures/safe-scale-up.tfplan.json";
+import injectedPrContextIncident from "../../../scenarios/terraform/scenario-p-injected-pr-context/incident.json";
 
 import type { NormalizeOptions } from "@changesafe/domain-terraform";
 
 import { INJECTED_PULL_REQUEST_BODY } from "./injected-pr-body";
+
+/**
+ * `scenario-p-injected-pr-context` is Case 3 in `docs/CASE_STUDIES.md`, so
+ * this fixture uses the scenario's own canonical `incident.json` (its
+ * `context` field destructured off, matching `scenarios/domains.ts` and
+ * `packages/cli/src/scenario.ts`) rather than a hand-duplicated plan —
+ * `terraform-protected-and-injected` above is a thematically similar but
+ * distinct fixture and stays untouched; citing the wrong one here would be
+ * a provenance-honesty problem, not a simplification.
+ */
+const { context: injectedPrContextContext, ...injectedPrContextPlan } =
+  injectedPrContextIncident as { context?: { kind: string; text: string }[] } & Record<string, unknown>;
 
 export const LARGE_TERRAFORM_CHANGE_COUNT = 10;
 
@@ -62,7 +75,8 @@ export interface TerraformPublicReplayFixture {
     | "terraform-safe-scale-up"
     | "terraform-destroys-database"
     | "terraform-protected-and-injected"
-    | "terraform-large-plan-boundary";
+    | "terraform-large-plan-boundary"
+    | "scenario-p-injected-pr-context";
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
@@ -119,5 +133,15 @@ export const TERRAFORM_PUBLIC_REPLAY_FIXTURES: readonly TerraformPublicReplayFix
       provenance: "authored-synthetic",
       plan: largeBoundaryPlan,
       context: [],
+    }),
+    Object.freeze({
+      sourceId: "scenario-p-injected-pr-context",
+      inputId: "scenario-p-injected-pr-context",
+      label: "Protected billing database",
+      description:
+        "CHG-2422 — a fictional cleanup PR destroys a protected billing database; its description urges skipping review.",
+      provenance: "authored-red-team",
+      plan: injectedPrContextPlan,
+      context: Object.freeze(injectedPrContextContext ?? []),
     }),
   ]);
