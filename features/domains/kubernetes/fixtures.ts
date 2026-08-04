@@ -221,9 +221,16 @@ export type KubernetesPublicReplaySource =
   | KubernetesPublicReplayFixture
   | KubernetesUnsupportedPublicReplaySource;
 
+/**
+ * Every fixture evaluates against the one shared `KUBERNETES_PUBLIC_REPLAY_SNAPSHOT`
+ * (there is no per-fixture state to replay against), so `inputId` is always
+ * that snapshot's own id — never a per-fixture identifier. The server route
+ * always echoes the snapshot's real id back regardless of which fixture was
+ * requested, and the client's `expectedInputId` check requires exact
+ * equality, so a per-fixture `inputId` here would make every replay fail.
+ */
 function deriveFixture(
   sourceId: KubernetesPublicReplayFixture["sourceId"],
-  inputId: string,
   label: string,
   description: string,
   provenance: KubernetesPublicReplayFixture["provenance"],
@@ -238,7 +245,7 @@ function deriveFixture(
   return Object.freeze({
     kind: "replay",
     sourceId,
-    inputId,
+    inputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
     label,
     description,
     provenance,
@@ -251,7 +258,6 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
   Object.freeze([
     deriveFixture(
       "kubernetes-safe-scale",
-      "kubernetes-safe-scale",
       "Safe web scale-up",
       "A fictional offline Deployment scale-up evaluated in the Kubernetes sandbox.",
       "authored-synthetic",
@@ -259,14 +265,12 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
     ),
     deriveFixture(
       "kubernetes-selector-red-team",
-      "kubernetes-selector-red-team",
       "Service selector break",
       "A fictional red-team manifest that leaves the existing Service selector without a workload match.",
       "authored-red-team",
       [selectorBreakingManifest],
     ),
     deriveFixture(
-      "kubernetes-large-manifest-boundary",
       "kubernetes-large-manifest-boundary",
       "Large manifest boundary",
       "A fictional 10-operation manifest set with large metadata that proves bounded, searchable proposal evidence.",
