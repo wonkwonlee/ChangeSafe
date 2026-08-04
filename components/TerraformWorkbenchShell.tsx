@@ -9,7 +9,9 @@ import {
   BoundedJsonBlock,
   EvidencePager,
 } from "@/components/BoundedEvidence";
+import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
@@ -188,6 +190,7 @@ export function TerraformWorkbenchShell({
   const input = useMemo(() => inputFor(fixture), [fixture]);
   const workflow = controller.state.workflow;
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
+  const { setScenarioInUrl } = useScenarioDeepLink();
   const [changeQuery, setChangeQuery] = useState("");
   const [changePageIndex, setChangePageIndex] = useState(0);
   const changePage = useMemo(
@@ -213,9 +216,22 @@ export function TerraformWorkbenchShell({
     setSelectedSourceId(sourceId);
     setChangeQuery("");
     setChangePageIndex(0);
-  }, [controller]);
+    setScenarioInUrl(sourceId);
+  }, [controller, setScenarioInUrl]);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+
+  useEffect(() => {
+    const initialId = readInitialScenarioId(TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId));
+    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+      // Deep-link resolution: sync initial selection from the URL, once on
+      // mount only. window.location is unavailable during SSR, so this can't
+      // move into the useState initializer without a hydration mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
@@ -315,7 +331,7 @@ export function TerraformWorkbenchShell({
           <h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Terraform examples">
             {TERRAFORM_REVIEW_EXAMPLES.map((candidate) => (
-              <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${candidate.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`} disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>
+              <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${candidate.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`} disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}{candidate.caseStudy ? <CaseStudyBadge label={candidate.caseStudy} /> : null}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>
             ))}
           </ul>
           <section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title">

@@ -40,7 +40,7 @@ test("an unrecognized scenario id falls back to the default example", async ({ p
 test("Case 3 replay run produces the expected CRITICAL/BLOCKED findings", async ({ page }) => {
   await page.goto("/workbench/terraform?scenario=scenario-p-injected-pr-context");
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "BLOCKED" })).toBeVisible();
+  await expect(page.locator('[data-phase="BLOCKED"]')).toBeVisible();
 });
 
 test("picking a scenario writes it into the URL and survives a reload", async ({ page }) => {

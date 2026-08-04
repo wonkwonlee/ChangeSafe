@@ -28021,6 +28021,8 @@ var ReviewExampleDescriptorSchema = external_exports.strictObject({
   sourceId: IdSchema,
   label: external_exports.string().min(1).max(160),
   description: external_exports.string().min(1).max(1e3),
+  /** Which `docs/CASE_STUDIES.md` case this scenario is, or null for the rest. Purely client-side picker-rendering metadata — never crosses the analyze-API boundary. */
+  caseStudy: external_exports.string().min(1).max(80).nullable(),
   session: ReviewSessionEnvelopeSchema
 }).superRefine((descriptor, context) => {
   if (descriptor.domainId !== descriptor.session.domainId) {

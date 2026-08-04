@@ -24,6 +24,11 @@ const publicReplayCapabilities = composeSessionCapabilities(
   defineTransportCapabilitySource({ durableDecision: false }),
 );
 
+/** Scenario ids featured in `docs/CASE_STUDIES.md`, mapped to that doc's case heading. */
+const TERRAFORM_CASE_STUDIES: Readonly<Record<string, string>> = Object.freeze({
+  "scenario-p-injected-pr-context": "Case 3: Same story, AI coding agent and Terraform",
+});
+
 /** Schema-validated public replay entry points for fictional Terraform plans. */
 export const TERRAFORM_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
   Object.freeze(
@@ -34,6 +39,7 @@ export const TERRAFORM_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         sourceId: fixture.sourceId,
         label: fixture.label,
         description: fixture.description,
+        caseStudy: TERRAFORM_CASE_STUDIES[fixture.sourceId] ?? null,
         session: {
           domainId: terraformMetadata.domainId,
           contractVersion: terraformMetadata.contractVersion,

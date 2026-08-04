@@ -34,6 +34,8 @@ export const KUBERNETES_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
         sourceId: fixture.sourceId,
         label: fixture.label,
         description: fixture.description,
+        // No docs/CASE_STUDIES.md case is a Kubernetes scenario yet.
+        caseStudy: null,
         session: {
           domainId: kubernetesMetadata.domainId,
           contractVersion: kubernetesMetadata.contractVersion,

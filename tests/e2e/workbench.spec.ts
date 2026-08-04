@@ -45,7 +45,7 @@ test("public workbench evaluates a selected bundled replay without creating deci
   await expect(page.getByText("Fixture provenance").locator(".."))
     .toContainText("authored_red_team");
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "BLOCKED" })).toBeVisible();
+  await expect(page.locator('[data-phase="BLOCKED"]')).toBeVisible();
   await expect(page.getByText(/BLOCKED by deterministic findings/)).toBeVisible();
   await expect(page.getByRole("list", { name: "Evaluated policy findings" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Risk" }).locator(".."))
@@ -66,7 +66,7 @@ test("public workbench renders a safe replay result without granting its availab
   await expect(page.getByText("Fixture provenance").locator(".."))
     .toContainText("captured");
   await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "APPROVAL_REQUIRED" })).toBeVisible();
+  await expect(page.locator('[data-phase="APPROVAL_REQUIRED"]')).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Risk" }).locator("..")).toContainText("LOW");
   await expect(page.getByText(/gate permits a human decision, but public replay intentionally has no approval/i)).toBeVisible();
   await expect(page.getByText("Not run. Public replay cannot approve a proposal")).toBeVisible();

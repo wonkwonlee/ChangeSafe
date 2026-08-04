@@ -24,8 +24,9 @@ describe("Terraform review examples", () => {
       "terraform-destroys-database",
       "terraform-protected-and-injected",
       "terraform-large-plan-boundary",
+      "scenario-p-injected-pr-context",
     ]);
-    expect(new Set(ids).size).toBe(4);
+    expect(new Set(ids).size).toBe(5);
     expect(TERRAFORM_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
   });
 
@@ -98,6 +99,13 @@ describe("Terraform review examples", () => {
         session: {
           source: "authored-fixture",
           provenance: "authored-synthetic",
+        },
+      },
+      {
+        sourceId: "scenario-p-injected-pr-context",
+        session: {
+          source: "authored-fixture",
+          provenance: "authored-red-team",
         },
       },
     ]);

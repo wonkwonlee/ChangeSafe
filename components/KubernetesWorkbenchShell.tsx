@@ -13,6 +13,7 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
+import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import {
@@ -378,13 +379,27 @@ export function KubernetesWorkbenchShell({
   );
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+  const { setScenarioInUrl } = useScenarioDeepLink();
 
   const selectExample = useCallback((sourceId: string) => {
     const nextFixture = fixtureFor(sourceId);
     const nextExample = exampleFor(sourceId);
     controller.rebind({ sourceId: nextFixture.sourceId, input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, expectedInputId: nextFixture.inputId, session: nextExample.session });
     setSelectedSourceId(sourceId);
-  }, [controller]);
+    setScenarioInUrl(sourceId);
+  }, [controller, setScenarioInUrl]);
+
+  useEffect(() => {
+    const initialId = readInitialScenarioId(KUBERNETES_REVIEW_EXAMPLES.map((example) => example.sourceId));
+    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+      // Deep-link resolution: sync initial selection from the URL, once on
+      // mount only. window.location is unavailable during SSR, so this can't
+      // move into the useState initializer without a hydration mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectExample(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (hasFindings(workflow) || workflow.phase === "ERROR") {
