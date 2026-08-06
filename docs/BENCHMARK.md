@@ -6,11 +6,32 @@ about that distinction as about the numbers.
 
 ```bash
 changesafe eval --provider anthropic --runs 3 --report reports/claude-opus-4-8.json
+changesafe eval --provider anthropic --domain kubernetes --runs 3 \
+  --report reports/claude-opus-4-8-kubernetes.json
 ```
+
+## Which domains can be measured
+
+`eval` measures a model *proposing*, so it covers the domains a model can
+propose in: **network** and **kubernetes**. `--domain` selects one, and the
+corpus directory follows it unless `--dir` says otherwise.
+
+Terraform is deliberately absent. Its plan already *is* the proposal, derived
+mechanically from `terraform show -json`; asking a model to restate it would
+measure transcription, not diagnosis. `changesafe eval --domain terraform`
+says so rather than silently producing a number.
+
+**Two domains are two benchmarks, not one.** They use different prompts,
+different corpora, and different domain policies, so a network score and a
+kubernetes score are not comparable and must not be averaged. Every report
+records `corpus.domain` for exactly this reason; reports written before
+schema version 3 have no such field because there was only one domain they
+could have measured.
 
 ## What is actually being measured
 
-Each scenario in the corpus is handed to the model as an incident bundle. The
+Each scenario in the corpus is handed to the model as its domain's input — an
+incident bundle for network, a namespace snapshot for kubernetes. The
 returned proposal goes through the identical pipeline the console and CLI use
 — provider structured output, strict Zod parse, evidence and resource
 cross-checks — and then through the deterministic gate.
@@ -87,19 +108,20 @@ number is only comparable to another number from the same scenarios:
 `reportVersion` bumps whenever a field's meaning changes, so an old report
 stays interpretable instead of being silently re-read under new definitions.
 
-To compare two models fairly: same corpus directory, same `--runs`, same
-report version. Sampling is deterministic where the provider allows it
+To compare two models fairly: same domain, same corpus directory, same
+`--runs`, same report version. Sampling is deterministic where the provider allows it
 (temperature 0 on Ollama), but hosted providers do not guarantee
 determinism — use several runs and report the spread rather than a single
 number.
 
 ## Honest limits
 
-- **The corpus is small and synthetic.** Nine scenarios in one domain. It is
-  a coverage instrument, not a statistical sample, and any percentage from it
-  carries wide error bars.
-- **It measures one prompt.** A different prompt changes the numbers. The
-  prompt used is in `packages/ai/src/prompts/network.ts` and is part of the
+- **The corpus is small and synthetic.** Nine network scenarios or ten
+  kubernetes ones per run. It is a coverage instrument, not a statistical
+  sample, and any percentage from it carries wide error bars.
+- **It measures one prompt per domain.** A different prompt changes the
+  numbers. The prompts are `packages/ai/src/prompts/network.ts` and
+  `packages/ai/src/prompts/kubernetes.ts`, and each is part of the
   methodology, not a neutral constant.
 - **Adversarial scenarios are hand-authored.** They demonstrate failure modes
   we thought of. A model can score perfectly and still fail on a mode the

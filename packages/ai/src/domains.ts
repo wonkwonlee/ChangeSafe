@@ -1,8 +1,11 @@
-import { DomainError } from "@changesafe/core";
-import { IncidentBundleSchema } from "@changesafe/domain-network";
+import { DomainError, type DomainAdapter } from "@changesafe/core";
+import { IncidentBundleSchema, networkDomain } from "@changesafe/domain-network";
+import { KubernetesSnapshotSchema, kubernetesDomain } from "@changesafe/domain-kubernetes";
 
 import { analyzeWithPrompt, type AnalysisResult, type AnalyzeOptions } from "./analyze";
+import type { AnalysisPrompt } from "./prompt";
 import { networkAnalysisPrompt } from "./prompts/network";
+import { kubernetesAnalysisPrompt } from "./prompts/kubernetes";
 
 /**
  * Which domains a model can propose changes in.
@@ -18,6 +21,15 @@ export interface AnalysisDomain {
   parseInput(raw: unknown): unknown;
   /** Parse, propose, and locally validate in one typed step. */
   analyze(raw: unknown, options: AnalyzeOptions): Promise<DomainAnalysis>;
+  /**
+   * The prompt and the gate adapter, exposed so a caller that needs the
+   * unaccepted outcomes too — `eval`, which counts *why* a proposal was
+   * rejected — can drive `probeProposal` and then the same policies the gate
+   * would run. Without these, every such caller re-hardcodes one domain,
+   * which is exactly how the benchmark ended up measuring only network.
+   */
+  readonly prompt: AnalysisPrompt<never>;
+  readonly adapter: DomainAdapter<never, never>;
 }
 
 export interface DomainAnalysis extends AnalysisResult {
@@ -34,6 +46,19 @@ const ANALYSIS_DOMAINS: Record<string, AnalysisDomain> = {
       const result = await analyzeWithPrompt(networkAnalysisPrompt, bundle, options);
       return { ...result, input: bundle };
     },
+    prompt: networkAnalysisPrompt as unknown as AnalysisPrompt<never>,
+    adapter: networkDomain as unknown as DomainAdapter<never, never>,
+  },
+  kubernetes: {
+    domainId: "kubernetes",
+    parseInput: (raw) => KubernetesSnapshotSchema.parse(raw),
+    async analyze(raw, options) {
+      const snapshot = KubernetesSnapshotSchema.parse(raw);
+      const result = await analyzeWithPrompt(kubernetesAnalysisPrompt, snapshot, options);
+      return { ...result, input: snapshot };
+    },
+    prompt: kubernetesAnalysisPrompt as unknown as AnalysisPrompt<never>,
+    adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
   },
 };
 

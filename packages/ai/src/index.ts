@@ -35,6 +35,11 @@ export {
   buildAnalysisInput,
   networkAnalysisPrompt,
 } from "./prompts/network";
+export {
+  SYSTEM_INSTRUCTIONS as KUBERNETES_SYSTEM_INSTRUCTIONS,
+  buildAnalysisInput as buildKubernetesAnalysisInput,
+  kubernetesAnalysisPrompt,
+} from "./prompts/kubernetes";
 
 // Schema derivation
 export { toPortableJsonSchema } from "./json-schema";

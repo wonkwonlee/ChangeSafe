@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { PROVIDER_IDS } from "@changesafe/ai";
+import { ANALYZABLE_DOMAIN_IDS, PROVIDER_IDS } from "@changesafe/ai";
 import { isDomainError } from "@changesafe/core";
 
 import { runAnalyze } from "./analyze";
@@ -70,7 +70,10 @@ ANALYZE OPTIONS
 EVAL OPTIONS
   --provider <id>       required; spends API credit
   --model <id>          override the provider's default model
-  --dir <dir>           scenario suite (default: scenarios)
+  --domain <id>         domain to measure (default: network; available:
+                        ${ANALYZABLE_DOMAIN_IDS.join(", ")}). Terraform is absent
+                        because its plan already is the proposal.
+  --dir <dir>           scenario suite (default: scenarios/<domain>)
   --runs <n>            attempts per scenario (default: 1, max 20)
   --timeout <seconds>   provider deadline for one call (default: 60s hosted,
                         600s for a local Ollama model)
@@ -289,10 +292,12 @@ export async function main(argv: string[], console: Console): Promise<number> {
           provider: values.provider,
           model: values.model,
           timeoutSeconds: parseTimeout(values.timeout),
-          // eval measures a model, and only the network domain has model
-          // analysis (see packages/ai/src/domains.ts) — terraform and
-          // kubernetes proposals are derived mechanically, not proposed.
-          dir: values.dir ?? "scenarios/network",
+          // eval measures a model proposing, so it covers the domains a model
+          // can propose in (see packages/ai/src/domains.ts). Terraform is not
+          // one of them: its plan already is the proposal. The corpus is laid
+          // out by domain, so the default directory follows --domain.
+          domain: values.domain,
+          dir: values.dir ?? `scenarios/${values.domain}`,
           runs,
           report: values.report,
           format,

@@ -535,6 +535,23 @@ describe("changesafe usage", () => {
   });
 });
 
+describe("changesafe eval domain selection", () => {
+  // These paths must never spend API credit or reach a provider: the domain is
+  // resolved first, so an unmeasurable domain is answered as such rather than
+  // as a missing credential.
+  it("explains that terraform has nothing for a model to propose", async () => {
+    await expect(
+      main(["eval", "--provider", "anthropic", "--domain", "terraform"], createCapture()),
+    ).rejects.toThrow(/derives its proposal from the plan itself/);
+  });
+
+  it("names the analyzable domains when given an unknown one", async () => {
+    await expect(
+      main(["eval", "--provider", "anthropic", "--domain", "frobnicate"], createCapture()),
+    ).rejects.toThrow(/network, kubernetes/);
+  });
+});
+
 describe("analyze — the only command that calls a model", () => {
   const savedEnv = {
     CHANGESAFE_PROVIDER: process.env.CHANGESAFE_PROVIDER,
