@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3268 — Add a canary Service for checkout-api",
+  "summary": "A release team wants canary traffic addressed separately, so the change adds a second Service alongside the stable one and touches nothing that already works."
+}

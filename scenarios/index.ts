@@ -46,6 +46,9 @@ import expectationsX from "./kubernetes/scenario-x-missing-verification/expectat
 import snapshotY from "./kubernetes/scenario-y-rollback-does-not-restore/incident.json";
 import fixtureY from "./kubernetes/scenario-y-rollback-does-not-restore/replay-fixture.json";
 import expectationsY from "./kubernetes/scenario-y-rollback-does-not-restore/expectations.json";
+import snapshotZ from "./kubernetes/scenario-z-orphaned-canary-service/incident.json";
+import fixtureZ from "./kubernetes/scenario-z-orphaned-canary-service/replay-fixture.json";
+import expectationsZ from "./kubernetes/scenario-z-orphaned-canary-service/expectations.json";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -278,6 +281,15 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     snapshotY,
     fixtureY,
     expectationsY,
+  ),
+  defineScenario(
+    "kubernetes",
+    "scenario-z-orphaned-canary-service",
+    "CHG-3268 — Add a canary Service for checkout-api",
+    "A release team wants canary traffic addressed separately, so the change adds a second Service alongside the stable one and touches nothing that already works.",
+    snapshotZ,
+    fixtureZ,
+    expectationsZ,
   ),
 ];
 

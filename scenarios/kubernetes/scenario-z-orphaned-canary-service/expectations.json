@@ -1,0 +1,23 @@
+{
+  "scenarioId": "scenario-z-orphaned-canary-service",
+  "teaches": "Kubernetes' first created-resource change, and its first silent safety regression: K8S_SERVICE_SELECTOR only re-checks Services that existed before the change, so a newly added Service selecting a pod label no workload carries clears every policy and is caught only by the sandbox.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "PASS",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "PASS",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "LOW",
+  "approvable": true,
+  "simulation": { "safetyPropertiesSatisfied": false },
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["silent-safety-regression"]
+  }
+}
