@@ -171,6 +171,18 @@ describe("request failures report the caller's problem", () => {
     expect(await response.json()).toMatchObject({ error: { code: "UNAUTHENTICATED" } });
   });
 
+  it("answers 401 for a signature segment that is not base64url", async () => {
+    const { baseUrl } = await serve();
+    const segment = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    // Header and payload decode cleanly; only the signature is unrepresentable,
+    // which used to escape the decoder as a DOMException and read as a 500.
+    const token = `${segment({ alg: "ES256", kid: "k1" })}.${segment({ hello: "world" })}.%`;
+
+    const response = await post(baseUrl, JSON.stringify(approval), token);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: "UNAUTHENTICATED" } });
+  });
+
   it("answers 401 for a syntactically valid token with no claims", async () => {
     const { baseUrl } = await serve();
     const segment = (value: unknown) =>

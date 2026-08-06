@@ -157,6 +157,22 @@ function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
+ * Decode one JWT segment to bytes.
+ *
+ * `atob` throws on any character outside the alphabet, which is an ordinary
+ * property of attacker-supplied input rather than a server fault, so it is
+ * normalized here. The signature segment decodes to bytes and never to JSON,
+ * and it must fail the same way the JSON segments do.
+ */
+function decodeSegmentBytes(value: string, segment: string): Uint8Array<ArrayBuffer> {
+  try {
+    return base64UrlToBytes(value);
+  } catch {
+    throw unauthorized(`the token's ${segment} is not valid base64url`);
+  }
+}
+
+/**
  * Decode one JWT segment.
  *
  * Anything a caller can put in an Authorization header can land here —
@@ -346,7 +362,7 @@ export class OidcVerifier {
     const header = parseSegment(JwtHeaderSchema, base64UrlToJson(encodedHeader, "header"), "header");
     const alg = assertAllowedAlgorithm(header.alg);
 
-    const signature = base64UrlToBytes(encodedSignature);
+    const signature = decodeSegmentBytes(encodedSignature, "signature");
     const signed = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
 
     const verified = await this.#verifySignature(header.kid, alg, signature, signed);
