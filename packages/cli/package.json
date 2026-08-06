@@ -1,6 +1,6 @@
 {
   "name": "changesafe",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Gate AI-proposed infrastructure changes from the terminal or CI: deterministic policies, honest exit codes, hashed receipts. The gate itself never calls a model.",
   "license": "MIT",
   "type": "module",
@@ -45,16 +45,16 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "@changesafe/ai": "^0.3.1",
-    "@changesafe/core": "^0.3.1",
-    "@changesafe/domain-network": "^0.3.1",
-    "@changesafe/domain-terraform": "^0.3.1",
-    "@changesafe/ledger": "^0.3.1",
-    "@changesafe/server": "^0.3.1",
+    "@changesafe/ai": "^0.4.0",
+    "@changesafe/core": "^0.4.0",
+    "@changesafe/domain-network": "^0.4.0",
+    "@changesafe/domain-terraform": "^0.4.0",
+    "@changesafe/ledger": "^0.4.0",
+    "@changesafe/server": "^0.4.0",
     "esbuild": "^0.25.0",
     "typescript": "^5",
     "zod": "^4.4.3",
-    "@changesafe/domain-kubernetes": "^0.3.1",
-    "@changesafe/kubernetes-collector": "^0.3.1"
+    "@changesafe/domain-kubernetes": "^0.4.0",
+    "@changesafe/kubernetes-collector": "^0.4.0"
   }
 }

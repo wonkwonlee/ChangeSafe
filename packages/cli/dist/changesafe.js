@@ -22943,6 +22943,8 @@ var PROVIDER_IDS = ["openai", "anthropic", "ollama"];
 function isProviderId(value) {
   return PROVIDER_IDS.includes(value);
 }
+var DEFAULT_PROVIDER_TIMEOUT_MS = 6e4;
+var MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024;
 function callFailed(provider, detail, cause) {
   return new DomainError(
     "AI_CALL_FAILED",
@@ -22962,25 +22964,81 @@ function notConfigured(provider) {
     provider.credentialEnvVar ? `${provider.label} is not configured: set ${provider.credentialEnvVar}. Replay mode needs no credentials.` : `${provider.label} is not reachable. Replay mode needs no credentials.`
   );
 }
+async function readBoundedText(provider, response, maxBytes) {
+  const body = response.body;
+  if (!body) {
+    const text2 = await response.text();
+    if (text2.length > maxBytes) throw callFailed(provider, "the response was too large");
+    return text2;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let read = 0;
+  let text = "";
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      read += value.byteLength;
+      if (read > maxBytes) throw callFailed(provider, "the response was too large");
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => void 0);
+  }
+  return text + decoder.decode();
+}
 async function postJson(provider, url2, headers, body, call) {
-  let response;
+  const maxBytes = call.maxResponseBytes ?? MAX_PROVIDER_RESPONSE_BYTES;
+  const timeoutMs = call.timeoutMs ?? provider.defaultTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const deadline = timeoutMs < 1e3 ? `${timeoutMs}ms` : `${Math.round(timeoutMs / 1e3)}s`;
+  const controller = new AbortController();
+  const abortForCaller = () => controller.abort();
+  call.signal?.addEventListener("abort", abortForCaller, { once: true });
+  if (call.signal?.aborted) controller.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
-    response = await call.fetch(url2, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: call.signal
-    });
-  } catch (error51) {
-    throw callFailed(provider, "the request could not be sent", error51);
-  }
-  if (!response.ok) {
-    throw callFailed(provider, `upstream status ${response.status}`);
-  }
-  try {
-    return await response.json();
-  } catch (error51) {
-    throw callFailed(provider, "the response was not valid JSON", error51);
+    let response;
+    try {
+      response = await call.fetch(url2, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch (error51) {
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error51);
+      }
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
+      throw callFailed(provider, "the request could not be sent", error51);
+    }
+    if (!response.ok) {
+      throw callFailed(provider, `upstream status ${response.status}`);
+    }
+    let text;
+    try {
+      text = await readBoundedText(provider, response, maxBytes);
+    } catch (error51) {
+      if (isDomainError(error51)) throw error51;
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error51);
+      }
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
+      throw callFailed(provider, "the response could not be read", error51);
+    }
+    try {
+      return JSON.parse(text);
+    } catch (error51) {
+      throw callFailed(provider, "the response was not valid JSON", error51);
+    }
+  } finally {
+    clearTimeout(timer);
+    call.signal?.removeEventListener("abort", abortForCaller);
   }
 }
 function parseJsonText(provider, text) {
@@ -23125,6 +23183,13 @@ var ollamaProvider = {
   defaultModel: "llama3.1",
   // Local and unauthenticated: there is no credential to configure or leak.
   credentialEnvVar: null,
+  /**
+   * Local generation is slow for honest reasons — CPU inference, a cold model
+   * load, a laptop doing something else — none of which mean the endpoint has
+   * stopped answering. The hosted default would abort work that was going to
+   * succeed, so this provider carries its own, and `--timeout` overrides both.
+   */
+  defaultTimeoutMs: 6e5,
   isConfigured() {
     return true;
   },
@@ -24103,7 +24168,13 @@ async function probeProposal(prompt, input, options) {
         jsonSchema: toPortableJsonSchema(prompt.proposalSchema),
         maxOutputTokens: options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
       },
-      { fetch: options.fetch ?? globalThis.fetch, env, signal: options.signal }
+      {
+        fetch: options.fetch ?? globalThis.fetch,
+        env,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        maxResponseBytes: options.maxResponseBytes
+      }
     );
     raw = result.data;
     answeringModel = result.model;
@@ -25787,6 +25858,13 @@ function parseOrThrow2(schema, value, label) {
   throw new UsageError(`${label} failed validation:
 ${issues}${more}`);
 }
+function resolveTimeoutMs(seconds) {
+  if (seconds === void 0) return void 0;
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+    throw new UsageError("--timeout must be a whole number of seconds between 1 and 3600");
+  }
+  return seconds * 1e3;
+}
 
 // src/domains.ts
 function hasProposalKey(raw) {
@@ -25888,7 +25966,7 @@ import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
 // src/version.ts
-var CLI_PACKAGE_VERSION = "0.3.1";
+var CLI_PACKAGE_VERSION = "0.4.0";
 var CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
 var SERVER_APP_VERSION = `changesafe-server-${CLI_PACKAGE_VERSION}`;
 
@@ -26131,7 +26209,8 @@ async function runAnalyze(options, console2) {
   }
   const analysis = await analysisDomain.analyze(readJsonFile(inputPath, "incident bundle"), {
     provider,
-    model
+    model,
+    timeoutMs: resolveTimeoutMs(options.timeoutSeconds)
   });
   const sourceId = options.sourceId ?? (options.scenario ? path3.basename(path3.resolve(options.scenario)) : void 0) ?? "cli-analyze";
   if (options.out) {
@@ -26230,13 +26309,14 @@ function createScenarioReport(expectations, attempts) {
 }
 async function runEval(options, console2) {
   const provider = resolveProvider(options.provider);
+  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
+    throw new UsageError("--runs must be an integer between 1 and 20");
+  }
+  const timeoutMs = resolveTimeoutMs(options.timeoutSeconds);
   if (!provider.isConfigured(process.env)) {
     throw new UsageError(
       provider.credentialEnvVar ? `${provider.label} needs ${provider.credentialEnvVar} to be set` : `${provider.label} is not available`
     );
-  }
-  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
-    throw new UsageError("--runs must be an integer between 1 and 20");
   }
   const root = path4.resolve(options.dir);
   if (!existsSync(root)) throw new UsageError(`scenario directory does not exist: ${root}`);
@@ -26250,11 +26330,13 @@ async function runEval(options, console2) {
   }
   const reports = [];
   for (const name of directories) {
-    reports.push(await evaluateScenario(path4.join(root, name), provider.id, model, options.runs));
+    reports.push(
+      await evaluateScenario(path4.join(root, name), provider.id, model, options.runs, timeoutMs)
+    );
   }
   return report(reports, { provider: provider.label, model }, options, console2);
 }
-async function evaluateScenario(dir, providerId, model, runs) {
+async function evaluateScenario(dir, providerId, model, runs, timeoutMs) {
   const bundle = parseOrThrow2(
     IncidentBundleSchema,
     readJsonFile(path4.join(dir, "incident.json"), "incident bundle"),
@@ -26269,7 +26351,8 @@ async function evaluateScenario(dir, providerId, model, runs) {
   for (let run2 = 0; run2 < runs; run2 += 1) {
     const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
       provider: resolveProvider(providerId),
-      model
+      model,
+      timeoutMs
     });
     report2.outcomes[verdict.outcome] += 1;
     if (verdict.outcome === "accepted") {
@@ -27676,6 +27759,13 @@ function base64UrlToBytes(value) {
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+function decodeSegmentBytes(value, segment) {
+  try {
+    return base64UrlToBytes(value);
+  } catch {
+    throw unauthorized(`the token's ${segment} is not valid base64url`);
+  }
+}
 function base64UrlToJson(value, segment) {
   try {
     return JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
@@ -27799,7 +27889,7 @@ var OidcVerifier = class {
     const [encodedHeader, encodedPayload, encodedSignature] = parts;
     const header = parseSegment(JwtHeaderSchema, base64UrlToJson(encodedHeader, "header"), "header");
     const alg = assertAllowedAlgorithm(header.alg);
-    const signature = base64UrlToBytes(encodedSignature);
+    const signature = decodeSegmentBytes(encodedSignature, "signature");
     const signed = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
     const verified = await this.#verifySignature(header.kid, alg, signature, signed);
     if (!verified) throw unauthorized("the token signature is not valid for this issuer");
@@ -31298,6 +31388,8 @@ ANALYZE OPTIONS
   --scenario <dir>      shorthand for --input <dir>/incident.json
   --provider <id>       ${PROVIDER_IDS.join(" | ")} (default: the configured one)
   --model <id>          override the provider's default model
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --out <file>          write the accepted proposal
   --capture <file>      write a provenance-stamped replay fixture
   plus every GATE OPTION above, applied to the resulting proposal
@@ -31307,6 +31399,8 @@ EVAL OPTIONS
   --model <id>          override the provider's default model
   --dir <dir>           scenario suite (default: scenarios)
   --runs <n>            attempts per scenario (default: 1, max 20)
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --report <file>       write a versioned, committable report
   --format pretty|json
 
@@ -31387,6 +31481,7 @@ var OPTION_SPEC = {
   out: { type: "string" },
   capture: { type: "string" },
   runs: { type: "string", default: "1" },
+  timeout: { type: "string" },
   "sign-key": { type: "string" },
   "receipt-id": { type: "string" },
   "created-at": { type: "string" },
@@ -31420,6 +31515,14 @@ function parseFormat(value) {
     throw new UsageError(`--format must be "pretty" or "json", got "${value}"`);
   }
   return value;
+}
+function parseTimeout(value) {
+  if (value === void 0) return void 0;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) {
+    throw new UsageError(`--timeout must be a number of seconds, got "${value}"`);
+  }
+  return seconds;
 }
 async function main(argv, console2) {
   let parsed;
@@ -31476,6 +31579,7 @@ async function main(argv, console2) {
           scenario: values.scenario,
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           out: values.out,
           capture: values.capture,
           policyPack: values["policy-pack"],
@@ -31500,6 +31604,7 @@ async function main(argv, console2) {
         {
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           // eval measures a model, and only the network domain has model
           // analysis (see packages/ai/src/domains.ts) — terraform and
           // kubernetes proposals are derived mechanically, not proposed.

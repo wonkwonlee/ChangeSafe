@@ -64,6 +64,16 @@ next-env.d.ts
 # local artifacts (not part of the product)
 /artifacts/
 
+# beads (bd) issue-tracker state. The Dolt database, its config, and the
+# agent-tool wiring bd installs are per-machine runtime state, and beads syncs
+# through its own git refs rather than through tracked files — committing
+# .beads/issues.jsonl would version a passive export as if it were the source
+# of truth. Contributors do not need bd to work on this repository; the
+# workflow is documented in AGENTS.md.
+/.beads/
+/.agents/skills/beads/
+/.codex/hooks.json
+
 # playwright-mcp browser session artifacts
 /.playwright-mcp/
 

@@ -118,7 +118,7 @@ features/                  app-local domain registries, versioned review
                            transports, durable review contracts
 lib/ai/                    server-only live-provider status/config binding
 lib/domain/                app-level wire contracts and version constants
-scenarios/                 nine synthetic incident bundles, fixtures,
+scenarios/                 synthetic incident bundles by domain, fixtures,
                            expectations, plus the browser-usable registry
 tests/                     unit, integration, e2e (Playwright)
 scripts/                   release-bundle build/verify, PR summary rendering
@@ -255,8 +255,10 @@ env-gated. Never weaken a test to make an implementation pass.
 
 Scenarios are first-class contribution surface: fully fictional, schema-
 valid, provenance-honest, each with an `expectations.json` proving its
-claimed verdicts in CI. Nine scenarios ship today (six adversarial), and
-each declares `corpus.adversarial` plus its `failureModes` so coverage is
+claimed verdicts in CI. Twenty-six scenarios ship today across network,
+Terraform, and Kubernetes (twelve adversarial); `docs/SCENARIOS.md` carries
+the authoritative count, since it is generated from the corpus. Each
+declares `corpus.adversarial` plus its `failureModes` so coverage is
 countable. An adversarial scenario must be refused by the gate or flagged by
 simulation — the schema itself rejects an adversarial scenario declared as
 approvable *and* cleanly simulating. Red-team scenarios must always produce
@@ -272,8 +274,34 @@ hand-edit it, and regenerate when the corpus changes. Authoring guide:
   branches. Remote: github.com/wonkwonlee/ChangeSafe (public) — push after
   verified milestones.
 - Never commit secrets or local env files.
-- Publishing packages to npm requires explicit owner authorization; the npm
-  scope question is still open (`docs/OSS_ROADMAP.md` §7).
+- Publishing packages to npm requires explicit owner authorization. The
+  `@changesafe` scope and the unscoped `changesafe` name are both claimed
+  and published (`docs/OSS_ROADMAP.md` §7).
+
+## Work tracking
+
+GitHub Issues is the contribution surface and the only public record: user
+reports, scenario proposals, and anything a contributor should be able to
+find. Nothing below replaces it.
+
+Locally, this repository supports [beads](https://github.com/gastownhall/beads)
+(`bd`) as the agent-facing work graph, because a flat list cannot express
+"this is blocked until v0.4.0 is published" and repeatedly failed to: the
+vNext epic's ten delivery issues stayed open for a week after the work
+merged. `bd ready` answers what is actually startable; `bd blocked` says why
+the rest is not.
+
+- `bd` is optional. Contributors do not need it, and no build, test, or CI
+  step depends on it.
+- `.beads/` is per-machine runtime state and is ignored, including
+  `issues.jsonl` — beads syncs through its own git refs, so committing that
+  export would version a passive copy as if it were the source of truth.
+- A bead that mirrors a GitHub issue records it with
+  `--external-ref gh-<number>`. Automated `bd github sync` is off on purpose:
+  it is bidirectional by default and would push local planning items into a
+  public tracker.
+- Durable project decisions still belong in `MEMORY.md` and the roadmap, not
+  in a local database.
 
 ## Scope control
 

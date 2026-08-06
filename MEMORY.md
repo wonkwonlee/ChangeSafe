@@ -28,8 +28,8 @@ domain decisions.
   Exact `/workbench` and `/api/analyze` are retired.
 - Public replay evaluates only. It creates no decision, simulation result,
   durable review, or receipt. The optional self-hosted browser route needs an
-  operator-run HTTPS gateway/BFF with an HttpOnly session; `changesafe serve`
-  does not yet wire the durable review queue store.
+  operator-run HTTPS gateway/BFF with an HttpOnly session. `changesafe serve`
+  wires the durable review queue store as of #49.
 - New work should generally improve scenarios, domains, documentation,
   integrations, tests, or release hardening rather than add platform
   machinery ahead of the roadmap.
@@ -85,8 +85,10 @@ cross-environment handoffs. The repository allowlist is:
 - tracked project skills under `.claude/skills/`
 
 OMC/OMX sessions, logs, caches, metrics, state, runtime binaries, tmux data,
-Playwright MCP captures, `.next/`, worktrees, and Superpowers runtime output
-are local artifacts and remain ignored. Never place credentials, API keys,
+Playwright MCP captures, `.next/`, worktrees, Superpowers runtime output, and
+the beads work graph under `.beads/` are local artifacts and remain ignored.
+Beads holds *scheduling* — what is startable and what is blocked — which is
+runtime state; the decisions it schedules belong here or in the roadmap. Never place credentials, API keys,
 private transcripts, absolute machine paths, or personal identifiers in
 durable context.
 

@@ -63,7 +63,8 @@ Open http://localhost:3000. **Public replay works immediately** with bundled,
 clearly labeled fixtures — no key, no model call, no infrastructure network,
 and no cost.
 
-Nine bundled Network scenarios cover the gate verdict space and exercise the
+The bundled corpus is 26 scenarios across Network, Terraform, and Kubernetes.
+The nine Network scenarios below cover the gate verdict space and exercise the
 full engine in tests:
 
 | Bundled scenario | What it demonstrates | Outcome |
@@ -280,7 +281,7 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.3.1
+  uses: wonkwonlee/ChangeSafe@v0.4.0
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed
@@ -454,7 +455,7 @@ historical record of that work.
 
 MIT — see [LICENSE](LICENSE).
 
-## Kubernetes (v0.3.1)
+## Kubernetes
 
 ChangeSafe can gate supported Kubernetes Deployment, StatefulSet, DaemonSet, and Service upserts against an offline snapshot. See [docs/KUBERNETES.md](docs/KUBERNETES.md). The optional collector is read-only and namespace-scoped; the gate never contacts or mutates a cluster.
 

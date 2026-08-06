@@ -1,6 +1,6 @@
 {
   "name": "changesafe",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "A deterministic airlock for AI-proposed infrastructure changes: AI proposes, pure policies validate, a human decides, simulation stays sandboxed.",
   "license": "MIT",
@@ -51,7 +51,9 @@
   },
   "overrides": {
     "sharp": "^0.35.3",
-    "postcss": "^8.5.23"
+    "postcss": "^8.5.23",
+    "brace-expansion@<=1.1.17": "1.1.18",
+    "brace-expansion@>=4.0.0 <=5.0.8": "5.0.9"
   },
   "workspaces": [
     "packages/*"

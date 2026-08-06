@@ -5,7 +5,7 @@ import { networkAnalysisPrompt } from "../src/prompts/network";
 import { anthropicProvider } from "../src/providers/anthropic";
 import { ollamaProvider } from "../src/providers/ollama";
 import { openaiProvider } from "../src/providers/openai";
-import type { ModelProvider } from "../src/provider";
+import { DEFAULT_PROVIDER_TIMEOUT_MS, type ModelProvider } from "../src/provider";
 import { loadBundle, loadProposal, recordingFetch } from "./helpers";
 
 const bundle = loadBundle();
@@ -227,5 +227,97 @@ describe("failure handling", () => {
     await expect(
       probeProposal(networkAnalysisPrompt, bundle, { provider: openaiProvider, env: {} }),
     ).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
+  });
+});
+
+describe("transport bounds", () => {
+  /** A provider that accepts the connection and then never answers. */
+  const silentFetch = ((_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () =>
+        reject(new DOMException("aborted", "AbortError")),
+      );
+    })) as typeof globalThis.fetch;
+
+  it("abandons a provider that stops talking, without a caller signal", async () => {
+    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: silentFetch,
+      timeoutMs: 25,
+    });
+
+    expect(verdict.outcome).toBe("call_failed");
+    if (verdict.outcome !== "call_failed") return;
+    expect(verdict.detail).toContain("no answer within 25ms");
+  });
+
+  it("keeps caller cancellation distinguishable from the deadline", async () => {
+    const controller = new AbortController();
+    const verdict = probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: silentFetch,
+      signal: controller.signal,
+      // Long enough that only the caller's abort can end this call.
+      timeoutMs: 30_000,
+    });
+    controller.abort();
+
+    const settled = await verdict;
+    expect(settled.outcome).toBe("call_failed");
+    if (settled.outcome !== "call_failed") return;
+    expect(settled.detail).toContain("cancelled");
+  });
+
+  it("refuses an oversized response during the read", async () => {
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(4096)));
+      },
+    });
+    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: (() =>
+        Promise.resolve(
+          new Response(endless, { headers: { "content-type": "application/json" } }),
+        )) as typeof globalThis.fetch,
+      maxResponseBytes: 8192,
+    });
+
+    expect(verdict.outcome).toBe("call_failed");
+    if (verdict.outcome !== "call_failed") return;
+    expect(verdict.detail).toContain("too large");
+  });
+
+  it("still accepts an ordinary response under the bounds", async () => {
+    const { result } = probe(openaiProvider, () => REPLIES.openai!(proposal));
+    expect((await result).outcome).toBe("accepted");
+  });
+
+  it("gives a local model longer than a hosted one before giving up", async () => {
+    // The reason this exists: CPU inference and a cold model load are slow for
+    // honest reasons, and the hosted deadline would abort a call that was
+    // going to succeed.
+    expect(ollamaProvider.defaultTimeoutMs).toBeGreaterThan(DEFAULT_PROVIDER_TIMEOUT_MS);
+    expect(openaiProvider.defaultTimeoutMs).toBeUndefined();
+    expect(anthropicProvider.defaultTimeoutMs).toBeUndefined();
+  });
+
+  it("lets an explicit deadline override the provider's own", async () => {
+    const started = Date.now();
+    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+      provider: ollamaProvider,
+      env: {},
+      fetch: silentFetch,
+      // Without the override this call would sit for ollama's ten minutes.
+      timeoutMs: 25,
+    });
+
+    expect(verdict.outcome).toBe("call_failed");
+    if (verdict.outcome !== "call_failed") return;
+    expect(verdict.detail).toContain("no answer within");
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

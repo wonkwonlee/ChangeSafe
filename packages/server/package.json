@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/server",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Authenticated self-hosted decision path: OIDC approver identity, server-recomputed findings, signed receipts, append-only ledger. Executes nothing.",
   "license": "MIT",
   "private": true,
@@ -17,10 +17,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@changesafe/core": "^0.3.1",
-    "@changesafe/domain-network": "^0.3.1",
-    "@changesafe/domain-terraform": "^0.3.1",
-    "@changesafe/ledger": "^0.3.1",
+    "@changesafe/core": "^0.4.0",
+    "@changesafe/domain-network": "^0.4.0",
+    "@changesafe/domain-terraform": "^0.4.0",
+    "@changesafe/ledger": "^0.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

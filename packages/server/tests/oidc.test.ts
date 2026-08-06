@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { OidcVerifier, bearerToken, type OidcConfig } from "../src/oidc";
+import { AuthenticationError, OidcVerifier, bearerToken, type OidcConfig } from "../src/oidc";
 import { FakeIdp } from "./helpers";
 
 const AUDIENCE = "changesafe";
@@ -124,6 +124,18 @@ describe("OIDC bearer verification", () => {
   it("rejects malformed tokens", async () => {
     const { verifier } = await setup();
     await expect(verifier.verify("not-a-jwt")).rejects.toThrow(/not a JWT/);
+  });
+
+  it("rejects a signature segment that is not base64url", async () => {
+    const { idp, verifier } = await setup();
+    const [header, payload] = (await idp.token()).split(".") as [string, string, string];
+
+    // `atob` throws a DOMException on a character outside the alphabet. That is
+    // attacker-controlled input, not a server fault, so it has to arrive as the
+    // same authentication failure every other malformed segment produces.
+    const rejection = verifier.verify(`${header}.${payload}.%`);
+    await expect(rejection).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(rejection).rejects.toThrow(/signature is not valid base64url/);
   });
 
   it("refuses a discovery document that names a different issuer", async () => {

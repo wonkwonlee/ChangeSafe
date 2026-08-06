@@ -1,0 +1,84 @@
+{
+  "fixtureId": "fix-z-orphaned-canary-service",
+  "scenarioId": "scenario-z-orphaned-canary-service",
+  "provenance": "authored_synthetic",
+  "model": null,
+  "capturedAtUtc": null,
+  "notes": "Hand-authored resource creation: a new Service whose selector narrows onto a pod label the existing Deployment does not carry. Nothing that already worked is touched, so every policy passes and only the sandbox notices.",
+  "proposal": {
+    "proposalId": "add-checkout-api-canary-service",
+    "summary": "Add a checkout-api-canary Service so canary traffic can be addressed separately from the stable Service.",
+    "diagnosis": {
+      "likelyCause": "Checkout latency regressions are only reproducible under real traffic, so the team wants a canary endpoint before the next release.",
+      "confidence": 0.6,
+      "evidenceIds": ["ev-res-de01ac20685ab793", "ev-res-99a29425ed89338e"],
+      "assumptions": [
+        "The canary pods will be labelled track=canary by the release tooling."
+      ]
+    },
+    "operations": [
+      {
+        "op": "add",
+        "path": "/resources/res-956aede3f881c825",
+        "value": {
+          "resourceId": "res-956aede3f881c825",
+          "evidenceId": "ev-res-956aede3f881c825",
+          "identity": {
+            "namespace": "storefront",
+            "name": "checkout-api-canary",
+            "apiVersion": "v1",
+            "kind": "Service"
+          },
+          "metadata": {
+            "annotations": {},
+            "labels": { "app": "checkout-api", "track": "canary" }
+          },
+          "spec": {
+            "type": "ClusterIP",
+            "selector": { "app": "checkout-api", "track": "canary" }
+          }
+        },
+        "reason": "Give canary pods an addressable endpoint without changing the stable Service.",
+        "evidenceIds": ["ev-res-99a29425ed89338e"]
+      }
+    ],
+    "rollbackOperations": [
+      {
+        "op": "remove",
+        "path": "/resources/res-956aede3f881c825",
+        "value": {
+          "resourceId": "res-956aede3f881c825",
+          "evidenceId": "ev-res-956aede3f881c825",
+          "identity": {
+            "namespace": "storefront",
+            "name": "checkout-api-canary",
+            "apiVersion": "v1",
+            "kind": "Service"
+          },
+          "metadata": {
+            "annotations": {},
+            "labels": { "app": "checkout-api", "track": "canary" }
+          },
+          "spec": {
+            "type": "ClusterIP",
+            "selector": { "app": "checkout-api", "track": "canary" }
+          }
+        },
+        "reason": "Delete the Service that this change created, restoring the namespace exactly.",
+        "evidenceIds": ["ev-res-99a29425ed89338e"]
+      }
+    ],
+    "verificationSteps": [
+      {
+        "kind": "precondition",
+        "description": "Confirm no Service named checkout-api-canary already exists in the storefront namespace.",
+        "evidenceIds": ["ev-res-99a29425ed89338e"]
+      },
+      {
+        "kind": "postcheck",
+        "description": "Confirm the stable checkout-api Service still routes to the checkout-api Deployment after the change.",
+        "evidenceIds": ["ev-res-99a29425ed89338e", "ev-res-de01ac20685ab793"]
+      }
+    ]
+  }
+}
