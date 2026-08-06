@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/kubernetes-collector",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Namespace-scoped read-only Kubernetes snapshot collector for ChangeSafe.",
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@changesafe/domain-kubernetes": "^0.3.1",
+    "@changesafe/domain-kubernetes": "^0.4.0",
     "@kubernetes/client-node": "^1.4.0",
     "zod": "^4.4.3"
   },

@@ -22943,6 +22943,8 @@ var PROVIDER_IDS = ["openai", "anthropic", "ollama"];
 function isProviderId(value) {
   return PROVIDER_IDS.includes(value);
 }
+var DEFAULT_PROVIDER_TIMEOUT_MS = 6e4;
+var MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024;
 function callFailed(provider, detail, cause) {
   return new DomainError(
     "AI_CALL_FAILED",
@@ -22962,25 +22964,75 @@ function notConfigured(provider) {
     provider.credentialEnvVar ? `${provider.label} is not configured: set ${provider.credentialEnvVar}. Replay mode needs no credentials.` : `${provider.label} is not reachable. Replay mode needs no credentials.`
   );
 }
+async function readBoundedText(provider, response, maxBytes) {
+  const body = response.body;
+  if (!body) {
+    const text2 = await response.text();
+    if (text2.length > maxBytes) throw callFailed(provider, "the response was too large");
+    return text2;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let read = 0;
+  let text = "";
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      read += value.byteLength;
+      if (read > maxBytes) throw callFailed(provider, "the response was too large");
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => void 0);
+  }
+  return text + decoder.decode();
+}
 async function postJson(provider, url2, headers, body, call) {
-  let response;
+  const maxBytes = call.maxResponseBytes ?? MAX_PROVIDER_RESPONSE_BYTES;
+  const controller = new AbortController();
+  const abortForCaller = () => controller.abort();
+  call.signal?.addEventListener("abort", abortForCaller, { once: true });
+  if (call.signal?.aborted) controller.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, call.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
   try {
-    response = await call.fetch(url2, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: call.signal
-    });
-  } catch (error51) {
-    throw callFailed(provider, "the request could not be sent", error51);
-  }
-  if (!response.ok) {
-    throw callFailed(provider, `upstream status ${response.status}`);
-  }
-  try {
-    return await response.json();
-  } catch (error51) {
-    throw callFailed(provider, "the response was not valid JSON", error51);
+    let response;
+    try {
+      response = await call.fetch(url2, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch (error51) {
+      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error51);
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
+      throw callFailed(provider, "the request could not be sent", error51);
+    }
+    if (!response.ok) {
+      throw callFailed(provider, `upstream status ${response.status}`);
+    }
+    let text;
+    try {
+      text = await readBoundedText(provider, response, maxBytes);
+    } catch (error51) {
+      if (isDomainError(error51)) throw error51;
+      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error51);
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
+      throw callFailed(provider, "the response could not be read", error51);
+    }
+    try {
+      return JSON.parse(text);
+    } catch (error51) {
+      throw callFailed(provider, "the response was not valid JSON", error51);
+    }
+  } finally {
+    clearTimeout(timer);
+    call.signal?.removeEventListener("abort", abortForCaller);
   }
 }
 function parseJsonText(provider, text) {
@@ -24103,7 +24155,13 @@ async function probeProposal(prompt, input, options) {
         jsonSchema: toPortableJsonSchema(prompt.proposalSchema),
         maxOutputTokens: options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
       },
-      { fetch: options.fetch ?? globalThis.fetch, env, signal: options.signal }
+      {
+        fetch: options.fetch ?? globalThis.fetch,
+        env,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        maxResponseBytes: options.maxResponseBytes
+      }
     );
     raw = result.data;
     answeringModel = result.model;
@@ -25888,7 +25946,7 @@ import { writeFileSync } from "node:fs";
 import path2 from "node:path";
 
 // src/version.ts
-var CLI_PACKAGE_VERSION = "0.3.1";
+var CLI_PACKAGE_VERSION = "0.4.0";
 var CLI_APP_VERSION = `changesafe-cli-${CLI_PACKAGE_VERSION}`;
 var SERVER_APP_VERSION = `changesafe-server-${CLI_PACKAGE_VERSION}`;
 
@@ -27676,6 +27734,13 @@ function base64UrlToBytes(value) {
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+function decodeSegmentBytes(value, segment) {
+  try {
+    return base64UrlToBytes(value);
+  } catch {
+    throw unauthorized(`the token's ${segment} is not valid base64url`);
+  }
+}
 function base64UrlToJson(value, segment) {
   try {
     return JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
@@ -27799,7 +27864,7 @@ var OidcVerifier = class {
     const [encodedHeader, encodedPayload, encodedSignature] = parts;
     const header = parseSegment(JwtHeaderSchema, base64UrlToJson(encodedHeader, "header"), "header");
     const alg = assertAllowedAlgorithm(header.alg);
-    const signature = base64UrlToBytes(encodedSignature);
+    const signature = decodeSegmentBytes(encodedSignature, "signature");
     const signed = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
     const verified = await this.#verifySignature(header.kid, alg, signature, signed);
     if (!verified) throw unauthorized("the token signature is not valid for this issuer");
