@@ -229,3 +229,70 @@ describe("failure handling", () => {
     ).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
   });
 });
+
+describe("transport bounds", () => {
+  /** A provider that accepts the connection and then never answers. */
+  const silentFetch = ((_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () =>
+        reject(new DOMException("aborted", "AbortError")),
+      );
+    })) as typeof globalThis.fetch;
+
+  it("abandons a provider that stops talking, without a caller signal", async () => {
+    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: silentFetch,
+      timeoutMs: 25,
+    });
+
+    expect(verdict.outcome).toBe("call_failed");
+    if (verdict.outcome !== "call_failed") return;
+    expect(verdict.detail).toContain("did not answer in time");
+  });
+
+  it("keeps caller cancellation distinguishable from the deadline", async () => {
+    const controller = new AbortController();
+    const verdict = probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: silentFetch,
+      signal: controller.signal,
+      // Long enough that only the caller's abort can end this call.
+      timeoutMs: 30_000,
+    });
+    controller.abort();
+
+    const settled = await verdict;
+    expect(settled.outcome).toBe("call_failed");
+    if (settled.outcome !== "call_failed") return;
+    expect(settled.detail).toContain("cancelled");
+  });
+
+  it("refuses an oversized response during the read", async () => {
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(4096)));
+      },
+    });
+    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+      provider: openaiProvider,
+      env: CREDENTIALED_ENV,
+      fetch: (() =>
+        Promise.resolve(
+          new Response(endless, { headers: { "content-type": "application/json" } }),
+        )) as typeof globalThis.fetch,
+      maxResponseBytes: 8192,
+    });
+
+    expect(verdict.outcome).toBe("call_failed");
+    if (verdict.outcome !== "call_failed") return;
+    expect(verdict.detail).toContain("too large");
+  });
+
+  it("still accepts an ordinary response under the bounds", async () => {
+    const { result } = probe(openaiProvider, () => REPLIES.openai!(proposal));
+    expect((await result).outcome).toBe("accepted");
+  });
+});

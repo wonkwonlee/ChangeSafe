@@ -18,6 +18,10 @@ export interface AnalyzeOptions {
   /** Injected so tests exercise real adapters without network access. */
   readonly fetch?: typeof globalThis.fetch;
   readonly signal?: AbortSignal;
+  /** Per-call transport bounds; a local Ollama model may legitimately need
+   *  longer than the shared default. */
+  readonly timeoutMs?: number;
+  readonly maxResponseBytes?: number;
 }
 
 export interface AnalysisResult {
@@ -99,7 +103,13 @@ export async function probeProposal<TInput>(
         jsonSchema: toPortableJsonSchema(prompt.proposalSchema),
         maxOutputTokens: options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       },
-      { fetch: options.fetch ?? globalThis.fetch, env, signal: options.signal },
+      {
+        fetch: options.fetch ?? globalThis.fetch,
+        env,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        maxResponseBytes: options.maxResponseBytes,
+      },
     );
     raw = result.data;
     answeringModel = result.model;

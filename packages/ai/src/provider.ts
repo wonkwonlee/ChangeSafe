@@ -1,4 +1,4 @@
-import { DomainError } from "@changesafe/core";
+import { DomainError, isDomainError } from "@changesafe/core";
 
 import type { JsonSchema } from "./json-schema";
 
@@ -40,7 +40,32 @@ export interface ProviderCall {
   readonly fetch: typeof globalThis.fetch;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
+  /** Overrides {@link DEFAULT_PROVIDER_TIMEOUT_MS}; a slow local model is a
+   *  legitimate reason to wait longer than a hosted API should ever need. */
+  readonly timeoutMs?: number;
+  /** Overrides {@link MAX_PROVIDER_RESPONSE_BYTES}. */
+  readonly maxResponseBytes?: number;
 }
+
+/**
+ * How long any single provider call may take.
+ *
+ * Model calls are legitimately slow, so this is generous by HTTP standards and
+ * still finite: a provider that has not answered by now is one this request
+ * cannot use, and on the unauthenticated live-analysis path an unbounded wait
+ * is a request slot held open by whoever asked for it.
+ */
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 60_000;
+
+/**
+ * How much of a provider response is worth reading.
+ *
+ * A structured proposal is kilobytes. Everything past this cap is either a
+ * misbehaving endpoint or an attempt to make us buffer memory before local
+ * validation gets to reject the body, so it is refused during the read rather
+ * than after it.
+ */
+export const MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export interface ProviderResult {
   /** Parsed JSON exactly as the provider returned it. Not yet validated. */
@@ -95,6 +120,44 @@ export function notConfigured(provider: ModelProvider): DomainError {
   );
 }
 
+/**
+ * Read a response body under a byte cap, refusing during the read.
+ *
+ * The cap is enforced while streaming rather than after buffering, so an
+ * endpoint that answers with an endless body is dropped instead of being
+ * measured. A body-less response (or a transport that does not expose one)
+ * falls back to buffering, which is still bounded by the same cap.
+ */
+async function readBoundedText(
+  provider: ModelProvider,
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const body = response.body;
+  if (!body) {
+    const text = await response.text();
+    if (text.length > maxBytes) throw callFailed(provider, "the response was too large");
+    return text;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let read = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      read += value.byteLength;
+      if (read > maxBytes) throw callFailed(provider, "the response was too large");
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return text + decoder.decode();
+}
+
 /** POST JSON and return the decoded body, mapping every failure to a safe error. */
 export async function postJson(
   provider: ModelProvider,
@@ -103,28 +166,59 @@ export async function postJson(
   body: unknown,
   call: ProviderCall,
 ): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await call.fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: call.signal,
-    });
-  } catch (error) {
-    throw callFailed(provider, "the request could not be sent", error);
-  }
-
-  if (!response.ok) {
-    // Only the status crosses the boundary — provider error bodies can echo
-    // the request, and the request contains untrusted incident content.
-    throw callFailed(provider, `upstream status ${response.status}`);
-  }
+  const maxBytes = call.maxResponseBytes ?? MAX_PROVIDER_RESPONSE_BYTES;
+  // The caller's signal and our deadline are composed rather than chosen
+  // between: cancellation must stay observable as cancellation, and a caller
+  // that supplies no signal must still not be able to wait forever.
+  const controller = new AbortController();
+  const abortForCaller = () => controller.abort();
+  call.signal?.addEventListener("abort", abortForCaller, { once: true });
+  if (call.signal?.aborted) controller.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, call.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
 
   try {
-    return await response.json();
-  } catch (error) {
-    throw callFailed(provider, "the response was not valid JSON", error);
+    let response: Response;
+    try {
+      response = await call.fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error);
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error);
+      throw callFailed(provider, "the request could not be sent", error);
+    }
+
+    if (!response.ok) {
+      // Only the status crosses the boundary — provider error bodies can echo
+      // the request, and the request contains untrusted incident content.
+      throw callFailed(provider, `upstream status ${response.status}`);
+    }
+
+    let text: string;
+    try {
+      text = await readBoundedText(provider, response, maxBytes);
+    } catch (error) {
+      if (isDomainError(error)) throw error;
+      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error);
+      if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error);
+      throw callFailed(provider, "the response could not be read", error);
+    }
+
+    try {
+      return JSON.parse(text) as unknown;
+    } catch (error) {
+      throw callFailed(provider, "the response was not valid JSON", error);
+    }
+  } finally {
+    clearTimeout(timer);
+    call.signal?.removeEventListener("abort", abortForCaller);
   }
 }
 
