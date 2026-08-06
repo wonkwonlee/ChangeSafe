@@ -61,6 +61,8 @@ ANALYZE OPTIONS
   --scenario <dir>      shorthand for --input <dir>/incident.json
   --provider <id>       ${PROVIDER_IDS.join(" | ")} (default: the configured one)
   --model <id>          override the provider's default model
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --out <file>          write the accepted proposal
   --capture <file>      write a provenance-stamped replay fixture
   plus every GATE OPTION above, applied to the resulting proposal
@@ -70,6 +72,8 @@ EVAL OPTIONS
   --model <id>          override the provider's default model
   --dir <dir>           scenario suite (default: scenarios)
   --runs <n>            attempts per scenario (default: 1, max 20)
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --report <file>       write a versioned, committable report
   --format pretty|json
 
@@ -151,6 +155,7 @@ const OPTION_SPEC = {
   out: { type: "string" },
   capture: { type: "string" },
   runs: { type: "string", default: "1" },
+  timeout: { type: "string" },
   "sign-key": { type: "string" },
   "receipt-id": { type: "string" },
   "created-at": { type: "string" },
@@ -185,6 +190,16 @@ function parseFormat(value: string): "pretty" | "json" {
     throw new UsageError(`--format must be "pretty" or "json", got "${value}"`);
   }
   return value;
+}
+
+/** `--timeout` as seconds; the range check itself lives in `resolveTimeoutMs`. */
+function parseTimeout(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) {
+    throw new UsageError(`--timeout must be a number of seconds, got "${value}"`);
+  }
+  return seconds;
 }
 
 export async function main(argv: string[], console: Console): Promise<number> {
@@ -247,6 +262,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           scenario: values.scenario,
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           out: values.out,
           capture: values.capture,
           policyPack: values["policy-pack"],
@@ -272,6 +288,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
         {
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           // eval measures a model, and only the network domain has model
           // analysis (see packages/ai/src/domains.ts) — terraform and
           // kubernetes proposals are derived mechanically, not proposed.

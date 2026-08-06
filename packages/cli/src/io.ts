@@ -48,3 +48,19 @@ export function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, label: str
       : "";
   throw new UsageError(`${label} failed validation:\n${issues}${more}`);
 }
+
+/**
+ * Turn `--timeout <seconds>` into milliseconds.
+ *
+ * Undefined means "the provider decides": the shared default for hosted APIs,
+ * a longer one for local models. An explicit value always wins, which is the
+ * point — a deadline nobody can raise is a deadline that eventually aborts
+ * work that would have succeeded.
+ */
+export function resolveTimeoutMs(seconds: number | undefined): number | undefined {
+  if (seconds === undefined) return undefined;
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+    throw new UsageError("--timeout must be a whole number of seconds between 1 and 3600");
+  }
+  return seconds * 1000;
+}

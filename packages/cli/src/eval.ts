@@ -17,13 +17,15 @@ import {
 } from "@changesafe/core";
 import { IncidentBundleSchema, networkDomain } from "@changesafe/domain-network";
 
-import { UsageError, parseOrThrow, readJsonFile } from "./io";
+import { UsageError, parseOrThrow, readJsonFile, resolveTimeoutMs } from "./io";
 import { EXIT_OK, paint, type Console } from "./output";
 
 export interface EvalOptions {
   provider: string;
   model?: string;
   dir: string;
+  /** Per-call provider deadline in seconds; overrides the provider default. */
+  timeoutSeconds?: number;
   runs: number;
   /** Write a versioned, committable report here. */
   report?: string;
@@ -94,15 +96,19 @@ export function createScenarioReport(
  */
 export async function runEval(options: EvalOptions, console: Console): Promise<number> {
   const provider = resolveProvider(options.provider);
+  // Arguments before environment: a mistyped flag is the caller's own input and
+  // should be reported whether or not a credential happens to be configured.
+  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
+    throw new UsageError("--runs must be an integer between 1 and 20");
+  }
+  const timeoutMs = resolveTimeoutMs(options.timeoutSeconds);
+
   if (!provider.isConfigured(process.env)) {
     throw new UsageError(
       provider.credentialEnvVar
         ? `${provider.label} needs ${provider.credentialEnvVar} to be set`
         : `${provider.label} is not available`,
     );
-  }
-  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
-    throw new UsageError("--runs must be an integer between 1 and 20");
   }
 
   const root = path.resolve(options.dir);
@@ -125,7 +131,9 @@ export async function runEval(options: EvalOptions, console: Console): Promise<n
 
   const reports: ScenarioReport[] = [];
   for (const name of directories) {
-    reports.push(await evaluateScenario(path.join(root, name), provider.id, model, options.runs));
+    reports.push(
+      await evaluateScenario(path.join(root, name), provider.id, model, options.runs, timeoutMs),
+    );
   }
 
   return report(reports, { provider: provider.label, model }, options, console);
@@ -136,6 +144,7 @@ async function evaluateScenario(
   providerId: string,
   model: string,
   runs: number,
+  timeoutMs: number | undefined,
 ): Promise<ScenarioReport> {
   const bundle = parseOrThrow(
     IncidentBundleSchema,
@@ -153,6 +162,7 @@ async function evaluateScenario(
     const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
       provider: resolveProvider(providerId),
       model,
+      timeoutMs,
     });
     report.outcomes[verdict.outcome] += 1;
 

@@ -14,7 +14,7 @@ import type { ChangeProposal } from "@changesafe/core";
 
 import { resolveDomain } from "./domains";
 import { gateParsedProposal } from "./gate";
-import { UsageError, readJsonFile } from "./io";
+import { UsageError, readJsonFile, resolveTimeoutMs } from "./io";
 import { paint, type Console } from "./output";
 
 export interface AnalyzeCommandOptions {
@@ -23,6 +23,8 @@ export interface AnalyzeCommandOptions {
   scenario?: string;
   provider?: string;
   model?: string;
+  /** Per-call provider deadline in seconds; overrides the provider default. */
+  timeoutSeconds?: number;
   /** Write the accepted proposal here. */
   out?: string;
   /** Write a provenance-stamped replay fixture here. */
@@ -76,6 +78,7 @@ export async function runAnalyze(
   const analysis = await analysisDomain.analyze(readJsonFile(inputPath, "incident bundle"), {
     provider,
     model,
+    timeoutMs: resolveTimeoutMs(options.timeoutSeconds),
   });
 
   const sourceId =

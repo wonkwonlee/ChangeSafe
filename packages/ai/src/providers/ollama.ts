@@ -30,6 +30,13 @@ export const ollamaProvider: ModelProvider = {
   defaultModel: "llama3.1",
   // Local and unauthenticated: there is no credential to configure or leak.
   credentialEnvVar: null,
+  /**
+   * Local generation is slow for honest reasons — CPU inference, a cold model
+   * load, a laptop doing something else — none of which mean the endpoint has
+   * stopped answering. The hosted default would abort work that was going to
+   * succeed, so this provider carries its own, and `--timeout` overrides both.
+   */
+  defaultTimeoutMs: 600_000,
 
   isConfigured() {
     // Reachability cannot be established without a call; `propose` reports a

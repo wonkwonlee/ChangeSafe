@@ -49,11 +49,14 @@ gate is honest about not catching, which is why the scenario exists.
   HTTP 500. It is now the same `AuthenticationError` every other malformed
   segment produces, refused before any JWKS fetch. (#24)
 - **Provider calls are bounded.** Every OpenAI, Anthropic, and Ollama call now
-  runs under a 60s default deadline and a 2 MiB response cap enforced during
-  the read, composed with — not replacing — a caller-supplied `AbortSignal`.
-  `AnalyzeOptions` accepts `timeoutMs` and `maxResponseBytes` for slower local
-  models. This is a behavior change for library consumers who previously
-  relied on an unbounded wait. (#26)
+  runs under a deadline and a 2 MiB response cap enforced during the read,
+  composed with — not replacing — a caller-supplied `AbortSignal`. The default
+  is 60s for hosted APIs and 600s for a local Ollama model, because CPU
+  inference and a cold model load are slow for reasons that have nothing to do
+  with a stalled connection. `changesafe analyze --timeout <seconds>` and
+  `changesafe eval --timeout <seconds>` override both, as does `timeoutMs` on
+  `AnalyzeOptions`. This is a behavior change for library consumers who
+  previously relied on an unbounded wait. (#26)
 - **`SECURITY.md` matches what shipped.** The authenticated server, ledger
   integrity, and signature-vs-integrity boundaries are now named in scope,
   and the two runtimes have separate documented boundaries. (#25)

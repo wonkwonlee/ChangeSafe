@@ -22990,6 +22990,8 @@ async function readBoundedText(provider, response, maxBytes) {
 }
 async function postJson(provider, url2, headers, body, call) {
   const maxBytes = call.maxResponseBytes ?? MAX_PROVIDER_RESPONSE_BYTES;
+  const timeoutMs = call.timeoutMs ?? provider.defaultTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const deadline = timeoutMs < 1e3 ? `${timeoutMs}ms` : `${Math.round(timeoutMs / 1e3)}s`;
   const controller = new AbortController();
   const abortForCaller = () => controller.abort();
   call.signal?.addEventListener("abort", abortForCaller, { once: true });
@@ -22998,7 +23000,7 @@ async function postJson(provider, url2, headers, body, call) {
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, call.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
+  }, timeoutMs);
   try {
     let response;
     try {
@@ -23009,7 +23011,9 @@ async function postJson(provider, url2, headers, body, call) {
         signal: controller.signal
       });
     } catch (error51) {
-      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error51);
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error51);
+      }
       if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
       throw callFailed(provider, "the request could not be sent", error51);
     }
@@ -23021,7 +23025,9 @@ async function postJson(provider, url2, headers, body, call) {
       text = await readBoundedText(provider, response, maxBytes);
     } catch (error51) {
       if (isDomainError(error51)) throw error51;
-      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error51);
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error51);
+      }
       if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error51);
       throw callFailed(provider, "the response could not be read", error51);
     }
@@ -23177,6 +23183,13 @@ var ollamaProvider = {
   defaultModel: "llama3.1",
   // Local and unauthenticated: there is no credential to configure or leak.
   credentialEnvVar: null,
+  /**
+   * Local generation is slow for honest reasons — CPU inference, a cold model
+   * load, a laptop doing something else — none of which mean the endpoint has
+   * stopped answering. The hosted default would abort work that was going to
+   * succeed, so this provider carries its own, and `--timeout` overrides both.
+   */
+  defaultTimeoutMs: 6e5,
   isConfigured() {
     return true;
   },
@@ -25845,6 +25858,13 @@ function parseOrThrow2(schema, value, label) {
   throw new UsageError(`${label} failed validation:
 ${issues}${more}`);
 }
+function resolveTimeoutMs(seconds) {
+  if (seconds === void 0) return void 0;
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+    throw new UsageError("--timeout must be a whole number of seconds between 1 and 3600");
+  }
+  return seconds * 1e3;
+}
 
 // src/domains.ts
 function hasProposalKey(raw) {
@@ -26189,7 +26209,8 @@ async function runAnalyze(options, console2) {
   }
   const analysis = await analysisDomain.analyze(readJsonFile(inputPath, "incident bundle"), {
     provider,
-    model
+    model,
+    timeoutMs: resolveTimeoutMs(options.timeoutSeconds)
   });
   const sourceId = options.sourceId ?? (options.scenario ? path3.basename(path3.resolve(options.scenario)) : void 0) ?? "cli-analyze";
   if (options.out) {
@@ -26288,13 +26309,14 @@ function createScenarioReport(expectations, attempts) {
 }
 async function runEval(options, console2) {
   const provider = resolveProvider(options.provider);
+  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
+    throw new UsageError("--runs must be an integer between 1 and 20");
+  }
+  const timeoutMs = resolveTimeoutMs(options.timeoutSeconds);
   if (!provider.isConfigured(process.env)) {
     throw new UsageError(
       provider.credentialEnvVar ? `${provider.label} needs ${provider.credentialEnvVar} to be set` : `${provider.label} is not available`
     );
-  }
-  if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 20) {
-    throw new UsageError("--runs must be an integer between 1 and 20");
   }
   const root = path4.resolve(options.dir);
   if (!existsSync(root)) throw new UsageError(`scenario directory does not exist: ${root}`);
@@ -26308,11 +26330,13 @@ async function runEval(options, console2) {
   }
   const reports = [];
   for (const name of directories) {
-    reports.push(await evaluateScenario(path4.join(root, name), provider.id, model, options.runs));
+    reports.push(
+      await evaluateScenario(path4.join(root, name), provider.id, model, options.runs, timeoutMs)
+    );
   }
   return report(reports, { provider: provider.label, model }, options, console2);
 }
-async function evaluateScenario(dir, providerId, model, runs) {
+async function evaluateScenario(dir, providerId, model, runs, timeoutMs) {
   const bundle = parseOrThrow2(
     IncidentBundleSchema,
     readJsonFile(path4.join(dir, "incident.json"), "incident bundle"),
@@ -26327,7 +26351,8 @@ async function evaluateScenario(dir, providerId, model, runs) {
   for (let run2 = 0; run2 < runs; run2 += 1) {
     const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
       provider: resolveProvider(providerId),
-      model
+      model,
+      timeoutMs
     });
     report2.outcomes[verdict.outcome] += 1;
     if (verdict.outcome === "accepted") {
@@ -31363,6 +31388,8 @@ ANALYZE OPTIONS
   --scenario <dir>      shorthand for --input <dir>/incident.json
   --provider <id>       ${PROVIDER_IDS.join(" | ")} (default: the configured one)
   --model <id>          override the provider's default model
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --out <file>          write the accepted proposal
   --capture <file>      write a provenance-stamped replay fixture
   plus every GATE OPTION above, applied to the resulting proposal
@@ -31372,6 +31399,8 @@ EVAL OPTIONS
   --model <id>          override the provider's default model
   --dir <dir>           scenario suite (default: scenarios)
   --runs <n>            attempts per scenario (default: 1, max 20)
+  --timeout <seconds>   provider deadline for one call (default: 60s hosted,
+                        600s for a local Ollama model)
   --report <file>       write a versioned, committable report
   --format pretty|json
 
@@ -31452,6 +31481,7 @@ var OPTION_SPEC = {
   out: { type: "string" },
   capture: { type: "string" },
   runs: { type: "string", default: "1" },
+  timeout: { type: "string" },
   "sign-key": { type: "string" },
   "receipt-id": { type: "string" },
   "created-at": { type: "string" },
@@ -31485,6 +31515,14 @@ function parseFormat(value) {
     throw new UsageError(`--format must be "pretty" or "json", got "${value}"`);
   }
   return value;
+}
+function parseTimeout(value) {
+  if (value === void 0) return void 0;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) {
+    throw new UsageError(`--timeout must be a number of seconds, got "${value}"`);
+  }
+  return seconds;
 }
 async function main(argv, console2) {
   let parsed;
@@ -31541,6 +31579,7 @@ async function main(argv, console2) {
           scenario: values.scenario,
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           out: values.out,
           capture: values.capture,
           policyPack: values["policy-pack"],
@@ -31565,6 +31604,7 @@ async function main(argv, console2) {
         {
           provider: values.provider,
           model: values.model,
+          timeoutSeconds: parseTimeout(values.timeout),
           // eval measures a model, and only the network domain has model
           // analysis (see packages/ai/src/domains.ts) — terraform and
           // kubernetes proposals are derived mechanically, not proposed.

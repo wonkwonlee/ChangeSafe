@@ -81,6 +81,14 @@ export interface ModelProvider {
   /** Environment variable holding the credential; null when the provider is
    *  local and needs none. */
   readonly credentialEnvVar: string | null;
+  /**
+   * This provider's own deadline, when the shared default does not fit it.
+   *
+   * A local model generating on someone's laptop is slow for reasons that have
+   * nothing to do with a stalled connection, so the provider that knows this
+   * says so rather than making every caller pass a flag.
+   */
+  readonly defaultTimeoutMs?: number;
   isConfigured(env: Readonly<Record<string, string | undefined>>): boolean;
   propose(request: ProposalRequest, call: ProviderCall): Promise<ProviderResult>;
 }
@@ -167,6 +175,11 @@ export async function postJson(
   call: ProviderCall,
 ): Promise<unknown> {
   const maxBytes = call.maxResponseBytes ?? MAX_PROVIDER_RESPONSE_BYTES;
+  const timeoutMs =
+    call.timeoutMs ?? provider.defaultTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  // Rendered from the deadline actually in force, so the message names the
+  // number someone can change rather than a constant they cannot find.
+  const deadline = timeoutMs < 1000 ? `${timeoutMs}ms` : `${Math.round(timeoutMs / 1000)}s`;
   // The caller's signal and our deadline are composed rather than chosen
   // between: cancellation must stay observable as cancellation, and a caller
   // that supplies no signal must still not be able to wait forever.
@@ -178,7 +191,7 @@ export async function postJson(
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, call.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
+  }, timeoutMs);
 
   try {
     let response: Response;
@@ -190,7 +203,9 @@ export async function postJson(
         signal: controller.signal,
       });
     } catch (error) {
-      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error);
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error);
+      }
       if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error);
       throw callFailed(provider, "the request could not be sent", error);
     }
@@ -206,7 +221,9 @@ export async function postJson(
       text = await readBoundedText(provider, response, maxBytes);
     } catch (error) {
       if (isDomainError(error)) throw error;
-      if (timedOut) throw callFailed(provider, "the provider did not answer in time", error);
+      if (timedOut) {
+        throw callFailed(provider, `no answer within ${deadline}`, error);
+      }
       if (call.signal?.aborted) throw callFailed(provider, "the request was cancelled", error);
       throw callFailed(provider, "the response could not be read", error);
     }

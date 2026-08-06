@@ -512,6 +512,22 @@ describe("changesafe usage", () => {
     expect(capture.stdout).toContain("No command approves a change");
   });
 
+  it("exposes the provider deadline and rejects a nonsensical one", async () => {
+    // The escape hatch has to be reachable from the shipped command, not just
+    // from the library: a local model that legitimately takes minutes is the
+    // case the shared 60s default gets wrong.
+    const capture = createCapture();
+    await main([], capture);
+    expect(capture.stdout).toContain("--timeout <seconds>");
+
+    await expect(
+      main(["eval", "--provider", "anthropic", "--timeout", "0"], createCapture()),
+    ).rejects.toThrow(/--timeout must be a whole number of seconds/);
+    await expect(
+      main(["analyze", "--scenario", SAFE, "--timeout", "abc"], createCapture()),
+    ).rejects.toThrow(/--timeout must be a number of seconds/);
+  });
+
   it("rejects unknown commands and formats", async () => {
     const capture = createCapture();
     await expect(main(["frobnicate"], capture)).rejects.toThrow(/unknown command/);
