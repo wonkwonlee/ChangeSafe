@@ -1,4 +1,4 @@
-# Kubernetes (v0.3.1)
+# Kubernetes
 
 Use `@changesafe/domain-kubernetes@0.3.1` or later. The `0.3.0` library
 publication is deprecated because its direct Node ESM imports were invalid;

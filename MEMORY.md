@@ -28,8 +28,8 @@ domain decisions.
   Exact `/workbench` and `/api/analyze` are retired.
 - Public replay evaluates only. It creates no decision, simulation result,
   durable review, or receipt. The optional self-hosted browser route needs an
-  operator-run HTTPS gateway/BFF with an HttpOnly session; `changesafe serve`
-  does not yet wire the durable review queue store.
+  operator-run HTTPS gateway/BFF with an HttpOnly session. `changesafe serve`
+  wires the durable review queue store as of #49.
 - New work should generally improve scenarios, domains, documentation,
   integrations, tests, or release hardening rather than add platform
   machinery ahead of the roadmap.
