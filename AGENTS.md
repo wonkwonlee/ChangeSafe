@@ -274,8 +274,34 @@ hand-edit it, and regenerate when the corpus changes. Authoring guide:
   branches. Remote: github.com/wonkwonlee/ChangeSafe (public) — push after
   verified milestones.
 - Never commit secrets or local env files.
-- Publishing packages to npm requires explicit owner authorization; the npm
-  scope question is still open (`docs/OSS_ROADMAP.md` §7).
+- Publishing packages to npm requires explicit owner authorization. The
+  `@changesafe` scope and the unscoped `changesafe` name are both claimed
+  and published (`docs/OSS_ROADMAP.md` §7).
+
+## Work tracking
+
+GitHub Issues is the contribution surface and the only public record: user
+reports, scenario proposals, and anything a contributor should be able to
+find. Nothing below replaces it.
+
+Locally, this repository supports [beads](https://github.com/gastownhall/beads)
+(`bd`) as the agent-facing work graph, because a flat list cannot express
+"this is blocked until v0.4.0 is published" and repeatedly failed to: the
+vNext epic's ten delivery issues stayed open for a week after the work
+merged. `bd ready` answers what is actually startable; `bd blocked` says why
+the rest is not.
+
+- `bd` is optional. Contributors do not need it, and no build, test, or CI
+  step depends on it.
+- `.beads/` is per-machine runtime state and is ignored, including
+  `issues.jsonl` — beads syncs through its own git refs, so committing that
+  export would version a passive copy as if it were the source of truth.
+- A bead that mirrors a GitHub issue records it with
+  `--external-ref gh-<number>`. Automated `bd github sync` is off on purpose:
+  it is bidirectional by default and would push local planning items into a
+  public tracker.
+- Durable project decisions still belong in `MEMORY.md` and the roadmap, not
+  in a local database.
 
 ## Scope control
 
