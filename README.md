@@ -63,7 +63,8 @@ Open http://localhost:3000. **Public replay works immediately** with bundled,
 clearly labeled fixtures — no key, no model call, no infrastructure network,
 and no cost.
 
-Nine bundled Network scenarios cover the gate verdict space and exercise the
+The bundled corpus is 26 scenarios across Network, Terraform, and Kubernetes.
+The nine Network scenarios below cover the gate verdict space and exercise the
 full engine in tests:
 
 | Bundled scenario | What it demonstrates | Outcome |

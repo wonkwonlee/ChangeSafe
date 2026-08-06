@@ -118,7 +118,7 @@ features/                  app-local domain registries, versioned review
                            transports, durable review contracts
 lib/ai/                    server-only live-provider status/config binding
 lib/domain/                app-level wire contracts and version constants
-scenarios/                 nine synthetic incident bundles, fixtures,
+scenarios/                 synthetic incident bundles by domain, fixtures,
                            expectations, plus the browser-usable registry
 tests/                     unit, integration, e2e (Playwright)
 scripts/                   release-bundle build/verify, PR summary rendering
@@ -255,8 +255,10 @@ env-gated. Never weaken a test to make an implementation pass.
 
 Scenarios are first-class contribution surface: fully fictional, schema-
 valid, provenance-honest, each with an `expectations.json` proving its
-claimed verdicts in CI. Nine scenarios ship today (six adversarial), and
-each declares `corpus.adversarial` plus its `failureModes` so coverage is
+claimed verdicts in CI. Twenty-six scenarios ship today across network,
+Terraform, and Kubernetes (twelve adversarial); `docs/SCENARIOS.md` carries
+the authoritative count, since it is generated from the corpus. Each
+declares `corpus.adversarial` plus its `failureModes` so coverage is
 countable. An adversarial scenario must be refused by the gate or flagged by
 simulation — the schema itself rejects an adversarial scenario declared as
 approvable *and* cleanly simulating. Red-team scenarios must always produce
