@@ -5,13 +5,17 @@ deploys, tags, or posts automatically.
 
 ## Release truth
 
-- `v0.4.0` is the canonical package/tag release: the first published release
-  of the multi-domain workbench, and the first to go out through the trusted
+- `v0.4.1` is the canonical package/tag release: the complete published set of
+  the multi-domain workbench, and the first to go out through the trusted
   publishing workflow rather than a manual publish.
+- **Do not point anyone at `0.4.0`.** It published three of five packages
+  before failing, so the CLI and the Kubernetes domain do not exist at that
+  version. The three that shipped are genuine and carry provenance; the set is
+  simply incomplete. See [RELEASE_NOTES_v0.4.1.md](RELEASE_NOTES_v0.4.1.md).
 - `@changesafe/domain-kubernetes@0.3.0` is deprecated because its direct Node
   ESM imports were invalid; use `0.3.1` or later.
 - v0.3.0 and v0.3.1 were manually published and do **not** carry npm
-  provenance attestations. Verify v0.4.0's attestations before announcing it
+  provenance attestations. Verify v0.4.1's attestations before announcing it
   — an unverified provenance claim is worth less than none.
 - The vNext UI cutover (#47, #48, #49) is merged to `main` and deployed to
   the hosted Vercel URL. It does not itself create an npm release, Git tag,
@@ -88,7 +92,7 @@ Example:
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.4.0
+  uses: wonkwonlee/ChangeSafe@v0.4.1
   with:
     plan: tfplan.json
     context: pr-body.txt
