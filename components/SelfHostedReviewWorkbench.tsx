@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SelfHostedDisconnectedExplainer } from "./SelfHostedDisconnectedExplainer";
 import { SelfHostedReviewDetail } from "./SelfHostedReviewDetail";
 import { SelfHostedReviewQueue } from "./SelfHostedReviewQueue";
 import { WorkbenchNav } from "./WorkbenchNav";
@@ -323,6 +324,11 @@ export function SelfHostedReviewWorkbench({
         </div>
       </section>
 
+      {!transport ? (
+        <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+          <SelfHostedDisconnectedExplainer />
+        </div>
+      ) : (
       <div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.6fr)_minmax(260px,0.8fr)]">
         <aside className="rounded-xl border border-edge bg-surface p-4" aria-label="Offline artifact intake">
           <p className="eyebrow text-ink-faint">Offline artifact intake</p>
@@ -344,9 +350,8 @@ export function SelfHostedReviewWorkbench({
             <p className="mt-3 rounded border border-warn/50 bg-warn/10 p-3 text-sm text-warn" role="status">Unsupported for durable self-hosted review. Use the Kubernetes public offline workbench; no cluster access or apply exists.</p>
           ) : null}
           <button
-            aria-describedby={!transport ? "self-hosted-disconnected-notice" : undefined}
             className="mt-4 w-full rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:opacity-50"
-            disabled={busy || !transport || example.domainId === "kubernetes"}
+            disabled={busy || example.domainId === "kubernetes"}
             onClick={() => void createReview()}
             type="button"
           >
@@ -370,9 +375,8 @@ export function SelfHostedReviewWorkbench({
           <div className="flex items-center justify-between gap-3">
             <div><p className="eyebrow text-ink-faint">Owner-scoped queue</p><h2 className="mt-2 text-base font-semibold">Reviews</h2></div>
             <button
-              aria-describedby={!transport ? "self-hosted-disconnected-notice" : undefined}
               className="rounded border border-edge px-3 py-2 text-xs disabled:opacity-50"
-              disabled={busy || !transport}
+              disabled={busy}
               onClick={() => void refreshQueue()}
               type="button"
             >
@@ -387,6 +391,7 @@ export function SelfHostedReviewWorkbench({
           />
         </aside>
       </div>
+      )}
     </div>
   );
 }

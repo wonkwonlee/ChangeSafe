@@ -8,7 +8,7 @@ import SelfHostedWorkbenchPage, {
 } from "../../app/workbench/self-hosted/page";
 
 describe("/workbench/self-hosted route", () => {
-  it("renders a separate, disabled-until-configured authenticated surface", () => {
+  it("replaces the app shell with an explainer when disconnected, instead of a disabled surface", () => {
     const previous = process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL;
     delete process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL;
     try {
@@ -20,12 +20,20 @@ describe("/workbench/self-hosted route", () => {
       expect(markup).toContain("Authenticated self-hosted");
       expect(markup).toContain("connects to a self-hosted ChangeSafe server that you run");
       expect(markup).toContain("empty by design");
-      expect(markup).toContain("Kubernetes offline artifact");
-      expect(markup).toContain("Kubernetes unsupported");
-      expect(markup).toContain("never executes infrastructure");
       expect(markup).toContain('href="https://github.com/wonkwonlee/ChangeSafe/blob/main/packages/server/README.md"');
       expect(markup).toContain('href="https://github.com/wonkwonlee/ChangeSafe"');
-      expect(markup).toContain('aria-describedby="self-hosted-disconnected-notice"');
+
+      // The explainer, not the disabled app shell, is what renders.
+      expect(markup).toContain("What self-hosting adds");
+      expect(markup).toContain("OIDC approver identity");
+      expect(markup).toContain("Signed receipts");
+      expect(markup).toContain("Independent receipt proof");
+      expect(markup).toContain(">Example<");
+      expect(markup).toContain("Fictional claims for illustration only");
+      expect(markup).not.toContain("Offline artifact intake");
+      expect(markup).not.toContain("Add to authenticated queue");
+      expect(markup).not.toContain("Kubernetes offline artifact");
+
       expect(metadata.title).toBe(
         "ChangeSafe Workbench — Authenticated Self-Hosted",
       );
@@ -59,7 +67,7 @@ describe("/workbench/self-hosted route", () => {
     expect(uiSource).not.toContain("sessionStorage");
   });
 
-  it("renders the public gateway trust boundary when configured", () => {
+  it("renders the working app shell, not the explainer, when configured", () => {
     const previous = process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL;
     process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL =
       "https://review-gateway.example.test";
@@ -69,6 +77,13 @@ describe("/workbench/self-hosted route", () => {
       expect(markup).toContain("must use HTTPS");
       expect(markup).toContain("HttpOnly session cookie");
       expect(markup).not.toContain("Self-hosted review is not configured");
+
+      // The real app shell renders, not the disconnected explainer.
+      expect(markup).toContain("Offline artifact intake");
+      expect(markup).toContain("Add to authenticated queue");
+      expect(markup).toContain("Kubernetes offline artifact");
+      expect(markup).not.toContain("What self-hosting adds");
+      expect(markup).not.toContain("connects to a self-hosted ChangeSafe server that you run");
     } finally {
       if (previous === undefined) {
         delete process.env.CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL;
