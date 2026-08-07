@@ -185,7 +185,7 @@ export function DomainCoverageCatalog({
             {coverage.skippedPolicies.map((skip) => (
               <li key={skip.policyId}>
                 <span className="font-mono">{skip.policyId}</span> —{" "}
-                {skip.because} Replacement: {skip.replacedBy}.
+                {skip.because} Replacement: {skip.replacedBy.policyId}.
               </li>
             ))}
           </ul>

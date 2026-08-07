@@ -54,18 +54,32 @@ export {
   PolicyIdSchema,
   PolicyStatusSchema,
   RiskLevelSchema,
+  SKIPPABLE_UNIVERSAL_POLICY_IDS,
   UNIVERSAL_POLICY_IDS,
   deriveRiskLevel,
   hasBlockingFinding,
 } from "./findings";
-export type { PolicyFinding, PolicyId, PolicyStatus, RiskLevel } from "./findings";
+export type {
+  PolicyFinding,
+  PolicyId,
+  PolicyStatus,
+  RiskLevel,
+  SkippableUniversalPolicyId,
+} from "./findings";
 
 // Simulation
 export { DiffEntrySchema, SimulationResultSchema } from "./simulation";
 export type { DiffEntry, SimulationResult } from "./simulation";
 
 // Receipts
-export { ApproverSchema, ChangeReceiptSchema, ReceiptDecisionSchema } from "./receipt";
+export {
+  ApproverSchema,
+  ChangeReceiptSchema,
+  PolicyCoverageSchema,
+  ReceiptDecisionSchema,
+  SkipReplacementSchema,
+  SkippedUniversalPolicySchema,
+} from "./receipt";
 export type { Approver, ChangeReceipt, ReceiptDecision } from "./receipt";
 export { createReceipt, verifyReceiptHash } from "./create-receipt";
 export type { ReceiptInput } from "./create-receipt";
@@ -105,10 +119,13 @@ export type {
   DomainAdapter,
   DomainPolicy,
   PolicyContext,
+  PolicyCoverage,
   PolicyEvaluator,
+  SkipReplacement,
   SkippedUniversalPolicy,
 } from "./domain";
 export {
+  computePolicyCoverage,
   evaluateBlastRadius,
   evaluatePatchSchema,
   evaluatePolicies,

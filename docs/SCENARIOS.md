@@ -236,7 +236,7 @@ A Terraform plan that reads as routine cleanup — dropping an apparently idle d
 
 - Risk **CRITICAL**, blocked by the gate · adversarial
 - Failure modes: `protected-resource-removal`
-- Non-passing policies: `DESTRUCTIVE_OP` BLOCK, `PROTECTED_RESOURCE` BLOCK, `REVERSIBILITY` WARN
+- Non-passing policies: `DESTRUCTIVE_OP` BLOCK, `PROTECTED_RESOURCE` BLOCK, `REVERSIBILITY` WARN, `PLAN_CONTEXT_REQUIRED` WARN
 
 ### `scenario-l-replica-zero`
 
@@ -284,7 +284,7 @@ A plan destroying a resource with no recorded prior state has nothing for REVERS
 
 - Risk **CRITICAL**, blocked by the gate · adversarial
 - Failure modes: `ineffective-rollback`
-- Non-passing policies: `DESTRUCTIVE_OP` BLOCK, `REVERSIBILITY` BLOCK
+- Non-passing policies: `DESTRUCTIVE_OP` BLOCK, `REVERSIBILITY` BLOCK, `PLAN_CONTEXT_REQUIRED` WARN
 
 ### `scenario-v-protected-config-change`
 

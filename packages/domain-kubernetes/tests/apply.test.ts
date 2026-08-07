@@ -219,7 +219,7 @@ describe("kubernetesDomain", () => {
   it("provides resource-level policy context without widening the patch surface", () => {
     const texts = kubernetesDomain.untrustedTexts(snapshot).map((entry) => entry.text);
 
-    expect(kubernetesDomain.policyVersion).toBe("core-v0.1.0+kubernetes-v0.1.0");
+    expect(kubernetesDomain.policyVersion).toBe("core-v0.2.0+kubernetes-v0.1.0");
     expect(kubernetesDomain.blastRadiusUnit(operation("replace"))).toEqual({
       kind: "kubernetes-resource",
       id: original.resourceId,

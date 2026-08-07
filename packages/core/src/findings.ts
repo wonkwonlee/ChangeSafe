@@ -25,6 +25,24 @@ export const UNIVERSAL_POLICY_IDS = [
   "UNTRUSTED_INSTRUCTION",
 ] as const;
 
+/**
+ * Universal policies a domain may declare inapplicable.
+ *
+ * Deliberately a strict subset of `UNIVERSAL_POLICY_IDS`: `PATCH_SCHEMA`,
+ * `BLAST_RADIUS`, and `UNTRUSTED_INSTRUCTION` are structurally answerable by
+ * every domain (a null `blastRadiusUnit` already fails closed; every domain
+ * must implement `untrustedTexts`), so there is no legitimate reason to skip
+ * them and no domain gets to declare one. Only the two policies whose shape
+ * assumes an inverse patch or a model-authored proposal — neither of which
+ * an external-diff domain has — may ever be replaced.
+ */
+export const SKIPPABLE_UNIVERSAL_POLICY_IDS = [
+  "ROLLBACK_COMPLETE",
+  "VERIFICATION_REQUIRED",
+] as const satisfies readonly (typeof UNIVERSAL_POLICY_IDS)[number][];
+
+export type SkippableUniversalPolicyId = (typeof SKIPPABLE_UNIVERSAL_POLICY_IDS)[number];
+
 export const PolicyStatusSchema = z.enum(["PASS", "WARN", "BLOCK"]);
 
 export const RiskLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);

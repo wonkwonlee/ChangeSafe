@@ -1,6 +1,12 @@
 {
   "format_version": "1.2",
   "terraform_version": "1.9.5",
+  "context": [
+    {
+      "kind": "pull_request_description",
+      "text": "Bump the checkout worker AMI to pick up the latest base image patches. Terraform will replace the instance; it is stateless behind the load balancer."
+    }
+  ],
   "resource_changes": [
     {
       "address": "module.compute.aws_instance.checkout_worker",

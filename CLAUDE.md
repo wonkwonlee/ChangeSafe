@@ -160,17 +160,31 @@ Universal policies (in `packages/core/src/policies/`): `PATCH_SCHEMA`,
 `BLAST_RADIUS`, `ROLLBACK_COMPLETE`, `VERIFICATION_REQUIRED`,
 `UNTRUSTED_INSTRUCTION`. Domain policies: network contributes
 `MGMT_REACHABILITY` and `PROTECTED_RESOURCE`; terraform contributes
-`DESTRUCTIVE_OP`, `PROTECTED_RESOURCE`, and `REVERSIBILITY` (its declared
-replacement for `ROLLBACK_COMPLETE`). Policy ids are open UPPER_SNAKE
-strings so each domain contributes its own; `policyOrder(adapter)` publishes
-the evaluation order (structural → domain → universal). Policy status is
-`PASS | WARN | BLOCK`; all policies fail closed. Policy packs may tune typed
-parameters (thresholds, protected patterns) but are never a DSL, and never
-alter the risk formula. Any policy behavior change bumps
+`DESTRUCTIVE_OP`, `PROTECTED_RESOURCE`, `REVERSIBILITY` (its declared
+replacement for `ROLLBACK_COMPLETE`), and `PLAN_CONTEXT_REQUIRED` (its
+declared replacement for `VERIFICATION_REQUIRED`). Policy ids are open
+UPPER_SNAKE strings so each domain contributes its own; `policyOrder(adapter)`
+publishes the evaluation order (structural → domain → universal). Policy
+status is `PASS | WARN | BLOCK`; all policies fail closed. Policy packs may
+tune typed parameters (thresholds, protected patterns) but are never a DSL,
+and never alter the risk formula. Any policy behavior change bumps
 `CORE_POLICY_VERSION` (`packages/core/src/version.ts`) or the domain's
 version (`NETWORK_POLICY_VERSION`, `TERRAFORM_POLICY_VERSION`) — both
 compose into the `policyVersion` recorded in receipts — and updates receipt
 tests.
+
+Only `ROLLBACK_COMPLETE` and `VERIFICATION_REQUIRED` may ever be skipped
+(`SKIPPABLE_UNIVERSAL_POLICY_IDS`) — `PATCH_SCHEMA`, `BLAST_RADIUS`, and
+`UNTRUSTED_INSTRUCTION` are structurally answerable by every domain and no
+adapter may declare them skipped. `evaluatePolicies` and `policyOrder` both
+enforce this and reject a `skippedUniversalPolicies` entry whose
+`replacedBy` names a domain policy the adapter does not actually declare —
+core verifies this itself rather than trusting the app's registration path,
+so a third-party adapter reaching `changesafe gate` directly gets the same
+guarantee. Every receipt records `policyCoverage` (`computePolicyCoverage`):
+the exact ordered policy ids that ran plus what was skipped and why, so a
+verifier reads what a receipt's absence of a policy id means from the signed
+payload itself rather than the adapter's source.
 
 ## Technology
 

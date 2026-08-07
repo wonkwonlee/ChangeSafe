@@ -9,7 +9,8 @@ import { deriveRiskLevel } from "@changesafe/core";
 import { evaluateRollbackComplete } from "@changesafe/core";
 import { evaluateUntrustedInstruction } from "@changesafe/core";
 import { evaluateVerificationRequired } from "@changesafe/core";
-import { evaluatePolicies } from "@changesafe/core";
+import { computePolicyCoverage, evaluatePolicies, type DomainAdapter } from "@changesafe/core";
+import { terraformDomain } from "@changesafe/domain-terraform";
 import {
   buildFinding,
   buildIncidentBundle,
@@ -301,5 +302,101 @@ describe("evaluatePolicies engine", () => {
     const a = evaluatePolicies(networkDomain, buildIncidentBundle(), buildProposal());
     const b = evaluatePolicies(networkDomain, buildIncidentBundle(), buildProposal());
     expect(a).toEqual(b);
+  });
+});
+
+describe("universal policy skip legitimacy", () => {
+  // A domain adapter is core-published: nothing prevents a third party (or
+  // `changesafe gate` itself) from calling `evaluatePolicies`/`policyOrder`
+  // against a hand-written adapter with no app-layer registration in
+  // between. These tests exercise that boundary directly, not through the
+  // app's `defineSimulatedRuntime`/`defineExternalDiffRuntime` wrappers.
+  function withSkips(
+    skippedUniversalPolicies: unknown,
+  ): DomainAdapter<ReturnType<typeof buildIncidentBundle>, unknown> {
+    return {
+      ...networkDomain,
+      skippedUniversalPolicies,
+    } as unknown as DomainAdapter<ReturnType<typeof buildIncidentBundle>, unknown>;
+  }
+
+  it("refuses to skip a structurally-answerable universal policy", () => {
+    const adapter = withSkips([
+      {
+        policyId: "BLAST_RADIUS",
+        because: "convenient",
+        replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" },
+      },
+    ]);
+    expect(() => policyOrder(adapter)).toThrow(/cannot skip "BLAST_RADIUS"/);
+    expect(() =>
+      evaluatePolicies(adapter, buildIncidentBundle(), buildProposal()),
+    ).toThrow(/cannot skip "BLAST_RADIUS"/);
+  });
+
+  it("refuses every universal policy skipped at once — the gate never silently passes everything", () => {
+    const adapter = withSkips([
+      { policyId: "PATCH_SCHEMA", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "BLAST_RADIUS", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "ROLLBACK_COMPLETE", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "VERIFICATION_REQUIRED", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "UNTRUSTED_INSTRUCTION", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+    ]);
+    expect(() =>
+      evaluatePolicies(adapter, buildIncidentBundle(), buildProposal()),
+    ).toThrow(/cannot skip "PATCH_SCHEMA"/);
+  });
+
+  it("refuses a domain-policy replacement that the adapter never declares", () => {
+    const adapter = withSkips([
+      {
+        policyId: "VERIFICATION_REQUIRED",
+        because: "no model involved",
+        replacedBy: { kind: "domain-policy", policyId: "NOT_A_REAL_POLICY" },
+      },
+    ]);
+    expect(() => policyOrder(adapter)).toThrow(/not one of its declared policies/);
+  });
+
+  it("refuses a replacement that collides with a universal policy id", () => {
+    // A domain policy literally named VERIFICATION_REQUIRED would run and
+    // produce a finding, but policyOrder's filter can't tell that finding's
+    // id apart from the skipped universal slot — it would vanish from
+    // policyCoverage despite having actually evaluated.
+    const adapter = withSkips([
+      {
+        policyId: "VERIFICATION_REQUIRED",
+        because: "collision probe",
+        replacedBy: { kind: "domain-policy", policyId: "VERIFICATION_REQUIRED" },
+      },
+    ]);
+    expect(() => policyOrder(adapter)).toThrow(/collides with a universal policy id/);
+  });
+
+  it("refuses duplicate skips of the same policy", () => {
+    const adapter = withSkips([
+      { policyId: "ROLLBACK_COMPLETE", because: "a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "ROLLBACK_COMPLETE", because: "b", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+    ]);
+    expect(() => policyOrder(adapter)).toThrow(/duplicate universal policy skips/);
+  });
+
+  it("computes coverage for a legitimate skip that names a real domain policy", () => {
+    const coverage = computePolicyCoverage(terraformDomain);
+    expect(coverage.orderedPolicyIds).not.toContain("ROLLBACK_COMPLETE");
+    expect(coverage.orderedPolicyIds).not.toContain("VERIFICATION_REQUIRED");
+    expect(coverage.orderedPolicyIds).toContain("PLAN_CONTEXT_REQUIRED");
+    expect(coverage.skippedPolicies).toEqual([
+      {
+        policyId: "ROLLBACK_COMPLETE",
+        because: expect.any(String),
+        replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" },
+      },
+      {
+        policyId: "VERIFICATION_REQUIRED",
+        because: expect.any(String),
+        replacedBy: { kind: "domain-policy", policyId: "PLAN_CONTEXT_REQUIRED" },
+      },
+    ]);
   });
 });

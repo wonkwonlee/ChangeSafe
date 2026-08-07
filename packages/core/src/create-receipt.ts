@@ -1,4 +1,5 @@
 import type { AnalysisMode, FixtureProvenance } from "./analysis";
+import type { PolicyCoverage } from "./domain";
 import type { PolicyFinding, RiskLevel } from "./findings";
 import { hashCanonical } from "./hash";
 import type { ChangeProposal } from "./proposal";
@@ -25,6 +26,8 @@ export interface ReceiptInput {
   model: string | null;
   fixtureProvenance: FixtureProvenance | null;
   findings: PolicyFinding[];
+  /** Computed by `computePolicyCoverage(adapter)` — never authored by hand. */
+  policyCoverage: PolicyCoverage;
   riskLevel: RiskLevel;
   decision: ReceiptDecision;
   /** Authenticated approver, when the decision came through an authenticated
@@ -63,6 +66,10 @@ export async function createReceipt(input: ReceiptInput): Promise<ChangeReceipt>
     inputSha256,
     proposalSha256,
     findings: input.findings,
+    policyCoverage: {
+      orderedPolicyIds: [...input.policyCoverage.orderedPolicyIds],
+      skippedPolicies: input.policyCoverage.skippedPolicies.map((skip) => ({ ...skip })),
+    },
     riskLevel: input.riskLevel,
     decision: input.decision,
     approver: input.approver ?? null,

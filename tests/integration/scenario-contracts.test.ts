@@ -8,7 +8,7 @@ import { DomainError, IllegalTransitionError, policyOrder } from "@changesafe/co
 import { initialState, transition, type WorkflowState } from "@changesafe/core";
 import { validateProposalEvidence } from "@changesafe/core";
 import { evaluatePolicies } from "@changesafe/core";
-import { createReceipt, verifyReceiptHash } from "@changesafe/core";
+import { computePolicyCoverage, createReceipt, verifyReceiptHash } from "@changesafe/core";
 import { SCENARIOS, getScenario, type ScenarioDefinition } from "@/scenarios";
 import { SCENARIO_DOMAIN_IDS, resolveScenarioDomain } from "@/scenarios/domains";
 
@@ -240,6 +240,7 @@ describe.runIf(simulableApprovable.length > 0)("approvable scenarios (simulated-
         model: scenario.fixture?.model ?? null,
         fixtureProvenance: scenario.fixture?.provenance ?? null,
         findings: state.findings,
+        policyCoverage: computePolicyCoverage(domain.adapter),
         riskLevel: state.riskLevel,
         decision: "approved",
         simulation,
@@ -284,6 +285,7 @@ describe.runIf(derivedApprovable.length > 0)("approvable scenarios (external-dif
         model: null,
         fixtureProvenance: null,
         findings,
+        policyCoverage: computePolicyCoverage(domain.adapter),
         riskLevel,
         decision: "gate_only",
         simulation: null,
@@ -338,6 +340,7 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
         model: scenario.fixture?.model ?? null,
         fixtureProvenance: scenario.fixture?.provenance ?? null,
         findings: state.findings,
+        policyCoverage: computePolicyCoverage(domain.adapter),
         riskLevel: state.riskLevel,
         decision: "blocked",
         simulation: null,
@@ -358,6 +361,7 @@ describe.runIf(blockedScenarios.length > 0)("blocked scenarios", () => {
           model: scenario.fixture?.model ?? null,
           fixtureProvenance: scenario.fixture?.provenance ?? null,
           findings: state.findings,
+          policyCoverage: computePolicyCoverage(domain.adapter),
           riskLevel: state.riskLevel,
           decision: "approved",
           simulation: null,

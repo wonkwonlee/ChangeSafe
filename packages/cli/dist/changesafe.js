@@ -22014,6 +22014,17 @@ var ReplayFixtureSchema = defaults.replayFixture;
 // ../core/src/findings.ts
 var POLICY_ID_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 var PolicyIdSchema = external_exports.string().min(3).max(48).regex(POLICY_ID_PATTERN, "policy ids are UPPER_SNAKE_CASE");
+var UNIVERSAL_POLICY_IDS = [
+  "PATCH_SCHEMA",
+  "BLAST_RADIUS",
+  "ROLLBACK_COMPLETE",
+  "VERIFICATION_REQUIRED",
+  "UNTRUSTED_INSTRUCTION"
+];
+var SKIPPABLE_UNIVERSAL_POLICY_IDS = [
+  "ROLLBACK_COMPLETE",
+  "VERIFICATION_REQUIRED"
+];
 var PolicyStatusSchema = external_exports.enum(["PASS", "WARN", "BLOCK"]);
 var RiskLevelSchema = external_exports.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
 var PolicyFindingSchema = external_exports.strictObject({
@@ -22059,6 +22070,22 @@ var SimulationResultSchema = external_exports.strictObject({
 });
 
 // ../core/src/receipt.ts
+var SkipReplacementSchema = external_exports.strictObject({
+  kind: external_exports.literal("domain-policy"),
+  policyId: PolicyIdSchema.refine(
+    (id) => !UNIVERSAL_POLICY_IDS.includes(id),
+    "a skip replacement cannot name a universal policy id"
+  )
+});
+var SkippedUniversalPolicySchema = external_exports.strictObject({
+  policyId: external_exports.enum(SKIPPABLE_UNIVERSAL_POLICY_IDS),
+  because: external_exports.string().min(1).max(1e3),
+  replacedBy: SkipReplacementSchema
+});
+var PolicyCoverageSchema = external_exports.strictObject({
+  orderedPolicyIds: external_exports.array(PolicyIdSchema).min(1).max(32),
+  skippedPolicies: external_exports.array(SkippedUniversalPolicySchema).max(SKIPPABLE_UNIVERSAL_POLICY_IDS.length)
+});
 var ReceiptDecisionSchema = external_exports.enum([
   "approved",
   "rejected",
@@ -22088,6 +22115,16 @@ var ChangeReceiptSchema = external_exports.strictObject({
   inputSha256: Sha256HexSchema,
   proposalSha256: Sha256HexSchema,
   findings: external_exports.array(PolicyFindingSchema).min(1).max(32),
+  /**
+   * What ran and what was skipped, so absence never reads as approval.
+   * Optional only so a receipt issued before this field existed (v0.4.1
+   * and earlier — see `verification/v0.1.0/receipt.signed.json`) still
+   * parses for hash/signature verification; `createReceipt` always sets
+   * it for anything issued going forward, and `canonicalize` drops an
+   * `undefined` property, so a legacy receipt's hash is unaffected by its
+   * absence here.
+   */
+  policyCoverage: PolicyCoverageSchema.optional(),
   riskLevel: RiskLevelSchema,
   decision: ReceiptDecisionSchema,
   /** The authenticated human who decided, when there was one. */
@@ -22201,6 +22238,10 @@ async function createReceipt(input) {
     inputSha256,
     proposalSha256,
     findings: input.findings,
+    policyCoverage: {
+      orderedPolicyIds: [...input.policyCoverage.orderedPolicyIds],
+      skippedPolicies: input.policyCoverage.skippedPolicies.map((skip) => ({ ...skip }))
+    },
     riskLevel: input.riskLevel,
     decision: input.decision,
     approver: input.approver ?? null,
@@ -22861,7 +22902,45 @@ function evaluateFailClosed(policyId, evaluate) {
     };
   }
 }
+function validateSkips(adapter) {
+  const skips = adapter.skippedUniversalPolicies ?? [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const skip of skips) {
+    if (seen.has(skip.policyId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" declares duplicate universal policy skips for "${skip.policyId}"`
+      );
+    }
+    seen.add(skip.policyId);
+  }
+  const declaredPolicyIds = new Set(adapter.policies.map((policy) => policy.id));
+  for (const skip of skips) {
+    if (!SKIPPABLE_UNIVERSAL_POLICY_IDS.includes(skip.policyId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" cannot skip "${skip.policyId}": only ${SKIPPABLE_UNIVERSAL_POLICY_IDS.join(", ")} may ever be skipped`
+      );
+    }
+    const replacementId = skip.replacedBy.policyId;
+    if (UNIVERSAL_POLICY_IDS.includes(replacementId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" skip of "${skip.policyId}" names replacement policy "${replacementId}", which collides with a universal policy id`
+      );
+    }
+    if (!declaredPolicyIds.has(replacementId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" skip of "${skip.policyId}" names replacement policy "${replacementId}", which is not one of its declared policies`
+      );
+    }
+  }
+}
+function computePolicyCoverage(adapter) {
+  return {
+    orderedPolicyIds: policyOrder(adapter),
+    skippedPolicies: [...adapter.skippedUniversalPolicies ?? []]
+  };
+}
 function evaluatePolicies(adapter, input, proposal, options = {}) {
+  validateSkips(adapter);
   const context = {
     input,
     proposal,
@@ -22904,6 +22983,7 @@ function evaluatePolicies(adapter, input, proposal, options = {}) {
   return { findings, riskLevel: deriveRiskLevel(findings) };
 }
 function policyOrder(adapter) {
+  validateSkips(adapter);
   const skipped = new Set(
     (adapter.skippedUniversalPolicies ?? []).map((skip) => skip.policyId)
   );
@@ -22936,7 +23016,7 @@ function validateProposalEvidence(adapter, input, proposal) {
 }
 
 // ../core/src/version.ts
-var CORE_POLICY_VERSION = "core-v0.1.0";
+var CORE_POLICY_VERSION = "core-v0.2.0";
 
 // ../ai/src/provider.ts
 var PROVIDER_IDS = ["openai", "anthropic", "ollama"];
@@ -25605,6 +25685,27 @@ function evaluateReversibility(context, deps) {
     remediation: null
   };
 }
+function evaluatePlanContextRequired(context) {
+  const destructive = context.input.changes.filter((change) => DESTRUCTIVE.includes(change.action));
+  if (destructive.length === 0 || context.input.context.length > 0) {
+    return {
+      policyId: "PLAN_CONTEXT_REQUIRED",
+      status: "PASS",
+      title: destructive.length === 0 ? "No destructive change requires review context" : "The plan carries review context",
+      explanation: destructive.length === 0 ? "The plan destroys or replaces nothing, so there is nothing that requires a documented pull request review." : `The plan carries ${context.input.context.length} context entr${context.input.context.length === 1 ? "y" : "ies"} for the pull request review to check against.`,
+      affectedResources: [],
+      remediation: null
+    };
+  }
+  return {
+    policyId: "PLAN_CONTEXT_REQUIRED",
+    status: "WARN",
+    title: "Destructive change carries no review context",
+    explanation: `${destructive.length} destroyed or replaced resource(s) (` + destructive.map((change) => change.address).join(", ") + ") arrived with no PR description or commit message. The pull request review this domain relies on for verification has nothing to check the change's stated intent against.",
+    affectedResources: destructive.map((change) => `resource:${change.address}`),
+    remediation: "Attach the PR description or commit message that motivated this plan."
+  };
+}
 
 // ../domain-terraform/src/schemas.ts
 var TerraformActionSchema = external_exports.enum([
@@ -25716,7 +25817,7 @@ function resolveTerraformPack(pack) {
 }
 
 // ../domain-terraform/src/adapter.ts
-var TERRAFORM_POLICY_VERSION = "terraform-v0.1.0";
+var TERRAFORM_POLICY_VERSION = "terraform-v0.2.0";
 var POLICY_VERSION3 = `${CORE_POLICY_VERSION}+${TERRAFORM_POLICY_VERSION}`;
 function createTerraformDomain(pack) {
   const resolved = resolveTerraformPack(pack);
@@ -25779,6 +25880,10 @@ function createTerraformDomain(pack) {
       {
         id: "REVERSIBILITY",
         evaluate: (context) => evaluateReversibility(context, deps)
+      },
+      {
+        id: "PLAN_CONTEXT_REQUIRED",
+        evaluate: (context) => evaluatePlanContextRequired(context)
       }
     ],
     // A cloud plan touching a dozen resources is ordinary; a dozen routers
@@ -25791,12 +25896,12 @@ function createTerraformDomain(pack) {
       {
         policyId: "ROLLBACK_COMPLETE",
         because: "a Terraform plan carries no inverse operations to verify; reverting means reverting the code, not replaying a patch",
-        replacedBy: "REVERSIBILITY"
+        replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" }
       },
       {
         policyId: "VERIFICATION_REQUIRED",
-        because: "plan JSON contains no verification plan to inspect; in this workflow the pull request review is the verification step",
-        replacedBy: "the pull request review"
+        because: "the proposal is derived mechanically from the plan with no model involved, so it can never declare its own precondition or postcheck steps; verification in this workflow happens through the pull request review instead",
+        replacedBy: { kind: "domain-policy", policyId: "PLAN_CONTEXT_REQUIRED" }
       }
     ]
   };
@@ -26235,6 +26340,7 @@ async function gateParsedProposal(options, console2) {
       model: options.model,
       fixtureProvenance: options.provenance,
       findings,
+      policyCoverage: computePolicyCoverage(domain2.adapter),
       riskLevel,
       // Never "approved": the CLI gates, and a human decides elsewhere.
       decision: blocked ? "blocked" : "gate_only",
@@ -27617,6 +27723,7 @@ var DecisionService = class {
       model: null,
       fixtureProvenance: null,
       findings: prepared.findings,
+      policyCoverage: prepared.policyCoverage,
       riskLevel: prepared.riskLevel,
       decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,
@@ -27744,6 +27851,7 @@ var DecisionService = class {
       proposal,
       policyVersion,
       findings,
+      policyCoverage: computePolicyCoverage(domain2.adapter),
       riskLevel,
       simulation
     };
@@ -27788,6 +27896,7 @@ var DecisionService = class {
       model: null,
       fixtureProvenance: null,
       findings: prepared.findings,
+      policyCoverage: prepared.policyCoverage,
       riskLevel: prepared.riskLevel,
       decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,

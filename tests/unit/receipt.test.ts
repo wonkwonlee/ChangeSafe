@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createReceipt, verifyReceiptHash, type ReceiptInput } from "@changesafe/core";
+import {
+  computePolicyCoverage,
+  createReceipt,
+  verifyReceiptHash,
+  type ReceiptInput,
+} from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
 import {
   buildFinding,
   buildIncidentBundle,
@@ -20,6 +26,7 @@ function baseInput(): ReceiptInput {
     model: null,
     fixtureProvenance: "authored_synthetic",
     findings: [buildFinding("PASS")],
+    policyCoverage: computePolicyCoverage(networkDomain),
     riskLevel: "LOW",
     decision: "rejected",
     simulation: null,

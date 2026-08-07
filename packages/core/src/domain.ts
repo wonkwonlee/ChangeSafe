@@ -1,4 +1,4 @@
-import type { PolicyFinding } from "./findings";
+import type { PolicyFinding, SkippableUniversalPolicyId } from "./findings";
 import type { PolicyPack, ResolvedPolicyPack } from "./policy-pack";
 import type { ChangeOperation, ChangeProposal } from "./proposal";
 import type { DiffEntry } from "./simulation";
@@ -70,22 +70,53 @@ export interface DomainAdapter<TInput = unknown, TState = unknown> {
 
   /**
    * Universal policies this domain does not run, each with the reason and
-   * the domain policy that answers the same question instead.
+   * what answers the same question instead.
    *
    * This is deliberately verbose: silently dropping a safety check is how
-   * gates rot. A skip appears in `policyOrder`, in receipts (by absence),
-   * and must name its replacement.
+   * gates rot. A skip appears in `policyOrder`, in receipts (never merely by
+   * a policy's absence — `policyCoverage.skippedPolicies` records it), and
+   * must name a real replacement. Only `SkippableUniversalPolicyId` may be
+   * named here; `evaluatePolicies` and `policyOrder` both throw for any
+   * other policy id or for a `replacedBy` that names a domain policy the
+   * adapter does not actually declare — a domain cannot self-certify a skip
+   * that core cannot verify.
    */
   readonly skippedUniversalPolicies?: readonly SkippedUniversalPolicy[];
 }
 
+/**
+ * What actually answers the question a skipped universal policy would have.
+ *
+ * Only `"domain-policy"` exists — deliberately: a replacement that names a
+ * non-mechanical process (a required pull request review, say) produces no
+ * finding of its own, so the gate would pass with a genuine gap in its
+ * verdict rather than merely an honestly-labeled one. `evaluatePolicies`
+ * verifies the named id is one of the adapter's own `policies` (and is not a
+ * universal policy id, which `policyOrder`'s filtering could not distinguish
+ * from the skip itself), so a skip's replacement is always a policy that
+ * actually ran and actually produced a finding — never a claim core cannot
+ * check.
+ */
+export type SkipReplacement = { readonly kind: "domain-policy"; readonly policyId: string };
+
 export interface SkippedUniversalPolicy {
   /** The universal policy that does not apply here. */
-  readonly policyId: string;
+  readonly policyId: SkippableUniversalPolicyId;
   /** Why it cannot be evaluated in this domain. */
   readonly because: string;
-  /** The domain policy that covers the same concern. */
-  readonly replacedBy: string;
+  /** What answers the same question instead. */
+  readonly replacedBy: SkipReplacement;
+}
+
+/**
+ * The exact set of policies a domain's gate run produced or deliberately
+ * skipped, computed by `computePolicyCoverage` and carried on every receipt.
+ * A verifier reads this instead of the adapter source to know what a
+ * receipt's absence of a policy id means.
+ */
+export interface PolicyCoverage {
+  readonly orderedPolicyIds: readonly string[];
+  readonly skippedPolicies: readonly SkippedUniversalPolicy[];
 }
 
 export interface DomainPolicy<TInput = unknown, TState = unknown> {

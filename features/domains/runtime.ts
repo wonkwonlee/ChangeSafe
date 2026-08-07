@@ -1,16 +1,16 @@
 import { z } from "zod";
 import {
+  computePolicyCoverage,
   evaluatePolicies,
   validateProposalEvidence,
   PolicyPackSchema,
-  policyOrder,
   resolvePolicyPack,
-  UNIVERSAL_POLICY_IDS,
   type ChangeProposal,
   type DomainAdapter,
   type PolicyEvaluation,
   type ResolvedPolicyPack,
   type SimulationResult,
+  type SkippedUniversalPolicy,
 } from "@changesafe/core";
 
 import {
@@ -61,12 +61,6 @@ const RuntimeMetadataSchema = z.strictObject({
   capabilities: DomainStaticCapabilitiesSchema,
 });
 
-const RuntimePolicySkipSchema = z.strictObject({
-  policyId: z.enum(UNIVERSAL_POLICY_IDS),
-  because: z.string().min(1).max(1000),
-  replacedBy: z.string().min(1).max(160),
-});
-
 const ResolvedPolicyPackSchema = z.strictObject({
   blastRadius: z.strictObject({
     warnAt: z.number().int().min(1).max(1000),
@@ -80,11 +74,7 @@ const ResolvedPolicyPackSchema = z.strictObject({
 
 export interface RuntimePolicyCoverage {
   readonly orderedPolicyIds: readonly string[];
-  readonly skippedPolicies: readonly Readonly<{
-    policyId: string;
-    because: string;
-    replacedBy: string;
-  }>[];
+  readonly skippedPolicies: readonly SkippedUniversalPolicy[];
   readonly baselinePack: Readonly<{
     source: "core-default" | "domain-default";
     name: string;
@@ -243,17 +233,16 @@ function defineRuntimePolicyCoverage<
 >(
   config: RuntimeConfig<TInput, TState, TProposal>,
 ): RuntimePolicyCoverage {
-  const skippedPolicies = (config.adapter.skippedUniversalPolicies ?? []).map(
-    (skip) => Object.freeze(RuntimePolicySkipSchema.parse(skip)),
-  );
-  const skippedPolicyIds = skippedPolicies.map((skip) => skip.policyId);
-  if (new Set(skippedPolicyIds).size !== skippedPolicyIds.length) {
-    throw new Error(
-      `runtime domain "${config.domainId}" declares duplicate universal policy skips`,
-    );
-  }
+  // `computePolicyCoverage` is core's own authority on what a gate run for
+  // this adapter actually produces: it throws for a skip that names a
+  // policy the adapter never declares, a duplicate skip, or an attempt to
+  // skip anything other than the two policies core allows skipping. A
+  // runtime registered here gets the identical guarantee `changesafe gate`
+  // gets against the same adapter — this function no longer re-derives it.
+  const coverage = computePolicyCoverage(config.adapter);
+  const skippedPolicies = coverage.skippedPolicies.map((skip) => Object.freeze({ ...skip }));
 
-  const orderedPolicyIds = policyOrder(config.adapter).map((policyId) =>
+  const orderedPolicyIds = coverage.orderedPolicyIds.map((policyId) =>
     z.string().min(1).max(128).parse(policyId),
   );
   if (new Set(orderedPolicyIds).size !== orderedPolicyIds.length) {
