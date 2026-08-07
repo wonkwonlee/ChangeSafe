@@ -52,8 +52,8 @@ domain decisions.
   `0.5.0` on `main`; publishing still needs an explicit owner-authorized tag
   and GitHub Release, after which this section should record the same
   registry-smoke verification v0.4.1 got before being called canonical.
-- **v0.4.1 was the canonical release before v0.5.0.** All five public
-  packages went out on npm at
+- **v0.4.1 is still the canonical release** until v0.5.0 actually publishes.
+  All five public packages are on npm at
   `0.4.1`, published by the release workflow over trusted publishing, and
   every one carries a verified provenance attestation recording
   `.github/workflows/publish.yml` in `wonkwonlee/ChangeSafe` at
