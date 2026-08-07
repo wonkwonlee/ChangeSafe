@@ -2,20 +2,22 @@ import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  networkAnalysisPrompt,
+  ANALYZABLE_DOMAIN_IDS,
   probeProposal,
+  resolveAnalysisDomain,
   resolveModel,
   resolveProvider,
+  type AnalysisDomain,
   type ProposalVerdict,
 } from "@changesafe/ai";
 import {
   ScenarioExpectationsSchema,
   evaluatePolicies,
   hasBlockingFinding,
+  isDomainError,
   type ChangeProposal,
   type ScenarioExpectations,
 } from "@changesafe/core";
-import { IncidentBundleSchema, networkDomain } from "@changesafe/domain-network";
 
 import { UsageError, parseOrThrow, readJsonFile, resolveTimeoutMs } from "./io";
 import { EXIT_OK, paint, type Console } from "./output";
@@ -26,6 +28,8 @@ export interface EvalOptions {
   dir: string;
   /** Per-call provider deadline in seconds; overrides the provider default. */
   timeoutSeconds?: number;
+  /** Which domain's prompt and gate to measure against. */
+  domain: string;
   runs: number;
   /** Write a versioned, committable report here. */
   report?: string;
@@ -40,9 +44,12 @@ export interface EvalOptions {
  * Bumped whenever a field's meaning changes, so a committed report from six
  * months ago is still interpretable rather than silently re-read under new
  * definitions. Comparing two models is only meaningful if both reports were
- * produced by the same methodology.
+ * produced by the same methodology — and since version 3, against the same
+ * domain: a v2 report has no `corpus.domain` field because there was only one
+ * domain it could have been, and reading it as comparable to a Kubernetes run
+ * would be a category error.
  */
-export const EVAL_REPORT_VERSION = 2;
+export const EVAL_REPORT_VERSION = 3;
 
 type Outcome = ProposalVerdict["outcome"];
 
@@ -95,6 +102,19 @@ export function createScenarioReport(
  * default, and nothing in CI runs it.
  */
 export async function runEval(options: EvalOptions, console: Console): Promise<number> {
+  // Resolved before the credential check so "terraform has nothing for a model
+  // to propose" is answered as such, rather than as a missing API key.
+  let domain: AnalysisDomain;
+  try {
+    domain = resolveAnalysisDomain(options.domain);
+  } catch (error) {
+    throw new UsageError(
+      isDomainError(error)
+        ? error.userMessage
+        : `--domain must be one of: ${ANALYZABLE_DOMAIN_IDS.join(", ")}`,
+    );
+  }
+
   const provider = resolveProvider(options.provider);
   // Arguments before environment: a mistyped flag is the caller's own input and
   // should be reported whether or not a credential happens to be configured.
@@ -125,14 +145,21 @@ export async function runEval(options: EvalOptions, console: Console): Promise<n
 
   if (options.format === "pretty") {
     console.err(
-      `  ${paint(console.color, "dim", `evaluating ${provider.label} ${model} over ${directories.length} scenarios × ${options.runs} run(s) — this spends API credit`)}`,
+      `  ${paint(console.color, "dim", `evaluating ${provider.label} ${model} on ${domain.domainId} over ${directories.length} scenarios × ${options.runs} run(s) — this spends API credit`)}`,
     );
   }
 
   const reports: ScenarioReport[] = [];
   for (const name of directories) {
     reports.push(
-      await evaluateScenario(path.join(root, name), provider.id, model, options.runs, timeoutMs),
+      await evaluateScenario(
+        path.join(root, name),
+        domain,
+        provider.id,
+        model,
+        options.runs,
+        timeoutMs,
+      ),
     );
   }
 
@@ -141,16 +168,18 @@ export async function runEval(options: EvalOptions, console: Console): Promise<n
 
 async function evaluateScenario(
   dir: string,
+  domain: AnalysisDomain,
   providerId: string,
   model: string,
   runs: number,
   timeoutMs: number | undefined,
 ): Promise<ScenarioReport> {
-  const bundle = parseOrThrow(
-    IncidentBundleSchema,
-    readJsonFile(path.join(dir, "incident.json"), "incident bundle"),
-    "incident bundle",
-  );
+  // The domain owns its input schema, so a network bundle handed to a
+  // Kubernetes run fails here with that domain's own validation error rather
+  // than being half-read and scored.
+  const input = domain.parseInput(
+    readJsonFile(path.join(dir, "incident.json"), `${domain.domainId} input`),
+  ) as never;
   const expectations = parseOrThrow(
     ScenarioExpectationsSchema,
     readJsonFile(path.join(dir, "expectations.json"), "expectations"),
@@ -159,7 +188,7 @@ async function evaluateScenario(
   const report = createScenarioReport(expectations, runs);
 
   for (let run = 0; run < runs; run += 1) {
-    const verdict = await probeProposal(networkAnalysisPrompt, bundle, {
+    const verdict = await probeProposal(domain.prompt, input, {
       provider: resolveProvider(providerId),
       model,
       timeoutMs,
@@ -168,8 +197,8 @@ async function evaluateScenario(
 
     if (verdict.outcome === "accepted") {
       const { findings } = evaluatePolicies(
-        networkDomain,
-        bundle,
+        domain.adapter,
+        input,
         verdict.proposal as ChangeProposal,
       );
       if (hasBlockingFinding(findings)) report.blocked += 1;
@@ -184,6 +213,7 @@ async function evaluateScenario(
 
 interface EvalArtifactContext {
   directory: string;
+  domain: string;
   generatedAtUtc: string;
   runsPerScenario: number;
 }
@@ -231,6 +261,7 @@ export function buildEvalArtifact(
     target: { provider: target.provider, model: target.model },
     corpus: {
       directory: context.directory,
+      domain: context.domain,
       scenarios: reports.length,
       adversarial: reports.filter((entry) => entry.adversarial).length,
       runsPerScenario: context.runsPerScenario,
@@ -248,6 +279,7 @@ function report(
 ): number {
   const artifact = buildEvalArtifact(reports, target, {
     directory: options.dir,
+    domain: options.domain,
     generatedAtUtc: options.now ?? new Date().toISOString(),
     runsPerScenario: options.runs,
   });
@@ -269,7 +301,7 @@ function report(
 
   console.out("");
   console.out(
-    `  ${paint(console.color, "bold", "ChangeSafe eval")} ${paint(console.color, "dim", `· ${target.provider} · ${target.model}`)}`,
+    `  ${paint(console.color, "bold", "ChangeSafe eval")} ${paint(console.color, "dim", `· ${target.provider} · ${target.model} · ${options.domain}`)}`,
   );
   console.out("");
   for (const scenario of reports) {

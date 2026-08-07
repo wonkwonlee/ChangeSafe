@@ -10,9 +10,6 @@ import { NETWORK_SCENARIOS } from "../../../scenarios";
 
 describe("eval report corpus semantics", () => {
   it("maps the validated corpus taxonomy independently from BLOCK expectations", () => {
-    // eval only ever measures the network domain — the AI layer proposes for
-    // network alone (see packages/ai/src/domains.ts); terraform and
-    // kubernetes proposals are derived mechanically, never model-authored.
     const reports: ScenarioReport[] = NETWORK_SCENARIOS.map(({ expectations }) => {
       const report = createScenarioReport(expectations, 1);
       report.outcomes.accepted = 1;
@@ -35,19 +32,38 @@ describe("eval report corpus semantics", () => {
       reports,
       { provider: "Test provider", model: "test-model" },
       {
-        directory: "scenarios",
+        directory: "scenarios/network",
+        domain: "network",
         generatedAtUtc: "2026-07-27T00:00:00.000Z",
         runsPerScenario: 1,
       },
     );
 
-    expect(EVAL_REPORT_VERSION).toBe(2);
+    expect(EVAL_REPORT_VERSION).toBe(3);
     expect(artifact.corpus).toEqual({
-      directory: "scenarios",
+      directory: "scenarios/network",
+      domain: "network",
       scenarios: 9,
       adversarial: 6,
       runsPerScenario: 1,
     });
     expect(artifact.summary.redTeamBlockedPct).toBe(100);
+  });
+
+  it("records which domain produced the numbers", () => {
+    // Two runs against different domains are not comparable, and a report that
+    // does not say which one it measured invites exactly that comparison.
+    const artifact = buildEvalArtifact(
+      [],
+      { provider: "Test provider", model: "test-model" },
+      {
+        directory: "scenarios/kubernetes",
+        domain: "kubernetes",
+        generatedAtUtc: "2026-08-06T00:00:00.000Z",
+        runsPerScenario: 1,
+      },
+    );
+
+    expect(artifact.corpus.domain).toBe("kubernetes");
   });
 });
