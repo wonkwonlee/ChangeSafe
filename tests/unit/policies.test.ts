@@ -322,7 +322,11 @@ describe("universal policy skip legitimacy", () => {
 
   it("refuses to skip a structurally-answerable universal policy", () => {
     const adapter = withSkips([
-      { policyId: "BLAST_RADIUS", because: "convenient", replacedBy: { kind: "out-of-band", process: "trust me" } },
+      {
+        policyId: "BLAST_RADIUS",
+        because: "convenient",
+        replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" },
+      },
     ]);
     expect(() => policyOrder(adapter)).toThrow(/cannot skip "BLAST_RADIUS"/);
     expect(() =>
@@ -332,11 +336,11 @@ describe("universal policy skip legitimacy", () => {
 
   it("refuses every universal policy skipped at once — the gate never silently passes everything", () => {
     const adapter = withSkips([
-      { policyId: "PATCH_SCHEMA", because: "n/a", replacedBy: { kind: "out-of-band", process: "n/a" } },
-      { policyId: "BLAST_RADIUS", because: "n/a", replacedBy: { kind: "out-of-band", process: "n/a" } },
-      { policyId: "ROLLBACK_COMPLETE", because: "n/a", replacedBy: { kind: "out-of-band", process: "n/a" } },
-      { policyId: "VERIFICATION_REQUIRED", because: "n/a", replacedBy: { kind: "out-of-band", process: "n/a" } },
-      { policyId: "UNTRUSTED_INSTRUCTION", because: "n/a", replacedBy: { kind: "out-of-band", process: "n/a" } },
+      { policyId: "PATCH_SCHEMA", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "BLAST_RADIUS", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "ROLLBACK_COMPLETE", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "VERIFICATION_REQUIRED", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "UNTRUSTED_INSTRUCTION", because: "n/a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
     ]);
     expect(() =>
       evaluatePolicies(adapter, buildIncidentBundle(), buildProposal()),
@@ -354,10 +358,25 @@ describe("universal policy skip legitimacy", () => {
     expect(() => policyOrder(adapter)).toThrow(/not one of its declared policies/);
   });
 
+  it("refuses a replacement that collides with a universal policy id", () => {
+    // A domain policy literally named VERIFICATION_REQUIRED would run and
+    // produce a finding, but policyOrder's filter can't tell that finding's
+    // id apart from the skipped universal slot — it would vanish from
+    // policyCoverage despite having actually evaluated.
+    const adapter = withSkips([
+      {
+        policyId: "VERIFICATION_REQUIRED",
+        because: "collision probe",
+        replacedBy: { kind: "domain-policy", policyId: "VERIFICATION_REQUIRED" },
+      },
+    ]);
+    expect(() => policyOrder(adapter)).toThrow(/collides with a universal policy id/);
+  });
+
   it("refuses duplicate skips of the same policy", () => {
     const adapter = withSkips([
-      { policyId: "ROLLBACK_COMPLETE", because: "a", replacedBy: { kind: "out-of-band", process: "a" } },
-      { policyId: "ROLLBACK_COMPLETE", because: "b", replacedBy: { kind: "out-of-band", process: "b" } },
+      { policyId: "ROLLBACK_COMPLETE", because: "a", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
+      { policyId: "ROLLBACK_COMPLETE", because: "b", replacedBy: { kind: "domain-policy", policyId: "MGMT_REACHABILITY" } },
     ]);
     expect(() => policyOrder(adapter)).toThrow(/duplicate universal policy skips/);
   });

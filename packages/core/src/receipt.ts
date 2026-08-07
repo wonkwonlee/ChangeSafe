@@ -5,21 +5,26 @@ import {
   PolicyIdSchema,
   RiskLevelSchema,
   SKIPPABLE_UNIVERSAL_POLICY_IDS,
+  UNIVERSAL_POLICY_IDS,
 } from "./findings";
 import { IdSchema, Sha256HexSchema, TimestampSchema } from "./primitives";
 import { SimulationResultSchema } from "./simulation";
 
 /**
  * What actually answered a skipped universal policy's question, mirroring
- * `SkipReplacement` in `domain.ts`. `"domain-policy"` names a real policy id
- * that `computePolicyCoverage` already verified the adapter declares;
- * `"out-of-band"` honestly names a non-mechanical process rather than
- * dressing it up as a policy the gate cannot actually check.
+ * `SkipReplacement` in `domain.ts`. Only `"domain-policy"` exists: a
+ * replacement that is not a policy would produce no finding, so the gate
+ * would pass with a genuine gap rather than an honestly-labeled one. The
+ * named id can never be a universal policy id, mirroring the same check
+ * `evaluatePolicies` makes before this ever reaches a receipt.
  */
-export const SkipReplacementSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("domain-policy"), policyId: PolicyIdSchema }),
-  z.strictObject({ kind: z.literal("out-of-band"), process: z.string().min(1).max(200) }),
-]);
+export const SkipReplacementSchema = z.strictObject({
+  kind: z.literal("domain-policy"),
+  policyId: PolicyIdSchema.refine(
+    (id) => !(UNIVERSAL_POLICY_IDS as readonly string[]).includes(id),
+    "a skip replacement cannot name a universal policy id",
+  ),
+});
 
 export const SkippedUniversalPolicySchema = z.strictObject({
   policyId: z.enum(SKIPPABLE_UNIVERSAL_POLICY_IDS),
@@ -93,8 +98,16 @@ export const ChangeReceiptSchema = z
     inputSha256: Sha256HexSchema,
     proposalSha256: Sha256HexSchema,
     findings: z.array(PolicyFindingSchema).min(1).max(32),
-    /** What ran and what was skipped, so absence never reads as approval. */
-    policyCoverage: PolicyCoverageSchema,
+    /**
+     * What ran and what was skipped, so absence never reads as approval.
+     * Optional only so a receipt issued before this field existed (v0.4.1
+     * and earlier — see `verification/v0.1.0/receipt.signed.json`) still
+     * parses for hash/signature verification; `createReceipt` always sets
+     * it for anything issued going forward, and `canonicalize` drops an
+     * `undefined` property, so a legacy receipt's hash is unaffected by its
+     * absence here.
+     */
+    policyCoverage: PolicyCoverageSchema.optional(),
     riskLevel: RiskLevelSchema,
     decision: ReceiptDecisionSchema,
     /** The authenticated human who decided, when there was one. */

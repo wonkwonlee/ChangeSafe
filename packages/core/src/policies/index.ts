@@ -3,6 +3,7 @@ import { isDomainError } from "../errors";
 import {
   deriveRiskLevel,
   SKIPPABLE_UNIVERSAL_POLICY_IDS,
+  UNIVERSAL_POLICY_IDS,
   type PolicyFinding,
   type RiskLevel,
 } from "../findings";
@@ -71,9 +72,12 @@ function evaluateFailClosed(policyId: string, evaluate: () => PolicyFinding): Po
  * `changesafe gate` against a third-party adapter gets the identical
  * guarantee the app's registration path gets. A domain may only skip
  * `ROLLBACK_COMPLETE` or `VERIFICATION_REQUIRED` (see
- * `SKIPPABLE_UNIVERSAL_POLICY_IDS`), never twice each, and a
- * `"domain-policy"` replacement must name a policy the adapter actually
- * declares — a skip cannot point at a policy that does not exist.
+ * `SKIPPABLE_UNIVERSAL_POLICY_IDS`), never twice each, and the replacement
+ * must name a policy the adapter actually declares — a skip cannot point at
+ * a policy that does not exist, or at a universal policy id: `policyOrder`
+ * filters *every* occurrence of a skipped id from its ordered list, so a
+ * replacement sharing a universal id would vanish from `policyCoverage`
+ * despite having actually run.
  */
 function validateSkips<TInput, TState>(adapter: DomainAdapter<TInput, TState>): void {
   const skips = adapter.skippedUniversalPolicies ?? [];
@@ -94,13 +98,17 @@ function validateSkips<TInput, TState>(adapter: DomainAdapter<TInput, TState>): 
         `domain "${adapter.domainId}" cannot skip "${skip.policyId}": only ${SKIPPABLE_UNIVERSAL_POLICY_IDS.join(", ")} may ever be skipped`,
       );
     }
-    if (
-      skip.replacedBy.kind === "domain-policy" &&
-      !declaredPolicyIds.has(skip.replacedBy.policyId)
-    ) {
+    const replacementId = skip.replacedBy.policyId;
+    if ((UNIVERSAL_POLICY_IDS as readonly string[]).includes(replacementId)) {
       throw new Error(
         `domain "${adapter.domainId}" skip of "${skip.policyId}" names replacement policy ` +
-          `"${skip.replacedBy.policyId}", which is not one of its declared policies`,
+          `"${replacementId}", which collides with a universal policy id`,
+      );
+    }
+    if (!declaredPolicyIds.has(replacementId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" skip of "${skip.policyId}" names replacement policy ` +
+          `"${replacementId}", which is not one of its declared policies`,
       );
     }
   }

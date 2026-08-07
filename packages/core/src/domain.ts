@@ -87,18 +87,17 @@ export interface DomainAdapter<TInput = unknown, TState = unknown> {
 /**
  * What actually answers the question a skipped universal policy would have.
  *
- * `"domain-policy"` is checked: core verifies the named id is one of the
- * adapter's own `policies`, so a skip cannot point at a policy that does not
- * exist. `"out-of-band"` is for when the replacement is a real but
- * non-mechanical process (e.g. a required pull request review) — core
- * cannot verify that a human actually performed it, so this kind is honest
- * about naming a process rather than a policy, and a receipt's
- * `policyCoverage` records the distinction rather than blurring it into
- * prose.
+ * Only `"domain-policy"` exists — deliberately: a replacement that names a
+ * non-mechanical process (a required pull request review, say) produces no
+ * finding of its own, so the gate would pass with a genuine gap in its
+ * verdict rather than merely an honestly-labeled one. `evaluatePolicies`
+ * verifies the named id is one of the adapter's own `policies` (and is not a
+ * universal policy id, which `policyOrder`'s filtering could not distinguish
+ * from the skip itself), so a skip's replacement is always a policy that
+ * actually ran and actually produced a finding — never a claim core cannot
+ * check.
  */
-export type SkipReplacement =
-  | { readonly kind: "domain-policy"; readonly policyId: string }
-  | { readonly kind: "out-of-band"; readonly process: string };
+export type SkipReplacement = { readonly kind: "domain-policy"; readonly policyId: string };
 
 export interface SkippedUniversalPolicy {
   /** The universal policy that does not apply here. */
