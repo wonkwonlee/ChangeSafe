@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/ai",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Provider-agnostic model adapters that produce ChangeProposals. One Zod schema drives structured output on every provider; every provider's output faces identical local validation.",
   "license": "MIT",
   "private": true,
@@ -17,9 +17,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@changesafe/core": "^0.4.1",
-    "@changesafe/domain-kubernetes": "^0.4.1",
-    "@changesafe/domain-network": "^0.4.1",
+    "@changesafe/core": "^0.5.0",
+    "@changesafe/domain-kubernetes": "^0.5.0",
+    "@changesafe/domain-network": "^0.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -31,7 +31,7 @@ import {
 } from "@/features/reviews/controller";
 import { NETWORK_SCENARIOS } from "@/scenarios";
 
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.5.0";
 const CREATED_AT = "2026-07-29T00:00:00.000Z";
 
 function scenarioOrThrow(scenarioId: string) {

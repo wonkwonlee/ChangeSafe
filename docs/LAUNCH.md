@@ -5,9 +5,19 @@ deploys, tags, or posts automatically.
 
 ## Release truth
 
-- `v0.4.1` is the canonical package/tag release: the complete published set of
-  the multi-domain workbench, and the first to go out through the trusted
-  publishing workflow rather than a manual publish.
+- `v0.5.0` is the canonical package/tag release: a universal-policy skip
+  legitimacy fix in `@changesafe/core` (a domain adapter could previously
+  skip any universal policy, not just the two shape permits, with no
+  enforcement outside the app's own registration path), a new Terraform
+  `PLAN_CONTEXT_REQUIRED` policy replacing a prose-only `VERIFICATION_REQUIRED`
+  skip, every receipt now recording `policyCoverage`, and `changesafe eval`
+  gaining Kubernetes support. `CORE_POLICY_VERSION` moves to `core-v0.2.0`
+  and `TERRAFORM_POLICY_VERSION` to `terraform-v0.2.0` — a v0.5.0 receipt is
+  not directly comparable to an earlier one. See
+  [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md).
+- `v0.4.1` was the complete published set of the multi-domain workbench, and
+  the first to go out through the trusted publishing workflow rather than a
+  manual publish.
 - **Do not point anyone at `0.4.0`.** It published three of five packages
   before failing, so the CLI and the Kubernetes domain do not exist at that
   version. The three that shipped are genuine and carry provenance; the set is
@@ -98,7 +108,7 @@ Example:
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.4.1
+  uses: wonkwonlee/ChangeSafe@v0.5.0
   with:
     plan: tfplan.json
     context: pr-body.txt
