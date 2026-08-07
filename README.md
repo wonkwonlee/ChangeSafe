@@ -354,7 +354,7 @@ bootstrap/remediation versions carry no attestation.
 
 Use `0.4.1` or later. `0.4.0` published only three of the five packages
 before failing, so the CLI and the Kubernetes domain do not exist at that
-version; what did ship there is genuine, but the set is incomplete.
+version; those three are genuine and attested, but the set is incomplete.
 
 ```bash
 npm i @changesafe/core @changesafe/domain-terraform   # embed the gate

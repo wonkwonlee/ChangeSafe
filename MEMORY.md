@@ -42,8 +42,10 @@ domain decisions.
   `0.4.1`, published by the release workflow over trusted publishing, and
   every one carries a verified provenance attestation recording
   `.github/workflows/publish.yml` in `wonkwonlee/ChangeSafe` at
-  `refs/tags/v0.4.1`, commit `bafdeeb`. This is the project's first release
-  with provenance.
+  `refs/tags/v0.4.1`, commit `bafdeeb`. This is the first *complete* set the
+  project has published with provenance — the three packages that reached the
+  registry during the failed v0.4.0 run were attested too, so v0.4.1 is the
+  first release where all five are.
 - **Do not point anyone at `0.4.0`.** It published `@changesafe/core`,
   `domain-network`, and `domain-terraform` and then failed: the Kubernetes
   domain had no trusted-publisher configuration on npm, so the registry
