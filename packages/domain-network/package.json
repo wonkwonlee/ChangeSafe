@@ -1,6 +1,6 @@
 {
   "name": "@changesafe/domain-network",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Network domain for ChangeSafe: declarative device state, an allowlisted patch engine, deterministic reachability, sandboxed simulation, and network safety policies.",
   "license": "MIT",
   "type": "module",
@@ -43,7 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@changesafe/core": "^0.4.1",
+    "@changesafe/core": "^0.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

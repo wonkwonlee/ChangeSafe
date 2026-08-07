@@ -345,7 +345,7 @@ there is no `--auto-approve`. Full usage: [packages/cli/README.md](packages/cli/
 
 ## Packages
 
-Five public packages are on npm. As of **v0.4.1** they are published by the
+Five public packages are on npm. Since **v0.4.1** they are published by the
 release workflow over npm trusted publishing, and each carries a provenance
 attestation naming the workflow, repository, and commit that produced it —
 `npm audit signatures` verifies them, and you should rather than take this
@@ -355,6 +355,7 @@ bootstrap/remediation versions carry no attestation.
 Use `0.4.1` or later. `0.4.0` published only three of the five packages
 before failing, so the CLI and the Kubernetes domain do not exist at that
 version; those three are genuine and attested, but the set is incomplete.
+(`v0.5.0` is prepared but not yet published — see `docs/LAUNCH.md`.)
 
 ```bash
 npm i @changesafe/core @changesafe/domain-terraform   # embed the gate
