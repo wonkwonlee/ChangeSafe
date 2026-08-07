@@ -15,8 +15,14 @@ deploys, tags, or posts automatically.
 - `@changesafe/domain-kubernetes@0.3.0` is deprecated because its direct Node
   ESM imports were invalid; use `0.3.1` or later.
 - v0.3.0 and v0.3.1 were manually published and do **not** carry npm
-  provenance attestations. Verify v0.4.1's attestations before announcing it
-  — an unverified provenance claim is worth less than none.
+  provenance attestations.
+- **v0.4.1's attestations are verified** (2026-08-07). All five packages
+  record `.github/workflows/publish.yml` in `wonkwonlee/ChangeSafe` at
+  `refs/tags/v0.4.1`, commit `bafdeeb`, and `npm audit signatures` reports
+  verified signatures and attestations for the installed tree. The
+  registry-installed CLI was also exercised end to end: it gates a
+  destructive Terraform plan to exit 1, and the Kubernetes package imports
+  directly under Node ESM — the defect that forced the v0.3.1 patch.
 - The vNext UI cutover (#47, #48, #49) is merged to `main` and deployed to
   the hosted Vercel URL. It does not itself create an npm release, Git tag,
   or GitHub Release.
