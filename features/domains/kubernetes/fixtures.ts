@@ -141,6 +141,38 @@ const rawSnapshot = {
       },
       spec: { selector: { group: "boundary-worker" } },
     },
+    {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: {
+        name: "pricing-engine",
+        namespace: "demo",
+        labels: { app: "pricing-engine", tier: "backend" },
+        annotations: {
+          "example.invalid/owner": "billing",
+          "changesafe.dev/protected": "true",
+        },
+      },
+      spec: {
+        replicas: 2,
+        strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } },
+        template: {
+          metadata: { labels: { app: "pricing-engine" } },
+          spec: {
+            containers: [
+              {
+                name: "pricing-engine",
+                image: "registry.example.invalid/pricing-engine:v4",
+                securityContext: {
+                  allowPrivilegeEscalation: false,
+                  runAsUser: 1000,
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
   ],
 } as const;
 
@@ -182,6 +214,43 @@ const selectorBreakingManifest = {
   },
 } as const;
 
+/**
+ * Bumps only `spec.replicas` on a resource annotated `changesafe.dev/protected:
+ * true`. This is deliberately the smallest possible change — even a
+ * single-replica increase is enough to trip K8S_PROTECTED_RESOURCE, because
+ * Kubernetes has no delete operation and protection means the spec cannot
+ * change at all, not "cannot be removed."
+ */
+const protectedResourceChangeManifest = {
+  apiVersion: "apps/v1",
+  kind: "Deployment",
+  metadata: {
+    name: "pricing-engine",
+    namespace: "demo",
+    labels: { app: "pricing-engine", tier: "backend" },
+    annotations: {
+      "example.invalid/owner": "billing",
+      "changesafe.dev/protected": "true",
+    },
+  },
+  spec: {
+    replicas: 3,
+    strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } },
+    template: {
+      metadata: { labels: { app: "pricing-engine" } },
+      spec: {
+        containers: [
+          {
+            name: "pricing-engine",
+            image: "registry.example.invalid/pricing-engine:v4",
+            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
+          },
+        ],
+      },
+    },
+  },
+} as const;
+
 const unsupportedSecretManifest = {
   apiVersion: "v1",
   kind: "Secret",
@@ -198,7 +267,8 @@ export interface KubernetesPublicReplayFixture {
   readonly sourceId:
     | "kubernetes-safe-scale"
     | "kubernetes-selector-red-team"
-    | "kubernetes-large-manifest-boundary";
+    | "kubernetes-large-manifest-boundary"
+    | "kubernetes-protected-resource-change";
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
@@ -262,6 +332,13 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
       "A fictional offline Deployment scale-up evaluated in the Kubernetes sandbox.",
       "authored-synthetic",
       [safeScaleManifest],
+    ),
+    deriveFixture(
+      "kubernetes-protected-resource-change",
+      "Protected resource change",
+      "A fictional single-replica bump on a Deployment annotated changesafe.dev/protected: true — protection means the spec cannot change at all, not just that it cannot be removed.",
+      "authored-synthetic",
+      [protectedResourceChangeManifest],
     ),
     deriveFixture(
       "kubernetes-selector-red-team",

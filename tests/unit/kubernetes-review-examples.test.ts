@@ -26,12 +26,13 @@ describe("Kubernetes review examples", () => {
 
     expect(ids).toEqual([
       "kubernetes-safe-scale",
+      "kubernetes-protected-resource-change",
       "kubernetes-selector-red-team",
       "kubernetes-large-manifest-boundary",
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     expect(KUBERNETES_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
-    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(4);
+    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(5);
   });
 
   it("uses valid simulated-state public replay descriptors without durable authority", () => {
@@ -74,6 +75,10 @@ describe("Kubernetes review examples", () => {
         evaluation: { riskLevel: "LOW" },
       },
       {
+        sourceId: "kubernetes-protected-resource-change",
+        evaluation: { riskLevel: "CRITICAL" },
+      },
+      {
         sourceId: "kubernetes-selector-red-team",
         evaluation: { riskLevel: "CRITICAL" },
       },
@@ -83,6 +88,9 @@ describe("Kubernetes review examples", () => {
     ]);
     expect(outcomes[0]?.evaluation.findings.some((finding) => finding.status === "BLOCK")).toBe(false);
     expect(outcomes[1]?.evaluation.findings).toContainEqual(
+      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
+    );
+    expect(outcomes[2]?.evaluation.findings).toContainEqual(
       expect.objectContaining({ policyId: "K8S_SERVICE_SELECTOR", status: "BLOCK" }),
     );
     for (const fixture of KUBERNETES_PUBLIC_REPLAY_FIXTURES) {
@@ -100,6 +108,10 @@ describe("Kubernetes review examples", () => {
   it("keeps authored provenance honest and rejects the unsupported adversarial source before a result exists", () => {
     expect(KUBERNETES_REVIEW_EXAMPLES).toMatchObject([
       { sourceId: "kubernetes-safe-scale", session: { provenance: "authored-synthetic" } },
+      {
+        sourceId: "kubernetes-protected-resource-change",
+        session: { provenance: "authored-synthetic" },
+      },
       { sourceId: "kubernetes-selector-red-team", session: { provenance: "authored-red-team" } },
       {
         sourceId: "kubernetes-large-manifest-boundary",
@@ -119,6 +131,32 @@ describe("Kubernetes review examples", () => {
         KUBERNETES_UNSUPPORTED_PUBLIC_REPLAY_SOURCE.sourceId,
       ),
     ).toThrow(/unsupported/i);
+  });
+
+  it("blocks a protected resource even when only its replica count changes", () => {
+    const fixture = KUBERNETES_PUBLIC_REPLAY_FIXTURES.find(
+      (candidate) => candidate.sourceId === "kubernetes-protected-resource-change",
+    );
+    expect(fixture).toBeDefined();
+    if (!fixture) return;
+
+    // The proposal touches exactly one Deployment, and the only material
+    // change in it is spec.replicas — not the protection annotation itself —
+    // so a passing evaluation here would mean protection only guards against
+    // losing the annotation, not against changing the spec at all.
+    expect(fixture.proposal.operations).toHaveLength(1);
+    const [operation] = fixture.proposal.operations;
+    expect(operation?.op).toBe("replace");
+
+    const evaluation = evaluatePolicies(
+      kubernetesDomain,
+      KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+      fixture.proposal,
+    );
+    expect(evaluation.riskLevel).toBe("CRITICAL");
+    expect(evaluation.findings).toContainEqual(
+      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
+    );
   });
 
   it("ships schema-valid large snapshot associations and a long manifest proposal", () => {
