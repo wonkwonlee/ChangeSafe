@@ -36,23 +36,33 @@ domain decisions.
 - Read `docs/OSS_ROADMAP.md` before starting multi-file work and follow the
   repository contract in `AGENTS.md`.
 
-## Current release and vNext status (2026-07-30)
+## Current release status (2026-08-07)
 
-- Kubernetes shipped in v0.3.0 and was patched in v0.3.1. The v0.3.1 tag and
-  GitHub Release are published; use `@changesafe/domain-kubernetes@0.3.1` or
-  later.
-- The npm `@changesafe/domain-kubernetes@0.3.0` publication is deprecated:
-  its direct Node ESM imports were invalid. The bundled `changesafe@0.3.0`
-  CLI was unaffected.
-- The five public v0.3.1 packages are on npm. The v0.3.0 bootstrap and v0.3.1
-  remediation were manually published, so those v0.3.x packages do not have
-  npm provenance attestations. Future releases should use the configured npm
-  trusted-publishing workflow and verify provenance before announcement.
-- v0.3.1 was validated by the full CI gate, including lint, typecheck, unit and
-  integration tests, build, Playwright, scenario corpus/gallery, secret scans,
-  and Kubernetes offline/read-only checks. A registry smoke also verified the
-  CLI version, direct Kubernetes package import, schema parsing, and a clean
-  Kubernetes gate.
+- **v0.4.1 is the canonical release.** All five public packages are on npm at
+  `0.4.1`, published by the release workflow over trusted publishing, and
+  every one carries a verified provenance attestation recording
+  `.github/workflows/publish.yml` in `wonkwonlee/ChangeSafe` at
+  `refs/tags/v0.4.1`, commit `bafdeeb`. This is the project's first release
+  with provenance.
+- **Do not point anyone at `0.4.0`.** It published `@changesafe/core`,
+  `domain-network`, and `domain-terraform` and then failed: the Kubernetes
+  domain had no trusted-publisher configuration on npm, so the registry
+  answered 404 and the loop exited before the CLI. Those three are genuine and
+  attested; the set is incomplete, not broken, and nothing was withdrawn.
+- v0.4.0 could not be re-published because a `release` event runs the workflow
+  file **at the tagged commit**, and the resumable-publish fix landed after
+  the tag. Moving the tag was rejected: the attestations already record the
+  original commit. Hence v0.4.1 rather than a retry.
+- Publishing is now resumable — a version already on the registry is skipped
+  rather than refused (`scripts/select-unpublished.sh`, covered by
+  `tests/integration/release-publish-selection.test.ts`).
+- The v0.3.0 `@changesafe/domain-kubernetes` publication is deprecated (its
+  direct Node ESM imports were invalid). v0.3.0 and v0.3.1 were published
+  manually and carry no attestation.
+- v0.4.1 was validated by the full CI gate and, after publication, by a
+  registry smoke: `npm audit signatures` clean, the installed CLI gates a
+  destructive Terraform plan to exit 1, and the Kubernetes package imports
+  directly under Node ESM.
 
 ## Verification baseline
 
