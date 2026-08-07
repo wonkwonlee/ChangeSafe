@@ -10,6 +10,7 @@ import {
   EvidencePager,
 } from "@/components/BoundedEvidence";
 import { CaseStudyBadge } from "@/components/CaseStudyBadge";
+import { DiffBlock } from "@/components/DiffBlock";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { readScenarioLookup, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
@@ -295,7 +296,7 @@ export function TerraformWorkbenchShell({
                 <table className="min-w-full border-collapse text-left text-xs">
                   <caption className="sr-only">Terraform resource changes</caption>
                   <thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Module</th><th className="px-4 py-3 font-medium" scope="col">Type / address</th><th className="px-4 py-3 font-medium" scope="col">Action</th><th className="px-4 py-3 font-medium" scope="col">Before / after</th></tr></thead>
-                  <tbody>{changePage.items.map((change) => <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} />{change.action === "delete" || change.action === "replace" ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details><summary className="cursor-pointer text-ink-dim">Inspect values</summary><p className="mt-2 text-ink-faint">Before</p><BoundedJsonBlock label={`${change.address} before JSON`} value={change.before} /><p className="mt-3 text-ink-faint">After</p><BoundedJsonBlock label={`${change.address} after JSON`} value={change.after} /></details></td></tr>)}</tbody>
+                  <tbody>{changePage.items.map((change) => { const destructive = change.action === "delete" || change.action === "replace"; return <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} />{destructive ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details open={destructive}><summary className="cursor-pointer text-ink-dim">Inspect values for {change.address}</summary><DiffBlock after={change.after} before={change.before} label={change.address} /></details></td></tr>; })}</tbody>
                 </table>
               </div>
             </section>

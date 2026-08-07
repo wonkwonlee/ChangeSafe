@@ -12,6 +12,7 @@ import {
   BoundedJsonBlock,
   EvidencePager,
 } from "@/components/BoundedEvidence";
+import { DiffBlock } from "@/components/DiffBlock";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { readScenarioLookup, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
 import { FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
@@ -315,7 +316,7 @@ function ProposedDiff({ proposal }: { proposal: KubernetesChangeProposal }) {
       <p className="mt-2 text-sm font-medium">{resourceName(operation.value)}</p>
       <p className="mt-1 text-sm text-ink-dim">{operation.reason}</p>
       <p className="mt-2 text-xs text-ink-faint">Evidence: {operation.evidenceIds.join(", ")}</p>
-      <details className="mt-3"><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest</summary><div className="grid gap-3 lg:grid-cols-2"><div className="min-w-0"><p className="mt-3 text-xs text-ink-faint">Current</p><BoundedJsonBlock label={`${operation.path} current manifest JSON`} value={before ?? "No current resource (add)"} /></div><div className="min-w-0"><p className="mt-3 text-xs text-ink-faint">Proposed</p><BoundedJsonBlock label={`${operation.path} proposed manifest JSON`} value={operation.value} /></div></div></details>
+      <details className="mt-3" open={operation.op === "remove" || operation.op === "replace"}><summary className="cursor-pointer text-sm text-ink-dim">Inspect current / proposed manifest for {operation.path}</summary><DiffBlock after={operation.value} before={before ?? null} label={operation.path} /></details>
     </article>;
   })}</div>;
 }
