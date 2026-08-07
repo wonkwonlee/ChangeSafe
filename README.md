@@ -281,7 +281,7 @@ credentials for your infrastructure, and never applies anything.
 
 ```yaml
 - name: ChangeSafe gate
-  uses: wonkwonlee/ChangeSafe@v0.4.1
+  uses: wonkwonlee/ChangeSafe@v0.5.0
   with:
     plan: tfplan.json
     context: pr-body.txt   # untrusted text, scanned but never obeyed
@@ -352,10 +352,9 @@ attestation naming the workflow, repository, and commit that produced it —
 paragraph's word for it. The manually published v0.3.0 and v0.3.1
 bootstrap/remediation versions carry no attestation.
 
-Use `0.4.1` or later. `0.4.0` published only three of the five packages
+Use `0.5.0` or later. `0.4.0` published only three of the five packages
 before failing, so the CLI and the Kubernetes domain do not exist at that
 version; those three are genuine and attested, but the set is incomplete.
-(`v0.5.0` is prepared but not yet published — see `docs/LAUNCH.md`.)
 
 ```bash
 npm i @changesafe/core @changesafe/domain-terraform   # embed the gate

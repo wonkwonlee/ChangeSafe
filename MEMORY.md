@@ -38,29 +38,36 @@ domain decisions.
 
 ## Current release status (2026-08-07)
 
-- **v0.5.0 is prepared on `main`, not yet published.** PR #61 fixed a real
-  gap in `@changesafe/core`'s currently-published `0.4.1`: a domain adapter
-  could skip any universal policy (not just the two the shape permits) with
-  zero enforcement outside the app's own registration path, and a skip's
-  claimed replacement was never verified to exist. Every receipt now carries
-  `policyCoverage`. PR #60 added Kubernetes support to `changesafe eval` and
-  fixed a prompt-injection surface (label/selector values leaking into the
-  trusted preamble) and an eval-accuracy gap (unvalidated rollback
-  references) found in review. `CORE_POLICY_VERSION` moves to `core-v0.2.0`,
-  `TERRAFORM_POLICY_VERSION` to `terraform-v0.2.0` — see
-  `docs/RELEASE_NOTES_v0.5.0.md`. All nine workspace packages are bumped to
-  `0.5.0` on `main`; publishing still needs an explicit owner-authorized tag
-  and GitHub Release, after which this section should record the same
-  registry-smoke verification v0.4.1 got before being called canonical.
-- **v0.4.1 is still the canonical release** until v0.5.0 actually publishes.
-  All five public packages are on npm at
+- **v0.5.0 is the canonical release, published and registry-verified.**
+  All five public packages are on npm at `0.5.0`, published by the release
+  workflow over trusted publishing, and every one carries a verified
+  provenance attestation recording `.github/workflows/publish.yml` in
+  `wonkwonlee/ChangeSafe` at `refs/tags/v0.5.0`, commit `c1ae07e`
+  (`npm view changesafe@0.5.0 dist.attestations` — `gitHead` matches).
+  `npm audit signatures` reports verified registry signatures and
+  attestations for the installed tree; the registry-installed CLI gates a
+  destructive Terraform plan to exit 1 with `PLAN_CONTEXT_REQUIRED` visible
+  in the findings, and `@changesafe/domain-kubernetes` imports directly
+  under Node ESM. PR #61 fixed a real gap in `@changesafe/core`'s
+  previously-published `0.4.1`: a domain adapter could skip any universal
+  policy (not just the two the shape permits) with zero enforcement outside
+  the app's own registration path, and a skip's claimed replacement was
+  never verified to exist. Every receipt now carries `policyCoverage`. PR
+  #60 added Kubernetes support to `changesafe eval` and fixed a
+  prompt-injection surface (label/selector values leaking into the trusted
+  preamble) and an eval-accuracy gap (unvalidated rollback references)
+  found in review. `CORE_POLICY_VERSION` moved to `core-v0.2.0`,
+  `TERRAFORM_POLICY_VERSION` to `terraform-v0.2.0` — a v0.5.0 receipt is not
+  directly comparable to a v0.4.x one. See `docs/RELEASE_NOTES_v0.5.0.md`.
+- **v0.4.1 was the canonical release before v0.5.0.** All five public
+  packages went out on npm at
   `0.4.1`, published by the release workflow over trusted publishing, and
   every one carries a verified provenance attestation recording
   `.github/workflows/publish.yml` in `wonkwonlee/ChangeSafe` at
-  `refs/tags/v0.4.1`, commit `bafdeeb`. This is the first *complete* set the
-  project has published with provenance — the three packages that reached the
-  registry during the failed v0.4.0 run were attested too, so v0.4.1 is the
-  first release where all five are.
+  `refs/tags/v0.4.1`, commit `bafdeeb`. This was the first *complete* set the
+  project published with provenance — the three packages that reached the
+  registry during the failed v0.4.0 run were attested too, so v0.4.1 was the
+  first release where all five were.
 - **Do not point anyone at `0.4.0`.** It published `@changesafe/core`,
   `domain-network`, and `domain-terraform` and then failed: the Kubernetes
   domain had no trusted-publisher configuration on npm, so the registry
