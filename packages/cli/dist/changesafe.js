@@ -25184,18 +25184,9 @@ function describeValidIdentifiers2(snapshot) {
   const evidence = [snapshot.evidenceId, ...snapshot.resources.map((resource) => resource.evidenceId)];
   const resourceLines = snapshot.resources.map((resource) => {
     const { namespace, name, kind } = resource.identity;
-    const details = [];
-    if ("replicas" in resource.spec && resource.spec.replicas !== void 0) {
-      details.push(`replicas ${resource.spec.replicas}`);
-    }
-    if ("podLabels" in resource.spec && resource.spec.podLabels) {
-      details.push(`podLabels ${JSON.stringify(resource.spec.podLabels)}`);
-    }
-    if ("selector" in resource.spec && resource.spec.selector) {
-      details.push(`selector ${JSON.stringify(resource.spec.selector)}`);
-    }
+    const replicas2 = "replicas" in resource.spec && resource.spec.replicas !== void 0 ? ` (replicas ${resource.spec.replicas})` : "";
     const protectedFlag = resource.metadata.annotations["changesafe.dev/protected"] === "true" ? " [PROTECTED]" : "";
-    return `- ${resource.resourceId}: ${kind} ${namespace}/${name}${protectedFlag}${details.length > 0 ? ` (${details.join("; ")})` : ""}`;
+    return `- ${resource.resourceId}: ${kind} ${namespace}/${name}${protectedFlag}${replicas2}`;
   });
   return [
     `Valid evidence ids: ${evidence.join(", ")}`,
@@ -25225,16 +25216,32 @@ var kubernetesAnalysisPrompt = {
   crossCheck(snapshot, proposal) {
     validateProposalEvidence(kubernetesDomain, snapshot, proposal);
     const known = new Set(snapshot.resources.map((resource) => resource.resourceId));
+    const addedByForward = /* @__PURE__ */ new Set();
+    for (const operation of proposal.operations) {
+      if (operation.op !== "add") continue;
+      const parsedPath = parseKubernetesPath(operation.path);
+      if (parsedPath) addedByForward.add(parsedPath.resourceId);
+    }
     const invented = /* @__PURE__ */ new Set();
     for (const operation of proposal.operations) {
       if (operation.op !== "replace") continue;
       const parsedPath = parseKubernetesPath(operation.path);
       if (parsedPath && !known.has(parsedPath.resourceId)) invented.add(parsedPath.resourceId);
     }
+    for (const operation of proposal.rollbackOperations) {
+      const parsedPath = parseKubernetesPath(operation.path);
+      if (!parsedPath) continue;
+      if (operation.op === "replace" && !known.has(parsedPath.resourceId)) {
+        invented.add(parsedPath.resourceId);
+      }
+      if (operation.op === "remove" && !addedByForward.has(parsedPath.resourceId)) {
+        invented.add(parsedPath.resourceId);
+      }
+    }
     if (invented.size > 0) {
       throw new DomainError(
         "AI_INVALID_OUTPUT",
-        `The model proposed replacing resources that do not exist in the snapshot: ${[...invented].sort().join(", ")}. No proposal was accepted.`
+        `The model proposed an operation referencing resources that do not exist or were never added: ${[...invented].sort().join(", ")}. No proposal was accepted.`
       );
     }
   }
@@ -25382,29 +25389,36 @@ async function analyzeWithPrompt(prompt, input, options) {
 }
 
 // ../ai/src/domains.ts
+function defineAnalysisDomain(domainId, parseInput, prompt, adapter) {
+  return {
+    domainId,
+    parseInput,
+    async analyze(raw, options) {
+      const input = parseInput(raw);
+      const result = await analyzeWithPrompt(prompt, input, options);
+      return { ...result, input };
+    },
+    prompt,
+    adapter
+  };
+}
+function parseKubernetesInput(raw) {
+  const alreadyNormalized = KubernetesSnapshotSchema.safeParse(raw);
+  return alreadyNormalized.success ? alreadyNormalized.data : normalizeSnapshot(raw);
+}
 var ANALYSIS_DOMAINS = {
-  network: {
-    domainId: "network",
-    parseInput: (raw) => IncidentBundleSchema.parse(raw),
-    async analyze(raw, options) {
-      const bundle = IncidentBundleSchema.parse(raw);
-      const result = await analyzeWithPrompt(networkAnalysisPrompt, bundle, options);
-      return { ...result, input: bundle };
-    },
-    prompt: networkAnalysisPrompt,
-    adapter: networkDomain
-  },
-  kubernetes: {
-    domainId: "kubernetes",
-    parseInput: (raw) => KubernetesSnapshotSchema.parse(raw),
-    async analyze(raw, options) {
-      const snapshot = KubernetesSnapshotSchema.parse(raw);
-      const result = await analyzeWithPrompt(kubernetesAnalysisPrompt, snapshot, options);
-      return { ...result, input: snapshot };
-    },
-    prompt: kubernetesAnalysisPrompt,
-    adapter: kubernetesDomain
-  }
+  network: defineAnalysisDomain(
+    "network",
+    (raw) => IncidentBundleSchema.parse(raw),
+    networkAnalysisPrompt,
+    networkDomain
+  ),
+  kubernetes: defineAnalysisDomain(
+    "kubernetes",
+    parseKubernetesInput,
+    kubernetesAnalysisPrompt,
+    kubernetesDomain
+  )
 };
 var ANALYZABLE_DOMAIN_IDS = Object.keys(ANALYSIS_DOMAINS);
 function resolveAnalysisDomain(domainId) {

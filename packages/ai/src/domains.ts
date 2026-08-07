@@ -1,6 +1,11 @@
 import { DomainError, type DomainAdapter } from "@changesafe/core";
 import { IncidentBundleSchema, networkDomain } from "@changesafe/domain-network";
-import { KubernetesSnapshotSchema, kubernetesDomain } from "@changesafe/domain-kubernetes";
+import {
+  KubernetesSnapshotSchema,
+  normalizeSnapshot,
+  kubernetesDomain,
+  type KubernetesSnapshot,
+} from "@changesafe/domain-kubernetes";
 
 import { analyzeWithPrompt, type AnalysisResult, type AnalyzeOptions } from "./analyze";
 import type { AnalysisPrompt } from "./prompt";
@@ -37,29 +42,64 @@ export interface DomainAnalysis extends AnalysisResult {
   readonly input: unknown;
 }
 
+/**
+ * Pair a prompt with the adapter it was actually written against.
+ *
+ * A single generic `TInput` binds `prompt` and `adapter` together at the
+ * call site: pairing a Kubernetes prompt with the network adapter (or any
+ * other mismatch) fails to typecheck here, before it can compile into a
+ * registry entry that would run the wrong policies against the wrong
+ * shape. The erasure to `AnalysisDomain`'s `never`-typed fields still
+ * happens — the registry itself is necessarily heterogeneous — but only
+ * once such a pairing is already known to be internally consistent.
+ */
+function defineAnalysisDomain<TInput, TState>(
+  domainId: string,
+  parseInput: (raw: unknown) => TInput,
+  prompt: AnalysisPrompt<TInput>,
+  adapter: DomainAdapter<TInput, TState>,
+): AnalysisDomain {
+  return {
+    domainId,
+    parseInput,
+    async analyze(raw, options) {
+      const input = parseInput(raw);
+      const result = await analyzeWithPrompt(prompt, input, options);
+      return { ...result, input };
+    },
+    prompt: prompt as unknown as AnalysisPrompt<never>,
+    adapter: adapter as unknown as DomainAdapter<never, never>,
+  };
+}
+
+/**
+ * `eval` reads scenario fixtures straight off disk — raw, collector-shaped
+ * JSON, the same as a real snapshot collector would produce — but a caller
+ * driving this domain directly from the scenario registry may already hold
+ * an already-normalized `KubernetesSnapshot`. `normalizeSnapshot` is not
+ * idempotent (it expects the raw shape and rejects its own output), so this
+ * tries the strict, already-normalized parse first and only normalizes when
+ * that fails — the same boundary `packages/cli/src/domains.ts` applies
+ * before the gate, extended to accept either shape here.
+ */
+function parseKubernetesInput(raw: unknown): KubernetesSnapshot {
+  const alreadyNormalized = KubernetesSnapshotSchema.safeParse(raw);
+  return alreadyNormalized.success ? alreadyNormalized.data : normalizeSnapshot(raw);
+}
+
 const ANALYSIS_DOMAINS: Record<string, AnalysisDomain> = {
-  network: {
-    domainId: "network",
-    parseInput: (raw) => IncidentBundleSchema.parse(raw),
-    async analyze(raw, options) {
-      const bundle = IncidentBundleSchema.parse(raw);
-      const result = await analyzeWithPrompt(networkAnalysisPrompt, bundle, options);
-      return { ...result, input: bundle };
-    },
-    prompt: networkAnalysisPrompt as unknown as AnalysisPrompt<never>,
-    adapter: networkDomain as unknown as DomainAdapter<never, never>,
-  },
-  kubernetes: {
-    domainId: "kubernetes",
-    parseInput: (raw) => KubernetesSnapshotSchema.parse(raw),
-    async analyze(raw, options) {
-      const snapshot = KubernetesSnapshotSchema.parse(raw);
-      const result = await analyzeWithPrompt(kubernetesAnalysisPrompt, snapshot, options);
-      return { ...result, input: snapshot };
-    },
-    prompt: kubernetesAnalysisPrompt as unknown as AnalysisPrompt<never>,
-    adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
-  },
+  network: defineAnalysisDomain(
+    "network",
+    (raw) => IncidentBundleSchema.parse(raw),
+    networkAnalysisPrompt,
+    networkDomain,
+  ),
+  kubernetes: defineAnalysisDomain(
+    "kubernetes",
+    parseKubernetesInput,
+    kubernetesAnalysisPrompt,
+    kubernetesDomain,
+  ),
 };
 
 export const ANALYZABLE_DOMAIN_IDS = Object.keys(ANALYSIS_DOMAINS);

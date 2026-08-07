@@ -45,26 +45,29 @@ A Service selector must match the pod labels of a workload that will exist after
 
 Field notes: proposalId is a short kebab-case identifier you choose. diagnosis.confidence is your honest 0..1 estimate; it is advisory only and has no effect on validation or approval.`;
 
-/** Compact, trusted enumeration of the only identifiers the model may cite. */
+/**
+ * Compact, trusted enumeration of the only identifiers the model may cite.
+ *
+ * Deliberately limited to opaque, schema-validated identifiers (resourceId,
+ * namespace, name, kind — all DNS-label/subdomain constrained) and a plain
+ * numeric replica count. Label maps (`podLabels`, a Service `selector`) are
+ * `Record<string, string>` with no charset restriction beyond length, so an
+ * instruction-like value there is exactly the untrusted content rule 1
+ * describes — it must stay inside `<untrusted_snapshot_data>`, where
+ * `canonicalize(snapshot)` already carries it, rather than being echoed into
+ * this trusted preamble.
+ */
 function describeValidIdentifiers(snapshot: KubernetesSnapshot): string {
   const evidence = [snapshot.evidenceId, ...snapshot.resources.map((resource) => resource.evidenceId)];
   const resourceLines = snapshot.resources.map((resource) => {
     const { namespace, name, kind } = resource.identity;
-    const details: string[] = [];
-    if ("replicas" in resource.spec && resource.spec.replicas !== undefined) {
-      details.push(`replicas ${resource.spec.replicas}`);
-    }
-    if ("podLabels" in resource.spec && resource.spec.podLabels) {
-      details.push(`podLabels ${JSON.stringify(resource.spec.podLabels)}`);
-    }
-    if ("selector" in resource.spec && resource.spec.selector) {
-      details.push(`selector ${JSON.stringify(resource.spec.selector)}`);
-    }
+    const replicas =
+      "replicas" in resource.spec && resource.spec.replicas !== undefined
+        ? ` (replicas ${resource.spec.replicas})`
+        : "";
     const protectedFlag =
       resource.metadata.annotations["changesafe.dev/protected"] === "true" ? " [PROTECTED]" : "";
-    return `- ${resource.resourceId}: ${kind} ${namespace}/${name}${protectedFlag}${
-      details.length > 0 ? ` (${details.join("; ")})` : ""
-    }`;
+    return `- ${resource.resourceId}: ${kind} ${namespace}/${name}${protectedFlag}${replicas}`;
   });
   return [
     `Valid evidence ids: ${evidence.join(", ")}`,
@@ -98,23 +101,41 @@ export const kubernetesAnalysisPrompt: AnalysisPrompt<KubernetesSnapshot> = {
     // Invented evidence ids are a hard rejection (EVIDENCE_UNKNOWN).
     validateProposalEvidence(kubernetesDomain, snapshot, proposal);
 
-    // Only forward `replace` is checked against the snapshot. An `add` names a
-    // resource that is *supposed* not to exist yet, and a rollback `remove`
-    // legitimately targets a resource this proposal just added — judging
-    // either against the pre-change state would reject correct proposals.
-    // Malformed paths and mismatched identities are left to PATCH_SCHEMA so
-    // they surface as explained findings rather than a blanket rejection.
+    // Forward `replace` and rollback `replace` are both checked against the
+    // pre-change snapshot. A forward `add` names a resource that is
+    // *supposed* not to exist yet, so it is exempt — and a rollback `remove`
+    // is legitimate only when it undoes a forward `add`, never when it names
+    // a resource that was never proposed. Malformed paths and mismatched
+    // identities are left to PATCH_SCHEMA so they surface as explained
+    // findings rather than a blanket rejection here.
     const known = new Set(snapshot.resources.map((resource) => resource.resourceId));
+    const addedByForward = new Set<string>();
+    for (const operation of proposal.operations) {
+      if (operation.op !== "add") continue;
+      const parsedPath = parseKubernetesPath(operation.path);
+      if (parsedPath) addedByForward.add(parsedPath.resourceId);
+    }
+
     const invented = new Set<string>();
     for (const operation of proposal.operations) {
       if (operation.op !== "replace") continue;
       const parsedPath = parseKubernetesPath(operation.path);
       if (parsedPath && !known.has(parsedPath.resourceId)) invented.add(parsedPath.resourceId);
     }
+    for (const operation of proposal.rollbackOperations) {
+      const parsedPath = parseKubernetesPath(operation.path);
+      if (!parsedPath) continue;
+      if (operation.op === "replace" && !known.has(parsedPath.resourceId)) {
+        invented.add(parsedPath.resourceId);
+      }
+      if (operation.op === "remove" && !addedByForward.has(parsedPath.resourceId)) {
+        invented.add(parsedPath.resourceId);
+      }
+    }
     if (invented.size > 0) {
       throw new DomainError(
         "AI_INVALID_OUTPUT",
-        `The model proposed replacing resources that do not exist in the snapshot: ${[...invented].sort().join(", ")}. No proposal was accepted.`,
+        `The model proposed an operation referencing resources that do not exist or were never added: ${[...invented].sort().join(", ")}. No proposal was accepted.`,
       );
     }
   },
