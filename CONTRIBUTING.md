@@ -215,12 +215,24 @@ It refuses to publish rather than guessing:
 
 - the release tag must equal `v<version>`, and every published package must
   carry that same version — they release together or not at all;
-- no version may already exist on npm, since npm versions are immutable;
 - lint, typecheck, the full test suite, and the bundle-freshness check must pass
   on the tagged commit;
 - the packed tarball is installed into a throwaway project and must gate a
   destructive plan to exit 1 — a package that installs but does not evaluate
   would otherwise be found by whoever ran `npx changesafe` first.
+
+A version already on npm is **skipped, not refused**. Five packages are five
+registry calls, so a failure partway through leaves some live and the rest
+missing; republishing the same version from the same tag is impossible
+anyway, so a resumed run sends only what is still missing and says which
+packages it skipped. Without this, completing a partial release meant
+publishing by hand — which is how v0.3.x lost its provenance.
+
+One caveat when resuming: a `release` event runs **the workflow file at the
+tagged commit**, not the one on `main`. A fix merged to `main` after the tag
+was created does not apply to that release; the tag has to contain it. When
+recovering a partial publish, check whether the tag's own workflow can do the
+job before re-publishing the release.
 
 Provenance needs no flag: under trusted publishing npm attaches it
 automatically, recording which workflow, repository, and commit produced each
