@@ -69,7 +69,6 @@ jobs:
             echo "::error::tag $TAG does not match version $VERSION — bump the packages or fix the tag"
             exit 1
           fi
-          REMAINING=""
           for entry in "cli:changesafe" \
                        "core:@changesafe/core" \
                        "domain-network:@changesafe/domain-network" \
@@ -82,18 +81,22 @@ jobs:
               echo "::error::$NAME is $OWN while the release is $VERSION; the workspace publishes as a set"
               exit 1
             fi
-            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-              echo "::notice::$NAME@$VERSION is already on the registry; skipping it"
-            else
-              REMAINING="$REMAINING $NAME"
-            fi
           done
+          # Which packages a resumed run still has to send. The selection lives
+          # in a script so it can be tested; see
+          # tests/integration/release-publish-selection.test.ts.
+          REMAINING=$(./scripts/select-unpublished.sh "$VERSION" \
+            @changesafe/core \
+            @changesafe/domain-network \
+            @changesafe/domain-terraform \
+            @changesafe/domain-kubernetes \
+            changesafe | tr '\n' ' ')
           # Named explicitly so a resumed run says what it is about to do, and
           # a run with nothing left to do says that rather than looking busy.
-          if [ -z "$REMAINING" ]; then
+          if [ -z "${REMAINING// /}" ]; then
             echo "::notice::every package is already published at $VERSION; nothing left to publish"
           else
-            echo "will publish:$REMAINING"
+            echo "will publish: $REMAINING"
           fi
           echo "REMAINING=$REMAINING" >> "$GITHUB_ENV"
 
