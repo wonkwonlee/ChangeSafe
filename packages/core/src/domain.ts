@@ -1,4 +1,4 @@
-import type { PolicyFinding } from "./findings";
+import type { PolicyFinding, SkippableUniversalPolicyId } from "./findings";
 import type { PolicyPack, ResolvedPolicyPack } from "./policy-pack";
 import type { ChangeOperation, ChangeProposal } from "./proposal";
 import type { DiffEntry } from "./simulation";
@@ -70,22 +70,54 @@ export interface DomainAdapter<TInput = unknown, TState = unknown> {
 
   /**
    * Universal policies this domain does not run, each with the reason and
-   * the domain policy that answers the same question instead.
+   * what answers the same question instead.
    *
    * This is deliberately verbose: silently dropping a safety check is how
-   * gates rot. A skip appears in `policyOrder`, in receipts (by absence),
-   * and must name its replacement.
+   * gates rot. A skip appears in `policyOrder`, in receipts (never merely by
+   * a policy's absence — `policyCoverage.skippedPolicies` records it), and
+   * must name a real replacement. Only `SkippableUniversalPolicyId` may be
+   * named here; `evaluatePolicies` and `policyOrder` both throw for any
+   * other policy id or for a `replacedBy` that names a domain policy the
+   * adapter does not actually declare — a domain cannot self-certify a skip
+   * that core cannot verify.
    */
   readonly skippedUniversalPolicies?: readonly SkippedUniversalPolicy[];
 }
 
+/**
+ * What actually answers the question a skipped universal policy would have.
+ *
+ * `"domain-policy"` is checked: core verifies the named id is one of the
+ * adapter's own `policies`, so a skip cannot point at a policy that does not
+ * exist. `"out-of-band"` is for when the replacement is a real but
+ * non-mechanical process (e.g. a required pull request review) — core
+ * cannot verify that a human actually performed it, so this kind is honest
+ * about naming a process rather than a policy, and a receipt's
+ * `policyCoverage` records the distinction rather than blurring it into
+ * prose.
+ */
+export type SkipReplacement =
+  | { readonly kind: "domain-policy"; readonly policyId: string }
+  | { readonly kind: "out-of-band"; readonly process: string };
+
 export interface SkippedUniversalPolicy {
   /** The universal policy that does not apply here. */
-  readonly policyId: string;
+  readonly policyId: SkippableUniversalPolicyId;
   /** Why it cannot be evaluated in this domain. */
   readonly because: string;
-  /** The domain policy that covers the same concern. */
-  readonly replacedBy: string;
+  /** What answers the same question instead. */
+  readonly replacedBy: SkipReplacement;
+}
+
+/**
+ * The exact set of policies a domain's gate run produced or deliberately
+ * skipped, computed by `computePolicyCoverage` and carried on every receipt.
+ * A verifier reads this instead of the adapter source to know what a
+ * receipt's absence of a policy id means.
+ */
+export interface PolicyCoverage {
+  readonly orderedPolicyIds: readonly string[];
+  readonly skippedPolicies: readonly SkippedUniversalPolicy[];
 }
 
 export interface DomainPolicy<TInput = unknown, TState = unknown> {

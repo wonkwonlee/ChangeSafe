@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   PolicyPackSchema,
+  computePolicyCoverage,
   createReceipt,
   importSigningKeyPair,
   signReceipt,
@@ -222,6 +223,7 @@ export async function gateParsedProposal(
       model: options.model,
       fixtureProvenance: options.provenance,
       findings,
+      policyCoverage: computePolicyCoverage(domain.adapter),
       riskLevel,
       // Never "approved": the CLI gates, and a human decides elsewhere.
       decision: blocked ? "blocked" : "gate_only",

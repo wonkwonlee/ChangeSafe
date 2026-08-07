@@ -139,6 +139,7 @@ export async function someReceipt(
         remediation: null,
       },
     ],
+    policyCoverage: { orderedPolicyIds: ["PATCH_SCHEMA"], skippedPolicies: [] },
     riskLevel: "LOW",
     decision: "gate_only",
     simulation: null,

@@ -104,12 +104,19 @@ describe("the terraform gate", () => {
       "DESTRUCTIVE_OP",
       "PROTECTED_RESOURCE",
       "REVERSIBILITY",
+      "PLAN_CONTEXT_REQUIRED",
       "BLAST_RADIUS",
       "UNTRUSTED_INSTRUCTION",
     ]);
     for (const skip of terraformDomain.skippedUniversalPolicies ?? []) {
       expect(skip.because.length).toBeGreaterThan(20);
-      expect(skip.replacedBy.length).toBeGreaterThan(0);
+      const replacedBy = skip.replacedBy;
+      expect(replacedBy.kind).toBe("domain-policy");
+      if (replacedBy.kind === "domain-policy") {
+        expect(
+          terraformDomain.policies.some((policy) => policy.id === replacedBy.policyId),
+        ).toBe(true);
+      }
     }
   });
 
@@ -123,6 +130,7 @@ describe("the terraform gate", () => {
     const { findings, riskLevel } = gate("destroys-database");
     expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("BLOCK");
     expect(statusOf(findings, "REVERSIBILITY")).toBe("WARN");
+    expect(statusOf(findings, "PLAN_CONTEXT_REQUIRED")).toBe("WARN");
     expect(riskLevel).toBe("CRITICAL");
     const destructive = findings.find((finding) => finding.policyId === "DESTRUCTIVE_OP");
     expect(destructive?.affectedResources).toEqual([
@@ -136,12 +144,15 @@ describe("the terraform gate", () => {
     };
     (plan.resource_changes[0]!.change.before.tags as Record<string, string>).changesafe_backup =
       "true";
-    const input = normalizePlan(plan);
+    const input = normalizePlan(plan, {
+      context: [{ kind: "pull_request_description", text: "Decommission the backed-up replica." }],
+    });
     const proposal = deriveProposal(input);
     const { findings, riskLevel } = evaluatePolicies(terraformDomain, input, proposal);
     // Downgraded, never silenced: the exception is in the receipt.
     expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("WARN");
     expect(statusOf(findings, "REVERSIBILITY")).toBe("PASS");
+    expect(statusOf(findings, "PLAN_CONTEXT_REQUIRED")).toBe("PASS");
     expect(riskLevel).toBe("MEDIUM");
   });
 
@@ -179,6 +190,28 @@ describe("the terraform gate", () => {
     const proposal = deriveProposal(input);
     const { findings } = evaluatePolicies(terraformDomain, input, proposal);
     expect(statusOf(findings, "REVERSIBILITY")).toBe("BLOCK");
+    expect(statusOf(findings, "PLAN_CONTEXT_REQUIRED")).toBe("WARN");
+  });
+
+  describe("PLAN_CONTEXT_REQUIRED", () => {
+    it("passes a plan that destroys nothing, regardless of context", () => {
+      const { findings } = gate("safe-scale-up");
+      expect(statusOf(findings, "PLAN_CONTEXT_REQUIRED")).toBe("PASS");
+    });
+
+    it("warns when a destructive plan carries no PR or commit context", () => {
+      const { findings } = gate("destroys-database");
+      const finding = findings.find((f) => f.policyId === "PLAN_CONTEXT_REQUIRED");
+      expect(finding?.status).toBe("WARN");
+      expect(finding?.affectedResources).toEqual(["resource:module.data.aws_db_instance.primary"]);
+    });
+
+    it("passes once the plan carries any context entry", () => {
+      const { findings } = gate("destroys-database", {
+        context: [{ kind: "commit_message", text: "Retire the legacy read replica." }],
+      });
+      expect(statusOf(findings, "PLAN_CONTEXT_REQUIRED")).toBe("PASS");
+    });
   });
 
   it("uses thresholds suited to cloud plans, not to routers", () => {

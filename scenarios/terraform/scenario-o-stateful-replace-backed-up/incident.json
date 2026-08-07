@@ -1,6 +1,12 @@
 {
   "format_version": "1.2",
   "terraform_version": "1.9.5",
+  "context": [
+    {
+      "kind": "pull_request_description",
+      "text": "Replace the undersized database instance with a larger instance class. A snapshot backup is tagged and confirmed before this plan was generated."
+    }
+  ],
   "resource_changes": [
     {
       "address": "module.data.aws_db_instance.checkout_read_replica",

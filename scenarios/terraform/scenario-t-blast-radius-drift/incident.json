@@ -1,6 +1,12 @@
 {
   "format_version": "1.2",
   "terraform_version": "1.9.5",
+  "context": [
+    {
+      "kind": "pull_request_description",
+      "text": "Fleet-wide instance-type bump across the worker pool to pick up the new baseline AMI. All twenty instances are stateless behind the load balancer."
+    }
+  ],
   "resource_changes": [
     {
       "address": "module.fleet.aws_instance.worker_00",

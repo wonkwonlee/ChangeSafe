@@ -1,6 +1,11 @@
-import type { DomainAdapter, PolicyContext } from "../domain";
+import type { DomainAdapter, PolicyContext, PolicyCoverage } from "../domain";
 import { isDomainError } from "../errors";
-import { deriveRiskLevel, type PolicyFinding, type RiskLevel } from "../findings";
+import {
+  deriveRiskLevel,
+  SKIPPABLE_UNIVERSAL_POLICY_IDS,
+  type PolicyFinding,
+  type RiskLevel,
+} from "../findings";
 import type { ChangeProposal } from "../proposal";
 import { resolvePolicyPack, type PolicyPack } from "../policy-pack";
 import { evaluateBlastRadius } from "./blast-radius";
@@ -58,6 +63,66 @@ function evaluateFailClosed(policyId: string, evaluate: () => PolicyFinding): Po
 }
 
 /**
+ * Enforce that a domain's declared skips are legitimate, independent of any
+ * particular proposal.
+ *
+ * This is the check a domain cannot bypass by publishing core and writing
+ * its own adapter: `evaluatePolicies` and `policyOrder` both call it, so
+ * `changesafe gate` against a third-party adapter gets the identical
+ * guarantee the app's registration path gets. A domain may only skip
+ * `ROLLBACK_COMPLETE` or `VERIFICATION_REQUIRED` (see
+ * `SKIPPABLE_UNIVERSAL_POLICY_IDS`), never twice each, and a
+ * `"domain-policy"` replacement must name a policy the adapter actually
+ * declares — a skip cannot point at a policy that does not exist.
+ */
+function validateSkips<TInput, TState>(adapter: DomainAdapter<TInput, TState>): void {
+  const skips = adapter.skippedUniversalPolicies ?? [];
+  const seen = new Set<string>();
+  for (const skip of skips) {
+    if (seen.has(skip.policyId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" declares duplicate universal policy skips for "${skip.policyId}"`,
+      );
+    }
+    seen.add(skip.policyId);
+  }
+
+  const declaredPolicyIds = new Set(adapter.policies.map((policy) => policy.id));
+  for (const skip of skips) {
+    if (!(SKIPPABLE_UNIVERSAL_POLICY_IDS as readonly string[]).includes(skip.policyId)) {
+      throw new Error(
+        `domain "${adapter.domainId}" cannot skip "${skip.policyId}": only ${SKIPPABLE_UNIVERSAL_POLICY_IDS.join(", ")} may ever be skipped`,
+      );
+    }
+    if (
+      skip.replacedBy.kind === "domain-policy" &&
+      !declaredPolicyIds.has(skip.replacedBy.policyId)
+    ) {
+      throw new Error(
+        `domain "${adapter.domainId}" skip of "${skip.policyId}" names replacement policy ` +
+          `"${skip.replacedBy.policyId}", which is not one of its declared policies`,
+      );
+    }
+  }
+}
+
+/**
+ * The exact policy coverage a domain's gate run produces: the ordered ids
+ * that actually evaluate, plus what was skipped and why. Computed the same
+ * way for every caller — the CLI gate, the server, and every receipt — so a
+ * receipt's `policyCoverage` and the coverage a UI displays can never drift
+ * from what `evaluatePolicies` actually ran.
+ */
+export function computePolicyCoverage<TInput, TState>(
+  adapter: DomainAdapter<TInput, TState>,
+): PolicyCoverage {
+  return {
+    orderedPolicyIds: policyOrder(adapter),
+    skippedPolicies: [...(adapter.skippedUniversalPolicies ?? [])],
+  };
+}
+
+/**
  * The deterministic safety gate.
  *
  * Order is fixed and meaningful: is the change well-formed at all
@@ -72,6 +137,8 @@ export function evaluatePolicies<TInput, TState>(
   proposal: ChangeProposal,
   options: EvaluateOptions = {},
 ): PolicyEvaluation {
+  validateSkips(adapter);
+
   const context: PolicyContext<TInput, TState> = {
     input,
     proposal,
@@ -80,7 +147,7 @@ export function evaluatePolicies<TInput, TState>(
     pack: resolvePolicyPack(adapter.defaultPolicyPack, options.policyPack),
   };
 
-  const skipped = new Set(
+  const skipped = new Set<string>(
     (adapter.skippedUniversalPolicies ?? []).map((skip) => skip.policyId),
   );
 
@@ -125,7 +192,9 @@ export function evaluatePolicies<TInput, TState>(
 export function policyOrder<TInput, TState>(
   adapter: DomainAdapter<TInput, TState>,
 ): string[] {
-  const skipped = new Set(
+  validateSkips(adapter);
+
+  const skipped = new Set<string>(
     (adapter.skippedUniversalPolicies ?? []).map((skip) => skip.policyId),
   );
   return [

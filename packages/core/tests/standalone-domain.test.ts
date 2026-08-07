@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DomainError,
+  computePolicyCoverage,
   createReceipt,
   evaluatePolicies,
   initialState,
@@ -255,6 +256,7 @@ describe("core with a foreign domain", () => {
       model: null,
       fixtureProvenance: "authored_synthetic",
       findings: state.findings,
+      policyCoverage: computePolicyCoverage(counterDomain),
       riskLevel: state.riskLevel,
       decision: "approved",
       simulation: state.simulation,

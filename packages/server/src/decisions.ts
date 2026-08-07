@@ -1,5 +1,6 @@
 import {
   canonicalize,
+  computePolicyCoverage,
   computePublicKeyId,
   DomainError,
   SignedReceiptSchema,
@@ -15,6 +16,7 @@ import {
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
+  type PolicyCoverage,
   type PolicyFinding,
   type RiskLevel,
   type SimulationResult,
@@ -84,6 +86,7 @@ interface PreparedDecision {
   proposal: ChangeProposal;
   policyVersion: string;
   findings: PolicyFinding[];
+  policyCoverage: PolicyCoverage;
   riskLevel: RiskLevel;
   simulation: SimulationResult | null;
 }
@@ -180,6 +183,7 @@ export class DecisionService {
       model: null,
       fixtureProvenance: null,
       findings: prepared.findings,
+      policyCoverage: prepared.policyCoverage,
       riskLevel: prepared.riskLevel,
       decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,
@@ -350,6 +354,7 @@ export class DecisionService {
       proposal,
       policyVersion,
       findings,
+      policyCoverage: computePolicyCoverage(domain.adapter),
       riskLevel,
       simulation,
     };
@@ -400,6 +405,7 @@ export class DecisionService {
       model: null,
       fixtureProvenance: null,
       findings: prepared.findings,
+      policyCoverage: prepared.policyCoverage,
       riskLevel: prepared.riskLevel,
       decision: prepared.request.decision === "approve" ? "approved" : "rejected",
       approver,

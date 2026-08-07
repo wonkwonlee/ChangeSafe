@@ -1,8 +1,44 @@
 import { z } from "zod";
 import { AnalysisModeSchema, FixtureProvenanceSchema } from "./analysis";
-import { PolicyFindingSchema, RiskLevelSchema } from "./findings";
+import {
+  PolicyFindingSchema,
+  PolicyIdSchema,
+  RiskLevelSchema,
+  SKIPPABLE_UNIVERSAL_POLICY_IDS,
+} from "./findings";
 import { IdSchema, Sha256HexSchema, TimestampSchema } from "./primitives";
 import { SimulationResultSchema } from "./simulation";
+
+/**
+ * What actually answered a skipped universal policy's question, mirroring
+ * `SkipReplacement` in `domain.ts`. `"domain-policy"` names a real policy id
+ * that `computePolicyCoverage` already verified the adapter declares;
+ * `"out-of-band"` honestly names a non-mechanical process rather than
+ * dressing it up as a policy the gate cannot actually check.
+ */
+export const SkipReplacementSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("domain-policy"), policyId: PolicyIdSchema }),
+  z.strictObject({ kind: z.literal("out-of-band"), process: z.string().min(1).max(200) }),
+]);
+
+export const SkippedUniversalPolicySchema = z.strictObject({
+  policyId: z.enum(SKIPPABLE_UNIVERSAL_POLICY_IDS),
+  because: z.string().min(1).max(1000),
+  replacedBy: SkipReplacementSchema,
+});
+
+/**
+ * The exact policy coverage a receipt's gate run produced, so a verifier
+ * reads what was skipped and why from the signed payload itself rather than
+ * having to fetch and trust the adapter's source to interpret an absent
+ * policy id.
+ */
+export const PolicyCoverageSchema = z.strictObject({
+  orderedPolicyIds: z.array(PolicyIdSchema).min(1).max(32),
+  skippedPolicies: z
+    .array(SkippedUniversalPolicySchema)
+    .max(SKIPPABLE_UNIVERSAL_POLICY_IDS.length),
+});
 
 /**
  * `gate_only` records an automated evaluation with no human decision — what
@@ -57,6 +93,8 @@ export const ChangeReceiptSchema = z
     inputSha256: Sha256HexSchema,
     proposalSha256: Sha256HexSchema,
     findings: z.array(PolicyFindingSchema).min(1).max(32),
+    /** What ran and what was skipped, so absence never reads as approval. */
+    policyCoverage: PolicyCoverageSchema,
     riskLevel: RiskLevelSchema,
     decision: ReceiptDecisionSchema,
     /** The authenticated human who decided, when there was one. */

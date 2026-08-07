@@ -7,6 +7,7 @@ import {
 
 import {
   evaluateDestructiveOp,
+  evaluatePlanContextRequired,
   evaluateProtectedResource,
   evaluateReversibility,
   type TerraformPolicyContext,
@@ -17,7 +18,7 @@ import {
   type TerraformPolicyPack,
 } from "./schemas";
 
-export const TERRAFORM_POLICY_VERSION = "terraform-v0.1.0";
+export const TERRAFORM_POLICY_VERSION = "terraform-v0.2.0";
 export const POLICY_VERSION = `${CORE_POLICY_VERSION}+${TERRAFORM_POLICY_VERSION}`;
 
 /**
@@ -110,6 +111,10 @@ export function createTerraformDomain(
         id: "REVERSIBILITY",
         evaluate: (context) => evaluateReversibility(context as TerraformPolicyContext, deps),
       },
+      {
+        id: "PLAN_CONTEXT_REQUIRED",
+        evaluate: (context) => evaluatePlanContextRequired(context as TerraformPolicyContext),
+      },
     ],
 
     // A cloud plan touching a dozen resources is ordinary; a dozen routers
@@ -124,13 +129,13 @@ export function createTerraformDomain(
         policyId: "ROLLBACK_COMPLETE",
         because:
           "a Terraform plan carries no inverse operations to verify; reverting means reverting the code, not replaying a patch",
-        replacedBy: "REVERSIBILITY",
+        replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" },
       },
       {
         policyId: "VERIFICATION_REQUIRED",
         because:
-          "plan JSON contains no verification plan to inspect; in this workflow the pull request review is the verification step",
-        replacedBy: "the pull request review",
+          "the proposal is derived mechanically from the plan with no model involved, so it can never declare its own precondition or postcheck steps; verification in this workflow happens through the pull request review instead",
+        replacedBy: { kind: "domain-policy", policyId: "PLAN_CONTEXT_REQUIRED" },
       },
     ],
   };

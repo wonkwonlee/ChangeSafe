@@ -181,6 +181,7 @@ describe("closed domain registry", () => {
       "DESTRUCTIVE_OP",
       "PROTECTED_RESOURCE",
       "REVERSIBILITY",
+      "PLAN_CONTEXT_REQUIRED",
       "BLAST_RADIUS",
       "UNTRUSTED_INSTRUCTION",
     ]);
@@ -197,7 +198,7 @@ describe("closed domain registry", () => {
       ),
     ).toEqual(["ROLLBACK_COMPLETE", "VERIFICATION_REQUIRED"]);
     expect(terraform.runtime.policyCoverage.skippedPolicies[0]).toMatchObject({
-      replacedBy: "REVERSIBILITY",
+      replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" },
     });
     expect(kubernetes.runtime.policyCoverage.orderedPolicyIds).toEqual([
       "PATCH_SCHEMA",
@@ -445,12 +446,12 @@ describe("closed domain registry", () => {
         {
           policyId: "ROLLBACK_COMPLETE",
           because: "The supplied diff is external.",
-          replacedBy: "REVERSIBILITY",
+          replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" },
         },
         {
           policyId: "ROLLBACK_COMPLETE",
           because: "A duplicate declaration is ambiguous.",
-          replacedBy: "REVERSIBILITY",
+          replacedBy: { kind: "domain-policy", policyId: "REVERSIBILITY" },
         },
       ],
     };

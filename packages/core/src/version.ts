@@ -3,4 +3,4 @@
  * its own version into the `policyVersion` recorded in receipts, so a receipt
  * always identifies the exact gate that produced it.
  */
-export const CORE_POLICY_VERSION = "core-v0.1.0";
+export const CORE_POLICY_VERSION = "core-v0.2.0";

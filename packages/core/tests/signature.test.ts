@@ -55,6 +55,7 @@ async function buildReceipt(overrides: Partial<Parameters<typeof createReceipt>[
         remediation: null,
       },
     ],
+    policyCoverage: { orderedPolicyIds: ["PATCH_SCHEMA"], skippedPolicies: [] },
     riskLevel: "LOW",
     decision: "gate_only",
     simulation: null,

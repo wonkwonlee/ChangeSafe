@@ -185,7 +185,11 @@ export function DomainCoverageCatalog({
             {coverage.skippedPolicies.map((skip) => (
               <li key={skip.policyId}>
                 <span className="font-mono">{skip.policyId}</span> —{" "}
-                {skip.because} Replacement: {skip.replacedBy}.
+                {skip.because} Replacement:{" "}
+                {skip.replacedBy.kind === "domain-policy"
+                  ? skip.replacedBy.policyId
+                  : `${skip.replacedBy.process} (out-of-band; not a gate policy)`}
+                .
               </li>
             ))}
           </ul>

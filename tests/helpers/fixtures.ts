@@ -1,5 +1,5 @@
-import type { ChangeOperation, ChangeProposal, ChangeReceipt, PolicyFinding, PolicyStatus, SimulationResult } from "@changesafe/core";
-import type { IncidentBundle } from "@changesafe/domain-network";
+import { computePolicyCoverage, type ChangeOperation, type ChangeProposal, type ChangeReceipt, type PolicyFinding, type PolicyStatus, type SimulationResult } from "@changesafe/core";
+import { networkDomain, type IncidentBundle } from "@changesafe/domain-network";
 import { APP_VERSION, POLICY_VERSION } from "@/lib/domain/version";
 
 /**
@@ -243,6 +243,10 @@ export function buildReceipt(overrides: Partial<ChangeReceipt> = {}): ChangeRece
     inputSha256: DUMMY_SHA,
     proposalSha256: DUMMY_SHA,
     findings: [buildFinding("PASS")],
+    policyCoverage: {
+      orderedPolicyIds: [...computePolicyCoverage(networkDomain).orderedPolicyIds],
+      skippedPolicies: [...computePolicyCoverage(networkDomain).skippedPolicies],
+    },
     riskLevel: "LOW",
     decision: "rejected",
     approver: null,

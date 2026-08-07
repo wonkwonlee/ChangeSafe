@@ -281,6 +281,7 @@ describe("changesafe gate --domain terraform", () => {
       "DESTRUCTIVE_OP",
       "PROTECTED_RESOURCE",
       "REVERSIBILITY",
+      "PLAN_CONTEXT_REQUIRED",
       "BLAST_RADIUS",
       "UNTRUSTED_INSTRUCTION",
     ]);

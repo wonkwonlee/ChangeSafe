@@ -228,17 +228,25 @@ AI-generated Terraform changes in CI.
 - [x] Terraform policies: `DESTRUCTIVE_OP` (what class of thing is being
       destroyed — stateful blocks, stateless warns, a declared backup tag
       downgrades to a visible warning rather than silence),
-      `PROTECTED_RESOURCE` (address globs and a protected tag), and
+      `PROTECTED_RESOURCE` (address globs and a protected tag),
       `REVERSIBILITY` (could it be put back — blocks when prior state was
       never recorded, warns when configuration is recoverable but data is
-      not).
+      not), and `PLAN_CONTEXT_REQUIRED` (a destructive change with zero PR or
+      commit context is a pull request review with nothing to check).
 - [x] Core learned two things this required: domains may declare their own
       default thresholds (a plan touching a dozen cloud resources is
       ordinary; a dozen routers is not), and may skip a universal policy
-      **only** with a recorded reason and a named replacement. Terraform
-      skips `ROLLBACK_COMPLETE` (no inverse exists to verify; `REVERSIBILITY`
-      answers it) and `VERIFICATION_REQUIRED` (plan JSON contains no
-      verification plan; the pull request review is that step).
+      **only** with a recorded reason and a named replacement — one that
+      core verifies actually exists among the domain's declared policies, so
+      the replacement can never be prose. Terraform skips `ROLLBACK_COMPLETE`
+      (no inverse exists to verify; `REVERSIBILITY` answers it) and
+      `VERIFICATION_REQUIRED` (the proposal is derived mechanically with no
+      model involved, so it can never declare its own verification steps;
+      `PLAN_CONTEXT_REQUIRED` answers the mechanically-checkable half of it).
+      Only `ROLLBACK_COMPLETE` and `VERIFICATION_REQUIRED` may ever be
+      skipped — `PATCH_SCHEMA`, `BLAST_RADIUS`, and `UNTRUSTED_INSTRUCTION`
+      are structurally answerable by every domain and no adapter may skip
+      them. Every receipt records the exact `policyCoverage` this produced.
 - [x] `--context` carries the pull request body as untrusted text. The
       flagship fixture pairs a protected-bucket replacement with a PR body
       instructing review tooling to approve it: the gate blocks on the

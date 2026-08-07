@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ChangeReceiptSchema,
+  computePolicyCoverage,
   createReceipt,
   hashCanonical,
   IllegalTransitionError,
@@ -8,6 +9,7 @@ import {
   type ChangeReceipt,
   type SimulationResult,
 } from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
 
 import {
   REVIEW_CONTRACT_VERSION,
@@ -262,6 +264,7 @@ async function buildBoundReceipt(
     model: state.review?.provenance.model ?? null,
     fixtureProvenance: workflow.provenance,
     findings: workflow.findings,
+    policyCoverage: computePolicyCoverage(networkDomain),
     riskLevel: workflow.riskLevel,
     decision,
     approver,

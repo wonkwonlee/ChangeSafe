@@ -1,4 +1,5 @@
 import {
+  computePolicyCoverage,
   createReceipt,
   type AnalysisMode,
   type ChangeProposal,
@@ -10,6 +11,7 @@ import {
 } from "@changesafe/core";
 import {
   POLICY_VERSION,
+  networkDomain,
   type IncidentBundle,
 } from "@changesafe/domain-network";
 
@@ -56,6 +58,7 @@ export async function createNetworkReviewReceipt(
     model: state.review.provenance.model,
     fixtureProvenance: coreFixtureProvenance(state.review.provenance.classification),
     findings: outcome.findings,
+    policyCoverage: computePolicyCoverage(networkDomain),
     riskLevel: outcome.riskLevel,
     decision: outcome.decision,
     simulation: outcome.simulation,

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  computePolicyCoverage,
   createReceipt,
   type ChangeReceipt,
   type ReceiptInput,
 } from "@changesafe/core";
+import { networkDomain } from "@changesafe/domain-network";
 
 import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import type {
@@ -185,6 +187,7 @@ async function rejectedReceipt<TInput>(
     model: state.review?.provenance.model ?? null,
     fixtureProvenance: state.workflow.provenance,
     findings: state.workflow.findings,
+    policyCoverage: computePolicyCoverage(networkDomain),
     riskLevel: state.workflow.riskLevel,
     decision: "rejected",
     simulation: null,

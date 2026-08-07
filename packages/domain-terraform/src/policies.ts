@@ -250,3 +250,49 @@ export function evaluateReversibility(
     remediation: null,
   };
 }
+
+/**
+ * PLAN_CONTEXT_REQUIRED — replaces core's VERIFICATION_REQUIRED.
+ *
+ * A Terraform proposal is derived mechanically from the plan with no model
+ * involved (see `normalize.ts`), so it can never declare its own
+ * precondition or postcheck steps the way a model-authored proposal does.
+ * In this workflow the pull request review is the verification step
+ * instead — but that only functions if the reviewer has something to
+ * review. A destructive change carrying zero PR/commit context is a review
+ * nobody described, so this is the mechanically-checkable half of "was this
+ * verified": not whether a human actually read it, but whether there was
+ * anything for them to read.
+ */
+export function evaluatePlanContextRequired(context: TerraformPolicyContext): PolicyFinding {
+  const destructive = context.input.changes.filter((change) => DESTRUCTIVE.includes(change.action));
+
+  if (destructive.length === 0 || context.input.context.length > 0) {
+    return {
+      policyId: "PLAN_CONTEXT_REQUIRED",
+      status: "PASS",
+      title:
+        destructive.length === 0
+          ? "No destructive change requires review context"
+          : "The plan carries review context",
+      explanation:
+        destructive.length === 0
+          ? "The plan destroys or replaces nothing, so there is nothing that requires a documented pull request review."
+          : `The plan carries ${context.input.context.length} context entr${context.input.context.length === 1 ? "y" : "ies"} for the pull request review to check against.`,
+      affectedResources: [],
+      remediation: null,
+    };
+  }
+
+  return {
+    policyId: "PLAN_CONTEXT_REQUIRED",
+    status: "WARN",
+    title: "Destructive change carries no review context",
+    explanation:
+      `${destructive.length} destroyed or replaced resource(s) (` +
+      destructive.map((change) => change.address).join(", ") +
+      ") arrived with no PR description or commit message. The pull request review this domain relies on for verification has nothing to check the change's stated intent against.",
+    affectedResources: destructive.map((change) => `resource:${change.address}`),
+    remediation: "Attach the PR description or commit message that motivated this plan.",
+  };
+}
