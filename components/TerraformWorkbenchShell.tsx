@@ -11,8 +11,9 @@ import {
 } from "@/components/BoundedEvidence";
 import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
-import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
+import { readScenarioLookup, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
+import { FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
+import { UnknownScenarioNotice } from "@/components/UnknownScenarioNotice";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
 import { TERRAFORM_REVIEW_EXAMPLES } from "@/features/domains/terraform/examples";
@@ -136,21 +137,7 @@ function FindingsPanel({ state }: { state: WorkflowState<TerraformInput> }) {
   if (!hasFindings(state)) {
     return <p className="mt-3 text-sm text-ink-dim">Policy, reversibility, and untrusted-context evidence appear only after replay evaluation.</p>;
   }
-  return (
-    <ul className="mt-3 space-y-2" aria-label="Evaluated Terraform policy findings">
-      {state.findings.map((finding) => (
-        <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-xs">{finding.policyId}</span>
-            <StatusBadge status={finding.status} />
-          </div>
-          <p className="mt-2 font-medium text-ink">{finding.title}</p>
-          <p className="mt-1 text-ink-dim">{finding.explanation}</p>
-          {finding.affectedResources.length > 0 ? <p className="mt-2 text-xs text-ink-faint">Affected: {finding.affectedResources.join(", ")}</p> : null}
-        </li>
-      ))}
-    </ul>
-  );
+  return <FindingsList ariaLabel="Evaluated Terraform policy findings" findings={state.findings} />;
 }
 
 function ProposalPanel({ state }: { state: WorkflowState<TerraformInput> }) {
@@ -220,15 +207,21 @@ export function TerraformWorkbenchShell({
   }, [controller, setScenarioInUrl]);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
+  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
-    const initialId = readInitialScenarioId(TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId));
-    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+    const { requestedId, resolvedId } = readScenarioLookup(
+      TERRAFORM_REVIEW_EXAMPLES.map((example) => example.sourceId),
+    );
+    if (resolvedId && resolvedId !== INITIAL_EXAMPLE.sourceId) {
       // Deep-link resolution: sync initial selection from the URL, once on
       // mount only. window.location is unavailable during SSR, so this can't
       // move into the useState initializer without a hydration mismatch.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      selectExample(initialId);
+      selectExample(resolvedId);
+    } else if (requestedId && !resolvedId) {
+      setUnknownScenarioId(requestedId);
+      setScenarioInUrl(INITIAL_EXAMPLE.sourceId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -259,11 +252,21 @@ export function TerraformWorkbenchShell({
         </div>
       </section>
 
+      {unknownScenarioId ? (
+        <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6">
+          <UnknownScenarioNotice
+            fallbackLabel={INITIAL_EXAMPLE.label}
+            onDismiss={() => setUnknownScenarioId(null)}
+            requestedId={unknownScenarioId}
+          />
+        </div>
+      ) : null}
+
       <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
         <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold">{example.label}</h1><PhasePill phase={workflow.phase} ref={outcomeHeadingRef} /><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
-            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}</button>
+            <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : canRunReplay ? "Run replay" : "Replay evaluated"}</button>
           </header>
 
           <div className="mt-5 grid min-w-0 grid-cols-1 gap-4">
@@ -317,7 +320,7 @@ export function TerraformWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Terraform review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1">
+        <aside aria-label="Terraform review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 xl:sticky xl:top-4 xl:col-start-3 xl:row-start-1">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>

@@ -37,6 +37,30 @@ export function readInitialScenarioId(availableIds: readonly string[]): string |
 }
 
 /**
+ * Distinguishes "no `?scenario=` in the URL at all" from "`?scenario=` named
+ * an id that isn't in this corpus" — the second case is what silently
+ * substitutes a different example with no notice. `requestedId` is the raw,
+ * untrusted query value; `resolvedId` is `requestedId` only when it matches
+ * the corpus, otherwise null. A caller shows a substitution notice exactly
+ * when `requestedId` is non-null and `resolvedId` is null.
+ */
+export function resolveScenarioLookup(
+  searchParams: URLSearchParams | null,
+  availableIds: readonly string[],
+): { requestedId: string | null; resolvedId: string | null } {
+  const requestedId = searchParams?.get("scenario") ?? null;
+  const resolvedId = requestedId !== null && availableIds.includes(requestedId) ? requestedId : null;
+  return { requestedId, resolvedId };
+}
+
+export function readScenarioLookup(
+  availableIds: readonly string[],
+): { requestedId: string | null; resolvedId: string | null } {
+  if (typeof window === "undefined") return { requestedId: null, resolvedId: null };
+  return resolveScenarioLookup(new URLSearchParams(window.location.search), availableIds);
+}
+
+/**
  * Keeps the URL in sync as the visitor picks a different scenario — every
  * scenario becomes a copy-able link, not just the featured ones.
  *

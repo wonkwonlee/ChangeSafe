@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 
-import type { PolicyStatus, RiskLevel } from "@changesafe/core";
+import type { PolicyFinding, PolicyStatus, RiskLevel } from "@changesafe/core";
 
 const STATUS_TONE_CLASSNAME: Record<PolicyStatus, string> = {
   PASS: "border-pass/50 bg-pass/10 text-pass",
@@ -68,3 +68,55 @@ export const PhasePill = forwardRef<HTMLSpanElement, { phase: string }>(function
     </span>
   );
 });
+
+const FINDING_CARD_TONE_CLASSNAME: Record<PolicyStatus, string> = {
+  PASS: "border-edge bg-canvas",
+  WARN: "border-warn/50 bg-warn/10",
+  BLOCK: "border-l-4 border-l-block border-block/60 bg-block/10",
+};
+
+const SEVERITY_ORDER: Record<PolicyStatus, number> = { BLOCK: 0, WARN: 1, PASS: 2 };
+
+/**
+ * A BLOCK finding is categorically different from a WARN or PASS one — it
+ * makes approval structurally impossible, not merely discouraged. The list
+ * sorts findings severity-first and gives BLOCK cards distinct chrome (not
+ * just a colored status word) so that difference reads at a glance, not only
+ * on close reading.
+ */
+export function FindingsList({ findings, ariaLabel }: { findings: PolicyFinding[]; ariaLabel: string }) {
+  const blocking = findings.filter((finding) => finding.status === "BLOCK").length;
+  const warning = findings.filter((finding) => finding.status === "WARN").length;
+  const passing = findings.length - blocking - warning;
+  const sorted = [...findings].sort((a, b) => SEVERITY_ORDER[a.status] - SEVERITY_ORDER[b.status]);
+
+  return (
+    <div className="mt-3">
+      <p className="text-xs text-ink-faint">
+        {blocking} blocking · {warning} warning{warning === 1 ? "" : "s"} · {passing} passing
+      </p>
+      <ul className="mt-2 space-y-2" aria-label={ariaLabel}>
+        {sorted.map((finding) => (
+          <li
+            className={`rounded border p-3 text-sm ${FINDING_CARD_TONE_CLASSNAME[finding.status]}`}
+            id={`finding-${finding.policyId}`}
+            key={finding.policyId}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-xs">{finding.policyId}</span>
+              <StatusBadge status={finding.status} />
+            </div>
+            <p className="mt-2 font-medium text-ink">{finding.title}</p>
+            <p className="mt-1 text-ink-dim">{finding.explanation}</p>
+            {finding.affectedResources.length > 0 ? (
+              <p className="mt-2 text-xs text-ink-faint">Affected: {finding.affectedResources.join(", ")}</p>
+            ) : null}
+            {finding.remediation ? (
+              <p className="mt-2 border-t border-edge pt-2 text-xs text-ink-dim">Remediation: {finding.remediation}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

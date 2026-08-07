@@ -18,10 +18,14 @@ describe("/workbench/self-hosted route", () => {
       expect(markup).toContain('href="/"');
       expect(markup).not.toContain('href="/workbench"');
       expect(markup).toContain("Authenticated self-hosted");
-      expect(markup).toContain("Self-hosted review is not configured");
+      expect(markup).toContain("connects to a self-hosted ChangeSafe server that you run");
+      expect(markup).toContain("empty by design");
       expect(markup).toContain("Kubernetes offline artifact");
       expect(markup).toContain("Kubernetes unsupported");
       expect(markup).toContain("never executes infrastructure");
+      expect(markup).toContain('href="https://github.com/wonkwonlee/ChangeSafe/blob/main/packages/server/README.md"');
+      expect(markup).toContain('href="https://github.com/wonkwonlee/ChangeSafe"');
+      expect(markup).toContain('aria-describedby="self-hosted-disconnected-notice"');
       expect(metadata.title).toBe(
         "ChangeSafe Workbench — Authenticated Self-Hosted",
       );
