@@ -12,10 +12,14 @@ import {
 } from "@/components/diffLines";
 import { serializeJsonPreview } from "@/features/domains/presentation-limit";
 
+// Deliberately not text-pass/text-block: those two colors are reserved for
+// gate verdicts elsewhere in this design system, and a removed line is not a
+// BLOCK finding. The sr-only added/removed labels below already carry the
+// semantic meaning, so this pair is free to be any two distinct tones.
 const LINE_TONE_CLASSNAME: Record<DiffLine["type"], string> = {
   context: "text-ink-dim",
-  add: "bg-pass/10 text-pass",
-  remove: "bg-block/10 text-block",
+  add: "bg-diff-add/10 text-diff-add",
+  remove: "bg-diff-remove/10 text-diff-remove",
 };
 
 const LINE_MARKER: Record<DiffLine["type"], string> = {

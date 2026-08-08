@@ -33,6 +33,12 @@
   --status-warn: #d29922;
   --status-block: #f85149;
   --status-info: #38bdf8;
+  /* Diff add/remove markers: intentionally NOT pass-green/block-red, which
+     this app reserves exclusively for gate verdicts. Reusing them here would
+     make a removed line read as a BLOCK finding it may have nothing to do
+     with. */
+  --diff-add: #38bdf8;
+  --diff-remove: #fb923c;
 
   --font-body: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-code: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
@@ -91,6 +97,8 @@
   --color-status-warn: var(--status-warn);
   --color-status-block: var(--status-block);
   --color-status-info: var(--status-info);
+  --color-diff-add: var(--diff-add);
+  --color-diff-remove: var(--diff-remove);
   --color-raised: var(--raised);
   --color-sunken: var(--sunken);
   --color-edge: var(--edge);

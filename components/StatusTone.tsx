@@ -21,6 +21,21 @@ export function StatusBadge({ status }: { status: PolicyStatus }) {
   return <span className={`eyebrow rounded px-2 py-1 ${STATUS_TONE_CLASSNAME[status]}`}>{status}</span>;
 }
 
+const ACTION_TONE_CLASSNAME = {
+  destructive: "bg-block text-action-primary-foreground",
+  nondestructive: "bg-active text-action-primary-foreground",
+} as const;
+
+/**
+ * Renders a plan action (create/update/replace/delete) in the same
+ * solid-fill pill chrome as `StatusBadge`, so the two badge families read as
+ * one system rather than one solid and one translucent-outline.
+ */
+export function ActionBadge({ action, destructive }: { action: string; destructive: boolean }) {
+  const tone = destructive ? ACTION_TONE_CLASSNAME.destructive : ACTION_TONE_CLASSNAME.nondestructive;
+  return <span className={`eyebrow rounded px-2 py-1 ${tone}`}>{action}</span>;
+}
+
 const RISK_TONE_CLASSNAME: Record<RiskLevel, string> = {
   LOW: "text-pass",
   MEDIUM: "text-warn",

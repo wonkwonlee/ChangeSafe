@@ -215,6 +215,65 @@ const selectorBreakingManifest = {
 } as const;
 
 /**
+ * Reduces `web` from its captured 2 replicas to 1 with the image left
+ * untouched, so this trips exactly one policy (`K8S_WORKLOAD_AVAILABILITY`
+ * WARN) and lands at MEDIUM risk — the gate's middle path was previously
+ * unreachable from this picker, which only ever exposed a clean LOW example
+ * or a fully-blocked CRITICAL one.
+ */
+const reducedAvailabilityManifest = {
+  apiVersion: "apps/v1",
+  kind: "Deployment",
+  metadata: {
+    name: "web",
+    namespace: "demo",
+    labels: { app: "web", tier: "frontend" },
+    annotations: { "example.invalid/owner": "platform" },
+  },
+  spec: {
+    replicas: 1,
+    strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 1 } },
+    template: {
+      metadata: { labels: { app: "web" } },
+      spec: {
+        containers: [
+          {
+            name: "web",
+            image: "registry.example.invalid/web:v1",
+            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
+          },
+        ],
+      },
+    },
+  },
+} as const;
+
+/**
+ * Reduces `web` to 1 replica *and* swaps its pinned tag for `:latest`, so
+ * this independently trips both `K8S_WORKLOAD_AVAILABILITY` and
+ * `K8S_MUTABLE_IMAGE` — two WARNs, landing at HIGH risk without touching
+ * privilege escalation or resource protection.
+ */
+const mutableImageManifest = {
+  ...reducedAvailabilityManifest,
+  spec: {
+    ...reducedAvailabilityManifest.spec,
+    template: {
+      ...reducedAvailabilityManifest.spec.template,
+      spec: {
+        containers: [
+          {
+            name: "web",
+            image: "registry.example.invalid/web:latest",
+            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
+          },
+        ],
+      },
+    },
+  },
+} as const;
+
+/**
  * Bumps only `spec.replicas` on a resource annotated `changesafe.dev/protected:
  * true`. This is deliberately the smallest possible change — even a
  * single-replica increase is enough to trip K8S_PROTECTED_RESOURCE, because
@@ -266,6 +325,8 @@ export interface KubernetesPublicReplayFixture {
   readonly kind: "replay";
   readonly sourceId:
     | "kubernetes-safe-scale"
+    | "kubernetes-reduced-availability"
+    | "kubernetes-mutable-image-tag"
     | "kubernetes-selector-red-team"
     | "kubernetes-large-manifest-boundary"
     | "kubernetes-protected-resource-change";
@@ -332,6 +393,20 @@ export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayF
       "A fictional offline Deployment scale-up evaluated in the Kubernetes sandbox.",
       "authored-synthetic",
       [safeScaleManifest],
+    ),
+    deriveFixture(
+      "kubernetes-reduced-availability",
+      "Reduced availability",
+      "A fictional replica reduction on an existing Deployment — one warning, MEDIUM risk, and still approvable.",
+      "authored-synthetic",
+      [reducedAvailabilityManifest],
+    ),
+    deriveFixture(
+      "kubernetes-mutable-image-tag",
+      "Mutable image tag",
+      "A fictional move to an unpinned :latest tag combined with a replica reduction — two independent warnings, HIGH risk.",
+      "authored-synthetic",
+      [mutableImageManifest],
     ),
     deriveFixture(
       "kubernetes-protected-resource-change",

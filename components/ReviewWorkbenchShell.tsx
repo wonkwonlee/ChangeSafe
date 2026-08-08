@@ -283,7 +283,7 @@ export function ReviewWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
+        <aside aria-label="Review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>

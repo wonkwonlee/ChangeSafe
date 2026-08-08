@@ -13,7 +13,7 @@ import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DiffBlock } from "@/components/DiffBlock";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
 import { readScenarioLookup, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
-import { FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
+import { ActionBadge, FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
 import { UnknownScenarioNotice } from "@/components/UnknownScenarioNotice";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { searchAndPageOfflineCollection } from "@/features/domains/presentation-limit";
@@ -99,11 +99,6 @@ function initialSource() {
 
 function Label({ children }: { children: React.ReactNode }) {
   return <p className="eyebrow text-ink-faint">{children}</p>;
-}
-
-function ActionBadge({ action }: { action: TerraformInput["changes"][number]["action"] }) {
-  const tone = action === "delete" || action === "replace" ? "border-block/50 bg-block/10 text-block" : "border-active/50 bg-active/10 text-active";
-  return <span className={`eyebrow rounded border px-2 py-1 ${tone}`}>{action}</span>;
 }
 
 function ReplayStatus({ state }: { state: WorkflowState<TerraformInput> }) {
@@ -274,7 +269,7 @@ export function TerraformWorkbenchShell({
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="findings-title"><Label>Deterministic findings</Label><h2 id="findings-title" className="mt-2 text-base font-semibold">Policy, reversibility, and context evidence</h2><FindingsPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
             <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="plan-title"><Label>Supplied Terraform plan</Label><h2 id="plan-title" className="mt-2 text-base font-semibold">{input.changes.length} actionable resource change{input.changes.length === 1 ? "" : "s"}</h2><p className="mt-2 text-sm text-ink-dim">Module, provider resource type, address, and before/after values are read from the bundled plan. No result is declared before the deterministic evaluation runs.</p></section>
-            <section className="overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="resources-title">
+            <section className="min-w-0 overflow-hidden rounded-lg border border-edge bg-raised" aria-labelledby="resources-title">
               <div className="p-4">
                 <Label>Structured diff</Label>
                 <h2 id="resources-title" className="mt-2 text-base font-semibold">Resources and actions</h2>
@@ -292,11 +287,17 @@ export function TerraformWorkbenchShell({
                   query={changeQuery}
                 />
               </div>
-              <div className="overflow-x-auto">
+              {/* contain-layout: table-layout:auto's intrinsic max-content sizing pass
+                  otherwise leaks into the document's own scrollable overflow even
+                  though this container visually clips and scrolls the table fine —
+                  a real 196px horizontal page drift on mobile that a plain
+                  scrollWidth/clientWidth check on this div can't see, because the
+                  div itself never reports overflowing. */}
+              <div className="overflow-x-auto contain-layout">
                 <table className="min-w-full border-collapse text-left text-xs">
                   <caption className="sr-only">Terraform resource changes</caption>
                   <thead className="border-y border-edge bg-surface text-ink-faint"><tr><th className="px-4 py-3 font-medium" scope="col">Module</th><th className="px-4 py-3 font-medium" scope="col">Type / address</th><th className="px-4 py-3 font-medium" scope="col">Action</th><th className="px-4 py-3 font-medium" scope="col">Before / after</th></tr></thead>
-                  <tbody>{changePage.items.map((change) => { const destructive = change.action === "delete" || change.action === "replace"; return <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} />{destructive ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details open={destructive}><summary className="cursor-pointer text-ink-dim">Inspect values for {change.address}</summary><DiffBlock after={change.after} before={change.before} label={change.address} /></details></td></tr>; })}</tbody>
+                  <tbody>{changePage.items.map((change) => { const destructive = change.action === "delete" || change.action === "replace"; return <tr className="border-b border-edge align-top" key={change.evidenceId}><td className="px-4 py-3 font-mono">{change.moduleAddress}</td><td className="px-4 py-3"><p className="font-mono text-ink">{change.resourceType}</p><p className="mt-1 font-mono text-ink-dim">{change.address}</p></td><td className="px-4 py-3"><ActionBadge action={change.action} destructive={destructive} />{destructive ? <p className="mt-2 text-ink-dim">Destructive plan action</p> : null}</td><td className="min-w-72 px-4 py-3"><details open={destructive}><summary className="cursor-pointer text-ink-dim">Inspect values for {change.address}</summary><DiffBlock after={change.after} before={change.before} label={change.address} /></details></td></tr>; })}</tbody>
                 </table>
               </div>
             </section>
@@ -321,7 +322,7 @@ export function TerraformWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Terraform review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
+        <aside aria-label="Terraform review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>

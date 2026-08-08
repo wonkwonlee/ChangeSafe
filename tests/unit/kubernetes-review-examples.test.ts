@@ -26,13 +26,15 @@ describe("Kubernetes review examples", () => {
 
     expect(ids).toEqual([
       "kubernetes-safe-scale",
+      "kubernetes-reduced-availability",
+      "kubernetes-mutable-image-tag",
       "kubernetes-protected-resource-change",
       "kubernetes-selector-red-team",
       "kubernetes-large-manifest-boundary",
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     expect(KUBERNETES_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
-    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(5);
+    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(7);
   });
 
   it("uses valid simulated-state public replay descriptors without durable authority", () => {
@@ -75,6 +77,14 @@ describe("Kubernetes review examples", () => {
         evaluation: { riskLevel: "LOW" },
       },
       {
+        sourceId: "kubernetes-reduced-availability",
+        evaluation: { riskLevel: "MEDIUM" },
+      },
+      {
+        sourceId: "kubernetes-mutable-image-tag",
+        evaluation: { riskLevel: "HIGH" },
+      },
+      {
         sourceId: "kubernetes-protected-resource-change",
         evaluation: { riskLevel: "CRITICAL" },
       },
@@ -88,9 +98,18 @@ describe("Kubernetes review examples", () => {
     ]);
     expect(outcomes[0]?.evaluation.findings.some((finding) => finding.status === "BLOCK")).toBe(false);
     expect(outcomes[1]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
+      expect.objectContaining({ policyId: "K8S_WORKLOAD_AVAILABILITY", status: "WARN" }),
     );
     expect(outcomes[2]?.evaluation.findings).toContainEqual(
+      expect.objectContaining({ policyId: "K8S_MUTABLE_IMAGE", status: "WARN" }),
+    );
+    expect(outcomes[2]?.evaluation.findings).toContainEqual(
+      expect.objectContaining({ policyId: "K8S_WORKLOAD_AVAILABILITY", status: "WARN" }),
+    );
+    expect(outcomes[3]?.evaluation.findings).toContainEqual(
+      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
+    );
+    expect(outcomes[4]?.evaluation.findings).toContainEqual(
       expect.objectContaining({ policyId: "K8S_SERVICE_SELECTOR", status: "BLOCK" }),
     );
     for (const fixture of KUBERNETES_PUBLIC_REPLAY_FIXTURES) {
@@ -108,6 +127,14 @@ describe("Kubernetes review examples", () => {
   it("keeps authored provenance honest and rejects the unsupported adversarial source before a result exists", () => {
     expect(KUBERNETES_REVIEW_EXAMPLES).toMatchObject([
       { sourceId: "kubernetes-safe-scale", session: { provenance: "authored-synthetic" } },
+      {
+        sourceId: "kubernetes-reduced-availability",
+        session: { provenance: "authored-synthetic" },
+      },
+      {
+        sourceId: "kubernetes-mutable-image-tag",
+        session: { provenance: "authored-synthetic" },
+      },
       {
         sourceId: "kubernetes-protected-resource-change",
         session: { provenance: "authored-synthetic" },

@@ -29,6 +29,8 @@ function request(sourceId: string, contractVersion: string): Request {
 describe("POST /api/reviews/analyze Kubernetes public replay", () => {
   it.each([
     ["kubernetes-safe-scale", "LOW", false, "authored-synthetic"],
+    ["kubernetes-reduced-availability", "MEDIUM", false, "authored-synthetic"],
+    ["kubernetes-mutable-image-tag", "HIGH", false, "authored-synthetic"],
     [
       "kubernetes-selector-red-team",
       "CRITICAL",
