@@ -46,18 +46,22 @@ describe("summarizeLeafChanges", () => {
   it("finds a single changed leaf inside an otherwise identical object", () => {
     const before = { spec: { replicas: 2, image: "web:v1" } };
     const after = { spec: { replicas: 2, image: "web:v2" } };
-    expect(summarizeLeafChanges(before, after)).toEqual([
-      { path: "spec.image", before: "web:v1", after: "web:v2" },
-    ]);
+    expect(summarizeLeafChanges(before, after)).toEqual({
+      changes: [{ path: "spec.image", before: "web:v1", after: "web:v2" }],
+      truncated: false,
+    });
   });
 
   it("reports multiple changed leaves in traversal order", () => {
     const before = { a: 1, b: 2 };
     const after = { a: 9, b: 2, c: 3 };
-    expect(summarizeLeafChanges(before, after)).toEqual([
-      { path: "a", before: 1, after: 9 },
-      { path: "c", before: undefined, after: 3 },
-    ]);
+    expect(summarizeLeafChanges(before, after)).toEqual({
+      changes: [
+        { path: "a", before: 1, after: 9 },
+        { path: "c", before: undefined, after: 3 },
+      ],
+      truncated: false,
+    });
   });
 
   it("caps the number of collected changes so a huge diff stays cheap", () => {
@@ -67,11 +71,29 @@ describe("summarizeLeafChanges", () => {
       before[`k${i}`] = i;
       after[`k${i}`] = i + 1;
     }
-    expect(summarizeLeafChanges(before, after)).toHaveLength(6);
+    const result = summarizeLeafChanges(before, after);
+    expect(result.changes).toHaveLength(6);
+    expect(result.truncated).toBe(false);
   });
 
   it("returns nothing for identical values", () => {
-    expect(summarizeLeafChanges({ a: 1 }, { a: 1 })).toEqual([]);
+    expect(summarizeLeafChanges({ a: 1 }, { a: 1 })).toEqual({ changes: [], truncated: false });
+  });
+
+  it("marks the result truncated instead of claiming equality when the node budget runs out before a real difference", () => {
+    const before: Record<string, number> = {};
+    const after: Record<string, number> = {};
+    for (let i = 0; i < 2500; i++) {
+      before[`k${i}`] = i;
+      after[`k${i}`] = i;
+    }
+    // The one real difference sits past MAX_VISITED_NODES (2000), so the
+    // walk exhausts its budget on equal leaves before ever reaching it.
+    after["k2499"] = 999;
+
+    const result = summarizeLeafChanges(before, after);
+    expect(result.changes).toEqual([]);
+    expect(result.truncated).toBe(true);
   });
 });
 

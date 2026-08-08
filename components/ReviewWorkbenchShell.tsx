@@ -158,6 +158,7 @@ export function ReviewWorkbenchShell({
   const workflow = controller.state.workflow;
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const { setScenarioInUrl } = useScenarioDeepLink();
+  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   const selectExample = useCallback(
     (sourceId: string) => {
@@ -171,12 +172,12 @@ export function ReviewWorkbenchShell({
       });
       setSelectedSourceId(sourceId);
       setScenarioInUrl(sourceId);
+      setUnknownScenarioId(null);
     },
     [controller, setScenarioInUrl],
   );
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
-  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
     const { requestedId, resolvedId } = readScenarioLookup(

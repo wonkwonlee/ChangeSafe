@@ -376,6 +376,7 @@ export function KubernetesWorkbenchShell({
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
   const { setScenarioInUrl } = useScenarioDeepLink();
+  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   const selectExample = useCallback((sourceId: string) => {
     const nextFixture = fixtureFor(sourceId);
@@ -383,9 +384,8 @@ export function KubernetesWorkbenchShell({
     controller.rebind({ sourceId: nextFixture.sourceId, input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, expectedInputId: nextFixture.inputId, session: nextExample.session });
     setSelectedSourceId(sourceId);
     setScenarioInUrl(sourceId);
+    setUnknownScenarioId(null);
   }, [controller, setScenarioInUrl]);
-
-  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
     const { requestedId, resolvedId } = readScenarioLookup(

@@ -74,6 +74,15 @@ export interface LeafChange {
   readonly after: unknown;
 }
 
+export interface LeafChangeSummary {
+  readonly changes: LeafChange[];
+  // True once the walk hit MAX_VISITED_NODES before finishing. An empty
+  // `changes` alongside `truncated: true` means "gave up before reaching
+  // every leaf", not "these values are equal" — the two must never be
+  // presented to a reader the same way.
+  readonly truncated: boolean;
+}
+
 export const MAX_LEAF_CHANGES = 6;
 const MAX_VISITED_NODES = 2000;
 
@@ -86,14 +95,20 @@ function isPlainObjectOrArray(value: unknown): value is Record<string, unknown> 
  * differ, as human-readable paths ("spec.replicas", "0.image"). Bounded on
  * both the number of changes collected and the number of nodes visited, so a
  * huge or deeply nested proposal can never make this expensive — the caller
- * gets a short, useful summary or nothing, never a hang.
+ * gets a short, useful summary or an explicit truncation signal, never a
+ * hang and never a false "nothing differs".
  */
-export function summarizeLeafChanges(before: unknown, after: unknown): LeafChange[] {
+export function summarizeLeafChanges(before: unknown, after: unknown): LeafChangeSummary {
   const changes: LeafChange[] = [];
   let visited = 0;
+  let truncated = false;
 
   function walk(a: unknown, b: unknown, path: string): void {
-    if (changes.length >= MAX_LEAF_CHANGES || visited >= MAX_VISITED_NODES) return;
+    if (changes.length >= MAX_LEAF_CHANGES) return;
+    if (visited >= MAX_VISITED_NODES) {
+      truncated = true;
+      return;
+    }
     visited++;
     if (a === b) return;
 
@@ -112,7 +127,7 @@ export function summarizeLeafChanges(before: unknown, after: unknown): LeafChang
   }
 
   walk(before, after, "");
-  return changes;
+  return { changes, truncated };
 }
 
 function formatLeafValue(value: unknown): string {

@@ -51,7 +51,8 @@ export function DiffBlock({
   readonly before: unknown;
   readonly after: unknown;
 }) {
-  const leafChanges = useMemo(() => summarizeLeafChanges(before, after), [before, after]);
+  const leafSummary = useMemo(() => summarizeLeafChanges(before, after), [before, after]);
+  const { changes: leafChanges, truncated } = leafSummary;
   // A root-level replacement (the whole value added, removed, or swapped for
   // a different type) collapses to one "(root): {huge JSON} → …" entry that
   // is harder to read than the line diff already below it — so the one-line
@@ -70,6 +71,10 @@ export function DiffBlock({
         <p className="mt-2 text-xs text-ink-dim">
           {summary.map(formatLeafChange).join(" · ")}
           {summary.length >= MAX_LEAF_CHANGES ? " · …" : ""}
+        </p>
+      ) : leafChanges.length === 0 && truncated ? (
+        <p className="mt-2 text-xs text-ink-faint">
+          This value is too large to summarize leaf-by-leaf; see the full diff below.
         </p>
       ) : leafChanges.length === 0 ? (
         <p className="mt-2 text-xs text-ink-faint">No leaf value differs between current and proposed.</p>

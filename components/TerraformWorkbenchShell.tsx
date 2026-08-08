@@ -187,6 +187,8 @@ export function TerraformWorkbenchShell({
     [changePageIndex, changeQuery, input.changes],
   );
 
+  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
+
   const selectExample = useCallback((sourceId: string) => {
     const nextFixture = fixtureFor(sourceId);
     const nextExample = exampleFor(sourceId);
@@ -200,10 +202,10 @@ export function TerraformWorkbenchShell({
     setChangeQuery("");
     setChangePageIndex(0);
     setScenarioInUrl(sourceId);
+    setUnknownScenarioId(null);
   }, [controller, setScenarioInUrl]);
 
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
-  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
     const { requestedId, resolvedId } = readScenarioLookup(
