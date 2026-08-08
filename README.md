@@ -318,6 +318,19 @@ therefore replaces `ROLLBACK_COMPLETE` (a plan has no inverse to verify)
 with `REVERSIBILITY` (could this be put back?), and records why in the
 adapter rather than silently dropping a check.
 
+## Gate a Kubernetes change against an offline snapshot
+
+ChangeSafe gates supported Deployment, StatefulSet, DaemonSet, and Service
+upserts against a snapshot taken beforehand — **no cluster is contacted at
+evaluation time, and nothing is ever applied.** The optional collector
+(`changesafe kubernetes collect`) is read-only and namespace-scoped. Full
+detail: [docs/KUBERNETES.md](docs/KUBERNETES.md).
+
+Use `@changesafe/domain-kubernetes@0.3.1` or later. The initially published
+`0.3.0` library package is deprecated because its direct Node ESM imports were
+invalid; the bundled CLI was unaffected. See the
+[v0.3.1 release notes](docs/RELEASE_NOTES_v0.3.1.md).
+
 ## Gate a change from the terminal or CI
 
 The engine is a library, and the CLI is the same engine with **no AI
@@ -331,12 +344,49 @@ npx changesafe gate --scenario scenarios/network/scenario-b-route-leak
   PASS   PATCH_SCHEMA           All operations are valid declarative patches
   BLOCK  MGMT_REACHABILITY      Change severs management reachability
   BLOCK  PROTECTED_RESOURCE     Change removes or disables a protected resource
-  WARN   UNTRUSTED_INSTRUCTION  Incident content contains instruction-like language
+  WARN   UNTRUSTED_INSTRUCTION  Input content contains instruction-like language
   …
   4 PASS · 1 WARN · 2 BLOCK   risk: CRITICAL
 
   BLOCKED — this change cannot be approved.
 ```
+
+The other two domains gate from the same binary — `--domain` selects the
+adapter, and the universal policies are unchanged underneath:
+
+```bash
+# a Terraform plan that destroys a protected database
+npx changesafe gate --domain terraform \
+  --input scenarios/terraform/scenario-p-injected-pr-context/incident.json
+```
+
+```text
+  BLOCK  DESTRUCTIVE_OP         Plan destroys stateful resources
+  BLOCK  PROTECTED_RESOURCE     Plan destroys a protected resource
+  WARN   REVERSIBILITY          Configuration is recoverable, data is not
+  WARN   PLAN_CONTEXT_REQUIRED  Destructive change carries no review context
+  PASS   BLAST_RADIUS           Blast radius limited to one resource
+  PASS   UNTRUSTED_INSTRUCTION  No instruction-like language in the input
+
+  3 PASS · 2 WARN · 2 BLOCK   risk: CRITICAL
+```
+
+```bash
+# a Service selector edit that orphans every pod behind it
+npx changesafe gate --domain kubernetes \
+  --scenario scenarios/kubernetes/scenario-m-selector-drift
+```
+
+```text
+  BLOCK  K8S_SERVICE_SELECTOR   Service selectors lose every supported workload
+         Service "payments" matched a supported workload before the change and none after it.
+  …
+  9 PASS · 0 WARN · 1 BLOCK   risk: CRITICAL
+```
+
+Note what the Kubernetes run demonstrates: nine policies pass and the change
+is still CRITICAL. Risk is derived from the worst finding, never averaged —
+one BLOCK is not outvoted by agreement elsewhere.
 
 Exit `0` means nothing blocked, `1` means blocked, `2` means the gate could
 not evaluate at all — so a missing verdict never reads as approval. The CLI
@@ -461,11 +511,3 @@ historical record of that work.
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Kubernetes
-
-ChangeSafe can gate supported Kubernetes Deployment, StatefulSet, DaemonSet, and Service upserts against an offline snapshot. See [docs/KUBERNETES.md](docs/KUBERNETES.md). The optional collector is read-only and namespace-scoped; the gate never contacts or mutates a cluster.
-
-Use `@changesafe/domain-kubernetes@0.3.1` or later. The initially published
-`0.3.0` library package is deprecated because its direct Node ESM imports were
-invalid; the bundled CLI was unaffected. See the [v0.3.1 release notes](docs/RELEASE_NOTES_v0.3.1.md).
