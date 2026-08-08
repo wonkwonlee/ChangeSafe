@@ -232,7 +232,10 @@ test("keeps a schema-valid 10-change Terraform plan searchable while bounding re
     .getByLabel("Search all Terraform changes")
     .fill("worker_009");
   await expect(
-    page.getByText("module.boundary.aws_instance.worker_009"),
+    // exact: without it this also matches the row's "Inspect values for
+    // module.boundary.aws_instance.worker_009" <summary>, a strict-mode
+    // violation.
+    page.getByText("module.boundary.aws_instance.worker_009", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Showing 1–1 of 1 matching changes from 10 total."),
@@ -259,14 +262,14 @@ test("keeps large Kubernetes inventory, nested selector matches, and proposal op
   await page.goto("/workbench/kubernetes");
 
   await expect(
-    page.getByText("Showing 1–8 of 153 resources."),
+    page.getByText("Showing 1–8 of 154 resources."),
   ).toBeVisible();
   await page
     .getByLabel("Search all Kubernetes resources")
     .fill("boundary-worker-149");
   await expect(
     page
-      .getByRole("region", { name: "153 captured offline resources" })
+      .getByRole("region", { name: "154 captured offline resources" })
       .getByText("Deployment demo/boundary-worker-149"),
   ).toBeVisible();
 
