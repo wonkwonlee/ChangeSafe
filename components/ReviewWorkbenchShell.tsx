@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoundedJsonBlock } from "@/components/BoundedEvidence";
 import { CaseStudyBadge } from "@/components/CaseStudyBadge";
 import { DomainCoverageCatalog } from "@/components/DomainCoverageCatalog";
-import { readInitialScenarioId, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
-import { PhasePill, RiskValue, StatusBadge } from "@/components/StatusTone";
+import { readScenarioLookup, useScenarioDeepLink } from "@/components/hooks/useScenarioDeepLink";
+import { FindingsList, PhasePill, RiskValue } from "@/components/StatusTone";
 import { TopologyView } from "@/components/TopologyView";
+import { UnknownScenarioNotice } from "@/components/UnknownScenarioNotice";
 import { WorkbenchNav } from "@/components/WorkbenchNav";
 import { NETWORK_REVIEW_EXAMPLES } from "@/features/domains/network/examples";
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
@@ -112,25 +113,7 @@ function FindingsPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
   if (!hasFindings(state)) {
     return <p className="mt-3 text-sm text-ink-dim">Findings appear only after replay evaluation.</p>;
   }
-  return (
-    <ul className="mt-3 space-y-2" aria-label="Evaluated policy findings">
-      {state.findings.map((finding) => (
-        <li className="rounded border border-edge bg-canvas p-3 text-sm" key={finding.policyId}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-xs">{finding.policyId}</span>
-            <StatusBadge status={finding.status} />
-          </div>
-          <p className="mt-2 font-medium text-ink">{finding.title}</p>
-          <p className="mt-1 text-ink-dim">{finding.explanation}</p>
-          {finding.affectedResources.length > 0 ? (
-            <p className="mt-2 text-xs text-ink-faint">
-              Affected: {finding.affectedResources.join(", ")}
-            </p>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  );
+  return <FindingsList ariaLabel="Evaluated policy findings" findings={state.findings} />;
 }
 
 function DecisionPanel({ state }: { state: WorkflowState<IncidentBundle> }) {
@@ -175,6 +158,7 @@ export function ReviewWorkbenchShell({
   const workflow = controller.state.workflow;
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const { setScenarioInUrl } = useScenarioDeepLink();
+  const [unknownScenarioId, setUnknownScenarioId] = useState<string | null>(null);
 
   const selectExample = useCallback(
     (sourceId: string) => {
@@ -188,6 +172,7 @@ export function ReviewWorkbenchShell({
       });
       setSelectedSourceId(sourceId);
       setScenarioInUrl(sourceId);
+      setUnknownScenarioId(null);
     },
     [controller, setScenarioInUrl],
   );
@@ -195,13 +180,18 @@ export function ReviewWorkbenchShell({
   const canRunReplay = workflow.phase === "READY" || workflow.phase === "ERROR";
 
   useEffect(() => {
-    const initialId = readInitialScenarioId(NETWORK_REVIEW_EXAMPLES.map((example) => example.sourceId));
-    if (initialId && initialId !== INITIAL_EXAMPLE.sourceId) {
+    const { requestedId, resolvedId } = readScenarioLookup(
+      NETWORK_REVIEW_EXAMPLES.map((example) => example.sourceId),
+    );
+    if (resolvedId && resolvedId !== INITIAL_EXAMPLE.sourceId) {
       // Deep-link resolution: sync initial selection from the URL, once on
       // mount only. window.location is unavailable during SSR, so this can't
       // move into the useState initializer without a hydration mismatch.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      selectExample(initialId);
+      selectExample(resolvedId);
+    } else if (requestedId && !resolvedId) {
+      setUnknownScenarioId(requestedId);
+      setScenarioInUrl(INITIAL_EXAMPLE.sourceId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -235,8 +225,18 @@ export function ReviewWorkbenchShell({
         </div>
       </section>
 
-      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
-        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
+      {unknownScenarioId ? (
+        <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6">
+          <UnknownScenarioNotice
+            fallbackLabel={INITIAL_EXAMPLE.label}
+            onDismiss={() => setUnknownScenarioId(null)}
+            requestedId={unknownScenarioId}
+          />
+        </div>
+      ) : null}
+
+      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
+        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 lg:col-start-2 lg:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
@@ -248,7 +248,7 @@ export function ReviewWorkbenchShell({
               </p>
             </div>
             <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">
-              {workflow.phase === "ANALYZING" ? "Running replay…" : "Run replay"}
+              {workflow.phase === "ANALYZING" ? "Running replay…" : canRunReplay ? "Run replay" : "Replay evaluated"}
             </button>
           </header>
 
@@ -284,7 +284,7 @@ export function ReviewWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Review authority" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-3 xl:row-start-1">
+        <aside aria-label="Review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
@@ -293,7 +293,7 @@ export function ReviewWorkbenchShell({
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Execution outside ChangeSafe</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never executes infrastructure changes.</p></section>
         </aside>
 
-        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
+        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 lg:col-start-1 lg:row-start-1">
           <Label>Network examples</Label>
           <h2 className="mt-2 text-lg font-semibold">{scenario.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveInitialScenarioId } from "../../components/hooks/useScenarioDeepLink";
+import {
+  resolveInitialScenarioId,
+  resolveScenarioLookup,
+} from "../../components/hooks/useScenarioDeepLink";
 
 describe("resolveInitialScenarioId", () => {
   it("returns the id when the scenario query param matches an available id", () => {
@@ -26,5 +29,38 @@ describe("resolveInitialScenarioId", () => {
   it("returns null when searchParams itself is null", () => {
     const result = resolveInitialScenarioId(null, ["scenario-a-failover"]);
     expect(result).toBeNull();
+  });
+});
+
+describe("resolveScenarioLookup", () => {
+  it("resolves both fields when the query param matches an available id", () => {
+    const params = new URLSearchParams("scenario=scenario-a-failover");
+    expect(resolveScenarioLookup(params, ["scenario-a-failover"])).toEqual({
+      requestedId: "scenario-a-failover",
+      resolvedId: "scenario-a-failover",
+    });
+  });
+
+  it("reports a requested id that isn't in the corpus, distinct from no id at all", () => {
+    const params = new URLSearchParams("scenario=does-not-exist");
+    expect(resolveScenarioLookup(params, ["scenario-a-failover"])).toEqual({
+      requestedId: "does-not-exist",
+      resolvedId: null,
+    });
+  });
+
+  it("returns both fields null when there is no scenario query param", () => {
+    const params = new URLSearchParams("");
+    expect(resolveScenarioLookup(params, ["scenario-a-failover"])).toEqual({
+      requestedId: null,
+      resolvedId: null,
+    });
+  });
+
+  it("returns both fields null when searchParams itself is null", () => {
+    expect(resolveScenarioLookup(null, ["scenario-a-failover"])).toEqual({
+      requestedId: null,
+      resolvedId: null,
+    });
   });
 });

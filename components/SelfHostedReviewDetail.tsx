@@ -7,6 +7,8 @@ import type {
   ReviewResolutionStatus,
 } from "@/features/reviews/selfHostedReviewViewState";
 
+import { FindingsList } from "@/components/StatusTone";
+
 import { SelfHostedReceiptProof } from "./SelfHostedReceiptProof";
 
 export function SelfHostedReviewDetail({
@@ -85,24 +87,7 @@ export function SelfHostedReviewDetail({
             {projection.findings.length === 0 ? (
               <p className="mt-3 text-sm text-ink-dim">No policy returned a finding for this change.</p>
             ) : (
-              <ul className="mt-3 space-y-2">
-                {projection.findings.map((finding) => (
-                  <li className="rounded border border-edge bg-surface p-3" key={finding.policyId}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-edge px-2 py-0.5 text-xs font-semibold">{finding.status}</span>
-                      <span className="font-mono text-xs text-ink-dim">{finding.policyId}</span>
-                    </div>
-                    <p className="mt-2 text-sm font-medium">{finding.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-ink-dim">{finding.explanation}</p>
-                    {finding.affectedResources.length > 0 ? (
-                      <p className="mt-1 break-all font-mono text-xs text-ink-faint">{finding.affectedResources.join(" · ")}</p>
-                    ) : null}
-                    {finding.remediation ? (
-                      <p className="mt-1 text-xs text-ink-dim">Remediation: {finding.remediation}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+              <FindingsList ariaLabel="Server-recomputed policy findings" findings={projection.findings} />
             )}
           </>
         ) : (

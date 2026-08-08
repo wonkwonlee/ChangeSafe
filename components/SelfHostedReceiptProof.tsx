@@ -1,5 +1,30 @@
 import type { ReceiptProof } from "@/features/reviews/durable-review-contract";
 
+// Every claim status this panel renders, routed to the same solid-fill
+// pass/warn/block tone StatusBadge uses elsewhere — a claim that failed
+// must not render identically to one that passed.
+const CLAIM_STATUS_TONE: Record<string, "pass" | "warn" | "block"> = {
+  verified: "pass",
+  present: "pass",
+  valid: "pass",
+  included: "pass",
+  absent: "warn",
+  "not checked": "warn",
+  "not-checked": "warn",
+  unverified: "warn",
+  "not-included": "warn",
+  unavailable: "warn",
+  mismatch: "block",
+  invalid: "block",
+  "key-mismatch": "block",
+};
+
+const CLAIM_TONE_CLASSNAME = {
+  pass: "bg-pass text-action-primary-foreground",
+  warn: "bg-warn text-action-primary-foreground",
+  block: "bg-block text-action-primary-foreground",
+} as const;
+
 function Claim({
   label,
   status,
@@ -9,10 +34,13 @@ function Claim({
   status: string;
   detail: string;
 }) {
+  const tone = CLAIM_STATUS_TONE[status] ?? "warn";
   return (
     <div className="border-t border-edge py-3 first:border-t-0 first:pt-0">
       <dt className="text-xs text-ink-faint">{label}</dt>
-      <dd className="mt-1 text-sm font-semibold text-ink">{status}</dd>
+      <dd className="mt-1">
+        <span className={`eyebrow rounded px-2 py-1 ${CLAIM_TONE_CLASSNAME[tone]}`}>{status}</span>
+      </dd>
       <dd className="mt-1 break-all text-xs text-ink-dim">{detail}</dd>
     </div>
   );
