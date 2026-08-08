@@ -234,8 +234,8 @@ export function ReviewWorkbenchShell({
         </div>
       ) : null}
 
-      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
-        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
+      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
+        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 lg:col-start-2 lg:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div>
               <Label>Replay evaluation</Label>
@@ -283,7 +283,7 @@ export function ReviewWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 xl:sticky xl:top-4 xl:col-start-3 xl:row-start-1">
+        <aside aria-label="Review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
@@ -292,7 +292,7 @@ export function ReviewWorkbenchShell({
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Execution outside ChangeSafe</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never executes infrastructure changes.</p></section>
         </aside>
 
-        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
+        <aside aria-label="Review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 lg:col-start-1 lg:row-start-1">
           <Label>Network examples</Label>
           <h2 className="mt-2 text-lg font-semibold">{scenario.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Network examples">

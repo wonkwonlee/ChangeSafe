@@ -24,10 +24,18 @@ const LINE_MARKER: Record<DiffLine["type"], string> = {
   remove: "-",
 };
 
+const LINE_SR_LABEL: Record<DiffLine["type"], string | null> = {
+  context: null,
+  add: "added: ",
+  remove: "removed: ",
+};
+
 /**
- * A real before/after diff, not two side-by-side JSON dumps. The marker
- * (+/-) carries the meaning, not color alone, so it survives for readers who
- * can't rely on color. Falls back to plain before/after blocks when the
+ * A real before/after diff, not two side-by-side JSON dumps. The +/- marker
+ * carries the meaning for sighted readers who can't rely on color alone; a
+ * paired sr-only "added"/"removed" word carries the same distinction for
+ * screen readers, since the glyph itself is decorative to them. Falls back
+ * to plain before/after blocks when the
  * value is too large to diff cheaply (see `computeLineDiff`).
  */
 export function DiffBlock({
@@ -69,7 +77,8 @@ export function DiffBlock({
         >
           {diffLines.map((line, index) => (
             <div className={LINE_TONE_CLASSNAME[line.type]} key={index}>
-              <span aria-hidden="true">{LINE_MARKER[line.type]}</span> {line.text}
+              {LINE_SR_LABEL[line.type] ? <span className="sr-only">{LINE_SR_LABEL[line.type]}</span> : null}
+              <span aria-hidden={line.type === "context" ? undefined : "true"}>{LINE_MARKER[line.type]}</span> {line.text}
             </div>
           ))}
         </pre>

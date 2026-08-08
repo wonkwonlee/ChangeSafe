@@ -2,15 +2,23 @@ import { forwardRef } from "react";
 
 import type { PolicyFinding, PolicyStatus, RiskLevel } from "@changesafe/core";
 
+// Solid fill, not a translucent tint: a badge's background must never depend
+// on what tint (if any) the card behind it is also applying. Two identical
+// translucent layers stacking (a card's bg-block/10 plus a badge's own
+// bg-block/10 inside it) silently doubled the effective opacity and dropped
+// BLOCK's text contrast to 3.75:1 — invisible in isolation, only caught by
+// measuring the composited result. An opaque badge can't stack with
+// anything behind it, so its contrast is fixed at ~6.2–8.0:1 regardless of
+// context, verified against all three status colors.
 const STATUS_TONE_CLASSNAME: Record<PolicyStatus, string> = {
-  PASS: "border-pass/50 bg-pass/10 text-pass",
-  WARN: "border-warn/50 bg-warn/10 text-warn",
-  BLOCK: "border-block/50 bg-block/10 text-block",
+  PASS: "bg-pass text-action-primary-foreground",
+  WARN: "bg-warn text-action-primary-foreground",
+  BLOCK: "bg-block text-action-primary-foreground",
 };
 
 /** Renders a policy verdict in the color the design system already reserves for it (never color alone: the status word stays the label). */
 export function StatusBadge({ status }: { status: PolicyStatus }) {
-  return <span className={`eyebrow rounded border px-2 py-1 ${STATUS_TONE_CLASSNAME[status]}`}>{status}</span>;
+  return <span className={`eyebrow rounded px-2 py-1 ${STATUS_TONE_CLASSNAME[status]}`}>{status}</span>;
 }
 
 const RISK_TONE_CLASSNAME: Record<RiskLevel, string> = {

@@ -263,8 +263,8 @@ export function TerraformWorkbenchShell({
         </div>
       ) : null}
 
-      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
-        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 xl:col-start-2 xl:row-start-1">
+      <div id="review" className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(220px,0.75fr)_minmax(0,2fr)_minmax(280px,0.95fr)]">
+        <main aria-busy={workflow.phase === "ANALYZING"} aria-label="Terraform review canvas" className="min-w-0 rounded-xl border border-edge bg-surface p-4 sm:p-6 lg:col-start-2 lg:row-start-1">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge pb-5">
             <div><Label>External-diff replay evaluation</Label><h1 className="mt-2 text-xl font-semibold">{example.label}</h1><PhasePill phase={workflow.phase} ref={outcomeHeadingRef} /><p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-dim"><StateValue state={workflow} /></p><p aria-atomic="true" aria-live="polite" className="sr-only" role="status"><ReplayStatus state={workflow} /></p></div>
             <button className="rounded bg-active px-4 py-2 text-sm font-semibold text-action-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!canRunReplay} onClick={() => void controller.analyze()} type="button">{workflow.phase === "ANALYZING" ? "Running replay…" : canRunReplay ? "Run replay" : "Replay evaluated"}</button>
@@ -321,7 +321,7 @@ export function TerraformWorkbenchShell({
           </div>
         </main>
 
-        <aside aria-label="Terraform review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 xl:sticky xl:top-4 xl:col-start-3 xl:row-start-1">
+        <aside aria-label="Terraform review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
           <Label>Airlock status</Label>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section>
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section>
@@ -330,7 +330,7 @@ export function TerraformWorkbenchShell({
           <section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Terraform execution</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never runs Terraform or executes infrastructure changes.</p></section>
         </aside>
 
-        <aside aria-label="Terraform review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 xl:col-start-1 xl:row-start-1">
+        <aside aria-label="Terraform review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 lg:col-start-1 lg:row-start-1">
           <Label>Terraform examples</Label>
           <h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2>
           <ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Terraform examples">
