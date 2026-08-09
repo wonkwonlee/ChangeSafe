@@ -324,3 +324,5 @@ deterministic correctness, (2) the always-working replay demo and red-team
 contract, (3) the current roadmap phase's exit gate, (4) tests and build
 health, (5) docs, (6) polish. The do-not-build list in
 `docs/OSS_ROADMAP.md` §6 is binding.
+
+Before proposing new work, read docs/STRATEGY.agent.md

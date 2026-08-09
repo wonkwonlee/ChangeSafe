@@ -158,6 +158,13 @@ server.
    clone transactionally and rollback is checked canonically.
 6. **Humans and existing systems execute.** No ChangeSafe endpoint or adapter
    executes infrastructure changes.
+7. **Authorization is not execution.** A decision or authorization
+   establishes bounded permission; it does not attest that any action
+   occurred. A signed receipt records what was decided, never that
+   infrastructure changed.
+8. **Execution is not verified effect.** Observing or authorizing a requested
+   operation does not prove the intended system state was realized.
+   ChangeSafe has no observation path and issues no attestation of effect.
 
 ## Integrity and authorship
 
@@ -166,7 +173,9 @@ hashes prove content integrity, not authorship. Ed25519 signatures prove an
 issuer only when checked against an expected public key obtained out of band.
 The ledger's SQLite triggers and hash chain make alteration, deletion, and
 reordering detectable; they do not provide external timestamping or
-non-repudiation.
+non-repudiation. 
+Receipts attest decisions, not effects: no hash or signature asserts that an
+approved change was applied, or that its intended state was reached.
 
 ## Kubernetes acquisition boundary
 
