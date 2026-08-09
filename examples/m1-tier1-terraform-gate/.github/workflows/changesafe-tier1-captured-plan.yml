@@ -21,7 +21,7 @@ jobs:
       - name: Run ChangeSafe gate
         run: |
           mkdir -p evidence
-          npx --yes changesafe@0.5.0 gate \
+          npx --yes --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
             --input fixtures/benign-scale-up.tfplan.json \
             --receipt evidence/benign.receipt.json \
@@ -50,7 +50,7 @@ jobs:
       - name: Generate ephemeral receipt signing key
         run: |
           mkdir -p evidence
-          npx --yes changesafe@0.5.0 keygen \
+          npx --yes --package=changesafe@0.5.0 changesafe keygen \
             --out "$RUNNER_TEMP/changesafe-hostile-signing-key" \
             --format json | tee evidence/hostile-keygen.json
           cp "$RUNNER_TEMP/changesafe-hostile-signing-key.pub.pem" evidence/hostile-signing-key.pub.pem
@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir -p evidence
           set +e
-          npx --yes changesafe@0.5.0 gate \
+          npx --yes --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
             --input fixtures/hostile-protected-destroy.tfplan.json \
             --context fixtures/hostile-pr-body.txt \
@@ -77,7 +77,7 @@ jobs:
 
       - name: Verify hostile signed receipt
         run: |
-          npx --yes changesafe@0.5.0 verify evidence/hostile.receipt.json \
+          npx --yes --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
             --public-key evidence/hostile-signing-key.pub.pem \
             --format json | tee evidence/hostile-verify.json
           node -e "const v=require('./evidence/hostile-verify.json'); if (!v.ok || !v.signature || v.signature.verdict !== 'valid') process.exit(1)"

@@ -22,9 +22,13 @@ belong in `M1_EVIDENCE.md` after a reproduction run.
 
 ## Local Commands
 
+Run these commands from this template directory. The explicit `--package`
+form prevents a parent monorepo package named `changesafe` from shadowing the
+published CLI.
+
 ```bash
 mkdir -p evidence
-npx --yes changesafe@0.5.0 gate \
+npx --yes --package=changesafe@0.5.0 changesafe gate \
   --domain terraform \
   --input fixtures/benign-scale-up.tfplan.json \
   --receipt evidence/benign.receipt.json \
@@ -35,12 +39,12 @@ npx --yes changesafe@0.5.0 gate \
 key_dir="$(mktemp -d)"
 trap 'rm -rf "$key_dir"' EXIT
 mkdir -p evidence
-npx --yes changesafe@0.5.0 keygen \
+npx --yes --package=changesafe@0.5.0 changesafe keygen \
   --out "$key_dir/hostile-signing-key" \
   --format json > evidence/hostile-keygen.json
 
 set +e
-npx --yes changesafe@0.5.0 gate \
+npx --yes --package=changesafe@0.5.0 changesafe gate \
   --domain terraform \
   --input fixtures/hostile-protected-destroy.tfplan.json \
   --context fixtures/hostile-pr-body.txt \
@@ -52,7 +56,7 @@ set -e
 test "$code" -eq 1
 
 cp "$key_dir/hostile-signing-key.pub.pem" evidence/hostile-signing-key.pub.pem
-npx --yes changesafe@0.5.0 verify evidence/hostile.receipt.json \
+npx --yes --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
   --public-key evidence/hostile-signing-key.pub.pem \
   --format json
 ```

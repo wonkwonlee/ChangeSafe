@@ -151,7 +151,7 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
       path.join(EXAMPLE_ROOT, ".github/workflows/changesafe-tier1-captured-plan.yml"),
       "utf8",
     );
-    expect(workflow).toContain("npx --yes changesafe@0.5.0 gate");
+    expect(workflow).toContain("npx --yes --package=changesafe@0.5.0 changesafe gate");
     expect(workflow).not.toContain("hashicorp/setup-terraform");
     expect(workflow).not.toMatch(/\bterraform\s+(init|plan|show)\b/);
     expect(workflow).not.toMatch(/uses:\s*wonkwonlee\/ChangeSafe@/);
