@@ -1,0 +1,58 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.web.aws_autoscaling_group.app",
+      "module_address": "module.web",
+      "mode": "managed",
+      "type": "aws_autoscaling_group",
+      "name": "app",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": { "name": "app-asg", "min_size": 2, "max_size": 6, "desired_capacity": 2 },
+        "after": { "name": "app-asg", "min_size": 4, "max_size": 12, "desired_capacity": 4 }
+      }
+    },
+    {
+      "address": "module.web.aws_cloudwatch_metric_alarm.cpu_high",
+      "module_address": "module.web",
+      "mode": "managed",
+      "type": "aws_cloudwatch_metric_alarm",
+      "name": "cpu_high",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": { "alarm_name": "app-cpu-high", "threshold": 80 },
+        "after": { "alarm_name": "app-cpu-high", "threshold": 70 }
+      }
+    },
+    {
+      "address": "module.web.aws_security_group_rule.metrics_scrape",
+      "module_address": "module.web",
+      "mode": "managed",
+      "type": "aws_security_group_rule",
+      "name": "metrics_scrape",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": { "type": "ingress", "from_port": 9100, "to_port": 9100, "protocol": "tcp" }
+      }
+    },
+    {
+      "address": "module.web.aws_instance.bastion",
+      "module_address": "module.web",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "bastion",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "instance_type": "t3.micro" },
+        "after": { "instance_type": "t3.micro" }
+      }
+    }
+  ]
+}

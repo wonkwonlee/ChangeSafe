@@ -1,0 +1,89 @@
+name: ChangeSafe M1 Tier 1 captured-plan gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benign:
+    name: Benign captured plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run ChangeSafe gate
+        run: |
+          mkdir -p evidence
+          npx --yes --package=changesafe@0.5.0 changesafe gate \
+            --domain terraform \
+            --input fixtures/benign-scale-up.tfplan.json \
+            --receipt evidence/benign.receipt.json \
+            --format json | tee evidence/benign-result.json
+
+      - name: Assert benign verdict
+        run: |
+          node -e "const r=require('./evidence/benign-result.json'); if (r.blocked || r.riskLevel !== 'LOW' || r.decision !== 'gate_only') process.exit(1)"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: changesafe-m1-tier1-benign
+          path: evidence/
+
+  hostile:
+    name: Hostile captured plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate ephemeral receipt signing key
+        run: |
+          mkdir -p evidence
+          npx --yes --package=changesafe@0.5.0 changesafe keygen \
+            --out "$RUNNER_TEMP/changesafe-hostile-signing-key" \
+            --format json | tee evidence/hostile-keygen.json
+          cp "$RUNNER_TEMP/changesafe-hostile-signing-key.pub.pem" evidence/hostile-signing-key.pub.pem
+
+      - name: Run ChangeSafe gate
+        run: |
+          mkdir -p evidence
+          set +e
+          npx --yes --package=changesafe@0.5.0 changesafe gate \
+            --domain terraform \
+            --input fixtures/hostile-protected-destroy.tfplan.json \
+            --context fixtures/hostile-pr-body.txt \
+            --receipt evidence/hostile.receipt.json \
+            --sign-key "$RUNNER_TEMP/changesafe-hostile-signing-key.pem" \
+            --format json > evidence/hostile-result.json
+          code="$?"
+          set -e
+          echo "$code" > evidence/hostile-exit-code.txt
+          test "$code" -eq 1
+
+      - name: Assert hostile verdict
+        run: |
+          node -e "const r=require('./evidence/hostile-result.json'); if (!r.blocked || r.riskLevel !== 'CRITICAL' || r.decision !== 'blocked') process.exit(1)"
+
+      - name: Verify hostile signed receipt
+        run: |
+          npx --yes --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
+            --public-key evidence/hostile-signing-key.pub.pem \
+            --format json | tee evidence/hostile-verify.json
+          node -e "const v=require('./evidence/hostile-verify.json'); if (!v.ok || !v.signature || v.signature.verdict !== 'valid') process.exit(1)"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: changesafe-m1-tier1-hostile
+          path: evidence/

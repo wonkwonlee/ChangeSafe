@@ -1,0 +1,37 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "module.audit.aws_s3_bucket.compliance_logs",
+      "module_address": "module.audit",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "compliance_logs",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {
+          "bucket": "acme-compliance-logs",
+          "tags": { "changesafe_protected": "true", "retention": "7y" }
+        },
+        "after": {
+          "bucket": "acme-compliance-logs-v2",
+          "tags": { "changesafe_protected": "true", "retention": "7y" }
+        }
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.log_writer",
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "log_writer",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": { "name": "log-writer", "policy": "{\"Version\":\"2012-10-17\"}" },
+        "after": { "name": "log-writer", "policy": "{\"Version\":\"2012-10-17\"}" }
+      }
+    }
+  ]
+}
