@@ -23,6 +23,7 @@ belong in `M1_EVIDENCE.md` after a reproduction run.
 ## Local Commands
 
 ```bash
+mkdir -p evidence
 npx --yes changesafe@0.5.0 gate \
   --domain terraform \
   --input fixtures/benign-scale-up.tfplan.json \
