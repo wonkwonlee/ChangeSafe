@@ -20,22 +20,22 @@ payloads, or provider logs.
 
 | Field | Value |
 | --- | --- |
-| Template repository URL |  |
-| Template commit |  |
-| Workflow run URL |  |
-| Benign command exit code |  |
-| Benign receipt path |  |
-| Benign receipt SHA-256 |  |
-| Benign receipt decision |  |
-| Benign receipt policy version |  |
-| Hostile command exit code |  |
-| Hostile receipt path |  |
-| Hostile receipt SHA-256 |  |
-| Hostile receipt decision |  |
-| Hostile receipt policy version |  |
-| Hostile signer public key id |  |
-| Hostile public key path |  |
-| Hostile signature verification verdict |  |
+| Template repository URL | `https://github.com/wonkwonlee/changesafe-m1-tier1-repro` |
+| Template commit | `7919865fe735cbb5de049b7dcce6aaa3b35396f3` |
+| Workflow run URL | `https://github.com/wonkwonlee/changesafe-m1-tier1-repro/actions/runs/31332578100` |
+| Benign command exit code | 0 |
+| Benign receipt path | `evidence/benign.receipt.json` |
+| Benign receipt SHA-256 | `4c626f70081fd69052986be762ce3bdb29208aad288366394195ba958c991feb` |
+| Benign receipt decision | `gate_only` |
+| Benign receipt policy version | `core-v0.2.0+terraform-v0.2.0` |
+| Hostile command exit code | 1 |
+| Hostile receipt path | `evidence/hostile.receipt.json` |
+| Hostile receipt SHA-256 | `201c13ee65343f1dfb40b212ca794e30c7240e3958f9c286336f98d6406d6fc1` |
+| Hostile receipt decision | `blocked` |
+| Hostile receipt policy version | `core-v0.2.0+terraform-v0.2.0` |
+| Hostile signer public key id | `919aa9a9159a6a16c9408316b7ebd6b6` |
+| Hostile public key path | `evidence/hostile-signing-key.pub.pem` |
+| Hostile signature verification verdict | `valid` |
 
 ## Boundary Notes
 
