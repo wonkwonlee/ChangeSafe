@@ -59,7 +59,9 @@ next-env.d.ts
 .superpowers/
 
 .worktrees/
-.claude/settings.local.json
+.claude/
+.agents/
+.impeccable/
 
 # local artifacts (not part of the product)
 /artifacts/
