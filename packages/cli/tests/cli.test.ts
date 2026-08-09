@@ -359,6 +359,121 @@ describe("changesafe gate --domain terraform", () => {
       main(["gate", "--domain", "terraform", "--input", notAPlan], createCapture()),
     ).rejects.toThrow(/terraform show -json/);
   });
+
+  it("writes a receipt that verifies against the same Terraform plan artifact", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    const planPath = path.join(PLANS, "safe-scale-up.tfplan.json");
+
+    const gateCode = await main(
+      ["gate", "--domain", "terraform", "--input", planPath, "--receipt", receiptPath],
+      createCapture(),
+    );
+    expect(gateCode).toBe(0);
+
+    const capture = createCapture();
+    const verifyCode = await main(
+      ["verify", receiptPath, "--domain", "terraform", "--input", planPath, "--format", "json"],
+      capture,
+    );
+    expect(verifyCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.checks.find((check: { name: string }) => check.name === "input hash").ok).toBe(
+      true,
+    );
+  });
+
+  it("rejects a Terraform receipt verification when a different plan artifact is supplied", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        path.join(PLANS, "safe-scale-up.tfplan.json"),
+        "--receipt",
+        receiptPath,
+      ],
+      createCapture(),
+    );
+
+    const capture = createCapture();
+    const verifyCode = await main(
+      [
+        "verify",
+        receiptPath,
+        "--domain",
+        "terraform",
+        "--input",
+        path.join(PLANS, "destroys-database.tfplan.json"),
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+    expect(verifyCode).toBe(1);
+    const inputCheck = JSON.parse(capture.stdout).checks.find(
+      (check: { name: string }) => check.name === "input hash",
+    );
+    expect(inputCheck.ok).toBe(false);
+    expect(inputCheck.detail).toContain("not what this receipt describes");
+  });
+
+  it("rejects changed Terraform verify context through the receipt input hash", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    const planPath = path.join(PLANS, "safe-scale-up.tfplan.json");
+    const originalContext = path.join(dir, "original-pr-body.txt");
+    const changedContext = path.join(dir, "changed-pr-body.txt");
+    writeFileSync(originalContext, "Original PR context for the captured Terraform plan.");
+    writeFileSync(changedContext, "Changed PR context supplied during receipt verification.");
+
+    const gateCode = await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        planPath,
+        "--context",
+        originalContext,
+        "--receipt",
+        receiptPath,
+      ],
+      createCapture(),
+    );
+    expect(gateCode).toBe(0);
+
+    const capture = createCapture();
+    const verifyCode = await main(
+      [
+        "verify",
+        receiptPath,
+        "--domain",
+        "terraform",
+        "--input",
+        planPath,
+        "--context",
+        changedContext,
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+
+    expect(verifyCode).toBe(1);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.checks.map((check: { name: string }) => check.name)).toEqual([
+      "receipt hash",
+      "input hash",
+    ]);
+    const inputCheck = payload.checks.find((check: { name: string }) => check.name === "input hash");
+    expect(inputCheck.ok).toBe(false);
+    expect(inputCheck.detail).toContain("not what this receipt describes");
+  });
 });
 
 describe("changesafe verify", () => {

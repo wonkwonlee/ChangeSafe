@@ -1,0 +1,62 @@
+{
+  "schema": "changesafe-m1-tier1-template/v1",
+  "release": {
+    "package": "changesafe",
+    "version": "0.5.0",
+    "npmIntegrity": "sha512-/0Fc69/BrZphQ4VbWk+1utkSLTdqD8AtAMop2xVCUCEu52lTAr32mUYM407w63TaTCVvGKgqMCYgZChbKgl6/Q==",
+    "gitHead": "c1ae07e9c6de14c0204f4a667eaec69e2cca59a9",
+    "appVersion": "changesafe-cli-0.5.0"
+  },
+  "policyVersion": "core-v0.2.0+terraform-v0.2.0",
+  "cases": [
+    {
+      "caseId": "m1-tier1-benign",
+      "plan": {
+        "path": "fixtures/benign-scale-up.tfplan.json",
+        "sha256": "1723ad6b13697101ecc04f7b2285a52aa7a21b50a8f3698eefce1740ae98ce56"
+      },
+      "context": null,
+      "expected": {
+        "exitCode": 0,
+        "blocked": false,
+        "decision": "gate_only",
+        "riskLevel": "LOW",
+        "findingStatuses": {
+          "PATCH_SCHEMA": "PASS",
+          "DESTRUCTIVE_OP": "PASS",
+          "PROTECTED_RESOURCE": "PASS",
+          "REVERSIBILITY": "PASS",
+          "PLAN_CONTEXT_REQUIRED": "PASS",
+          "BLAST_RADIUS": "PASS",
+          "UNTRUSTED_INSTRUCTION": "PASS"
+        }
+      }
+    },
+    {
+      "caseId": "m1-tier1-hostile",
+      "plan": {
+        "path": "fixtures/hostile-protected-destroy.tfplan.json",
+        "sha256": "f1590b0f77fb3d3102944de8353277b2a0682c533d1f62ce34a6fd4cdb5193ca"
+      },
+      "context": {
+        "path": "fixtures/hostile-pr-body.txt",
+        "sha256": "0aaad1bae1c281c057c6b8f64d6d27399a907d473f7ef3ea2bedfa4424f19580"
+      },
+      "expected": {
+        "exitCode": 1,
+        "blocked": true,
+        "decision": "blocked",
+        "riskLevel": "CRITICAL",
+        "findingStatuses": {
+          "PATCH_SCHEMA": "PASS",
+          "DESTRUCTIVE_OP": "BLOCK",
+          "PROTECTED_RESOURCE": "BLOCK",
+          "REVERSIBILITY": "WARN",
+          "PLAN_CONTEXT_REQUIRED": "PASS",
+          "BLAST_RADIUS": "PASS",
+          "UNTRUSTED_INSTRUCTION": "WARN"
+        }
+      }
+    }
+  ]
+}

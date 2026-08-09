@@ -81,6 +81,20 @@ describe("plan normalization", () => {
     expect(() => normalizePlan("not even an object")).toThrow(/terraform show -json/);
   });
 
+  it("rejects a plan entry with an unexpected Terraform action", () => {
+    expect(() =>
+      normalizePlan({
+        resource_changes: [
+          {
+            address: "aws_instance.web",
+            type: "aws_instance",
+            change: { actions: ["deposed"], before: null, after: null },
+          },
+        ],
+      }),
+    ).toThrow(/terraform show -json/);
+  });
+
   it("refuses to gate a plan with nothing to do", () => {
     expect(() => deriveProposal(normalizePlan({ resource_changes: [] }))).toThrow(
       /nothing to gate/,
