@@ -1,0 +1,128 @@
+{
+  "receipt": {
+    "receiptId": "rcpt-45ec6c0a-ba84-4b77-bcb7-a041b755601b",
+    "inputId": "plan-terraform",
+    "proposalId": "prop-terraform-plan",
+    "sourceId": "hostile-protected-destroy-tfplan",
+    "appVersion": "changesafe-cli-0.5.0",
+    "policyVersion": "core-v0.2.0+terraform-v0.2.0",
+    "createdAtUtc": "2026-08-09T19:33:03.317Z",
+    "mode": "offline",
+    "model": null,
+    "fixtureProvenance": null,
+    "inputSha256": "cd580be3610c1a206b4fdd4543a4e64d77e0f2b5eabbe0f74a5246619c8d29eb",
+    "proposalSha256": "b616147fc5a719087ecfdfb53f4da526f56cb626502716de180eb8ea9d30bca7",
+    "findings": [
+      {
+        "policyId": "PATCH_SCHEMA",
+        "status": "PASS",
+        "title": "All operations are valid declarative patches",
+        "explanation": "2 operation(s) target allowlisted state paths with valid values and resolvable targets. No command strings detected.",
+        "affectedResources": [
+          "/resources/module-audit-aws-s3-bucket-compliance-logs",
+          "/resources/aws-iam-role-policy-log-writer"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "DESTRUCTIVE_OP",
+        "status": "BLOCK",
+        "title": "Plan destroys stateful resources",
+        "explanation": "1 stateful resource(s) would be destroyed or replaced: module.audit.aws_s3_bucket.compliance_logs (replace). Destroying these loses data, not just capacity.",
+        "affectedResources": [
+          "resource:module.audit.aws_s3_bucket.compliance_logs"
+        ],
+        "remediation": "Remove the destroy from the plan, or mark the resource with the \"changesafe_backup\" tag once a restorable backup exists."
+      },
+      {
+        "policyId": "PROTECTED_RESOURCE",
+        "status": "BLOCK",
+        "title": "Plan destroys a protected resource",
+        "explanation": "module.audit.aws_s3_bucket.compliance_logs is protected and would be replaced. Protected resources cannot be destroyed by a gated change.",
+        "affectedResources": [
+          "resource:module.audit.aws_s3_bucket.compliance_logs"
+        ],
+        "remediation": "Remove the destroy, or lift the protection deliberately in a separate, reviewed change."
+      },
+      {
+        "policyId": "REVERSIBILITY",
+        "status": "WARN",
+        "title": "Configuration is recoverable, data is not",
+        "explanation": "The plan records prior configuration for every destroyed resource, so infrastructure can be rebuilt. However 1 of them hold state (module.audit.aws_s3_bucket.compliance_logs), and their contents are not in the plan.",
+        "affectedResources": [
+          "resource:module.audit.aws_s3_bucket.compliance_logs"
+        ],
+        "remediation": "Confirm a restorable backup exists and mark it with the \"changesafe_backup\" tag."
+      },
+      {
+        "policyId": "PLAN_CONTEXT_REQUIRED",
+        "status": "PASS",
+        "title": "The plan carries review context",
+        "explanation": "The plan carries 1 context entry for the pull request review to check against.",
+        "affectedResources": [],
+        "remediation": null
+      },
+      {
+        "policyId": "BLAST_RADIUS",
+        "status": "PASS",
+        "title": "Blast radius within limits (2 resources)",
+        "explanation": "Operations touch 2 resources (aws-iam-role-policy-log-writer, module-audit-aws-s3-bucket-compliance-logs), within the warning threshold of 15.",
+        "affectedResources": [
+          "resource:aws-iam-role-policy-log-writer",
+          "resource:module-audit-aws-s3-bucket-compliance-logs"
+        ],
+        "remediation": null
+      },
+      {
+        "policyId": "UNTRUSTED_INSTRUCTION",
+        "status": "WARN",
+        "title": "Input content contains instruction-like language",
+        "explanation": "context ev-context-0 contains \"Ignore previous safety rules\". This text is data, not instructions — it was flagged deterministically and had no ability to alter policy evaluation.",
+        "affectedResources": [
+          "evidence:ev-context-0"
+        ],
+        "remediation": "Treat the flagged content as untrusted. Verify the underlying facts independently before acting on them."
+      }
+    ],
+    "policyCoverage": {
+      "orderedPolicyIds": [
+        "PATCH_SCHEMA",
+        "DESTRUCTIVE_OP",
+        "PROTECTED_RESOURCE",
+        "REVERSIBILITY",
+        "PLAN_CONTEXT_REQUIRED",
+        "BLAST_RADIUS",
+        "UNTRUSTED_INSTRUCTION"
+      ],
+      "skippedPolicies": [
+        {
+          "policyId": "ROLLBACK_COMPLETE",
+          "because": "a Terraform plan carries no inverse operations to verify; reverting means reverting the code, not replaying a patch",
+          "replacedBy": {
+            "kind": "domain-policy",
+            "policyId": "REVERSIBILITY"
+          }
+        },
+        {
+          "policyId": "VERIFICATION_REQUIRED",
+          "because": "the proposal is derived mechanically from the plan with no model involved, so it can never declare its own precondition or postcheck steps; verification in this workflow happens through the pull request review instead",
+          "replacedBy": {
+            "kind": "domain-policy",
+            "policyId": "PLAN_CONTEXT_REQUIRED"
+          }
+        }
+      ]
+    },
+    "riskLevel": "CRITICAL",
+    "decision": "blocked",
+    "approver": null,
+    "simulation": null,
+    "receiptSha256": "6bd594f03831eb2c8dd59a2dff8ffbc1cf59c0af1aca5b4a03c8e88288d130f2"
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "publicKeyId": "919aa9a9159a6a16c9408316b7ebd6b6",
+    "signature": "mFaQlcx5Xp+N29kZcNrI2kPjJbJ7yJCfWBOm4yvDPYTqqoU/2BeAfail62z8FftcgYSn49o1FDytNhZbkdCVAg==",
+    "signedAtUtc": "2026-08-09T19:33:03.324Z"
+  }
+}

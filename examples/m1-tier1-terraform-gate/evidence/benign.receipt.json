@@ -1,0 +1,114 @@
+{
+  "receiptId": "rcpt-3c65135c-fd8c-4e65-86af-5321d0d72807",
+  "inputId": "plan-terraform",
+  "proposalId": "prop-terraform-plan",
+  "sourceId": "benign-scale-up-tfplan",
+  "appVersion": "changesafe-cli-0.5.0",
+  "policyVersion": "core-v0.2.0+terraform-v0.2.0",
+  "createdAtUtc": "2026-08-09T19:24:29.937Z",
+  "mode": "offline",
+  "model": null,
+  "fixtureProvenance": null,
+  "inputSha256": "ccfa7db5e34282679475f9805d08af727eb84f6e9c60c4347b7b61717c29985e",
+  "proposalSha256": "5337f26ff7a763d6b1faee8c3632649cb91f88306bc85d3400de7ef936a9caa5",
+  "findings": [
+    {
+      "policyId": "PATCH_SCHEMA",
+      "status": "PASS",
+      "title": "All operations are valid declarative patches",
+      "explanation": "3 operation(s) target allowlisted state paths with valid values and resolvable targets. No command strings detected.",
+      "affectedResources": [
+        "/resources/module-web-aws-autoscaling-group-app",
+        "/resources/module-web-aws-cloudwatch-metric-alarm-cpu-high",
+        "/resources/module-web-aws-security-group-rule-metrics-scrape"
+      ],
+      "remediation": null
+    },
+    {
+      "policyId": "DESTRUCTIVE_OP",
+      "status": "PASS",
+      "title": "No resource is destroyed or replaced",
+      "explanation": "All 3 planned change(s) create or update resources in place.",
+      "affectedResources": [],
+      "remediation": null
+    },
+    {
+      "policyId": "PROTECTED_RESOURCE",
+      "status": "PASS",
+      "title": "No protected resource is destroyed",
+      "explanation": "No plan entry destroys a resource carrying the \"changesafe_protected\" tag.",
+      "affectedResources": [],
+      "remediation": null
+    },
+    {
+      "policyId": "REVERSIBILITY",
+      "status": "PASS",
+      "title": "Nothing to reverse",
+      "explanation": "The plan destroys nothing, so every change can be undone by reverting the code.",
+      "affectedResources": [],
+      "remediation": null
+    },
+    {
+      "policyId": "PLAN_CONTEXT_REQUIRED",
+      "status": "PASS",
+      "title": "No destructive change requires review context",
+      "explanation": "The plan destroys or replaces nothing, so there is nothing that requires a documented pull request review.",
+      "affectedResources": [],
+      "remediation": null
+    },
+    {
+      "policyId": "BLAST_RADIUS",
+      "status": "PASS",
+      "title": "Blast radius within limits (3 resources)",
+      "explanation": "Operations touch 3 resources (module-web-aws-autoscaling-group-app, module-web-aws-cloudwatch-metric-alarm-cpu-high, module-web-aws-security-group-rule-metrics-scrape), within the warning threshold of 15.",
+      "affectedResources": [
+        "resource:module-web-aws-autoscaling-group-app",
+        "resource:module-web-aws-cloudwatch-metric-alarm-cpu-high",
+        "resource:module-web-aws-security-group-rule-metrics-scrape"
+      ],
+      "remediation": null
+    },
+    {
+      "policyId": "UNTRUSTED_INSTRUCTION",
+      "status": "PASS",
+      "title": "No instruction-like language in the input",
+      "explanation": "No untrusted text supplied with this change attempts to issue instructions to the system.",
+      "affectedResources": [],
+      "remediation": null
+    }
+  ],
+  "policyCoverage": {
+    "orderedPolicyIds": [
+      "PATCH_SCHEMA",
+      "DESTRUCTIVE_OP",
+      "PROTECTED_RESOURCE",
+      "REVERSIBILITY",
+      "PLAN_CONTEXT_REQUIRED",
+      "BLAST_RADIUS",
+      "UNTRUSTED_INSTRUCTION"
+    ],
+    "skippedPolicies": [
+      {
+        "policyId": "ROLLBACK_COMPLETE",
+        "because": "a Terraform plan carries no inverse operations to verify; reverting means reverting the code, not replaying a patch",
+        "replacedBy": {
+          "kind": "domain-policy",
+          "policyId": "REVERSIBILITY"
+        }
+      },
+      {
+        "policyId": "VERIFICATION_REQUIRED",
+        "because": "the proposal is derived mechanically from the plan with no model involved, so it can never declare its own precondition or postcheck steps; verification in this workflow happens through the pull request review instead",
+        "replacedBy": {
+          "kind": "domain-policy",
+          "policyId": "PLAN_CONTEXT_REQUIRED"
+        }
+      }
+    ]
+  },
+  "riskLevel": "LOW",
+  "decision": "gate_only",
+  "approver": null,
+  "simulation": null,
+  "receiptSha256": "d893b7e192e84228b0590b82049f7aae10b73fdd78668112327efb4d55ab4d73"
+}
