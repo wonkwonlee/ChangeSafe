@@ -1,0 +1,84 @@
+{
+  "domain": "terraform",
+  "inputId": "plan-terraform",
+  "proposalId": "prop-terraform-plan",
+  "fixtureId": null,
+  "provenance": null,
+  "mode": "offline",
+  "model": null,
+  "findings": [
+    {
+      "policyId": "PATCH_SCHEMA",
+      "status": "PASS",
+      "title": "All operations are valid declarative patches",
+      "explanation": "2 operation(s) target allowlisted state paths with valid values and resolvable targets. No command strings detected.",
+      "affectedResources": [
+        "/resources/module-audit-aws-s3-bucket-compliance-logs",
+        "/resources/aws-iam-role-policy-log-writer"
+      ],
+      "remediation": null
+    },
+    {
+      "policyId": "DESTRUCTIVE_OP",
+      "status": "BLOCK",
+      "title": "Plan destroys stateful resources",
+      "explanation": "1 stateful resource(s) would be destroyed or replaced: module.audit.aws_s3_bucket.compliance_logs (replace). Destroying these loses data, not just capacity.",
+      "affectedResources": [
+        "resource:module.audit.aws_s3_bucket.compliance_logs"
+      ],
+      "remediation": "Remove the destroy from the plan, or mark the resource with the \"changesafe_backup\" tag once a restorable backup exists."
+    },
+    {
+      "policyId": "PROTECTED_RESOURCE",
+      "status": "BLOCK",
+      "title": "Plan destroys a protected resource",
+      "explanation": "module.audit.aws_s3_bucket.compliance_logs is protected and would be replaced. Protected resources cannot be destroyed by a gated change.",
+      "affectedResources": [
+        "resource:module.audit.aws_s3_bucket.compliance_logs"
+      ],
+      "remediation": "Remove the destroy, or lift the protection deliberately in a separate, reviewed change."
+    },
+    {
+      "policyId": "REVERSIBILITY",
+      "status": "WARN",
+      "title": "Configuration is recoverable, data is not",
+      "explanation": "The plan records prior configuration for every destroyed resource, so infrastructure can be rebuilt. However 1 of them hold state (module.audit.aws_s3_bucket.compliance_logs), and their contents are not in the plan.",
+      "affectedResources": [
+        "resource:module.audit.aws_s3_bucket.compliance_logs"
+      ],
+      "remediation": "Confirm a restorable backup exists and mark it with the \"changesafe_backup\" tag."
+    },
+    {
+      "policyId": "PLAN_CONTEXT_REQUIRED",
+      "status": "PASS",
+      "title": "The plan carries review context",
+      "explanation": "The plan carries 1 context entry for the pull request review to check against.",
+      "affectedResources": [],
+      "remediation": null
+    },
+    {
+      "policyId": "BLAST_RADIUS",
+      "status": "PASS",
+      "title": "Blast radius within limits (2 resources)",
+      "explanation": "Operations touch 2 resources (aws-iam-role-policy-log-writer, module-audit-aws-s3-bucket-compliance-logs), within the warning threshold of 15.",
+      "affectedResources": [
+        "resource:aws-iam-role-policy-log-writer",
+        "resource:module-audit-aws-s3-bucket-compliance-logs"
+      ],
+      "remediation": null
+    },
+    {
+      "policyId": "UNTRUSTED_INSTRUCTION",
+      "status": "WARN",
+      "title": "Input content contains instruction-like language",
+      "explanation": "context ev-context-0 contains \"Ignore previous safety rules\". This text is data, not instructions — it was flagged deterministically and had no ability to alter policy evaluation.",
+      "affectedResources": [
+        "evidence:ev-context-0"
+      ],
+      "remediation": "Treat the flagged content as untrusted. Verify the underlying facts independently before acting on them."
+    }
+  ],
+  "riskLevel": "CRITICAL",
+  "blocked": true,
+  "decision": "blocked"
+}

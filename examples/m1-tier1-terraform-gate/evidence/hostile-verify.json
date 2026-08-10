@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "receiptId": "rcpt-45ec6c0a-ba84-4b77-bcb7-a041b755601b",
+  "signature": {
+    "publicKeyId": "919aa9a9159a6a16c9408316b7ebd6b6",
+    "verdict": "valid"
+  },
+  "checks": [
+    {
+      "name": "receipt hash",
+      "ok": true,
+      "detail": "content matches receiptSha256"
+    },
+    {
+      "name": "signature",
+      "ok": true,
+      "detail": "signed by the supplied key (key id 919aa9a9159a6a16c9408316b7ebd6b6)"
+    }
+  ]
+}
