@@ -25817,7 +25817,7 @@ function resolveTerraformPack(pack) {
 }
 
 // ../domain-terraform/src/adapter.ts
-var TERRAFORM_POLICY_VERSION = "terraform-v0.2.0";
+var TERRAFORM_POLICY_VERSION = "terraform-v0.2.1";
 var POLICY_VERSION3 = `${CORE_POLICY_VERSION}+${TERRAFORM_POLICY_VERSION}`;
 function createTerraformDomain(pack) {
   const resolved = resolveTerraformPack(pack);
@@ -25973,7 +25973,15 @@ function normalizePlan(raw, options = {}) {
       action,
       before,
       after,
-      tags: { ...readTags(before), ...readTags(after) }
+      // The resource being destroyed is `before`; `after` is what replaces
+      // it in a "replace" action. Merging them let a replacement's tags
+      // (fully attacker-controlled in a proposed plan) override the tags of
+      // the resource actually being destroyed — a fabricated backup/
+      // protection tag on `after` would satisfy `hasBackup`/`isProtected`
+      // for a destroy the tag never applied to. Only the prior state
+      // describes what is actually being lost, so `after` is a fallback for
+      // pure creates (no `before`), never an override.
+      tags: readTags(before ?? after)
     });
   });
   const context = (options.context ?? []).map((entry, index) => ({

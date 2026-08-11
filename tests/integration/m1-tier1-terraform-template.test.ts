@@ -18,6 +18,7 @@ import {
   hashCanonical,
   verifyReceiptHash,
 } from "@changesafe/core";
+import { POLICY_VERSION as TERRAFORM_LIVE_POLICY_VERSION } from "@changesafe/domain-terraform";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const EXAMPLE_ROOT = path.join(REPO_ROOT, "examples/m1-tier1-terraform-gate");
@@ -151,10 +152,20 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
       path.join(EXAMPLE_ROOT, ".github/workflows/changesafe-tier1-captured-plan.yml"),
       "utf8",
     );
-    expect(workflow).toContain("npx --yes --package=changesafe@0.5.0 changesafe gate");
+    expect(workflow).toContain(
+      "npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate",
+    );
     expect(workflow).not.toContain("hashicorp/setup-terraform");
     expect(workflow).not.toMatch(/\bterraform\s+(init|plan|show)\b/);
     expect(workflow).not.toMatch(/uses:\s*wonkwonlee\/ChangeSafe@/);
+
+    // Every npx invocation resolves `changesafe` against the real registry,
+    // not whatever a checked-out PR's `.npmrc` might redirect it to.
+    const npxInvocations = workflow.match(/npx --yes[^\n]*/g) ?? [];
+    expect(npxInvocations.length).toBeGreaterThan(0);
+    for (const invocation of npxInvocations) {
+      expect(invocation, invocation).toContain("--registry=https://registry.npmjs.org");
+    }
   });
 
   it("keeps the GitHub Action fail-closed when the gate blocks or cannot evaluate", () => {
@@ -229,7 +240,13 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
           : ChangeReceiptSchema.parse(rawReceipt);
         expect(parsedReceipt.decision).toBe(entry.expected.decision);
         expect(parsedReceipt.riskLevel).toBe(entry.expected.riskLevel);
-        expect(parsedReceipt.policyVersion).toBe(manifest.policyVersion);
+        // Against the live policy version, not `manifest.policyVersion`: the
+        // manifest is frozen to what the pinned, already-published
+        // `changesafe@0.5.0` actually emits, and main can legitimately carry
+        // policy fixes that package does not have yet. What this case proves
+        // is that the bundled CLI still reaches the same verdict for these
+        // fixed inputs — not that main is byte-identical to that release.
+        expect(parsedReceipt.policyVersion).toBe(TERRAFORM_LIVE_POLICY_VERSION);
         expect(parsedReceipt.appVersion).toBe(manifest.release.appVersion);
         expect(parsedReceipt.mode).toBe("offline");
         expect(parsedReceipt.simulation).toBeNull();

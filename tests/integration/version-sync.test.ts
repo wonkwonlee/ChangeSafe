@@ -126,6 +126,6 @@ describe("policy versions are not release versions", () => {
     // ever issued is compared through this string.
     expect(CORE_POLICY_VERSION).toBe("core-v0.2.0");
     expect(NETWORK_POLICY_VERSION).toBe("network-v0.1.0");
-    expect(TERRAFORM_POLICY_VERSION).toBe("terraform-v0.2.0");
+    expect(TERRAFORM_POLICY_VERSION).toBe("terraform-v0.2.1");
   });
 });

@@ -19,13 +19,22 @@ jobs:
           node-version: 22
 
       - name: Run ChangeSafe gate
+        # A checked-out PR is untrusted, and pinning `--registry` alone does
+        # not neutralize its tree: npm still reads a project-level `.npmrc`
+        # for every other setting (script-shell among them), and any of
+        # those could be turned into arbitrary code execution or a faked
+        # verdict. Running from $RUNNER_TEMP — outside the checkout, with no
+        # package.json above it — means npm never discovers that .npmrc at
+        # all, so nothing the PR added to the tree can reach this step's
+        # npm/npx configuration. Every file path is therefore absolute.
+        working-directory: ${{ runner.temp }}
         run: |
-          mkdir -p evidence
-          npx --yes --package=changesafe@0.5.0 changesafe gate \
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
-            --input fixtures/benign-scale-up.tfplan.json \
-            --receipt evidence/benign.receipt.json \
-            --format json | tee evidence/benign-result.json
+            --input "$GITHUB_WORKSPACE/fixtures/benign-scale-up.tfplan.json" \
+            --receipt "$GITHUB_WORKSPACE/evidence/benign.receipt.json" \
+            --format json | tee "$GITHUB_WORKSPACE/evidence/benign-result.json"
 
       - name: Assert benign verdict
         run: |
@@ -48,27 +57,31 @@ jobs:
           node-version: 22
 
       - name: Generate ephemeral receipt signing key
+        # Same isolation as the benign job: run from outside the checkout so
+        # the untrusted PR's .npmrc is never discovered.
+        working-directory: ${{ runner.temp }}
         run: |
-          mkdir -p evidence
-          npx --yes --package=changesafe@0.5.0 changesafe keygen \
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe keygen \
             --out "$RUNNER_TEMP/changesafe-hostile-signing-key" \
-            --format json | tee evidence/hostile-keygen.json
-          cp "$RUNNER_TEMP/changesafe-hostile-signing-key.pub.pem" evidence/hostile-signing-key.pub.pem
+            --format json | tee "$GITHUB_WORKSPACE/evidence/hostile-keygen.json"
+          cp "$RUNNER_TEMP/changesafe-hostile-signing-key.pub.pem" "$GITHUB_WORKSPACE/evidence/hostile-signing-key.pub.pem"
 
       - name: Run ChangeSafe gate
+        working-directory: ${{ runner.temp }}
         run: |
-          mkdir -p evidence
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
           set +e
-          npx --yes --package=changesafe@0.5.0 changesafe gate \
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
-            --input fixtures/hostile-protected-destroy.tfplan.json \
-            --context fixtures/hostile-pr-body.txt \
-            --receipt evidence/hostile.receipt.json \
+            --input "$GITHUB_WORKSPACE/fixtures/hostile-protected-destroy.tfplan.json" \
+            --context "$GITHUB_WORKSPACE/fixtures/hostile-pr-body.txt" \
+            --receipt "$GITHUB_WORKSPACE/evidence/hostile.receipt.json" \
             --sign-key "$RUNNER_TEMP/changesafe-hostile-signing-key.pem" \
-            --format json > evidence/hostile-result.json
+            --format json > "$GITHUB_WORKSPACE/evidence/hostile-result.json"
           code="$?"
           set -e
-          echo "$code" > evidence/hostile-exit-code.txt
+          echo "$code" > "$GITHUB_WORKSPACE/evidence/hostile-exit-code.txt"
           test "$code" -eq 1
 
       - name: Assert hostile verdict
@@ -76,11 +89,12 @@ jobs:
           node -e "const r=require('./evidence/hostile-result.json'); if (!r.blocked || r.riskLevel !== 'CRITICAL' || r.decision !== 'blocked') process.exit(1)"
 
       - name: Verify hostile signed receipt
+        working-directory: ${{ runner.temp }}
         run: |
-          npx --yes --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
-            --public-key evidence/hostile-signing-key.pub.pem \
-            --format json | tee evidence/hostile-verify.json
-          node -e "const v=require('./evidence/hostile-verify.json'); if (!v.ok || !v.signature || v.signature.verdict !== 'valid') process.exit(1)"
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe verify "$GITHUB_WORKSPACE/evidence/hostile.receipt.json" \
+            --public-key "$GITHUB_WORKSPACE/evidence/hostile-signing-key.pub.pem" \
+            --format json | tee "$GITHUB_WORKSPACE/evidence/hostile-verify.json"
+          node -e "const v=require(process.env.GITHUB_WORKSPACE + '/evidence/hostile-verify.json'); if (!v.ok || !v.signature || v.signature.verdict !== 'valid') process.exit(1)"
 
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
