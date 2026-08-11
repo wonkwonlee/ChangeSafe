@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **TL;DR**
+
 - AI agents can now propose real infrastructure changes — and will confidently propose a dangerous one.
 - ChangeSafe treats every AI proposal as untrusted data: a pure, deterministic policy engine decides what's safe, not the model's confidence score.
 - The public workbench is an ephemeral, keyless review surface. Authenticated self-hosting is the separate authority that can record human decisions and signed, ledger-backed receipts.
@@ -67,17 +68,17 @@ The bundled corpus is 26 scenarios across Network, Terraform, and Kubernetes.
 The nine Network scenarios below cover the gate verdict space and exercise the
 full engine in tests:
 
-| Bundled scenario | What it demonstrates | Outcome |
-| --- | --- | --- |
-| `INC-4821 — Degraded primary uplink` | A minimal, well-evidenced failover with a verified rollback passes every policy, so the decision is genuinely yours. | LOW · approvable |
-| `INC-5602 — Idle standby transit path` | Every policy passes, yet the sandbox reports a safety property broken: the gate and the simulation answer different questions. | LOW · approvable, flagged |
-| `INC-5133 — Transit route flapping` | A sound change that never says how success would be confirmed earns one warning. | MEDIUM · approvable |
-| `INC-5290 — Egress load imbalance` | Warnings accumulate: two devices touched *and* no precondition. | HIGH · approvable |
-| `INC-4977 — Suspected route leak` | A confident proposal obeys an instruction injected into an operator note and would sever the only management path to a protected firewall. | CRITICAL · blocked |
-| `INC-5744 — Firewall CPU saturation` | The injection arrives in an *alert body*, not a note, and disabling the uplink severs management to a protected device. | CRITICAL · blocked |
-| `INC-5810 — Branch aggregate black-holed` | A substantively correct fix that smuggles device CLI into a declarative value and targets a route that does not exist. | CRITICAL · blocked |
-| `INC-5341 — Replication window overrun` | The proposal *has* a rollback — it just restores the wrong value, which replaying it on a sandboxed copy proves. | CRITICAL · blocked |
-| `INC-5388 — Intermittent access-layer loss` | A one-device incident answered with a three-device "while we're in there" change. | CRITICAL · blocked |
+| Bundled scenario                            | What it demonstrates                                                                                                                       | Outcome                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `INC-4821 — Degraded primary uplink`        | A minimal, well-evidenced failover with a verified rollback passes every policy, so the decision is genuinely yours.                       | LOW · approvable          |
+| `INC-5602 — Idle standby transit path`      | Every policy passes, yet the sandbox reports a safety property broken: the gate and the simulation answer different questions.             | LOW · approvable, flagged |
+| `INC-5133 — Transit route flapping`         | A sound change that never says how success would be confirmed earns one warning.                                                           | MEDIUM · approvable       |
+| `INC-5290 — Egress load imbalance`          | Warnings accumulate: two devices touched _and_ no precondition.                                                                            | HIGH · approvable         |
+| `INC-4977 — Suspected route leak`           | A confident proposal obeys an instruction injected into an operator note and would sever the only management path to a protected firewall. | CRITICAL · blocked        |
+| `INC-5744 — Firewall CPU saturation`        | The injection arrives in an _alert body_, not a note, and disabling the uplink severs management to a protected device.                    | CRITICAL · blocked        |
+| `INC-5810 — Branch aggregate black-holed`   | A substantively correct fix that smuggles device CLI into a declarative value and targets a route that does not exist.                     | CRITICAL · blocked        |
+| `INC-5341 — Replication window overrun`     | The proposal _has_ a rollback — it just restores the wrong value, which replaying it on a sandboxed copy proves.                           | CRITICAL · blocked        |
+| `INC-5388 — Intermittent access-layer loss` | A one-device incident answered with a three-device "while we're in there" change.                                                          | CRITICAL · blocked        |
 
 Here, “approvable” describes the core gate classification: no BLOCK was
 found, so an authority-bearing runtime may request a human decision. It never
@@ -205,11 +206,11 @@ Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 
 Three providers are supported and none is privileged:
 
-| Provider | Configure with | Structured output via |
-| --- | --- | --- |
-| OpenAI | `OPENAI_API_KEY` | Responses API, strict `json_schema` |
-| Anthropic | `ANTHROPIC_API_KEY` | Messages API, forced strict tool call |
-| Ollama (local) | nothing — just run it | `format` JSON Schema |
+| Provider       | Configure with        | Structured output via                 |
+| -------------- | --------------------- | ------------------------------------- |
+| OpenAI         | `OPENAI_API_KEY`      | Responses API, strict `json_schema`   |
+| Anthropic      | `ANTHROPIC_API_KEY`   | Messages API, forced strict tool call |
+| Ollama (local) | nothing — just run it | `format` JSON Schema                  |
 
 The browser live-analysis compatibility route has been removed. Exact
 `POST /api/analyze` and exact `/workbench` are intentionally retired; the
@@ -224,8 +225,8 @@ All three adapters are plain `fetch` — no vendor SDKs, so the CLI stays
 dependency-free and every adapter is testable without a network or a
 credential. One Zod schema derives all three wire schemas, and every
 provider's output faces the identical local validation. Because the gate is
-deterministic, swapping models changes what gets *proposed* and never what is
-*safe*: a weaker model produces more rejections and more blocks, never a
+deterministic, swapping models changes what gets _proposed_ and never what is
+_safe_: a weaker model produces more rejections and more blocks, never a
 weaker verdict.
 
 ```bash
@@ -284,10 +285,10 @@ credentials for your infrastructure, and never applies anything.
   uses: wonkwonlee/ChangeSafe@v0.5.0
   with:
     plan: tfplan.json
-    context: pr-body.txt   # untrusted text, scanned but never obeyed
+    context: pr-body.txt # untrusted text, scanned but never obeyed
 ```
 
-`@v0` tracks the newest `v0.x` patch if you would rather receive fixes
+`@v0` tracks the newest `v0` release if you would rather receive updates
 automatically; pin the exact tag, or a commit SHA, if you want the stricter
 supply-chain posture. Either way, the pull request body must reach the gate
 through the environment and never through a `${{ }}` expression inside a
@@ -308,7 +309,7 @@ telling the review tooling to approve it anyway:
 ```
 
 The injected instruction changes nothing: the block comes from what the plan
-*does*, not from reading the text. Copy
+_does_, not from reading the text. Copy
 [the example workflow](examples/github-actions/gate-terraform-plan.yml) to
 start.
 
@@ -336,9 +337,16 @@ invalid; the bundled CLI was unaffected. See the
 The engine is a library, and the CLI is the same engine with **no AI
 dependency** — nothing in the gate calls a model.
 
+To gate your own Terraform plan outside this repository, pass the artifact
+your pipeline already generated and any accompanying untrusted context:
+
 ```bash
-npx changesafe gate --scenario scenarios/network/scenario-b-route-leak
+npx --yes changesafe@0.5.0 gate --domain terraform \
+  --input ./tfplan.json --context ./pr-body.txt
 ```
+
+The `--scenario scenarios/...` examples below are repository fixtures; clone
+this repository before using them.
 
 ```text
   PASS   PATCH_SCHEMA           All operations are valid declarative patches
@@ -411,15 +419,15 @@ npm i @changesafe/core @changesafe/domain-terraform   # embed the gate
 npm i -g changesafe                                    # or just npx changesafe
 ```
 
-| Package | What it is |
-| --- | --- |
+| Package                                       | What it is                                                                                                                                                                  |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@changesafe/core`](packages/core/README.md) | The domain-agnostic gate: proposal contract, universal policies, risk derivation, workflow state machine, receipts, and the `DomainAdapter` contract. Depends on zod alone. |
-| `@changesafe/domain-network` | The network domain: declarative device state, allowlisted transactional patch engine, deterministic reachability, sandboxed simulation, network policies. |
-| `@changesafe/domain-terraform` | The Terraform domain: normalizes `terraform show -json` and polices destruction, protection, and reversibility. Read-only; never runs Terraform. |
-| `@changesafe/domain-kubernetes` | The Kubernetes domain: normalizes offline snapshots and proposed manifests, then applies deterministic workload, selector, protection, image, and privilege policies. |
-| [`changesafe`](packages/cli/README.md) | The CLI: `gate`, `verify`, `scenario`, and read-only Kubernetes collection. Ships pre-bundled to run under plain Node. |
+| `@changesafe/domain-network`                  | The network domain: declarative device state, allowlisted transactional patch engine, deterministic reachability, sandboxed simulation, network policies.                   |
+| `@changesafe/domain-terraform`                | The Terraform domain: normalizes `terraform show -json` and polices destruction, protection, and reversibility. Read-only; never runs Terraform.                            |
+| `@changesafe/domain-kubernetes`               | The Kubernetes domain: normalizes offline snapshots and proposed manifests, then applies deterministic workload, selector, protection, image, and privilege policies.       |
+| [`changesafe`](packages/cli/README.md)        | The CLI: `gate`, `verify`, `scenario`, and read-only Kubernetes collection. Ships pre-bundled to run under plain Node.                                                      |
 
-A domain teaches core what a change *is* in its world; core's universal
+A domain teaches core what a change _is_ in its world; core's universal
 policies then work unchanged. `packages/core/tests/standalone-domain.test.ts`
 implements a complete toy domain in one file to show the whole contract.
 The app-level registration and generic coverage path are documented in the

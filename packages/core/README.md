@@ -8,38 +8,56 @@ policies validate it, a human decides, and every outcome — approved,
 rejected, or blocked — becomes a hashed **receipt**. Core never executes
 anything and never calls a model.
 
-> Status: pre-release, developed inside the ChangeSafe repository and not yet
-> published to npm. The API is stable enough to build on but may change
-> before `1.0`; see `docs/OSS_ROADMAP.md`.
+> Status: published on npm as `@changesafe/core@0.5.0`. The API remains
+> pre-1.0 and may change between minor releases; pin a version in production
+> integrations and see `docs/OSS_ROADMAP.md` for the roadmap.
 
 ## The shape of a gate
 
 ```ts
-import { evaluatePolicies, initialState, transition, createReceipt } from "@changesafe/core";
+import {
+  evaluatePolicies,
+  initialState,
+  transition,
+  createReceipt,
+} from "@changesafe/core";
 import { networkDomain } from "@changesafe/domain-network";
 
-const { findings, riskLevel } = evaluatePolicies(networkDomain, bundle, proposal);
+const { findings, riskLevel } = evaluatePolicies(
+  networkDomain,
+  bundle,
+  proposal,
+);
 
 let state = initialState("scenario-a", bundle);
 state = transition(state, { type: "START_ANALYSIS", mode: "replay" });
-state = transition(state, { type: "PROPOSAL_RECEIVED", proposal, mode: "replay", provenance: "authored_synthetic" });
-state = transition(state, { type: "VALIDATION_COMPLETED", findings, riskLevel });
+state = transition(state, {
+  type: "PROPOSAL_RECEIVED",
+  proposal,
+  mode: "replay",
+  provenance: "authored_synthetic",
+});
+state = transition(state, {
+  type: "VALIDATION_COMPLETED",
+  findings,
+  riskLevel,
+});
 state = transition(state, { type: "CLASSIFY" });
 // -> "BLOCKED" or "APPROVAL_REQUIRED"; only a human dispatches APPROVE/REJECT
 ```
 
 ## What core owns
 
-| Area | Exports |
-| --- | --- |
-| Proposal contract | `ChangeProposalSchema`, `ChangeOperationSchema`, `makeProposalSchemas` |
-| Findings and risk | `PolicyFindingSchema`, `deriveRiskLevel`, `hasBlockingFinding` |
+| Area               | Exports                                                                                               |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| Proposal contract  | `ChangeProposalSchema`, `ChangeOperationSchema`, `makeProposalSchemas`                                |
+| Findings and risk  | `PolicyFindingSchema`, `deriveRiskLevel`, `hasBlockingFinding`                                        |
 | Universal policies | `PATCH_SCHEMA`, `BLAST_RADIUS`, `ROLLBACK_COMPLETE`, `VERIFICATION_REQUIRED`, `UNTRUSTED_INSTRUCTION` |
-| The gate | `evaluatePolicies`, `policyOrder` |
-| Workflow | `initialState`, `transition`, `WorkflowState` |
-| Receipts | `createReceipt`, `verifyReceiptHash`, `canonicalize`, `hashCanonical` |
-| Validation | `validateProposalEvidence` |
-| Scenario contracts | `ScenarioExpectationsSchema` |
+| The gate           | `evaluatePolicies`, `policyOrder`                                                                     |
+| Workflow           | `initialState`, `transition`, `WorkflowState`                                                         |
+| Receipts           | `createReceipt`, `verifyReceiptHash`, `canonicalize`, `hashCanonical`                                 |
+| Validation         | `validateProposalEvidence`                                                                            |
+| Scenario contracts | `ScenarioExpectationsSchema`                                                                          |
 
 Risk derivation is fixed and domain-independent: any `BLOCK` → `CRITICAL`,
 two or more `WARN` → `HIGH`, one `WARN` → `MEDIUM`, otherwise `LOW`. Model
@@ -47,7 +65,7 @@ confidence is never an input.
 
 ## Implementing a domain
 
-A domain teaches core what a change *is* in its world. Core's universal
+A domain teaches core what a change _is_ in its world. Core's universal
 policies then work unchanged.
 
 ```ts
@@ -100,9 +118,9 @@ to understanding the contract.
 
 ## Consuming this package
 
-It currently ships TypeScript source and is consumed through a bundler
-(Turbopack in the app, Vitest in tests) via workspace resolution. A compiled
-build lands with the CLI, which must run under plain Node.
+Install the compiled package with `npm i @changesafe/core`. Repository
+development uses workspace resolution; published consumers import the compiled
+ESM build under plain Node or a bundler.
 
 ## License
 

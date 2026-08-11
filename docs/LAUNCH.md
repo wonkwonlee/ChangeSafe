@@ -80,9 +80,11 @@ Also exercise `POST /api/reviews/analyze` with a request body: it must
 reject a malformed one against the versioned review contract (400, not
 404), proving the route is live and schema-enforced rather than absent.
 
-**Verified 2026-07-30**: all of the above pass against the hosted
-deployment. The hosted URL currently serves the vNext workbench — safe to
-use as demo and cutover evidence.
+**Route-status snapshot refreshed 2026-08-10**: `/` and the Terraform,
+Kubernetes, and self-hosted workbench routes return 200; exact `/workbench`
+and `POST /api/analyze` return 404; a malformed request to
+`POST /api/reviews/analyze` returns 400. Before posting, repeat the checks
+against the exact deployed commit and manually replay one bundled scenario.
 
 ## Short product description
 
