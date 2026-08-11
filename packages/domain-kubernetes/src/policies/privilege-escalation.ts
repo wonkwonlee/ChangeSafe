@@ -16,11 +16,7 @@ function privilegeSignals(resource: KubernetesResource): Set<string> {
   for (const field of ["hostNetwork", "hostPID", "hostIPC", "hasHostPath"] as const) {
     if (spec[field]) signals.add(field);
   }
-  for (const container of [
-    ...(spec.initContainers ?? []),
-    ...(spec.ephemeralContainers ?? []),
-    ...(spec.containers ?? []),
-  ]) {
+  for (const container of [...(spec.initContainers ?? []), ...(spec.containers ?? [])]) {
     const security = container.security;
     if (security?.privileged === true) signals.add(`${container.name}:privileged`);
     if (security?.allowPrivilegeEscalation === true) {

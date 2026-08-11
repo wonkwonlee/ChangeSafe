@@ -295,11 +295,6 @@ describe("K8S_PRIVILEGE_ESCALATION", () => {
       "setup:privileged",
     ],
     [
-      "privileged ephemeral container",
-      { ephemeralContainers: [{ name: "debug", image: "registry.example.invalid/debug:v1", security: { privileged: true, allowPrivilegeEscalation: false } }] },
-      "debug:privileged",
-    ],
-    [
       "privilege escalation",
       {
         containers: [

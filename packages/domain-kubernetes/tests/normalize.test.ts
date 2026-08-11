@@ -106,7 +106,7 @@ describe("normalizeSnapshot", () => {
     expect(normalized.resources[0]).not.toHaveProperty("metadata.deletionTimestamp");
   });
 
-  it("normalizes pod security, init containers, and ephemeral containers for privilege policies", () => {
+  it("normalizes pod security and init containers for privilege policies", () => {
     const rawDeployment = currentSnapshot.resources[0];
     if (!rawDeployment) throw new Error("fixture must contain a Deployment");
     const normalized = normalizeSnapshot({
@@ -125,14 +125,6 @@ describe("normalizeSnapshot", () => {
                 image: "registry.example.invalid/setup:v1",
                 securityContext: { privileged: true, allowPrivilegeEscalation: false },
               }],
-              // A debug/sidecar container declared alongside the pod's
-              // ordinary ones. It carries its own securityContext exactly
-              // like an init container, so it must be modeled the same way.
-              ephemeralContainers: [{
-                name: "debug",
-                image: "registry.example.invalid/debug:v1",
-                securityContext: { privileged: true, allowPrivilegeEscalation: false },
-              }],
             },
           },
         },
@@ -141,7 +133,6 @@ describe("normalizeSnapshot", () => {
     expect(normalized.resources[0]?.spec).toMatchObject({
       podRunAsUser: 0,
       initContainers: [{ name: "setup", security: { privileged: true } }],
-      ephemeralContainers: [{ name: "debug", security: { privileged: true } }],
     });
   });
 

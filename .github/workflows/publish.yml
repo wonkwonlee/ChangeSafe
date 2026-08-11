@@ -82,26 +82,19 @@ jobs:
               exit 1
             fi
           done
-          # Which packages a resumed run still has to send. The selection lives
-          # in a script so it can be tested; see
-          # tests/integration/release-publish-selection.test.ts. An
-          # already-published version is only trusted when it was published
-          # from this exact commit — otherwise the script refuses rather than
-          # silently blessing whatever is already on the registry.
-          GIT_HEAD=$(git rev-parse HEAD)
-          REMAINING=$(./scripts/select-unpublished.sh "$VERSION" "$GIT_HEAD" \
+          # A version already on the registry fails the run rather than being
+          # treated as done: this script has no way to prove that an existing
+          # publish came from this workflow rather than a hand-publish or a
+          # compromised account, so it refuses instead of silently blessing
+          # whatever is already there. The selection lives in a script so it
+          # can be tested; see tests/integration/release-publish-selection.test.ts.
+          REMAINING=$(./scripts/select-unpublished.sh "$VERSION" \
             @changesafe/core \
             @changesafe/domain-network \
             @changesafe/domain-terraform \
             @changesafe/domain-kubernetes \
             changesafe | tr '\n' ' ')
-          # Named explicitly so a resumed run says what it is about to do, and
-          # a run with nothing left to do says that rather than looking busy.
-          if [ -z "${REMAINING// /}" ]; then
-            echo "::notice::every package is already published at $VERSION; nothing left to publish"
-          else
-            echo "will publish: $REMAINING"
-          fi
+          echo "will publish: $REMAINING"
           echo "REMAINING=$REMAINING" >> "$GITHUB_ENV"
 
       # Publishing is the one action that cannot be undone, so the gate runs

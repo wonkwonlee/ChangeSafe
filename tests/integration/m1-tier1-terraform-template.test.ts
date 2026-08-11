@@ -18,6 +18,7 @@ import {
   hashCanonical,
   verifyReceiptHash,
 } from "@changesafe/core";
+import { POLICY_VERSION as TERRAFORM_LIVE_POLICY_VERSION } from "@changesafe/domain-terraform";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const EXAMPLE_ROOT = path.join(REPO_ROOT, "examples/m1-tier1-terraform-gate");
@@ -122,7 +123,7 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
       gitHead: "c1ae07e9c6de14c0204f4a667eaec69e2cca59a9",
       appVersion: "changesafe-cli-0.5.0",
     });
-    expect(manifest.policyVersion).toBe("core-v0.2.0+terraform-v0.2.1");
+    expect(manifest.policyVersion).toBe("core-v0.2.0+terraform-v0.2.0");
     expect(manifest.cases.map((entry) => entry.caseId)).toEqual([
       "m1-tier1-benign",
       "m1-tier1-hostile",
@@ -239,7 +240,13 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
           : ChangeReceiptSchema.parse(rawReceipt);
         expect(parsedReceipt.decision).toBe(entry.expected.decision);
         expect(parsedReceipt.riskLevel).toBe(entry.expected.riskLevel);
-        expect(parsedReceipt.policyVersion).toBe(manifest.policyVersion);
+        // Against the live policy version, not `manifest.policyVersion`: the
+        // manifest is frozen to what the pinned, already-published
+        // `changesafe@0.5.0` actually emits, and main can legitimately carry
+        // policy fixes that package does not have yet. What this case proves
+        // is that the bundled CLI still reaches the same verdict for these
+        // fixed inputs — not that main is byte-identical to that release.
+        expect(parsedReceipt.policyVersion).toBe(TERRAFORM_LIVE_POLICY_VERSION);
         expect(parsedReceipt.appVersion).toBe(manifest.release.appVersion);
         expect(parsedReceipt.mode).toBe("offline");
         expect(parsedReceipt.simulation).toBeNull();

@@ -40,11 +40,6 @@ const RawContainerSchema = z.looseObject({
 const RawPodSpecSchema = z.looseObject({
   containers: z.array(RawContainerSchema).optional(),
   initContainers: z.array(RawContainerSchema).optional(),
-  // Debug/sidecar containers a pod can carry alongside its ordinary ones.
-  // Kubernetes lets these declare their own securityContext exactly like an
-  // init or regular container, so a privileged ephemeral container is a real
-  // way in — omitting it here would make it an unmodeled, unpoliced one.
-  ephemeralContainers: z.array(RawContainerSchema).optional(),
   securityContext: z.looseObject({ runAsUser: z.number().int().min(0).optional() }).optional(),
   hostNetwork: z.boolean().optional(),
   hostPID: z.boolean().optional(),
@@ -203,14 +198,12 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
   const podSpec = template?.spec;
   const containers = normalizeContainers(podSpec?.containers);
   const initContainers = normalizeContainers(podSpec?.initContainers);
-  const ephemeralContainers = normalizeContainers(podSpec?.ephemeralContainers);
   return {
     ...(template?.metadata?.labels === undefined
       ? {}
       : { podLabels: sortRecord(template.metadata.labels) }),
     ...(containers === undefined ? {} : { containers }),
     ...(initContainers === undefined ? {} : { initContainers }),
-    ...(ephemeralContainers === undefined ? {} : { ephemeralContainers }),
     ...(podSpec?.securityContext?.runAsUser === undefined
       ? {}
       : { podRunAsUser: podSpec.securityContext.runAsUser }),

@@ -24225,7 +24225,6 @@ var KubernetesWorkloadSpecBaseShape = {
   podLabels: KubernetesLabelMapSchema.optional(),
   containers: external_exports.array(KubernetesContainerSchema).max(256).optional(),
   initContainers: external_exports.array(KubernetesContainerSchema).max(256).optional(),
-  ephemeralContainers: external_exports.array(KubernetesContainerSchema).max(256).optional(),
   podRunAsUser: external_exports.number().int().min(0).optional(),
   hostNetwork: external_exports.boolean().optional(),
   hostPID: external_exports.boolean().optional(),
@@ -24421,11 +24420,6 @@ var RawContainerSchema = external_exports.looseObject({
 var RawPodSpecSchema = external_exports.looseObject({
   containers: external_exports.array(RawContainerSchema).optional(),
   initContainers: external_exports.array(RawContainerSchema).optional(),
-  // Debug/sidecar containers a pod can carry alongside its ordinary ones.
-  // Kubernetes lets these declare their own securityContext exactly like an
-  // init or regular container, so a privileged ephemeral container is a real
-  // way in — omitting it here would make it an unmodeled, unpoliced one.
-  ephemeralContainers: external_exports.array(RawContainerSchema).optional(),
   securityContext: external_exports.looseObject({ runAsUser: external_exports.number().int().min(0).optional() }).optional(),
   hostNetwork: external_exports.boolean().optional(),
   hostPID: external_exports.boolean().optional(),
@@ -24541,12 +24535,10 @@ function normalizePodSpec(template) {
   const podSpec = template?.spec;
   const containers = normalizeContainers(podSpec?.containers);
   const initContainers = normalizeContainers(podSpec?.initContainers);
-  const ephemeralContainers = normalizeContainers(podSpec?.ephemeralContainers);
   return {
     ...template?.metadata?.labels === void 0 ? {} : { podLabels: sortRecord(template.metadata.labels) },
     ...containers === void 0 ? {} : { containers },
     ...initContainers === void 0 ? {} : { initContainers },
-    ...ephemeralContainers === void 0 ? {} : { ephemeralContainers },
     ...podSpec?.securityContext?.runAsUser === void 0 ? {} : { podRunAsUser: podSpec.securityContext.runAsUser },
     hostNetwork: podSpec?.hostNetwork ?? false,
     hostPID: podSpec?.hostPID ?? false,
@@ -25034,11 +25026,7 @@ function privilegeSignals(resource) {
   for (const field of ["hostNetwork", "hostPID", "hostIPC", "hasHostPath"]) {
     if (spec[field]) signals.add(field);
   }
-  for (const container of [
-    ...spec.initContainers ?? [],
-    ...spec.ephemeralContainers ?? [],
-    ...spec.containers ?? []
-  ]) {
+  for (const container of [...spec.initContainers ?? [], ...spec.containers ?? []]) {
     const security = container.security;
     if (security?.privileged === true) signals.add(`${container.name}:privileged`);
     if (security?.allowPrivilegeEscalation === true) {
@@ -25190,7 +25178,7 @@ function evaluateWorkloadAvailability(context) {
 }
 
 // ../domain-kubernetes/src/version.ts
-var KUBERNETES_POLICY_VERSION = "kubernetes-v0.1.1";
+var KUBERNETES_POLICY_VERSION = "kubernetes-v0.1.0";
 var POLICY_VERSION2 = `${CORE_POLICY_VERSION}+${KUBERNETES_POLICY_VERSION}`;
 
 // ../domain-kubernetes/src/adapter.ts
