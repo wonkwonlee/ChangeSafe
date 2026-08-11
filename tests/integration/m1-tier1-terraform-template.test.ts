@@ -122,7 +122,7 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
       gitHead: "c1ae07e9c6de14c0204f4a667eaec69e2cca59a9",
       appVersion: "changesafe-cli-0.5.0",
     });
-    expect(manifest.policyVersion).toBe("core-v0.2.0+terraform-v0.2.0");
+    expect(manifest.policyVersion).toBe("core-v0.2.0+terraform-v0.2.1");
     expect(manifest.cases.map((entry) => entry.caseId)).toEqual([
       "m1-tier1-benign",
       "m1-tier1-hostile",
@@ -151,10 +151,20 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
       path.join(EXAMPLE_ROOT, ".github/workflows/changesafe-tier1-captured-plan.yml"),
       "utf8",
     );
-    expect(workflow).toContain("npx --yes --package=changesafe@0.5.0 changesafe gate");
+    expect(workflow).toContain(
+      "npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate",
+    );
     expect(workflow).not.toContain("hashicorp/setup-terraform");
     expect(workflow).not.toMatch(/\bterraform\s+(init|plan|show)\b/);
     expect(workflow).not.toMatch(/uses:\s*wonkwonlee\/ChangeSafe@/);
+
+    // Every npx invocation resolves `changesafe` against the real registry,
+    // not whatever a checked-out PR's `.npmrc` might redirect it to.
+    const npxInvocations = workflow.match(/npx --yes[^\n]*/g) ?? [];
+    expect(npxInvocations.length).toBeGreaterThan(0);
+    for (const invocation of npxInvocations) {
+      expect(invocation, invocation).toContain("--registry=https://registry.npmjs.org");
+    }
   });
 
   it("keeps the GitHub Action fail-closed when the gate blocks or cannot evaluate", () => {

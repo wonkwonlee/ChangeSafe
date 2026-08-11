@@ -96,6 +96,13 @@ result = renameat2(
 )
 sys.exit(0 if result == 0 else 1)
 `;
+// `subprocessEnvironment()` below keeps these out of every child process this
+// script spawns, but that only covers processes it spawns itself. The
+// `build:bundle:v0.1.0` npm script chains a `build:cli` step ahead of this
+// file in the same shell invocation, so it explicitly unsets
+// CHANGESAFE_DEMO_SIGNING_KEY before that step — the CLI build has no need to
+// see a private-key path, and build tooling is exactly the kind of thing a
+// supply-chain compromise would target.
 const REQUIRED_ENVIRONMENT = [
   "CHANGESAFE_DEMO_SIGNING_KEY",
   "CHANGESAFE_DEMO_PUBLIC_KEY",

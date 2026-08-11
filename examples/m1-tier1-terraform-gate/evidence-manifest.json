@@ -7,7 +7,7 @@
     "gitHead": "c1ae07e9c6de14c0204f4a667eaec69e2cca59a9",
     "appVersion": "changesafe-cli-0.5.0"
   },
-  "policyVersion": "core-v0.2.0+terraform-v0.2.0",
+  "policyVersion": "core-v0.2.0+terraform-v0.2.1",
   "cases": [
     {
       "caseId": "m1-tier1-benign",

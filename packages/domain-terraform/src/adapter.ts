@@ -18,7 +18,7 @@ import {
   type TerraformPolicyPack,
 } from "./schemas";
 
-export const TERRAFORM_POLICY_VERSION = "terraform-v0.2.0";
+export const TERRAFORM_POLICY_VERSION = "terraform-v0.2.1";
 export const POLICY_VERSION = `${CORE_POLICY_VERSION}+${TERRAFORM_POLICY_VERSION}`;
 
 /**

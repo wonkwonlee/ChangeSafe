@@ -63,10 +63,60 @@ describe("plan normalization", () => {
     expect(() => validateProposalEvidence(terraformDomain, input, proposal)).not.toThrow();
   });
 
-  it("collects tags from before and after state", () => {
+  it("collects tags from the resource's prior state", () => {
     const input = normalizePlan(loadPlan("protected-and-injected"));
     const bucket = input.changes.find((change) => change.resourceType === "aws_s3_bucket");
     expect(bucket?.tags.changesafe_protected).toBe("true");
+  });
+
+  it("falls back to after-state tags only when there is no prior resource", () => {
+    const input = normalizePlan({
+      resource_changes: [
+        {
+          address: "aws_instance.new",
+          type: "aws_instance",
+          change: { actions: ["create"], before: null, after: { tags: { owner: "sre" } } },
+        },
+      ],
+    });
+    expect(input.changes[0]?.tags.owner).toBe("sre");
+  });
+
+  it("never lets a replacement's tags override the destroyed resource's own tags", () => {
+    // A "replace" merges one plan entry's before (destroyed) and after
+    // (replacement) state. An attacker who controls the plan can freely set
+    // tags on `after` — the resource that is about to exist — but must not
+    // be able to use them to fake a backup or clear protection on the
+    // resource that is actually being destroyed.
+    const forgedBackup = normalizePlan({
+      resource_changes: [
+        {
+          address: "aws_db_instance.primary",
+          type: "aws_db_instance",
+          change: {
+            actions: ["delete", "create"],
+            before: { tags: {} },
+            after: { tags: { changesafe_backup: "true" } },
+          },
+        },
+      ],
+    });
+    expect(forgedBackup.changes[0]?.tags.changesafe_backup).toBeUndefined();
+
+    const clearedProtection = normalizePlan({
+      resource_changes: [
+        {
+          address: "aws_db_instance.primary",
+          type: "aws_db_instance",
+          change: {
+            actions: ["delete", "create"],
+            before: { tags: { changesafe_protected: "true" } },
+            after: { tags: { changesafe_protected: "false" } },
+          },
+        },
+      ],
+    });
+    expect(clearedProtection.changes[0]?.tags.changesafe_protected).toBe("true");
   });
 
   it("maps plan actions onto the gate's operation kinds", () => {
@@ -189,6 +239,31 @@ describe("the terraform gate", () => {
     // The injection asked for approval; the gate blocked anyway, because the
     // block comes from the plan's contents, not from reading the text.
     expect(injection?.status).not.toBe("BLOCK");
+  });
+
+  it("cannot be talked out of blocking by tags planted on the replacement resource", () => {
+    // Same shape as the protected-and-injected fixture (a "replace"), but the
+    // protected tag now lives only on `before` and the replacement tries to
+    // clear it — the exact forgery a plan author fully controls.
+    const input = normalizePlan({
+      resource_changes: [
+        {
+          address: "module.audit.aws_s3_bucket.compliance_logs",
+          type: "aws_s3_bucket",
+          change: {
+            actions: ["delete", "create"],
+            before: { tags: { changesafe_protected: "true" } },
+            after: { tags: { changesafe_protected: "false", changesafe_backup: "true" } },
+          },
+        },
+      ],
+    });
+    const proposal = deriveProposal(input);
+    const { findings, riskLevel } = evaluatePolicies(terraformDomain, input, proposal);
+
+    expect(statusOf(findings, "PROTECTED_RESOURCE")).toBe("BLOCK");
+    expect(statusOf(findings, "DESTRUCTIVE_OP")).toBe("BLOCK");
+    expect(riskLevel).toBe("CRITICAL");
   });
 
   it("blocks a destroy whose prior state was never recorded", () => {

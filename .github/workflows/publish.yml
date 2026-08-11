@@ -84,8 +84,12 @@ jobs:
           done
           # Which packages a resumed run still has to send. The selection lives
           # in a script so it can be tested; see
-          # tests/integration/release-publish-selection.test.ts.
-          REMAINING=$(./scripts/select-unpublished.sh "$VERSION" \
+          # tests/integration/release-publish-selection.test.ts. An
+          # already-published version is only trusted when it was published
+          # from this exact commit — otherwise the script refuses rather than
+          # silently blessing whatever is already on the registry.
+          GIT_HEAD=$(git rev-parse HEAD)
+          REMAINING=$(./scripts/select-unpublished.sh "$VERSION" "$GIT_HEAD" \
             @changesafe/core \
             @changesafe/domain-network \
             @changesafe/domain-terraform \

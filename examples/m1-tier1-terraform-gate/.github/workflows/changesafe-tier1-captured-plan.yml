@@ -19,9 +19,15 @@ jobs:
           node-version: 22
 
       - name: Run ChangeSafe gate
+        # The checked-out PR contents can carry a project-level `.npmrc` that
+        # redirects the registry npx resolves `changesafe@0.5.0` against. A
+        # forked PR could point it at a counterfeit package that fakes a
+        # passing verdict. `--registry` is a CLI flag, which outranks any
+        # `.npmrc` in npm's config precedence, so the real registry is what
+        # npx actually asks regardless of what the PR added to the tree.
         run: |
           mkdir -p evidence
-          npx --yes --package=changesafe@0.5.0 changesafe gate \
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
             --input fixtures/benign-scale-up.tfplan.json \
             --receipt evidence/benign.receipt.json \
@@ -48,9 +54,12 @@ jobs:
           node-version: 22
 
       - name: Generate ephemeral receipt signing key
+        # Same registry pin as the benign job: the checked-out PR tree is
+        # untrusted, and a project-level `.npmrc` must not be able to steer
+        # npx at a counterfeit `changesafe` package.
         run: |
           mkdir -p evidence
-          npx --yes --package=changesafe@0.5.0 changesafe keygen \
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe keygen \
             --out "$RUNNER_TEMP/changesafe-hostile-signing-key" \
             --format json | tee evidence/hostile-keygen.json
           cp "$RUNNER_TEMP/changesafe-hostile-signing-key.pub.pem" evidence/hostile-signing-key.pub.pem
@@ -59,7 +68,7 @@ jobs:
         run: |
           mkdir -p evidence
           set +e
-          npx --yes --package=changesafe@0.5.0 changesafe gate \
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe gate \
             --domain terraform \
             --input fixtures/hostile-protected-destroy.tfplan.json \
             --context fixtures/hostile-pr-body.txt \
@@ -77,7 +86,7 @@ jobs:
 
       - name: Verify hostile signed receipt
         run: |
-          npx --yes --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
+          npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe verify evidence/hostile.receipt.json \
             --public-key evidence/hostile-signing-key.pub.pem \
             --format json | tee evidence/hostile-verify.json
           node -e "const v=require('./evidence/hostile-verify.json'); if (!v.ok || !v.signature || v.signature.verdict !== 'valid') process.exit(1)"
