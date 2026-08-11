@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 #
 # Print the packages that are not yet on the registry at a given version, one
-# per line, in the order they were passed.
+# per line, in the order they were passed. Any package that already has a
+# version published — for any reason — fails the run instead.
 #
-# Publishing the workspace is five separate registry calls, so a failure
-# partway through leaves some packages live and the rest missing. This decides
-# what a resumed run still has to do. It is a separate script rather than
-# inline YAML so it can be tested: the selection is the part where a mistake is
-# silent — skipping a package that was never published produces an incomplete
-# release that still reports success.
+# An earlier version of this script skipped an already-published package
+# instead of failing, so a run that died partway through publishing (five
+# packages, five separate registry calls) could be resumed by re-running the
+# release. That convenience is also exactly the gap a compromised publisher
+# or a stray hand-publish needs: nothing here can tell "this package reached
+# the registry because an earlier run of *this* release workflow put it
+# there" apart from "someone else already published this version number."
+# A `gitHead` comparison was tried and removed for the same reason: npm's
+# `package.json` normalizer only derives `gitHead` from git when the field
+# is absent, so a publisher — compromised or not — can hardcode the real
+# release commit into a malicious package.json before publishing (that
+# commit is public on an open-source repo anyway), and the check would wave
+# it through. That is not verification, only the appearance of it.
 #
-# Any already-published version fails the run rather than being treated as
-# satisfied. A `gitHead` comparison was tried here and removed: npm's
-# `package.json` normalizer only derives `gitHead` from git when the field is
-# absent, so a publisher can simply hardcode the real release commit into a
-# malicious package.json before publishing — a value that is public anyway
-# on an open-source repo — and the check would wave it through. That is not
-# verification, only the appearance of it. Real protection needs npm's signed
-# provenance/attestation, which this script does not attempt; until it does,
-# a human deciding whether an existing publish is trustworthy is the honest
-# answer, not an automated check that can be satisfied by copying a public
-# commit hash into a manifest.
+# Real protection needs npm's signed provenance/attestation (verifiable,
+# for example, via `gh attestation verify` against the published tarball),
+# not a string comparison — that is future work. Until then, failing closed
+# and recovering by hand (see CONTRIBUTING.md) is the honest answer, not an
+# automated check a publisher can satisfy by copying a public commit hash.
 #
 # Usage: select-unpublished.sh <version> <package>...
 set -euo pipefail
@@ -33,7 +35,7 @@ for NAME in "$@"; do
   # failure (network, auth) also lands here, which is the safe direction: the
   # package is treated as unpublished and `npm publish` decides for real.
   if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-    echo "::error::$NAME@$VERSION is already on the registry. This script cannot verify it came from this workflow, so it refuses rather than silently treating it as done — confirm by hand, then retry." >&2
+    echo "::error::$NAME@$VERSION is already on the registry, and this script cannot verify who put it there or why. Re-running this workflow will hit the same refusal — it does not resume. Publish the remaining packages by hand instead (see the 'Publishing' section of CONTRIBUTING.md)." >&2
     exit 1
   fi
   echo "$NAME"

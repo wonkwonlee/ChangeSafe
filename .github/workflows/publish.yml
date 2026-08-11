@@ -52,13 +52,14 @@ jobs:
       # against this version's code — and npm versions are immutable, so that
       # is not a mistake anyone can take back.
       #
-      # A version that is already on the registry is *skipped*, not refused.
-      # Publishing five packages is five separate registry calls, so a failure
-      # partway through leaves some of them live — and since the same version
-      # from the same tag cannot be overwritten anyway, republishing it is not
-      # a thing that can go wrong. Refusing instead would mean a partial
-      # publish could only ever be completed by hand, which is how this
-      # project lost provenance on v0.3.x.
+      # A version that is already on the registry fails the run. Publishing
+      # five packages is five separate registry calls, so a failure partway
+      # through leaves some of them live; an earlier version of this workflow
+      # treated that as reason to skip the rest and resume automatically,
+      # which is exactly what a compromised publisher or a stray hand-publish
+      # needs — nothing here can tell a legitimate partial publish apart from
+      # one that is not. See scripts/select-unpublished.sh and CONTRIBUTING.md
+      # ("Publishing") for the manual recovery path this now requires.
       - name: Every version matches the tag
         env:
           TAG: ${{ github.event.release.tag_name }}

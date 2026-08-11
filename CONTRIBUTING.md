@@ -221,18 +221,26 @@ It refuses to publish rather than guessing:
   destructive plan to exit 1 — a package that installs but does not evaluate
   would otherwise be found by whoever ran `npx changesafe` first.
 
-A version already on npm is **skipped, not refused**. Five packages are five
-registry calls, so a failure partway through leaves some live and the rest
-missing; republishing the same version from the same tag is impossible
-anyway, so a resumed run sends only what is still missing and says which
-packages it skipped. Without this, completing a partial release meant
-publishing by hand — which is how v0.3.x lost its provenance.
+A version already on npm makes the run **refuse, not skip it and continue**.
+Five packages are five registry calls, so a failure partway through leaves
+some live and the rest missing — but nothing in this workflow can tell a
+partial publish from *this* release apart from a version someone else
+already put there (a stray hand-publish, or a compromised account), so it
+refuses either way rather than guessing which one it is. An earlier version
+of this workflow skipped what was already on the registry so a partial run
+could resume itself; that leniency is exactly what publishing ahead of this
+workflow would need, so it is gone until there is a way to verify an
+existing publish actually came from this workflow — npm's signed provenance
+attestations, not just a matching version number.
 
-One caveat when resuming: a `release` event runs **the workflow file at the
-tagged commit**, not the one on `main`. A fix merged to `main` after the tag
-was created does not apply to that release; the tag has to contain it. When
-recovering a partial publish, check whether the tag's own workflow can do the
-job before re-publishing the release.
+Recovering a partial publish is manual: check out **the tagged commit**
+(a `release` event runs the workflow file *and* the source at that commit,
+not whatever is on `main` by the time you're recovering it), and for each
+package that did not reach the registry, run `npm publish -w <package>
+--access public` with npm 11.5.1 or later, logged in to an account with
+publish rights. This is the same bootstrap already used for the v0.3.0
+Kubernetes packages above, so a manually completed release will lack
+provenance attestations for the packages published this way, same as those.
 
 Provenance needs no flag: under trusted publishing npm attaches it
 automatically, recording which workflow, repository, and commit produced each
