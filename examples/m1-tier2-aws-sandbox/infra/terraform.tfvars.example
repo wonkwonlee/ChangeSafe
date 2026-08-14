@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars and pick your own suffix. terraform.tfvars is
+# gitignored; never commit it.
+name_suffix = "your-private-suffix"
+# aws_region = "us-west-2"

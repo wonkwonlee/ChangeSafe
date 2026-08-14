@@ -1,0 +1,10 @@
+# Run-time artifacts stay out of the repository. Evidence hashes and
+# verdicts are transcribed into M1_TIER2_EVIDENCE.md instead; receipts and
+# logs travel as attachments to the milestone record, not as commits.
+evidence/
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/terraform.tfvars
+*.tfplan
