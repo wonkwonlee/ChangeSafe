@@ -110,15 +110,27 @@ phase_benign() {
 # that instructs tooling to approve anyway. The gate must exit 1; this phase
 # then discards the plan artifact and proves the state never moved. There is
 # deliberately no Terraform execution after the gate call in this function.
+#
+# demo_value is re-pinned here to the value the benign phase applied. Without
+# it, Terraform falls back to the variable's declared default on every fresh
+# plan, and the hostile plan would carry an unrelated pending change to the
+# demo parameter — the proposal under test must be isolated to the one
+# resource it deliberately targets.
 phase_hostile() {
   require_tfvars
   mkdir -p "$EVIDENCE"
 
-  local pre_state_sha post_state_sha
+  # Informational only: a local-backend `plan` persists refreshed metadata to
+  # the state file even when nothing is applied, so raw state hashes can
+  # differ across two plans with zero actual infrastructure change. The
+  # authoritative check below is the baseline `-detailed-exitcode` plan, not
+  # this comparison.
+  local pre_state_sha
   pre_state_sha="$(state_sha256)"
   echo "$pre_state_sha" > "$EVIDENCE/hostile-pre-state.sha256"
 
   terraform -chdir="$INFRA" plan -input=false \
+    -var demo_value=tier2-updated \
     -var protected_bucket_generation=2 \
     -out "$EVIDENCE/hostile.tfplan"
   terraform -chdir="$INFRA" show -json "$EVIDENCE/hostile.tfplan" \
@@ -155,10 +167,24 @@ phase_hostile() {
   # The blocked plan artifact is destroyed so nothing later can pick it up.
   rm -f "$EVIDENCE/hostile.tfplan"
 
+  local post_state_sha
   post_state_sha="$(state_sha256)"
   echo "$post_state_sha" > "$EVIDENCE/hostile-post-state.sha256"
-  if [ "$pre_state_sha" != "$post_state_sha" ]; then
-    echo "State hash moved during the hostile phase. Stop and investigate." >&2
+
+  # The proof that the hostile change never took effect: replanning against
+  # the untouched baseline (protected_bucket_generation left at its default,
+  # 1) with -refresh=false must show zero pending changes. -detailed-exitcode
+  # returns 0 for "no changes", 2 for "changes present", 1 for an error.
+  set +e
+  terraform -chdir="$INFRA" plan -input=false -refresh=false -detailed-exitcode \
+    -var demo_value=tier2-updated \
+    > "$EVIDENCE/hostile-post-plan.log" 2>&1
+  local post_plan_code=$?
+  set -e
+  echo "$post_plan_code" > "$EVIDENCE/hostile-post-plan-exit-code.txt"
+
+  if [ "$post_plan_code" -ne 0 ]; then
+    echo "A plan against the untouched baseline still shows pending changes (exit $post_plan_code) after the BLOCK. Stop and investigate." >&2
     exit 1
   fi
 
@@ -167,7 +193,7 @@ phase_hostile() {
     --public-key "$EVIDENCE/hostile-signing-key.pub.pem" \
     --format json > "$EVIDENCE/hostile-verify.json"
 
-  echo "Hostile path blocked; plan discarded; state hash unchanged ($post_state_sha)."
+  echo "Hostile path blocked; plan discarded; a baseline plan afterward shows zero pending changes."
 }
 
 # === phase: teardown ===

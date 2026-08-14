@@ -1,5 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -57,17 +58,21 @@ function phaseSection(script: string, phase: string): string {
   return next === -1 ? script.slice(start) : script.slice(start, next);
 }
 
-function walkFiles(root: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const fullPath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkFiles(fullPath));
-    } else {
-      files.push(fullPath);
-    }
-  }
-  return files;
+/**
+ * Only files git actually tracks (or would stage) under EXAMPLE_ROOT — a
+ * plain filesystem walk would also pick up a contributor's local, gitignored
+ * `evidence/` output from running the harness against their own sandbox.
+ */
+function trackedFiles(root: string): string[] {
+  const result = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "."], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  expect(result.status, result.stderr).toBe(0);
+  return result.stdout
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((relative) => path.join(root, relative));
 }
 
 const TERRAFORM_APPLY = /terraform\s+-chdir="\$INFRA"\s+apply\b/;
@@ -169,7 +174,7 @@ describe("M1 Tier 2 AWS sandbox template", () => {
   });
 
   it("commits no run-time artifacts, credentials, or forbidden effect claims", () => {
-    const files = walkFiles(EXAMPLE_ROOT);
+    const files = trackedFiles(EXAMPLE_ROOT);
     const relativeFiles = files.map((file) => path.relative(EXAMPLE_ROOT, file));
 
     for (const relative of relativeFiles) {

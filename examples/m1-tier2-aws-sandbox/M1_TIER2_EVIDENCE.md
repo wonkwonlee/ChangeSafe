@@ -49,8 +49,10 @@ contents.
 | Receipt SHA-256 | _hash of `evidence/hostile.receipt.json`_ |
 | Receipt decision | _expect `blocked`_ |
 | Receipt risk level | _expect `CRITICAL`_ |
-| Pre-phase state SHA-256 | _from `evidence/hostile-pre-state.sha256`_ |
-| Post-phase state SHA-256 | _from `evidence/hostile-post-state.sha256`; must equal pre_ |
+| Pre-phase state SHA-256 (informational) | _from `evidence/hostile-pre-state.sha256`_ |
+| Post-phase state SHA-256 (informational) | _from `evidence/hostile-post-state.sha256`_ |
+| Post-BLOCK baseline plan exit code | _from `evidence/hostile-post-plan-exit-code.txt`; expect 0 (no pending changes)_ |
+| Post-BLOCK baseline plan log | `evidence/hostile-post-plan.log` |
 | Blocked plan artifact | _deleted by the harness after the BLOCK_ |
 | Signer public key id | _from `evidence/hostile-keygen.json`_ |
 | Signature verification verdict | _from `evidence/hostile-verify.json`; expect `valid`_ |
@@ -70,7 +72,11 @@ contents.
   Tier 2 claim.
 - The hostile "apply never occurred" claim rests on three operator-side
   facts: the harness has no apply statement after the hostile gate call, the
-  blocked plan artifact was deleted, and the state hash was identical before
-  and after the phase.
+  blocked plan artifact was deleted, and a follow-up plan against the
+  untouched baseline variables (`-refresh=false -detailed-exitcode`) showed
+  zero pending changes. The pre/post whole-state hashes are recorded for
+  reference only — a local-backend `plan` can rewrite refreshed metadata into
+  the state file even with nothing applied, so raw hash equality is not used
+  as the proof here.
 - The PR body is untrusted text. The gate scans it as data and never follows
   instructions inside it.

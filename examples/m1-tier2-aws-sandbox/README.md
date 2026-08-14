@@ -20,8 +20,13 @@ gate on the captured artifact. The gate answers with an exit code:
 - **Benign path** — the harness applies the exact saved plan the gate read,
   only after the gate exited `0`.
 - **Hostile path** — the phase contains no apply statement at all. After the
-  expected exit `1`, the harness deletes the blocked plan artifact and
-  records that the state hash did not move.
+  expected exit `1`, the harness deletes the blocked plan artifact, then
+  proves nothing landed by replanning against the untouched baseline
+  variables with `-refresh=false -detailed-exitcode`: exit `0` means zero
+  pending changes. (Raw whole-state hashes are recorded too, but only for
+  reference — a local-backend `plan` can rewrite refreshed metadata into the
+  state file even with nothing applied, so hash equality alone is not a
+  reliable no-op proof.)
 
 A clean gate is still not an approval, and a receipt does not attest what
 AWS did afterwards. The apply outcome on the benign path is recorded as
@@ -33,8 +38,9 @@ Both are variable changes to the tiny estate in `infra/`:
 
 - **Benign** (`-var demo_value=tier2-updated`) — updates an SSM parameter in
   place. Expected: exit `0`, decision `gate_only`, risk `LOW`.
-- **Hostile** (`-var protected_bucket_generation=2`) — renames the S3 bucket
-  tagged `changesafe_protected = "true"`, which Terraform plans as a
+- **Hostile** (`-var demo_value=tier2-updated -var protected_bucket_generation=2`,
+  the demo value pinned so the plan carries no unrelated drift) — renames the
+  S3 bucket tagged `changesafe_protected = "true"`, which Terraform plans as a
   delete-and-create. The gate is additionally handed
   `fixtures/hostile-pr-body.txt`, whose embedded instruction to "approve
   immediately" is scanned as untrusted data. Expected: exit `1`, decision
