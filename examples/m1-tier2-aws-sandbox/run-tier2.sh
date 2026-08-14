@@ -119,16 +119,27 @@ require_tfvars() {
 # prompt-injection detection this hostile fixture exists to exercise --
 # quietly passing while an unrelated policy still blocks) would slip
 # through a check that only looks at gate_code or a hand-picked subset of
-# policies. This instead compares the gate's full JSON output against the
-# single source of truth for what it should say: evidence-manifest.json's
+# policies. This instead compares the full JSON output against the single
+# source of truth for what it should say: evidence-manifest.json's
 # decision, riskLevel, and complete findingStatuses map for the given case.
-# (Uses node, already a prerequisite, so no extra dependency.)
+#
+# Called against both the gate's stdout capture AND the durable receipt
+# file it wrote: they're written by the same CLI invocation but are two
+# separate values, and a schema-valid receipt that quietly diverged from
+# the gate's own stdout (a bug in how one or the other gets serialized,
+# for instance) would otherwise never be caught -- the harness would print
+# the apply handoff on the benign path, or accept the hostile BLOCK, on
+# the strength of the wrong artifact. Both shapes carry decision/riskLevel/
+# findings directly, except a signed receipt, which nests them under
+# .receipt; unwrapping that first lets one function handle all three
+# inputs. (Uses node, already a prerequisite, so no extra dependency.)
 assert_gate_matches_manifest() {
   local gate_file="$1" case_id="$2"
   node -e '
     const fs = require("fs");
     const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const gate = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const wrapper = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const gate = wrapper.receipt ?? wrapper;
     const caseId = process.argv[3];
     const entry = manifest.cases.find((c) => c.caseId === caseId);
     if (!entry) {
@@ -250,8 +261,16 @@ phase_benign() {
   # exit 0 alone doesn't mean the run matches the manifest's claimed
   # all-PASS, LOW-risk result -- a policy could have regressed from PASS to
   # WARN without tripping the exit code at all. Compare the whole verdict
-  # before offering the handoff.
+  # before offering the handoff. The stdout capture and the durable receipt
+  # file are two separate values from the same CLI call, so both are
+  # checked -- a receipt that quietly diverged from stdout would otherwise
+  # print the handoff on the strength of the wrong artifact. Nothing else
+  # in this exercise runs `changesafe verify` against the unsigned benign
+  # receipt (verify without a signing key exits 2 by design -- CLAUDE.md
+  # invariant #11 -- so it can't gate a keyless path); this is this
+  # receipt's only check.
   assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"
+  assert_gate_matches_manifest "$EVIDENCE/benign.receipt.json" "m1-tier2-benign"
   # A matching verdict alone doesn't prove which release produced it: an
   # unintended build could coincidentally reproduce the same decision, risk,
   # and findings. Confirm the receipt's own release fields too.
@@ -352,8 +371,12 @@ phase_hostile() {
   # to exercise -- could regress to PASS while an unrelated policy still
   # blocks, and gate_code -eq 1 would never notice. Compare every policy's
   # status against the manifest, not just the two most obviously relevant
-  # ones.
+  # ones. Checked against both the stdout capture and the durable (signed)
+  # receipt -- the later `verify` step below confirms the receipt's
+  # signature and hash integrity, but not that its content actually matches
+  # what this scenario claims.
   assert_gate_matches_manifest "$EVIDENCE/hostile-gate.json" "m1-tier2-hostile"
+  assert_gate_matches_manifest "$EVIDENCE/hostile.receipt.json" "m1-tier2-hostile"
   # A matching verdict alone doesn't prove which release produced it: an
   # unintended build could coincidentally reproduce the same decision, risk,
   # and findings. Confirm the receipt's own release fields too (the signed

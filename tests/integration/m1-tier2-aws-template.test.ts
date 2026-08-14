@@ -333,8 +333,13 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(script).toContain('MANIFEST="$HERE/evidence-manifest.json"');
     expect(script).toContain("assert_gate_matches_manifest() {");
 
+    // Checked against both the stdout capture and the durable receipt file
+    // -- they come from the same CLI call but are two separate written
+    // values, and a receipt that quietly diverged from stdout (a
+    // serialization bug, for instance) would otherwise never be caught.
     const benign = phaseSection(script, "benign");
     expect(benign).toContain('assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"');
+    expect(benign).toContain('assert_gate_matches_manifest "$EVIDENCE/benign.receipt.json" "m1-tier2-benign"');
     const benignGateCheck = benign.indexOf('if [ "$gate_code" -ne 0 ]; then');
     const benignAssert = benign.indexOf("assert_gate_matches_manifest");
     const printedApply = benign.search(TERRAFORM_APPLY);
@@ -344,6 +349,7 @@ describe("M1 Tier 2 AWS sandbox template", () => {
 
     const hostile = phaseSection(script, "hostile");
     expect(hostile).toContain('assert_gate_matches_manifest "$EVIDENCE/hostile-gate.json" "m1-tier2-hostile"');
+    expect(hostile).toContain('assert_gate_matches_manifest "$EVIDENCE/hostile.receipt.json" "m1-tier2-hostile"');
     // Must run after the gate's own exit-code check and before the plan
     // artifact is deleted, so a mismatch still has the artifact to inspect.
     const hostileGateCheck = hostile.indexOf('if [ "$gate_code" -ne 1 ]; then');
