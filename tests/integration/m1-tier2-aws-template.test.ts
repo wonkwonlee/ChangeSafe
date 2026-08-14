@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const EXAMPLE_ROOT = path.join(REPO_ROOT, "examples/m1-tier2-aws-sandbox");
@@ -75,6 +76,23 @@ function trackedFiles(root: string): string[] {
     .map((relative) => path.join(root, relative));
 }
 
+/** Extracts a single top-level `name() { ... }` function's source from the script. */
+function extractFunction(script: string, name: string): string {
+  const start = script.indexOf(`${name}() {`);
+  expect(start, `missing function ${name}`).toBeGreaterThanOrEqual(0);
+  const end = script.indexOf("\n}\n", start);
+  expect(end, `unterminated function ${name}`).toBeGreaterThan(start);
+  return script.slice(start, end + 2);
+}
+
+const temporaryDirectories: string[] = [];
+afterEach(() => {
+  while (temporaryDirectories.length > 0) {
+    const dir = temporaryDirectories.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 const TERRAFORM_APPLY = /terraform\s+-chdir="\$INFRA"\s+apply\b/;
 const TERRAFORM_DESTROY = /terraform\s+-chdir="\$INFRA"\s+destroy\b/;
 
@@ -145,6 +163,59 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     }
   });
 
+  it("assert_gate_matches_manifest actually catches a regressed policy, not just wrong syntax", () => {
+    // Functional, not textual: run the harness's real function (extracted
+    // verbatim, not reimplemented) against a synthetic gate result that
+    // matches the manifest, then one where a single policy quietly
+    // regressed, and confirm it accepts the first and rejects the second
+    // with a message naming the mismatch.
+    const script = readScript();
+    const fn = extractFunction(script, "assert_gate_matches_manifest");
+    expect(fn).toContain("evidence-manifest.json");
+
+    const dir = mkdtempSync(path.join(tmpdir(), "changesafe-m1-tier2-assert-"));
+    temporaryDirectories.push(dir);
+
+    const manifest = readManifest();
+    const hostileCase = manifest.cases.find((c) => c.caseId === "m1-tier2-hostile");
+    if (!hostileCase) throw new Error("hostile case must exist");
+    writeFileSync(path.join(dir, "evidence-manifest.json"), JSON.stringify(manifest));
+
+    const matchingGate = {
+      decision: hostileCase.expected.decision,
+      riskLevel: hostileCase.expected.riskLevel,
+      findings: Object.entries(hostileCase.expected.findingStatuses).map(([policyId, status]) => ({
+        policyId,
+        status,
+      })),
+    };
+    writeFileSync(path.join(dir, "matching-gate.json"), JSON.stringify(matchingGate));
+
+    // UNTRUSTED_INSTRUCTION -- the prompt-injection detection this fixture's
+    // hostile PR body exists to exercise -- quietly regresses from WARN to
+    // PASS, with every other policy (including the overall BLOCK) unchanged.
+    const regressedGate = {
+      ...matchingGate,
+      findings: matchingGate.findings.map((f) =>
+        f.policyId === "UNTRUSTED_INSTRUCTION" ? { ...f, status: "PASS" } : f,
+      ),
+    };
+    writeFileSync(path.join(dir, "regressed-gate.json"), JSON.stringify(regressedGate));
+
+    const run = (gateFile: string) =>
+      spawnSync("bash", ["-c", `MANIFEST="$1/evidence-manifest.json"; ${fn}\nassert_gate_matches_manifest "$1/${gateFile}" "m1-tier2-hostile"`, "bash", dir], {
+        encoding: "utf8",
+      });
+
+    const matching = run("matching-gate.json");
+    expect(matching.status, matching.stderr).toBe(0);
+
+    const regressed = run("regressed-gate.json");
+    expect(regressed.status).not.toBe(0);
+    expect(regressed.stderr).toContain("UNTRUSTED_INSTRUCTION");
+    expect(regressed.stderr).toContain("expected WARN, got PASS");
+  });
+
   it("README's copy-pasteable apply command resolves the saved plan correctly under -chdir", () => {
     // `-chdir=infra` switches Terraform's working directory before it
     // resolves the plan-file argument, so a bare `evidence/benign.tfplan`
@@ -176,27 +247,38 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(readme).not.toMatch(/-refresh=false -detailed-exitcode/);
   });
 
-  it("validates the specific hostile policy findings, not just the gate's exit code", () => {
-    // A BLOCK exit code alone doesn't say which policy caused it. If
-    // PROTECTED_RESOURCE regressed to PASS while some unrelated policy still
-    // blocked, `gate_code -eq 1` would still hold and the exercise would
-    // report success without ever having exercised the policy it exists to
-    // test. The two policies this scenario is specifically designed to
-    // exercise (see the manifest and README) must be asserted by name.
+  it("validates the complete gate verdict against the manifest, not just the exit code", () => {
+    // An exit code alone is not specific enough: a policy can regress (a
+    // benign WARN nobody's exit-code check would catch; UNTRUSTED_INSTRUCTION
+    // -- the prompt-injection detection the hostile PR body exists to
+    // exercise -- silently passing while an unrelated policy still blocks)
+    // without moving gate_code at all. assert_gate_matches_manifest compares
+    // decision, riskLevel, and every policy's status against
+    // evidence-manifest.json, the single source of truth for what each case
+    // should say, rather than hand-picking a subset of policies to check.
     const script = readScript();
+    expect(script).toContain('MANIFEST="$HERE/evidence-manifest.json"');
+    expect(script).toContain("assert_gate_matches_manifest() {");
+
+    const benign = phaseSection(script, "benign");
+    expect(benign).toContain('assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"');
+    const benignGateCheck = benign.indexOf('if [ "$gate_code" -ne 0 ]; then');
+    const benignAssert = benign.indexOf("assert_gate_matches_manifest");
+    const printedApply = benign.search(TERRAFORM_APPLY);
+    expect(benignGateCheck).toBeGreaterThanOrEqual(0);
+    expect(benignAssert).toBeGreaterThan(benignGateCheck);
+    expect(printedApply).toBeGreaterThan(benignAssert);
+
     const hostile = phaseSection(script, "hostile");
-    expect(hostile).toContain('assert_policy_status "$EVIDENCE/hostile-gate.json" "DESTRUCTIVE_OP" "BLOCK"');
-    expect(hostile).toContain(
-      'assert_policy_status "$EVIDENCE/hostile-gate.json" "PROTECTED_RESOURCE" "BLOCK"',
-    );
+    expect(hostile).toContain('assert_gate_matches_manifest "$EVIDENCE/hostile-gate.json" "m1-tier2-hostile"');
     // Must run after the gate's own exit-code check and before the plan
     // artifact is deleted, so a mismatch still has the artifact to inspect.
-    const gateCheck = hostile.indexOf('if [ "$gate_code" -ne 1 ]; then');
-    const firstAssert = hostile.indexOf("assert_policy_status");
+    const hostileGateCheck = hostile.indexOf('if [ "$gate_code" -ne 1 ]; then');
+    const hostileAssert = hostile.indexOf("assert_gate_matches_manifest");
     const artifactDeleted = hostile.indexOf('rm -f "$EVIDENCE/hostile.tfplan"');
-    expect(gateCheck).toBeGreaterThanOrEqual(0);
-    expect(firstAssert).toBeGreaterThan(gateCheck);
-    expect(artifactDeleted).toBeGreaterThan(firstAssert);
+    expect(hostileGateCheck).toBeGreaterThanOrEqual(0);
+    expect(hostileAssert).toBeGreaterThan(hostileGateCheck);
+    expect(artifactDeleted).toBeGreaterThan(hostileAssert);
   });
 
   it("propagates state_sha256 failures instead of silently hashing a partial file", () => {

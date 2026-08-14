@@ -27,6 +27,7 @@ fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA="$HERE/infra"
 EVIDENCE="$HERE/evidence"
+MANIFEST="$HERE/evidence-manifest.json"
 
 # Every path this script mktemp's gets removed here, and only here — see
 # the comment on NPX_CWD below for why a single top-level trap replaced the
@@ -96,25 +97,49 @@ require_tfvars() {
   fi
 }
 
-# A BLOCK exit code alone doesn't prove which policy caused it: if
-# PROTECTED_RESOURCE regressed to PASS while some other, unrelated policy
-# still blocked, gate_code -eq 1 would still hold and this exercise would
-# report success without ever having exercised the policy it exists to
-# test. This parses the gate's JSON output (the CLI is already the pinned
-# npm release, so no extra dependency) and asserts a specific policy's
-# status.
-assert_policy_status() {
-  local file="$1" policy_id="$2" expected="$3" actual
-  actual="$(node -e '
+# An overall exit code alone doesn't say which policies actually produced
+# it: PASS/BLOCK is enough to reach the printed handoff, but a regression
+# that swaps one policy's status for another with the same overall exit
+# code (a benign WARN nobody checks for, or UNTRUSTED_INSTRUCTION -- the
+# prompt-injection detection this hostile fixture exists to exercise --
+# quietly passing while an unrelated policy still blocks) would slip
+# through a check that only looks at gate_code or a hand-picked subset of
+# policies. This instead compares the gate's full JSON output against the
+# single source of truth for what it should say: evidence-manifest.json's
+# decision, riskLevel, and complete findingStatuses map for the given case.
+# (Uses node, already a prerequisite, so no extra dependency.)
+assert_gate_matches_manifest() {
+  local gate_file="$1" case_id="$2"
+  node -e '
     const fs = require("fs");
-    const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const finding = data.findings.find((f) => f.policyId === process.argv[2]);
-    process.stdout.write(finding ? finding.status : "MISSING");
-  ' "$file" "$policy_id")"
-  if [ "$actual" != "$expected" ]; then
-    echo "Expected policy $policy_id to be $expected in $file but got $actual. Stop and investigate." >&2
-    exit 1
-  fi
+    const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const gate = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const caseId = process.argv[3];
+    const entry = manifest.cases.find((c) => c.caseId === caseId);
+    if (!entry) {
+      console.error(`No manifest case ${caseId}`);
+      process.exit(1);
+    }
+    const errors = [];
+    if (gate.decision !== entry.expected.decision) {
+      errors.push(`decision: expected ${entry.expected.decision}, got ${gate.decision}`);
+    }
+    if (gate.riskLevel !== entry.expected.riskLevel) {
+      errors.push(`riskLevel: expected ${entry.expected.riskLevel}, got ${gate.riskLevel}`);
+    }
+    const actual = Object.fromEntries(gate.findings.map((f) => [f.policyId, f.status]));
+    const expected = entry.expected.findingStatuses;
+    const allIds = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+    for (const id of allIds) {
+      if (actual[id] !== expected[id]) {
+        errors.push(`${id}: expected ${expected[id] ?? "MISSING"}, got ${actual[id] ?? "MISSING"}`);
+      }
+    }
+    if (errors.length > 0) {
+      console.error(`Gate verdict for ${caseId} does not match evidence-manifest.json:\n` + errors.join("\n"));
+      process.exit(1);
+    }
+  ' "$MANIFEST" "$gate_file" "$case_id"
 }
 
 # === phase: baseline ===
@@ -179,10 +204,17 @@ phase_benign() {
     exit 1
   fi
 
-  # Reached only when the deterministic gate exited 0. The receipt records
-  # gate_only: what the policies found, not an approval and not an outcome.
-  # This script does not apply anything itself — see the note at the top of
-  # the file. Apply the exact plan the gate read yourself:
+  # exit 0 alone doesn't mean the run matches the manifest's claimed
+  # all-PASS, LOW-risk result -- a policy could have regressed from PASS to
+  # WARN without tripping the exit code at all. Compare the whole verdict
+  # before offering the handoff.
+  assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"
+
+  # Reached only when the deterministic gate exited 0 and matched the
+  # manifest. The receipt records gate_only: what the policies found, not an
+  # approval and not an outcome. This script does not apply anything itself
+  # — see the note at the top of the file. Apply the exact plan the gate
+  # read yourself:
   cat <<EOF
 
 Gate PASSED (gate_only, not an approval). Apply the exact plan it read
@@ -268,11 +300,13 @@ phase_hostile() {
     exit 1
   fi
 
-  # A BLOCK exit code isn't specific enough on its own -- some other policy
-  # could block while these two, the ones this scenario exists to exercise,
-  # silently regressed to PASS. Assert both by name.
-  assert_policy_status "$EVIDENCE/hostile-gate.json" "DESTRUCTIVE_OP" "BLOCK"
-  assert_policy_status "$EVIDENCE/hostile-gate.json" "PROTECTED_RESOURCE" "BLOCK"
+  # A BLOCK exit code isn't specific enough on its own: UNTRUSTED_INSTRUCTION
+  # -- the prompt-injection detection this fixture's hostile PR body exists
+  # to exercise -- could regress to PASS while an unrelated policy still
+  # blocks, and gate_code -eq 1 would never notice. Compare every policy's
+  # status against the manifest, not just the two most obviously relevant
+  # ones.
+  assert_gate_matches_manifest "$EVIDENCE/hostile-gate.json" "m1-tier2-hostile"
 
   # The blocked plan artifact is destroyed so nothing later can pick it up.
   rm -f "$EVIDENCE/hostile.tfplan"
