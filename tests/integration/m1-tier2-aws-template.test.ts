@@ -157,6 +157,25 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(readme).toContain("terraform -chdir=infra apply -input=false ../evidence/benign.tfplan");
   });
 
+  it("describes the harness as read-only, not Terraform-free, and its no-op check as live", () => {
+    // run-tier2.sh genuinely runs `terraform init/plan/show/state pull`
+    // under the operator's real AWS credentials -- claiming it "never runs
+    // Terraform" or "holds no cloud credentials" the way ChangeSafe itself
+    // does would be false. What's actually true, and what the docs should
+    // say, is narrower: it never applies, destroys, or otherwise mutates
+    // infrastructure.
+    const readme = readFileSync(path.join(EXAMPLE_ROOT, "README.md"), "utf8");
+    expect(readme).not.toMatch(/run-tier2\.sh[^.]*never runs Terraform/);
+    expect(readme).not.toMatch(/holds no cloud credentials[^.]*run-tier2\.sh/);
+    expect(readme).toContain("ChangeSafe itself never runs Terraform");
+
+    // The post-BLOCK check must be described as querying live AWS, not as a
+    // -refresh=false comparison against the local cache — see the
+    // corresponding hostile-phase assertion for why that distinction is the
+    // actual safety property.
+    expect(readme).not.toMatch(/-refresh=false -detailed-exitcode/);
+  });
+
   it("never executes terraform apply or destroy — only ever prints them for a human", () => {
     const script = readScript();
 
@@ -178,6 +197,18 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(hostile).not.toMatch(TERRAFORM_APPLY);
     expect(hostile).toContain('rm -f "$EVIDENCE/hostile.tfplan"');
     expect(hostile).toContain('if [ "$gate_code" -ne 1 ]; then');
+
+    // The post-BLOCK "nothing landed" plan must query live AWS (default
+    // refresh), not just the local state cache: a -refresh=false plan would
+    // read 0 pending changes even if AWS had diverged from that cache
+    // without Terraform's knowledge, proving nothing about the live estate.
+    // (The script does mention -refresh=false in an explanatory comment on
+    // why it's deliberately absent -- match the actual invocation line, not
+    // the whole phase, so that comment doesn't trip this assertion.)
+    const postPlanInvocation =
+      hostile.match(/terraform -chdir="\$INFRA" plan[^\n]*-detailed-exitcode[^\n]*/)?.[0] ?? "";
+    expect(postPlanInvocation).toMatch(/plan -input=false -detailed-exitcode/);
+    expect(postPlanInvocation).not.toContain("-refresh=false");
 
     // The benign phase prints the apply command only after the exit-code
     // check, and only inside a heredoc (i.e. it is text for a human, not a

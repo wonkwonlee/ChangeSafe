@@ -59,15 +59,17 @@ contents.
 
 ## Boundary Notes
 
-- ChangeSafe never ran Terraform in either path, and neither does
-  `run-tier2.sh` itself (safety invariant #1, `AGENTS.md`): it plans,
-  captures `show -json`, gates, and reads state, but on the benign path it
-  only ever prints the exact saved plan for the operator to apply — the
-  operator ran that printed command by hand under their own credentials.
-  This specific run predates that harness revision, in which the script
-  applied the plan directly instead of printing it; the operator's own
-  credentials executed it either way, and no policy or verdict depends on
-  who typed the command.
+- ChangeSafe itself never ran Terraform in either path. `run-tier2.sh` is
+  different — it is the operator's own pipeline, not ChangeSafe, and it does
+  run `terraform init`, `plan`, `show`, and `state pull` under the
+  operator's exported credentials. What it never does, in either path
+  (safety invariant #1, `AGENTS.md`), is apply, destroy, or otherwise mutate
+  infrastructure: on the benign path it only ever prints the exact saved
+  plan for the operator to apply — the operator ran that printed command by
+  hand under their own credentials. This specific run predates that harness
+  revision, in which the script applied the plan directly instead of
+  printing it; the operator's own credentials executed it either way, and no
+  policy or verdict depends on who typed the command.
 - The benign receipt records `gate_only`: what the deterministic policies
   found in the captured plan artifact. It is not an approval, and it does not
   attest the apply outcome. The apply result above is operator-observed
@@ -79,10 +81,16 @@ contents.
 - The hostile "apply never occurred" claim rests on three operator-side
   facts: `run-tier2.sh` contains no apply statement, printed or otherwise,
   anywhere in its hostile phase, the blocked plan artifact was deleted, and a
-  follow-up plan against the untouched baseline variables
-  (`-refresh=false -detailed-exitcode`) showed zero pending changes. The
-  pre/post whole-state hashes are recorded for reference only — a
-  local-backend `plan` can rewrite refreshed metadata into the state file
+  follow-up `-detailed-exitcode` plan against the untouched baseline
+  variables showed zero pending changes. This specific run's post-BLOCK plan
+  used `-refresh=false`, which compares config only against the local
+  *cached* state file — a weaker claim ("nothing pending relative to what
+  Terraform believes is true") than what the current harness checks, since a
+  no-refresh plan cannot see AWS diverging from that cache. The harness now
+  keeps the default refresh instead, querying AWS directly for the
+  protected bucket's live generation. The pre/post whole-state hashes are
+  recorded for reference only — a local-backend `plan` can rewrite refreshed
+  metadata into the state file
   even with nothing applied, so raw hash equality is not used as the proof
   here.
 - The PR body is untrusted text. The gate scans it as data and never follows

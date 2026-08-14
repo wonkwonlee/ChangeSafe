@@ -12,15 +12,17 @@ parameter and one empty S3 bucket.
 
 ## The boundary
 
-ChangeSafe never runs Terraform and holds no cloud credentials — and neither
-does anything this repository ships, `run-tier2.sh` included. Safety
-invariant #1 (`AGENTS.md`) rules out a `terraform apply` or `destroy`
-execution path anywhere in the repo, examples included, so the script only
-ever plans, captures `terraform show -json`, calls the pinned
-`changesafe@0.5.0` gate on the captured artifact, and reads state. Wherever
-the exercise genuinely needs an apply or a destroy, the script prints the
-exact command and stops; you run it yourself, in your own terminal, under
-your own credentials:
+ChangeSafe itself never runs Terraform and holds no cloud credentials, in
+this exercise or anywhere else. `run-tier2.sh` is different: it is the
+*operator's own pipeline*, not ChangeSafe, and it does run `terraform init`,
+`plan`, `show`, and `state pull` under your exported AWS credentials — the
+same read-only shape a real CI plan step would have. What safety invariant
+#1 (`AGENTS.md`) rules out, unconditionally and with no exception for
+examples, is a `terraform apply` or `destroy` execution path: the script
+never applies, destroys, or otherwise mutates infrastructure. Wherever the
+exercise genuinely needs an apply or a destroy, the script prints the exact
+command and stops; you run it yourself, in your own terminal, under your own
+credentials:
 
 - **Benign path** — `benign` plans, captures, and gates. On exit `0` it
   prints the exact saved plan for you to apply; `record-benign` then
@@ -29,7 +31,12 @@ your own credentials:
   otherwise: a BLOCK has nothing to hand off. After the expected exit `1`,
   the harness deletes the blocked plan artifact, then proves nothing landed
   by replanning against the untouched baseline variables with
-  `-refresh=false -detailed-exitcode`: exit `0` means zero pending changes.
+  `-detailed-exitcode`: exit `0` means zero pending changes. This plan keeps
+  the default refresh deliberately — a `-refresh=false` plan only compares
+  config against the local *cached* state file, so it would read 0 changes
+  even if AWS itself had diverged from that cache without Terraform's
+  knowledge, proving nothing about the live estate. The default refresh
+  asks AWS directly what the protected bucket's generation actually is.
   (Raw whole-state hashes are recorded too, but only for reference — a
   local-backend `plan` can rewrite refreshed metadata into the state file
   even with nothing applied, so hash equality alone is not a reliable no-op

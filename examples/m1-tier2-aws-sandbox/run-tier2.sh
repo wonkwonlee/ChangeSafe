@@ -242,10 +242,16 @@ phase_hostile() {
 
   # The proof that the hostile change never took effect: replanning against
   # the untouched baseline (protected_bucket_generation left at its default,
-  # 1) with -refresh=false must show zero pending changes. -detailed-exitcode
-  # returns 0 for "no changes", 2 for "changes present", 1 for an error.
+  # 1) must show zero pending changes. This plan keeps the default refresh
+  # (deliberately not -refresh=false): a no-refresh plan only compares
+  # config against the local *cached* state file, so it would read 0 changes
+  # even if AWS itself had diverged from that cache -- proving nothing about
+  # the live estate. The default refresh asks AWS directly what the
+  # protected bucket's generation actually is right now, which is the claim
+  # this check needs to make. -detailed-exitcode returns 0 for "no changes",
+  # 2 for "changes present", 1 for an error.
   set +e
-  terraform -chdir="$INFRA" plan -input=false -refresh=false -detailed-exitcode \
+  terraform -chdir="$INFRA" plan -input=false -detailed-exitcode \
     -var demo_value=tier2-updated \
     > "$EVIDENCE/hostile-post-plan.log" 2>&1
   local post_plan_code=$?
