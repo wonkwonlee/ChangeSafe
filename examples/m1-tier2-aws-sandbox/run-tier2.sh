@@ -140,8 +140,12 @@ phase_hostile() {
   local key_dir
   key_dir="$(mktemp -d)"
   # EXIT, not RETURN: the private key must be removed even when this phase
-  # aborts through one of its exit paths.
-  trap 'rm -rf "$key_dir"' EXIT
+  # aborts through one of its exit paths. The path is baked into the trap
+  # string with double quotes (immediate expansion), not deferred `$key_dir`
+  # expansion: `key_dir` is local to this function, so a trap that resolves
+  # it lazily would fail with "unbound variable" once the function returns
+  # and the trap fires in the caller's scope, on the ordinary success path.
+  trap "rm -rf '$key_dir'" EXIT
 
   "${CHANGESAFE[@]}" keygen \
     --out "$key_dir/hostile-signing-key" \
