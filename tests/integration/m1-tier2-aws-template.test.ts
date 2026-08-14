@@ -4,42 +4,44 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const EXAMPLE_ROOT = path.join(REPO_ROOT, "examples/m1-tier2-aws-sandbox");
 
-interface ManifestCase {
-  caseId: string;
-  proposal: string;
-  plan: { path: string; captured: "at-run-time"; sha256: null };
-  context: { path: string; sha256: string } | null;
-  expected: {
-    exitCode: number;
-    blocked: boolean;
-    decision: "gate_only" | "blocked";
-    riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-    findingStatuses: Record<string, "PASS" | "WARN" | "BLOCK">;
-    applyReached: boolean;
-  };
-}
+const ManifestCaseSchema = z.object({
+  caseId: z.string(),
+  proposal: z.string(),
+  plan: z.object({ path: z.string(), captured: z.literal("at-run-time"), sha256: z.null() }),
+  context: z.object({ path: z.string(), sha256: z.string() }).nullable(),
+  expected: z.object({
+    exitCode: z.number(),
+    blocked: z.boolean(),
+    decision: z.enum(["gate_only", "blocked"]),
+    riskLevel: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+    findingStatuses: z.record(z.string(), z.enum(["PASS", "WARN", "BLOCK"])),
+    applyReached: z.boolean(),
+  }),
+});
 
-interface Manifest {
-  schema: "changesafe-m1-tier2-aws-sandbox/v1";
-  release: {
-    package: "changesafe";
-    version: string;
-    npmIntegrity: string;
-    gitHead: string;
-    appVersion: string;
-  };
-  policyVersion: string;
-  cases: ManifestCase[];
-}
+const ManifestSchema = z.object({
+  schema: z.literal("changesafe-m1-tier2-aws-sandbox/v1"),
+  release: z.object({
+    package: z.literal("changesafe"),
+    version: z.string(),
+    npmIntegrity: z.string(),
+    gitHead: z.string(),
+    appVersion: z.string(),
+  }),
+  policyVersion: z.string(),
+  cases: z.array(ManifestCaseSchema),
+});
+
+type Manifest = z.infer<typeof ManifestSchema>;
 
 function readManifest(): Manifest {
-  return JSON.parse(
-    readFileSync(path.join(EXAMPLE_ROOT, "evidence-manifest.json"), "utf8"),
-  ) as Manifest;
+  const raw = JSON.parse(readFileSync(path.join(EXAMPLE_ROOT, "evidence-manifest.json"), "utf8"));
+  return ManifestSchema.parse(raw);
 }
 
 function sha256(file: string): string {
