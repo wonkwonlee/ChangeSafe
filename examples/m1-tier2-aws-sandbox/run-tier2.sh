@@ -69,18 +69,30 @@ sha256() {
 }
 
 state_sha256() {
-  # Every caller invokes this through command substitution
-  # (`x="$(state_sha256)"`), and by default bash does NOT propagate -e into
-  # a command-substitution subshell (`shopt inherit_errexit` is off unless
-  # explicitly enabled, and this script can't assume a bash new enough to
-  # have it). Either `terraform state pull` or `sha256` failing inside that
-  # subshell would otherwise be silently swallowed: execution would
-  # continue past the failure and the function would still return 0,
-  # because the trailing `rm -f` succeeds regardless of what came before
-  # it. Capturing each command's own exit status explicitly and returning
-  # it makes the failure visible to the caller's own `set -e` instead.
+  # Called two different ways, each with its own -e hazard:
+  #
+  # - phase_hostile invokes it through command substitution
+  #   (`x="$(state_sha256)"`), where bash does NOT propagate -e into that
+  #   subshell by default (`shopt inherit_errexit` is off unless explicitly
+  #   enabled, and this script can't assume a bash new enough to have it).
+  #   A failing command inside would otherwise be silently swallowed --
+  #   execution continues past it and the function still returns 0, because
+  #   the trailing `rm -f` succeeds regardless. Capturing each command's own
+  #   exit status explicitly and returning it fixes this: the failure
+  #   becomes visible to the caller's own `set -e`.
+  # - record-baseline and record-benign call it directly, where -e *does*
+  #   apply immediately: a failing command below would kill the script
+  #   right there, skipping the status=$?/rm -f cleanup entirely and
+  #   leaking a temp file that can hold raw or partial Terraform state.
+  #   Registering the temp path on the shared CLEANUP_PATHS array up front
+  #   covers this case, since the top-level trap still removes it even when
+  #   -e cuts this function off mid-way. (For the command-substitution call
+  #   above, this same registration happens inside that subshell and
+  #   vanishes when it exits -- but -e doesn't fire early there either, so
+  #   the explicit rm -f calls below already cover cleanup for that path.)
   local tmp status
   tmp="$(mktemp)"
+  CLEANUP_PATHS+=("$tmp")
   terraform -chdir="$INFRA" state pull > "$tmp"
   status=$?
   if [ "$status" -ne 0 ]; then

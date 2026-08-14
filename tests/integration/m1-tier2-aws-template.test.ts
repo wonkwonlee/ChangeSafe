@@ -355,22 +355,41 @@ describe("M1 Tier 2 AWS sandbox template", () => {
   });
 
   it("propagates state_sha256 failures instead of silently hashing a partial file", () => {
-    // Every caller invokes state_sha256 through command substitution
-    // (`x="$(state_sha256)"`), and bash does not propagate -e into a
-    // command-substitution subshell by default (inherit_errexit is off
-    // unless explicitly enabled, and this script can't assume a bash new
-    // enough to have it). Without capturing and returning `terraform state
-    // pull`'s exit status explicitly, a transient failure would be silently
-    // swallowed: execution continues to hash an empty/partial file, and the
-    // function still returns 0 because the trailing `rm -f` succeeds
-    // regardless of what came before it.
+    // phase_hostile invokes state_sha256 through command substitution
+    // (`x="$(state_sha256)"`), where bash does not propagate -e into that
+    // subshell by default (inherit_errexit is off unless explicitly
+    // enabled, and this script can't assume a bash new enough to have it).
+    // Without capturing and returning each fallible command's exit status
+    // explicitly, a transient failure there would be silently swallowed:
+    // execution continues past it, and the function still returns 0
+    // because the trailing `rm -f` succeeds regardless of what came before
+    // it.
     const script = readScript();
-    const stateSha256Start = script.indexOf("state_sha256() {");
-    const stateSha256End = script.indexOf("\n}\n", stateSha256Start);
-    const stateSha256 = script.slice(stateSha256Start, stateSha256End);
+    const stateSha256 = extractFunction(script, "state_sha256");
     expect(stateSha256).toMatch(/status=\$\?/);
     expect(stateSha256).toMatch(/if \[ "\$status" -ne 0 \]; then/);
     expect(stateSha256).toMatch(/return "\$status"/);
+    // sha256's own exit status must be captured too, not just terraform's
+    // -- a failing digest utility has the identical shape and was missed
+    // in an earlier pass.
+    const shaCallIndex = stateSha256.indexOf('sha256 "$tmp"');
+    const nextStatusCapture = stateSha256.indexOf("status=$?", shaCallIndex);
+    expect(shaCallIndex).toBeGreaterThanOrEqual(0);
+    expect(nextStatusCapture).toBeGreaterThan(shaCallIndex);
+
+    // record-baseline and record-benign call state_sha256 directly (not
+    // through command substitution), where -e *does* apply immediately: a
+    // failing command would kill the script right there, skipping the
+    // status=$?/rm -f cleanup entirely and leaking a temp file that can
+    // hold raw or partial Terraform state. The temp path must be
+    // registered on the shared CLEANUP_PATHS array before any fallible
+    // command runs, so the top-level trap still removes it in that case.
+    const mktempIndex = stateSha256.indexOf('tmp="$(mktemp)"');
+    const registerIndex = stateSha256.indexOf('CLEANUP_PATHS+=("$tmp")');
+    const firstFallibleCommand = stateSha256.indexOf('terraform -chdir="$INFRA" state pull');
+    expect(mktempIndex).toBeGreaterThanOrEqual(0);
+    expect(registerIndex).toBeGreaterThan(mktempIndex);
+    expect(firstFallibleCommand).toBeGreaterThan(registerIndex);
   });
 
   it("commits the AWS provider lock file so a fresh checkout reproduces the recorded provider version", () => {
