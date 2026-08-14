@@ -1,0 +1,109 @@
+# M1 Tier 2 Evidence Checklist
+
+Fill this file during the author-run AWS sandbox exercise. Tier 2 is a
+real-world demonstration required of the project author, not of reviewers;
+the external-reproduction condition applies only to Tier 1. Keep receipts and
+logs as run outputs under `evidence/` (gitignored); transcribe hashes and
+verdicts here. Never record credentials, account secrets, or raw state
+contents.
+
+## Fixed Inputs
+
+| Field | Value |
+| --- | --- |
+| Package | `changesafe@0.5.0` |
+| npm integrity | `sha512-/0Fc69/BrZphQ4VbWk+1utkSLTdqD8AtAMop2xVCUCEu52lTAr32mUYM407w63TaTCVvGKgqMCYgZChbKgl6/Q==` |
+| Expected policy version | `core-v0.2.0+terraform-v0.2.0` |
+| Hostile PR body SHA-256 | `0aaad1bae1c281c057c6b8f64d6d27399a907d473f7ef3ea2bedfa4424f19580` |
+
+## Environment Record
+
+| Field | Value |
+| --- | --- |
+| Date (UTC) | 2026-08-14 |
+| AWS account | ...9679 (IAM user `changesafe-tier2-sandbox`, scoped policy) |
+| Region | us-east-2 |
+| Terraform version | 1.15.8 (`hashicorp/aws` 6.60.0) |
+| Baseline state SHA-256 | `bcaa6e97a0ac65aa9cbbfb1c170ce3e6ef40c1dc7ee8d6708e328ed82ab93483` |
+
+## Benign Path (PASS → operator apply)
+
+| Field | Value |
+| --- | --- |
+| Captured plan SHA-256 | `ab4c6421cea4de3c7aa4df699374d7f1dbca48142d01e301c19b194285318d03` |
+| Gate exit code | 0 |
+| Receipt SHA-256 | `6b455bede7c083dfed0aafb31e14b7258c0ce1fe6c7724e19c329db5538b89a1` |
+| Receipt decision | `gate_only` |
+| Receipt risk level | `LOW` |
+| Receipt policy version | `core-v0.2.0+terraform-v0.2.0` |
+| Verify verdict (receipt hash + input binding) | _from `evidence/benign-verify.json`; expect `ok: true`, both checks `ok: true` — not run for this recorded evidence, added after this run (see Boundary Notes)_ |
+| Apply log | `evidence/benign-apply.log` |
+| Resources changed (operator-observed) | `aws_ssm_parameter.demo` updated in place (1 changed, 0 added, 0 destroyed) |
+| Post-apply state SHA-256 | `7df4d7adda44086d0c406d10cc3e3028bfe04177d2c879e9b88ad1b3fe35205a` |
+
+## Hostile Path (BLOCK → apply never reached)
+
+| Field | Value |
+| --- | --- |
+| Captured plan SHA-256 | `4c916325c4117854224603ffd4d3335a0a0f6477258faf7453d171f9e89b8fe8` |
+| Gate exit code | 1 |
+| Receipt SHA-256 | `4fdccf89c7e1cb97343c6b7267f6bd3f2e813239782ee4d674f6238d9311aed6` |
+| Receipt decision | `blocked` |
+| Receipt risk level | `CRITICAL` |
+| Pre-phase state SHA-256 (informational) | `349bba5026bb1209dab0c4c76ce19a7831d750f20d8a49fa9f9c0c50e3619d6f` |
+| Post-phase state SHA-256 (informational) | `7df4d7adda44086d0c406d10cc3e3028bfe04177d2c879e9b88ad1b3fe35205a` (equals the benign post-apply state — the hostile phase left the real estate untouched) |
+| Post-BLOCK baseline plan exit code | 0 (no pending changes) |
+| Post-BLOCK baseline plan log | `evidence/hostile-post-plan.log` — "No changes. Your infrastructure matches the configuration." |
+| Blocked plan artifact | deleted by the harness after the BLOCK |
+| Signer public key id | `e2bc455f43b35b85a71668b43c59ea5a` |
+| Signature verification verdict | `valid` (receipt hash check: ok; signature check: ok) |
+
+## Boundary Notes
+
+- ChangeSafe itself never ran Terraform in either path. `run-tier2.sh` is
+  different — it is the operator's own pipeline, not ChangeSafe, and it does
+  run `terraform init`, `plan`, `show`, and `state pull` under the
+  operator's exported credentials. What it never does, in either path
+  (safety invariant #1, `AGENTS.md`), is apply, destroy, or otherwise mutate
+  infrastructure: on the benign path it only ever prints the exact saved
+  plan for the operator to apply — the operator ran that printed command by
+  hand under their own credentials. This specific run predates that harness
+  revision, in which the script applied the plan directly instead of
+  printing it; the operator's own credentials executed it either way, and no
+  policy or verdict depends on who typed the command.
+- `changesafe verify` on the benign path was added after this run's evidence
+  was already recorded above, so the "Verify verdict" row wasn't produced by
+  this run. Confirmed independently instead: running it directly against
+  this run's own `evidence/benign.receipt.json` and
+  `evidence/benign.tfplan.json` returns `ok: true` (receipt hash and input
+  binding both pass), and against a tampered copy of the same receipt or a
+  mismatched plan input returns `ok: false` on the corresponding check.
+  `verify` without `--public-key` is not a no-op here: it only refuses to
+  run against a *signed* receipt lacking a key (invariant #11 is about not
+  silently skipping the check that establishes authorship); the benign
+  receipt is unsigned, so its hash and input-binding checks run normally.
+- The benign receipt records `gate_only`: what the deterministic policies
+  found in the captured plan artifact. It is not an approval, and it does not
+  attest the apply outcome. The apply result above is operator-observed
+  evidence, recorded separately from the receipt on purpose.
+- The gate's verdict is about the authorized proposal (E0). What the AWS API
+  admitted, persisted, or reconciled after the operator's apply is a
+  different stage; binding those stages together is M2's question, not a
+  Tier 2 claim.
+- The hostile "apply never occurred" claim rests on three operator-side
+  facts: `run-tier2.sh` contains no apply statement, printed or otherwise,
+  anywhere in its hostile phase, the blocked plan artifact was deleted, and a
+  follow-up `-detailed-exitcode` plan against the untouched baseline
+  variables showed zero pending changes. This specific run's post-BLOCK plan
+  used `-refresh=false`, which compares config only against the local
+  *cached* state file — a weaker claim ("nothing pending relative to what
+  Terraform believes is true") than what the current harness checks, since a
+  no-refresh plan cannot see AWS diverging from that cache. The harness now
+  keeps the default refresh instead, querying AWS directly for the
+  protected bucket's live generation. The pre/post whole-state hashes are
+  recorded for reference only — a local-backend `plan` can rewrite refreshed
+  metadata into the state file
+  even with nothing applied, so raw hash equality is not used as the proof
+  here.
+- The PR body is untrusted text. The gate scans it as data and never follows
+  instructions inside it.

@@ -1,0 +1,18 @@
+# Run-time artifacts stay out of the repository. Evidence hashes and
+# verdicts are transcribed into M1_TIER2_EVIDENCE.md instead; receipts and
+# logs travel as attachments to the milestone record, not as commits.
+#
+# infra/.terraform.lock.hcl is deliberately NOT listed here: it pins the
+# hashicorp/aws provider version (6.60.0) the recorded evidence was
+# actually generated against. Without it, a fresh `terraform init` on a
+# later checkout resolves whatever the current latest 5.x/6.x/7.x provider
+# happens to be -- against the open `>= 5.0` constraint in versions.tf --
+# and a future run could produce different plan JSON, or fail outright
+# after a breaking provider release, for reasons that have nothing to do
+# with ChangeSafe. Commit it and let a future re-run bump it deliberately.
+evidence/
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/terraform.tfvars
+*.tfplan
