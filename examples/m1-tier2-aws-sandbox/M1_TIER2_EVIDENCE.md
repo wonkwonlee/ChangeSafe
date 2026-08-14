@@ -59,9 +59,15 @@ contents.
 
 ## Boundary Notes
 
-- ChangeSafe never ran Terraform in either path. The operator's harness ran
-  `plan`, `show -json`, and — on the benign path only, after the gate exited
-  0 — `apply` of the same saved plan the gate read.
+- ChangeSafe never ran Terraform in either path, and neither does
+  `run-tier2.sh` itself (safety invariant #1, `AGENTS.md`): it plans,
+  captures `show -json`, gates, and reads state, but on the benign path it
+  only ever prints the exact saved plan for the operator to apply — the
+  operator ran that printed command by hand under their own credentials.
+  This specific run predates that harness revision, in which the script
+  applied the plan directly instead of printing it; the operator's own
+  credentials executed it either way, and no policy or verdict depends on
+  who typed the command.
 - The benign receipt records `gate_only`: what the deterministic policies
   found in the captured plan artifact. It is not an approval, and it does not
   attest the apply outcome. The apply result above is operator-observed
@@ -71,12 +77,13 @@ contents.
   different stage; binding those stages together is M2's question, not a
   Tier 2 claim.
 - The hostile "apply never occurred" claim rests on three operator-side
-  facts: the harness has no apply statement after the hostile gate call, the
-  blocked plan artifact was deleted, and a follow-up plan against the
-  untouched baseline variables (`-refresh=false -detailed-exitcode`) showed
-  zero pending changes. The pre/post whole-state hashes are recorded for
-  reference only — a local-backend `plan` can rewrite refreshed metadata into
-  the state file even with nothing applied, so raw hash equality is not used
-  as the proof here.
+  facts: `run-tier2.sh` contains no apply statement, printed or otherwise,
+  anywhere in its hostile phase, the blocked plan artifact was deleted, and a
+  follow-up plan against the untouched baseline variables
+  (`-refresh=false -detailed-exitcode`) showed zero pending changes. The
+  pre/post whole-state hashes are recorded for reference only — a
+  local-backend `plan` can rewrite refreshed metadata into the state file
+  even with nothing applied, so raw hash equality is not used as the proof
+  here.
 - The PR body is untrusted text. The gate scans it as data and never follows
   instructions inside it.

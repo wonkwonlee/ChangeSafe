@@ -76,6 +76,17 @@ function trackedFiles(root: string): string[] {
 }
 
 const TERRAFORM_APPLY = /terraform\s+-chdir="\$INFRA"\s+apply\b/;
+const TERRAFORM_DESTROY = /terraform\s+-chdir="\$INFRA"\s+destroy\b/;
+
+/**
+ * Removes `cat <<EOF ... EOF` heredoc bodies (the script's printed,
+ * human-facing instructions) so executable-code assertions don't trip on
+ * apply/destroy commands that appear only as text for a human to copy, never
+ * as something this script runs.
+ */
+function stripHeredocs(script: string): string {
+  return script.replace(/<<EOF\n[\s\S]*?\nEOF\n/g, "<<EOF\nEOF\n");
+}
 
 describe("M1 Tier 2 AWS sandbox template", () => {
   it("pins the same release as Tier 1 and declares both cases with honest verdict expectations", () => {
@@ -134,31 +145,59 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     }
   });
 
-  it("keeps apply reachable only through the gate's exit code", () => {
+  it("never executes terraform apply or destroy — only ever prints them for a human", () => {
     const script = readScript();
 
     // Operator-only: the harness refuses CI outright.
     expect(script).toContain('if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then');
 
-    // The hostile phase must contain no Terraform apply at all — a BLOCK has
-    // nothing to fall through to.
+    // Safety invariant #1 (AGENTS.md) is unconditional: no terraform apply
+    // or destroy execution path exists anywhere in this repository,
+    // examples included. Stripping the heredoc bodies (the script's
+    // printed, human-facing instructions) and then asserting neither
+    // pattern survives proves this script never runs either itself.
+    const executable = stripHeredocs(script);
+    expect(executable).not.toMatch(TERRAFORM_APPLY);
+    expect(executable).not.toMatch(TERRAFORM_DESTROY);
+
+    // The hostile phase must not even print an apply command — a BLOCK has
+    // nothing to hand off to a human.
     const hostile = phaseSection(script, "hostile");
     expect(hostile).not.toMatch(TERRAFORM_APPLY);
     expect(hostile).toContain('rm -f "$EVIDENCE/hostile.tfplan"');
     expect(hostile).toContain('if [ "$gate_code" -ne 1 ]; then');
 
-    // The benign phase applies only the saved plan the gate read, and only
-    // after the exit-code check.
+    // The benign phase prints the apply command only after the exit-code
+    // check, and only inside a heredoc (i.e. it is text for a human, not a
+    // statement bash executes).
     const benign = phaseSection(script, "benign");
     const gateCheck = benign.indexOf('if [ "$gate_code" -ne 0 ]; then');
-    const applyCall = benign.search(TERRAFORM_APPLY);
+    const printedApply = benign.search(TERRAFORM_APPLY);
     expect(gateCheck).toBeGreaterThanOrEqual(0);
-    expect(applyCall).toBeGreaterThan(gateCheck);
+    expect(printedApply).toBeGreaterThan(gateCheck);
     expect(benign).toContain('apply -input=false "$EVIDENCE/benign.tfplan"');
+    expect(stripHeredocs(benign)).not.toMatch(TERRAFORM_APPLY);
+
+    // Both baseline and teardown likewise only ever print the mutating
+    // command, never run it.
+    const baseline = phaseSection(script, "baseline");
+    expect(baseline).toMatch(TERRAFORM_APPLY);
+    expect(stripHeredocs(baseline)).not.toMatch(TERRAFORM_APPLY);
+    const teardown = phaseSection(script, "teardown");
+    expect(teardown).toMatch(TERRAFORM_DESTROY);
+    expect(stripHeredocs(teardown)).not.toMatch(TERRAFORM_DESTROY);
 
     // The gated apply is a saved plan, so nothing needs -auto-approve; its
     // presence anywhere would mean an unattended approval path.
     expect(script).not.toContain("-auto-approve");
+
+    // The read-only record-* phases exist to capture evidence after a human
+    // has applied by hand, and must themselves stay execution-free too.
+    for (const phase of ["record-baseline", "record-benign"]) {
+      const section = phaseSection(script, phase);
+      expect(section).not.toMatch(TERRAFORM_APPLY);
+      expect(section).not.toMatch(TERRAFORM_DESTROY);
+    }
 
     // Every changesafe invocation resolves the pinned release against the
     // real registry. Matched as "npx --yes" specifically (not bare `npx`) so

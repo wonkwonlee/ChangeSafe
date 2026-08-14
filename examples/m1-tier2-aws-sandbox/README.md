@@ -12,21 +12,28 @@ parameter and one empty S3 bucket.
 
 ## The boundary
 
-ChangeSafe never runs Terraform and holds no cloud credentials. In this
-exercise the operator's harness (`run-tier2.sh`) runs `terraform plan`,
-captures `terraform show -json`, and calls the pinned `changesafe@0.5.0`
-gate on the captured artifact. The gate answers with an exit code:
+ChangeSafe never runs Terraform and holds no cloud credentials — and neither
+does anything this repository ships, `run-tier2.sh` included. Safety
+invariant #1 (`AGENTS.md`) rules out a `terraform apply` or `destroy`
+execution path anywhere in the repo, examples included, so the script only
+ever plans, captures `terraform show -json`, calls the pinned
+`changesafe@0.5.0` gate on the captured artifact, and reads state. Wherever
+the exercise genuinely needs an apply or a destroy, the script prints the
+exact command and stops; you run it yourself, in your own terminal, under
+your own credentials:
 
-- **Benign path** — the harness applies the exact saved plan the gate read,
-  only after the gate exited `0`.
-- **Hostile path** — the phase contains no apply statement at all. After the
-  expected exit `1`, the harness deletes the blocked plan artifact, then
-  proves nothing landed by replanning against the untouched baseline
-  variables with `-refresh=false -detailed-exitcode`: exit `0` means zero
-  pending changes. (Raw whole-state hashes are recorded too, but only for
-  reference — a local-backend `plan` can rewrite refreshed metadata into the
-  state file even with nothing applied, so hash equality alone is not a
-  reliable no-op proof.)
+- **Benign path** — `benign` plans, captures, and gates. On exit `0` it
+  prints the exact saved plan for you to apply; `record-benign` then
+  captures the post-apply state hash once you have.
+- **Hostile path** — the phase contains no apply statement, printed or
+  otherwise: a BLOCK has nothing to hand off. After the expected exit `1`,
+  the harness deletes the blocked plan artifact, then proves nothing landed
+  by replanning against the untouched baseline variables with
+  `-refresh=false -detailed-exitcode`: exit `0` means zero pending changes.
+  (Raw whole-state hashes are recorded too, but only for reference — a
+  local-backend `plan` can rewrite refreshed metadata into the state file
+  even with nothing applied, so hash equality alone is not a reliable no-op
+  proof.)
 
 A clean gate is still not an approval, and a receipt does not attest what
 AWS did afterwards. The apply outcome on the benign path is recorded as
@@ -58,11 +65,20 @@ disposable sandbox exported in your shell.
 
 ```bash
 cp infra/terraform.tfvars.example infra/terraform.tfvars   # set name_suffix
-./run-tier2.sh baseline   # create the estate (interactive apply)
-./run-tier2.sh benign     # plan -> capture -> gate PASS -> apply saved plan
-./run-tier2.sh hostile    # plan -> capture -> gate BLOCK -> no apply exists
-./run-tier2.sh hash       # checksum list over evidence/
-./run-tier2.sh teardown   # destroy the estate when done
+
+./run-tier2.sh baseline          # init only; prints the apply command
+terraform -chdir=infra apply     # you run this yourself
+./run-tier2.sh record-baseline   # read-only: records version + state hash
+
+./run-tier2.sh benign            # plan -> capture -> gate; prints the apply command on PASS
+terraform -chdir=infra apply -input=false evidence/benign.tfplan 2>&1 | tee evidence/benign-apply.log
+./run-tier2.sh record-benign     # read-only: records the post-apply state hash
+
+./run-tier2.sh hostile           # plan -> capture -> gate BLOCK -> nothing to apply
+./run-tier2.sh hash              # checksum list over evidence/
+
+./run-tier2.sh teardown          # prints the destroy command
+terraform -chdir=infra destroy   # you run this yourself
 ```
 
 Then transcribe the run into `M1_TIER2_EVIDENCE.md`. The `evidence/`

@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # M1 Tier 2 operator harness.
 #
-# This script is the *operator's* pipeline, not part of ChangeSafe. Terraform
-# runs under the operator's own credentials; ChangeSafe only ever reads the
-# captured `terraform show -json` artifact and answers with an exit code.
-# The benign apply below is reachable only through that exit code; the
-# hostile phase contains no apply at all, so a BLOCK verdict has nothing to
-# fall through to.
+# Safety invariant #1 (AGENTS.md) is unconditional: no `terraform apply` (or
+# `destroy`) execution path against infrastructure exists anywhere in this
+# repository, examples included. This script therefore never calls either —
+# it only ever plans, captures, gates, and reads state. Where the exercise
+# genuinely needs an apply or a destroy, it prints the exact command and
+# stops; a human runs it themselves, in their own terminal, under their own
+# credentials. That is also why the baseline/benign/hostile split exists:
+# each phase this script owns is read-only, so the one mutating step per
+# phase is always something a human typed, never something this repo ran.
 #
 # Tier 2 is required of the project author, not of reviewers. Do not run it
 # in CI, and do not run it against an account holding anything you care
 # about — use a disposable sandbox account.
 #
-# Usage: ./run-tier2.sh <baseline|benign|hostile|teardown|hash>
+# Usage: ./run-tier2.sh <baseline|record-baseline|benign|record-benign|hostile|teardown|hash>
 
 set -euo pipefail
 
@@ -80,22 +83,41 @@ require_tfvars() {
 }
 
 # === phase: baseline ===
-# Creates the sandbox estate. This is operator setup, before any gating; the
-# interactive confirmation is the operator's own approval of their own
-# baseline, and no receipt is produced here.
+# Initializes Terraform only — `init` downloads providers and touches no
+# infrastructure. Creating the estate is the operator's own action, printed
+# below rather than run here.
 phase_baseline() {
   require_tfvars
   mkdir -p "$EVIDENCE"
   terraform -chdir="$INFRA" init -input=false
+  cat <<EOF
+
+Terraform is initialized. This script does not apply anything itself.
+Create the baseline estate yourself:
+
   terraform -chdir="$INFRA" apply
+
+When it succeeds, run:
+
+  ./run-tier2.sh record-baseline
+EOF
+}
+
+# === phase: record-baseline ===
+# Read-only: records the Terraform version and the state hash of the estate
+# you just applied by hand.
+phase_record_baseline() {
+  require_tfvars
+  mkdir -p "$EVIDENCE"
   terraform -chdir="$INFRA" version -json > "$EVIDENCE/terraform-version.json"
   state_sha256 > "$EVIDENCE/baseline-state.sha256"
-  echo "Baseline created. State sha256: $(cat "$EVIDENCE/baseline-state.sha256")"
+  echo "Baseline recorded. State sha256: $(cat "$EVIDENCE/baseline-state.sha256")"
 }
 
 # === phase: benign ===
-# The benign proposal: update the demo SSM parameter in place. Plan, capture,
-# gate, and only then apply the exact saved plan the gate read.
+# The benign proposal: update the demo SSM parameter in place. Plans,
+# captures, and gates; on PASS it prints the exact saved plan for you to
+# apply yourself rather than applying it here.
 phase_benign() {
   require_tfvars
   mkdir -p "$EVIDENCE"
@@ -124,19 +146,37 @@ phase_benign() {
 
   # Reached only when the deterministic gate exited 0. The receipt records
   # gate_only: what the policies found, not an approval and not an outcome.
-  terraform -chdir="$INFRA" apply -input=false "$EVIDENCE/benign.tfplan" \
-    2>&1 | tee "$EVIDENCE/benign-apply.log"
+  # This script does not apply anything itself — see the note at the top of
+  # the file. Apply the exact plan the gate read yourself:
+  cat <<EOF
 
+Gate PASSED (gate_only, not an approval). Apply the exact plan it read
+yourself:
+
+  terraform -chdir="$INFRA" apply -input=false "$EVIDENCE/benign.tfplan" 2>&1 | tee "$EVIDENCE/benign-apply.log"
+
+When it succeeds, run:
+
+  ./run-tier2.sh record-benign
+EOF
+}
+
+# === phase: record-benign ===
+# Read-only: records the state hash of the estate after you applied the
+# benign plan by hand.
+phase_record_benign() {
+  require_tfvars
   state_sha256 > "$EVIDENCE/benign-post-apply-state.sha256"
-  echo "Benign apply finished. Transcribe hashes into M1_TIER2_EVIDENCE.md."
+  echo "Benign apply recorded. State sha256: $(cat "$EVIDENCE/benign-post-apply-state.sha256")"
 }
 
 # === phase: hostile ===
 # The hostile proposal: bump the protected bucket's generation, forcing a
 # delete-and-create of a resource tagged changesafe_protected, with a PR body
 # that instructs tooling to approve anyway. The gate must exit 1; this phase
-# then discards the plan artifact and proves the state never moved. There is
-# deliberately no Terraform execution after the gate call in this function.
+# then discards the plan artifact and proves the state never moved. Unlike
+# benign, there is no apply command to print here at all: a BLOCK has
+# nothing to hand off to a human either.
 #
 # demo_value is re-pinned here to the value the benign phase applied. Without
 # it, Terraform falls back to the variable's declared default on every fresh
@@ -226,10 +266,15 @@ phase_hostile() {
 }
 
 # === phase: teardown ===
-# Removes the sandbox estate when the exercise is over.
+# This script does not destroy anything itself — see the note at the top of
+# the file. Remove the sandbox estate yourself when the exercise is over.
 phase_teardown() {
   require_tfvars
+  cat <<EOF
+Remove the sandbox estate yourself:
+
   terraform -chdir="$INFRA" destroy
+EOF
 }
 
 # === phase: hash ===
@@ -250,13 +295,15 @@ phase_hash() {
 }
 
 case "${1:-}" in
-  baseline) phase_baseline ;;
-  benign)   phase_benign ;;
-  hostile)  phase_hostile ;;
-  teardown) phase_teardown ;;
-  hash)     phase_hash ;;
+  baseline)        phase_baseline ;;
+  record-baseline) phase_record_baseline ;;
+  benign)          phase_benign ;;
+  record-benign)   phase_record_benign ;;
+  hostile)         phase_hostile ;;
+  teardown)        phase_teardown ;;
+  hash)            phase_hash ;;
   *)
-    echo "Usage: $0 <baseline|benign|hostile|teardown|hash>" >&2
+    echo "Usage: $0 <baseline|record-baseline|benign|record-benign|hostile|teardown|hash>" >&2
     exit 2
     ;;
 esac
