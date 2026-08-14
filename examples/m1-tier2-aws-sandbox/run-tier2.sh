@@ -68,9 +68,23 @@ sha256() {
 }
 
 state_sha256() {
-  local tmp
+  # Every caller invokes this through command substitution
+  # (`x="$(state_sha256)"`), and by default bash does NOT propagate -e into
+  # a command-substitution subshell (`shopt inherit_errexit` is off unless
+  # explicitly enabled, and this script can't assume a bash new enough to
+  # have it). A failing `state pull` inside that subshell would otherwise be
+  # silently swallowed: execution would continue to `sha256` on an empty or
+  # partial file and the function would still return 0, because `rm -f`
+  # succeeds regardless. Capturing the exit status explicitly and returning
+  # it makes the failure visible to the caller's own `set -e` instead.
+  local tmp status
   tmp="$(mktemp)"
   terraform -chdir="$INFRA" state pull > "$tmp"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    rm -f "$tmp"
+    return "$status"
+  fi
   sha256 "$tmp"
   rm -f "$tmp"
 }
@@ -79,6 +93,27 @@ require_tfvars() {
   if [ ! -f "$INFRA/terraform.tfvars" ]; then
     echo "Copy infra/terraform.tfvars.example to infra/terraform.tfvars and set name_suffix first." >&2
     exit 2
+  fi
+}
+
+# A BLOCK exit code alone doesn't prove which policy caused it: if
+# PROTECTED_RESOURCE regressed to PASS while some other, unrelated policy
+# still blocked, gate_code -eq 1 would still hold and this exercise would
+# report success without ever having exercised the policy it exists to
+# test. This parses the gate's JSON output (the CLI is already the pinned
+# npm release, so no extra dependency) and asserts a specific policy's
+# status.
+assert_policy_status() {
+  local file="$1" policy_id="$2" expected="$3" actual
+  actual="$(node -e '
+    const fs = require("fs");
+    const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const finding = data.findings.find((f) => f.policyId === process.argv[2]);
+    process.stdout.write(finding ? finding.status : "MISSING");
+  ' "$file" "$policy_id")"
+  if [ "$actual" != "$expected" ]; then
+    echo "Expected policy $policy_id to be $expected in $file but got $actual. Stop and investigate." >&2
+    exit 1
   fi
 }
 
@@ -232,6 +267,12 @@ phase_hostile() {
     echo "Expected the gate to BLOCK (exit 1) but got $gate_code. Stop and investigate." >&2
     exit 1
   fi
+
+  # A BLOCK exit code isn't specific enough on its own -- some other policy
+  # could block while these two, the ones this scenario exists to exercise,
+  # silently regressed to PASS. Assert both by name.
+  assert_policy_status "$EVIDENCE/hostile-gate.json" "DESTRUCTIVE_OP" "BLOCK"
+  assert_policy_status "$EVIDENCE/hostile-gate.json" "PROTECTED_RESOURCE" "BLOCK"
 
   # The blocked plan artifact is destroyed so nothing later can pick it up.
   rm -f "$EVIDENCE/hostile.tfplan"

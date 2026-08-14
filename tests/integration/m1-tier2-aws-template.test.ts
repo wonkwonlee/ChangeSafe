@@ -176,6 +176,48 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(readme).not.toMatch(/-refresh=false -detailed-exitcode/);
   });
 
+  it("validates the specific hostile policy findings, not just the gate's exit code", () => {
+    // A BLOCK exit code alone doesn't say which policy caused it. If
+    // PROTECTED_RESOURCE regressed to PASS while some unrelated policy still
+    // blocked, `gate_code -eq 1` would still hold and the exercise would
+    // report success without ever having exercised the policy it exists to
+    // test. The two policies this scenario is specifically designed to
+    // exercise (see the manifest and README) must be asserted by name.
+    const script = readScript();
+    const hostile = phaseSection(script, "hostile");
+    expect(hostile).toContain('assert_policy_status "$EVIDENCE/hostile-gate.json" "DESTRUCTIVE_OP" "BLOCK"');
+    expect(hostile).toContain(
+      'assert_policy_status "$EVIDENCE/hostile-gate.json" "PROTECTED_RESOURCE" "BLOCK"',
+    );
+    // Must run after the gate's own exit-code check and before the plan
+    // artifact is deleted, so a mismatch still has the artifact to inspect.
+    const gateCheck = hostile.indexOf('if [ "$gate_code" -ne 1 ]; then');
+    const firstAssert = hostile.indexOf("assert_policy_status");
+    const artifactDeleted = hostile.indexOf('rm -f "$EVIDENCE/hostile.tfplan"');
+    expect(gateCheck).toBeGreaterThanOrEqual(0);
+    expect(firstAssert).toBeGreaterThan(gateCheck);
+    expect(artifactDeleted).toBeGreaterThan(firstAssert);
+  });
+
+  it("propagates state_sha256 failures instead of silently hashing a partial file", () => {
+    // Every caller invokes state_sha256 through command substitution
+    // (`x="$(state_sha256)"`), and bash does not propagate -e into a
+    // command-substitution subshell by default (inherit_errexit is off
+    // unless explicitly enabled, and this script can't assume a bash new
+    // enough to have it). Without capturing and returning `terraform state
+    // pull`'s exit status explicitly, a transient failure would be silently
+    // swallowed: execution continues to hash an empty/partial file, and the
+    // function still returns 0 because the trailing `rm -f` succeeds
+    // regardless of what came before it.
+    const script = readScript();
+    const stateSha256Start = script.indexOf("state_sha256() {");
+    const stateSha256End = script.indexOf("\n}\n", stateSha256Start);
+    const stateSha256 = script.slice(stateSha256Start, stateSha256End);
+    expect(stateSha256).toMatch(/status=\$\?/);
+    expect(stateSha256).toMatch(/if \[ "\$status" -ne 0 \]; then/);
+    expect(stateSha256).toMatch(/return "\$status"/);
+  });
+
   it("never executes terraform apply or destroy — only ever prints them for a human", () => {
     const script = readScript();
 
