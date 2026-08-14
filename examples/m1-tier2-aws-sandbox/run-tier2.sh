@@ -264,17 +264,26 @@ phase_benign() {
   # before offering the handoff. The stdout capture and the durable receipt
   # file are two separate values from the same CLI call, so both are
   # checked -- a receipt that quietly diverged from stdout would otherwise
-  # print the handoff on the strength of the wrong artifact. Nothing else
-  # in this exercise runs `changesafe verify` against the unsigned benign
-  # receipt (verify without a signing key exits 2 by design -- CLAUDE.md
-  # invariant #11 -- so it can't gate a keyless path); this is this
-  # receipt's only check.
+  # print the handoff on the strength of the wrong artifact.
   assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"
   assert_gate_matches_manifest "$EVIDENCE/benign.receipt.json" "m1-tier2-benign"
   # A matching verdict alone doesn't prove which release produced it: an
   # unintended build could coincidentally reproduce the same decision, risk,
   # and findings. Confirm the receipt's own release fields too.
   assert_receipt_matches_manifest "$EVIDENCE/benign.receipt.json"
+
+  # `changesafe verify` without --public-key is not a no-op on an unsigned
+  # receipt -- it only refuses to run against a *signed* one lacking a key
+  # (CLAUDE.md invariant #11 is about not silently skipping the one check
+  # that establishes authorship). Called here, it recomputes the receipt's
+  # self-hash and, via --input, binds it to the exact captured plan
+  # artifact the gate actually read -- schema and integrity checks the two
+  # asserts above never make, since they only compare specific field
+  # values, not the receipt's structural validity or its hash.
+  changesafe verify "$EVIDENCE/benign.receipt.json" \
+    --domain terraform \
+    --input "$EVIDENCE/benign.tfplan.json" \
+    --format json > "$EVIDENCE/benign-verify.json"
 
   # Reached only when the deterministic gate exited 0 and matched the
   # manifest. The receipt records gate_only: what the policies found, not an

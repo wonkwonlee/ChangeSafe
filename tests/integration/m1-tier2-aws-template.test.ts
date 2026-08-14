@@ -360,6 +360,36 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(artifactDeleted).toBeGreaterThan(hostileAssert);
   });
 
+  it("runs changesafe verify against the unsigned benign receipt", () => {
+    // `changesafe verify` without --public-key is not a no-op on an
+    // unsigned receipt -- it only refuses to run against a *signed* one
+    // lacking a key (packages/cli/src/verify.ts: the UsageError guard is
+    // `if (signature && !options.publicKey ...)`, gated on the receipt
+    // actually carrying a signature). Called against the unsigned benign
+    // receipt, it recomputes the receipt's self-hash and, via --input,
+    // binds it to the exact captured plan artifact the gate read -- a
+    // schema/integrity check assert_gate_matches_manifest and
+    // assert_receipt_matches_manifest never make, since they only compare
+    // specific field values.
+    const script = readScript();
+    const benign = phaseSection(script, "benign");
+    const verifyCallMatch = benign.match(
+      /changesafe verify "\$EVIDENCE\/benign\.receipt\.json"[\s\S]*?--format json[^\n]*/,
+    );
+    expect(verifyCallMatch).not.toBeNull();
+    expect(verifyCallMatch![0]).toContain("--domain terraform");
+    expect(verifyCallMatch![0]).toContain('--input "$EVIDENCE/benign.tfplan.json"');
+    expect(verifyCallMatch![0]).not.toContain("--public-key");
+    // Must run after assert_receipt_matches_manifest (release fields) and
+    // before the apply handoff is printed.
+    const releaseAssert = benign.indexOf("assert_receipt_matches_manifest");
+    const verifyCall = benign.indexOf("changesafe verify");
+    const printedApply = benign.search(TERRAFORM_APPLY);
+    expect(releaseAssert).toBeGreaterThanOrEqual(0);
+    expect(verifyCall).toBeGreaterThan(releaseAssert);
+    expect(printedApply).toBeGreaterThan(verifyCall);
+  });
+
   it("propagates state_sha256 failures instead of silently hashing a partial file", () => {
     // phase_hostile invokes state_sha256 through command substitution
     // (`x="$(state_sha256)"`), where bash does not propagate -e into that
