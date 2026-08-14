@@ -300,6 +300,30 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(stateSha256).toMatch(/return "\$status"/);
   });
 
+  it("commits the AWS provider lock file so a fresh checkout reproduces the recorded provider version", () => {
+    // versions.tf constrains the provider to `>= 5.0`, which admits every
+    // current or future 5.x/6.x/7.x release. Without a committed
+    // .terraform.lock.hcl, a fresh checkout's `terraform init` would resolve
+    // whatever the latest provider happens to be at that time -- not the
+    // 6.60.0 the recorded evidence in M1_TIER2_EVIDENCE.md was actually
+    // generated against -- and a future run could produce different plan
+    // JSON or fail after a breaking provider release for reasons that have
+    // nothing to do with ChangeSafe.
+    const tracked = trackedFiles(EXAMPLE_ROOT).map((file) => path.relative(EXAMPLE_ROOT, file));
+    expect(tracked).toContain(path.join("infra", ".terraform.lock.hcl"));
+
+    // Only check actual ignore *patterns*, not prose -- the .gitignore's
+    // own explanatory comment names this file deliberately.
+    const gitignorePatterns = readFileSync(path.join(EXAMPLE_ROOT, ".gitignore"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    expect(gitignorePatterns).not.toContain("infra/.terraform.lock.hcl");
+
+    const lockFile = readFileSync(path.join(EXAMPLE_ROOT, "infra/.terraform.lock.hcl"), "utf8");
+    expect(lockFile).toContain('provider "registry.terraform.io/hashicorp/aws"');
+    expect(lockFile).toMatch(/version\s*=\s*"6\.60\.0"/);
+  });
+
   it("never executes terraform apply or destroy — only ever prints them for a human", () => {
     const script = readScript();
 
