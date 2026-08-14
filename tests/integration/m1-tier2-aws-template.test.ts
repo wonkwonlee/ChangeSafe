@@ -145,6 +145,18 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     }
   });
 
+  it("README's copy-pasteable apply command resolves the saved plan correctly under -chdir", () => {
+    // `-chdir=infra` switches Terraform's working directory before it
+    // resolves the plan-file argument, so a bare `evidence/benign.tfplan`
+    // resolves as `infra/evidence/benign.tfplan` — one directory too deep,
+    // since evidence/ is a sibling of infra/, not a child. The saved plan
+    // must be reached with a path relative to infra/ (`../evidence/...`) or
+    // an absolute one.
+    const readme = readFileSync(path.join(EXAMPLE_ROOT, "README.md"), "utf8");
+    expect(readme).not.toMatch(/-chdir=infra apply[^\n]*(?<!\.\.\/)evidence\/benign\.tfplan/);
+    expect(readme).toContain("terraform -chdir=infra apply -input=false ../evidence/benign.tfplan");
+  });
+
   it("never executes terraform apply or destroy — only ever prints them for a human", () => {
     const script = readScript();
 

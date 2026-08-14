@@ -71,7 +71,7 @@ terraform -chdir=infra apply     # you run this yourself
 ./run-tier2.sh record-baseline   # read-only: records version + state hash
 
 ./run-tier2.sh benign            # plan -> capture -> gate; prints the apply command on PASS
-terraform -chdir=infra apply -input=false evidence/benign.tfplan 2>&1 | tee evidence/benign-apply.log
+terraform -chdir=infra apply -input=false ../evidence/benign.tfplan 2>&1 | tee evidence/benign-apply.log
 ./run-tier2.sh record-benign     # read-only: records the post-apply state hash
 
 ./run-tier2.sh hostile           # plan -> capture -> gate BLOCK -> nothing to apply
