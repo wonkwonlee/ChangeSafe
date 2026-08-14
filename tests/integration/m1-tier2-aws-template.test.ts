@@ -161,13 +161,33 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(script).not.toContain("-auto-approve");
 
     // Every changesafe invocation resolves the pinned release against the
-    // real registry.
-    const npxInvocations = script.match(/npx[^\n]*/g) ?? [];
+    // real registry. Matched as "npx --yes" specifically (not bare `npx`) so
+    // this doesn't also pick up prose like "npx's bare-command resolution"
+    // in the script's own comments.
+    const npxInvocations = script.match(/npx --yes[^\n]*/g) ?? [];
     expect(npxInvocations.length).toBeGreaterThan(0);
     for (const invocation of npxInvocations) {
       expect(invocation, invocation).toContain("--registry=https://registry.npmjs.org");
       expect(invocation, invocation).toContain("--package=changesafe@0.5.0");
     }
+
+    // npx's bare-command resolution prefers an enclosing project's
+    // node_modules/.bin over --package, even when --package names an exact
+    // version — this repo's own workspace build shadows the pinned release
+    // otherwise. Every npx call must run from a scratch cwd with no
+    // ancestor package.json (NPX_CWD, created via mktemp -d) rather than
+    // $HERE or $INFRA, both of which are inside this repo.
+    expect(script).toMatch(/NPX_CWD="\$\(mktemp -d\)"/);
+    expect(script).toMatch(/\(cd "\$NPX_CWD" && npx --yes/);
+
+    // Only one EXIT trap may exist: bash traps don't stack, so a second
+    // `trap ... EXIT` anywhere would silently replace the first one instead
+    // of composing with it, leaking whatever the first trap owned cleaning
+    // up. All mktemp'd paths must instead register on the shared array the
+    // single top-level trap iterates.
+    const trapCalls = script.match(/^\s*trap /gm) ?? [];
+    expect(trapCalls).toEqual(["trap "]);
+    expect(script).toContain("CLEANUP_PATHS+=");
 
     const mode = statSync(path.join(EXAMPLE_ROOT, "run-tier2.sh")).mode;
     expect(mode & 0o111, "run-tier2.sh must be executable").not.toBe(0);

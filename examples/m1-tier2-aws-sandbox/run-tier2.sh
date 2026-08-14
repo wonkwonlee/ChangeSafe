@@ -25,9 +25,36 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA="$HERE/infra"
 EVIDENCE="$HERE/evidence"
 
+# Every path this script mktemp's gets removed here, and only here — see
+# the comment on NPX_CWD below for why a single top-level trap replaced the
+# earlier per-function ones.
+CLEANUP_PATHS=()
+cleanup() {
+  local path
+  for path in "${CLEANUP_PATHS[@]:-}"; do
+    [ -n "$path" ] && rm -rf "$path"
+  done
+}
+trap cleanup EXIT
+
+# npx's bare-command resolution checks an enclosing project's
+# node_modules/.bin before it consults --package, even when --package names
+# an exact version: run this script from inside this monorepo (which builds
+# its own `changesafe` workspace binary at node_modules/.bin/changesafe) and
+# every "pinned npm release" call above silently ran the repo's current dev
+# build instead — confirmed by a real run whose receipts carried
+# policyVersion terraform-v0.2.1 (this repo's HEAD) instead of the actually
+# published 0.5.0's terraform-v0.2.0. Running npx from a scratch directory
+# with no ancestor package.json closes that: there is nothing local left to
+# find, so --package really is what gets fetched and run.
+NPX_CWD="$(mktemp -d)"
+CLEANUP_PATHS+=("$NPX_CWD")
+
 # Pinned release, resolved against the real registry. Matches
 # evidence-manifest.json; bump both together or the evidence is ambiguous.
-CHANGESAFE=(npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe)
+changesafe() {
+  (cd "$NPX_CWD" && npx --yes --registry=https://registry.npmjs.org --package=changesafe@0.5.0 changesafe "$@")
+}
 
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -81,7 +108,7 @@ phase_benign() {
   sha256 "$EVIDENCE/benign.tfplan.json" > "$EVIDENCE/benign.tfplan.json.sha256"
 
   set +e
-  "${CHANGESAFE[@]}" gate \
+  changesafe gate \
     --domain terraform \
     --input "$EVIDENCE/benign.tfplan.json" \
     --receipt "$EVIDENCE/benign.receipt.json" \
@@ -139,20 +166,18 @@ phase_hostile() {
 
   local key_dir
   key_dir="$(mktemp -d)"
-  # EXIT, not RETURN: the private key must be removed even when this phase
-  # aborts through one of its exit paths. The path is baked into the trap
-  # string with double quotes (immediate expansion), not deferred `$key_dir`
-  # expansion: `key_dir` is local to this function, so a trap that resolves
-  # it lazily would fail with "unbound variable" once the function returns
-  # and the trap fires in the caller's scope, on the ordinary success path.
-  trap "rm -rf '$key_dir'" EXIT
+  # Registered on the shared CLEANUP_PATHS array, not a fresh `trap ... EXIT`
+  # here: bash EXIT traps don't stack, and the top-level trap already owns
+  # cleaning up NPX_CWD. A second `trap` call in this function would replace
+  # that one outright, leaking NPX_CWD on the ordinary success path.
+  CLEANUP_PATHS+=("$key_dir")
 
-  "${CHANGESAFE[@]}" keygen \
+  changesafe keygen \
     --out "$key_dir/hostile-signing-key" \
     --format json > "$EVIDENCE/hostile-keygen.json"
 
   set +e
-  "${CHANGESAFE[@]}" gate \
+  changesafe gate \
     --domain terraform \
     --input "$EVIDENCE/hostile.tfplan.json" \
     --context "$HERE/fixtures/hostile-pr-body.txt" \
@@ -193,7 +218,7 @@ phase_hostile() {
   fi
 
   cp "$key_dir/hostile-signing-key.pub.pem" "$EVIDENCE/hostile-signing-key.pub.pem"
-  "${CHANGESAFE[@]}" verify "$EVIDENCE/hostile.receipt.json" \
+  changesafe verify "$EVIDENCE/hostile.receipt.json" \
     --public-key "$EVIDENCE/hostile-signing-key.pub.pem" \
     --format json > "$EVIDENCE/hostile-verify.json"
 
