@@ -216,6 +216,77 @@ describe("M1 Tier 2 AWS sandbox template", () => {
     expect(regressed.stderr).toContain("expected WARN, got PASS");
   });
 
+  it("validates each receipt's release fields, not just the gate verdict", () => {
+    // Matching decision/riskLevel/findings doesn't prove which release
+    // produced them: an unintended ChangeSafe build (the exact failure
+    // NPX_CWD isolation exists to prevent) could coincidentally reproduce
+    // the same verdict while carrying a different appVersion or
+    // policyVersion. assert_receipt_matches_manifest checks the receipt's
+    // own release fields against the manifest instead.
+    const script = readScript();
+    expect(script).toContain("assert_receipt_matches_manifest() {");
+
+    const benign = phaseSection(script, "benign");
+    expect(benign).toContain('assert_receipt_matches_manifest "$EVIDENCE/benign.receipt.json"');
+    const hostile = phaseSection(script, "hostile");
+    expect(hostile).toContain('assert_receipt_matches_manifest "$EVIDENCE/hostile.receipt.json"');
+
+    // Functional, not just textual: run the real function against a
+    // synthetic receipt matching the manifest (accepts), then one with a
+    // tampered appVersion (rejects, naming the mismatch). A signed receipt
+    // nests its fields under .receipt; exercise that shape since it's the
+    // one actually used on the hostile path.
+    const fn = extractFunction(script, "assert_receipt_matches_manifest");
+    const dir = mkdtempSync(path.join(tmpdir(), "changesafe-m1-tier2-receipt-"));
+    temporaryDirectories.push(dir);
+
+    const manifest = readManifest();
+    writeFileSync(path.join(dir, "evidence-manifest.json"), JSON.stringify(manifest));
+
+    const matchingReceipt = {
+      receipt: { appVersion: manifest.release.appVersion, policyVersion: manifest.policyVersion },
+    };
+    writeFileSync(path.join(dir, "matching-receipt.json"), JSON.stringify(matchingReceipt));
+
+    const tamperedReceipt = {
+      receipt: { ...matchingReceipt.receipt, appVersion: "changesafe-cli-9.9.9" },
+    };
+    writeFileSync(path.join(dir, "tampered-receipt.json"), JSON.stringify(tamperedReceipt));
+
+    const run = (receiptFile: string) =>
+      spawnSync("bash", ["-c", `MANIFEST="$1/evidence-manifest.json"; ${fn}\nassert_receipt_matches_manifest "$1/${receiptFile}"`, "bash", dir], {
+        encoding: "utf8",
+      });
+
+    const matching = run("matching-receipt.json");
+    expect(matching.status, matching.stderr).toBe(0);
+
+    const tampered = run("tampered-receipt.json");
+    expect(tampered.status).not.toBe(0);
+    expect(tampered.stderr).toContain("appVersion");
+    expect(tampered.stderr).toContain(`expected ${manifest.release.appVersion}, got changesafe-cli-9.9.9`);
+  });
+
+  it("propagates hash-phase digest failures instead of writing a blank SHA256SUMS line", () => {
+    // `echo "$(sha256 "$file")  $file" >> SHA256SUMS` has the same shape as
+    // the state_sha256 bug: a failing sha256 (missing file, unreadable
+    // file, broken digest utility) is swallowed inside the command
+    // substitution, echo still succeeds, and the loop would continue
+    // writing blank digest lines into the evidence anchor instead of
+    // aborting.
+    const script = readScript();
+    const hashPhase = phaseSection(script, "hash");
+    // Match only actual code, not the comment above it explaining the old
+    // buggy shape (which necessarily quotes that shape as an example).
+    const hashPhaseCode = hashPhase
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n");
+    expect(hashPhaseCode).not.toMatch(/echo "\$\(sha256 "\$file"\)\s+\$file"/);
+    expect(hashPhaseCode).toMatch(/digest="\$\(sha256 "\$file"\)"/);
+    expect(hashPhaseCode).toContain('echo "$digest  $file"');
+  });
+
   it("README's copy-pasteable apply command resolves the saved plan correctly under -chdir", () => {
     // `-chdir=infra` switches Terraform's working directory before it
     // resolves the plan-file argument, so a bare `evidence/benign.tfplan`

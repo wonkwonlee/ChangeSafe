@@ -142,6 +142,34 @@ assert_gate_matches_manifest() {
   ' "$MANIFEST" "$gate_file" "$case_id"
 }
 
+# assert_gate_matches_manifest compares decision/riskLevel/findings, which a
+# gate call against an unintended ChangeSafe build (the exact failure the
+# NPX_CWD isolation above exists to prevent) could still coincidentally
+# reproduce, since none of those fields say which release produced them.
+# This checks the two fields that actually identify the release: a signed
+# receipt nests its fields under .receipt, an unsigned one doesn't, so both
+# shapes are handled.
+assert_receipt_matches_manifest() {
+  local receipt_file="$1"
+  node -e '
+    const fs = require("fs");
+    const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const wrapper = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const receipt = wrapper.receipt ?? wrapper;
+    const errors = [];
+    if (receipt.appVersion !== manifest.release.appVersion) {
+      errors.push(`appVersion: expected ${manifest.release.appVersion}, got ${receipt.appVersion}`);
+    }
+    if (receipt.policyVersion !== manifest.policyVersion) {
+      errors.push(`policyVersion: expected ${manifest.policyVersion}, got ${receipt.policyVersion}`);
+    }
+    if (errors.length > 0) {
+      console.error("Receipt release fields do not match evidence-manifest.json:\n" + errors.join("\n"));
+      process.exit(1);
+    }
+  ' "$MANIFEST" "$receipt_file"
+}
+
 # === phase: baseline ===
 # Initializes Terraform only — `init` downloads providers and touches no
 # infrastructure. Creating the estate is the operator's own action, printed
@@ -209,6 +237,10 @@ phase_benign() {
   # WARN without tripping the exit code at all. Compare the whole verdict
   # before offering the handoff.
   assert_gate_matches_manifest "$EVIDENCE/benign-gate.json" "m1-tier2-benign"
+  # A matching verdict alone doesn't prove which release produced it: an
+  # unintended build could coincidentally reproduce the same decision, risk,
+  # and findings. Confirm the receipt's own release fields too.
+  assert_receipt_matches_manifest "$EVIDENCE/benign.receipt.json"
 
   # Reached only when the deterministic gate exited 0 and matched the
   # manifest. The receipt records gate_only: what the policies found, not an
@@ -307,6 +339,11 @@ phase_hostile() {
   # status against the manifest, not just the two most obviously relevant
   # ones.
   assert_gate_matches_manifest "$EVIDENCE/hostile-gate.json" "m1-tier2-hostile"
+  # A matching verdict alone doesn't prove which release produced it: an
+  # unintended build could coincidentally reproduce the same decision, risk,
+  # and findings. Confirm the receipt's own release fields too (the signed
+  # receipt nests them under .receipt; the function handles both shapes).
+  assert_receipt_matches_manifest "$EVIDENCE/hostile.receipt.json"
 
   # The blocked plan artifact is destroyed so nothing later can pick it up.
   rm -f "$EVIDENCE/hostile.tfplan"
@@ -369,7 +406,14 @@ phase_hash() {
     for file in *; do
       [ "$file" = "SHA256SUMS" ] && continue
       [ -f "$file" ] || continue
-      echo "$(sha256 "$file")  $file" >> SHA256SUMS
+      # A digest computed as `echo "$(sha256 "$file")  $file"` would swallow
+      # a failing sha256 the same way state_sha256 used to: echo itself
+      # still succeeds, so a missing/unreadable file or a broken digest
+      # utility would silently write a blank line instead of aborting.
+      # Capturing into a plain (non-local) variable first keeps the
+      # assignment's own exit status equal to sha256's, which -e does catch.
+      digest="$(sha256 "$file")"
+      echo "$digest  $file" >> SHA256SUMS
     done
     cat SHA256SUMS
   )
