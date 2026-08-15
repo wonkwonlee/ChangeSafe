@@ -31329,6 +31329,11 @@ async function runVerify(options, console2) {
       "--public-key was supplied but this receipt carries no signature. Verifying it would prove nothing about who issued it."
     );
   }
+  if (options.context && !options.input) {
+    throw new UsageError(
+      "--context was supplied but --input was not. Context only matters as part of the input hash check, so pass --input too."
+    );
+  }
   const checks = [];
   let parsedInput;
   const selfHashOk = await verifyReceiptHash(receipt);
@@ -31353,7 +31358,8 @@ async function runVerify(options, console2) {
   }
   if (options.input) {
     const domain2 = resolveDomain(options.domain);
-    const { input, inputId } = domain2.parseInput(readJsonFile(options.input, "input"));
+    const context = options.context ? [{ kind: "context", text: readTextFile(options.context, "context") }] : [];
+    const { input, inputId } = domain2.parseInput(readJsonFile(options.input, "input"), context);
     parsedInput = input;
     const actual = await hashCanonical(input);
     checks.push({
@@ -31698,6 +31704,10 @@ token for is an approver, and startup says so.
 
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
+  --context <file>      untrusted text that came with the original change
+                        (a PR body); needed alongside --input to reproduce
+                        the input hash of a receipt whose gate call used
+                        --context
   --proposal <file>     also check the receipt describes this proposal
   --public-key <file>   trusted key, obtained out of band, to check a signature
   --skip-signature      report integrity only, leaving authorship unchecked
@@ -31871,6 +31881,7 @@ async function main(argv, console2) {
           receipt,
           input: values.input,
           proposal: values.proposal,
+          context: values.context,
           publicKey: values["public-key"],
           skipSignature: values["skip-signature"],
           domain: values.domain,
