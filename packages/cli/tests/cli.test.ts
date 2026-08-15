@@ -474,6 +474,109 @@ describe("changesafe gate --domain terraform", () => {
     expect(inputCheck.ok).toBe(false);
     expect(inputCheck.detail).toContain("not what this receipt describes");
   });
+
+  it("reproduces the input hash of a context-bearing Terraform receipt when --context is repeated", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    const planPath = path.join(PLANS, "safe-scale-up.tfplan.json");
+    const contextPath = path.join(dir, "pr-body.txt");
+    writeFileSync(contextPath, "Original PR context for the captured Terraform plan.");
+
+    const gateCode = await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        planPath,
+        "--context",
+        contextPath,
+        "--receipt",
+        receiptPath,
+      ],
+      createCapture(),
+    );
+    expect(gateCode).toBe(0);
+
+    const capture = createCapture();
+    const verifyCode = await main(
+      [
+        "verify",
+        receiptPath,
+        "--domain",
+        "terraform",
+        "--input",
+        planPath,
+        "--context",
+        contextPath,
+        "--format",
+        "json",
+      ],
+      capture,
+    );
+
+    expect(verifyCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload.ok).toBe(true);
+    const inputCheck = payload.checks.find((check: { name: string }) => check.name === "input hash");
+    expect(inputCheck.ok).toBe(true);
+  });
+
+  it("fails the input hash of a context-bearing Terraform receipt when --context is omitted", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    const planPath = path.join(PLANS, "safe-scale-up.tfplan.json");
+    const contextPath = path.join(dir, "pr-body.txt");
+    writeFileSync(contextPath, "Original PR context for the captured Terraform plan.");
+
+    const gateCode = await main(
+      [
+        "gate",
+        "--domain",
+        "terraform",
+        "--input",
+        planPath,
+        "--context",
+        contextPath,
+        "--receipt",
+        receiptPath,
+      ],
+      createCapture(),
+    );
+    expect(gateCode).toBe(0);
+
+    const capture = createCapture();
+    const verifyCode = await main(
+      ["verify", receiptPath, "--domain", "terraform", "--input", planPath, "--format", "json"],
+      capture,
+    );
+
+    expect(verifyCode).toBe(1);
+    const inputCheck = JSON.parse(capture.stdout).checks.find(
+      (check: { name: string }) => check.name === "input hash",
+    );
+    expect(inputCheck.ok).toBe(false);
+  });
+
+  it("rejects --context without --input", async () => {
+    const dir = temporaryDir();
+    const receiptPath = path.join(dir, "terraform-receipt.json");
+    const planPath = path.join(PLANS, "safe-scale-up.tfplan.json");
+    const contextPath = path.join(dir, "pr-body.txt");
+    writeFileSync(contextPath, "Original PR context for the captured Terraform plan.");
+
+    await main(
+      ["gate", "--domain", "terraform", "--input", planPath, "--receipt", receiptPath],
+      createCapture(),
+    );
+
+    await expect(
+      main(
+        ["verify", receiptPath, "--domain", "terraform", "--context", contextPath],
+        createCapture(),
+      ),
+    ).rejects.toThrow(/--context was supplied but --input was not/);
+  });
 });
 
 describe("changesafe verify", () => {

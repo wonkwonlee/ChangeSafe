@@ -129,6 +129,10 @@ token for is an approver, and startup says so.
 
 VERIFY OPTIONS
   --input <file>        also check the receipt describes this input
+  --context <file>      untrusted text that came with the original change
+                        (a PR body); needed alongside --input to reproduce
+                        the input hash of a receipt whose gate call used
+                        --context
   --proposal <file>     also check the receipt describes this proposal
   --public-key <file>   trusted key, obtained out of band, to check a signature
   --skip-signature      report integrity only, leaving authorship unchecked
@@ -314,6 +318,7 @@ export async function main(argv: string[], console: Console): Promise<number> {
           receipt,
           input: values.input,
           proposal: values.proposal,
+          context: values.context,
           publicKey: values["public-key"],
           skipSignature: values["skip-signature"],
           domain: values.domain,

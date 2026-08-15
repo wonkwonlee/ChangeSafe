@@ -19,6 +19,14 @@ export interface VerifyOptions {
   /** Optional cross-checks: does this receipt describe these artifacts? */
   input?: string;
   proposal?: string;
+  /**
+   * Untrusted free text that travelled with the original change (a PR body).
+   * A domain that folds context into its normalized input (terraform) needs
+   * this to reproduce the exact inputSha256 a context-bearing `gate` call
+   * produced; omitting it here when the original run used --context makes
+   * the input hash check fail even against the correct, untampered input.
+   */
+  context?: string;
   /** Public-key PEM obtained out of band. Required to check a signature. */
   publicKey?: string;
   /** Explicitly accept an unchecked signature and report integrity only. */
@@ -80,6 +88,11 @@ export async function runVerify(options: VerifyOptions, console: Console): Promi
       "--public-key was supplied but this receipt carries no signature. Verifying it would prove nothing about who issued it.",
     );
   }
+  if (options.context && !options.input) {
+    throw new UsageError(
+      "--context was supplied but --input was not. Context only matters as part of the input hash check, so pass --input too.",
+    );
+  }
 
   const checks: Check[] = [];
   let parsedInput: unknown | undefined;
@@ -112,7 +125,13 @@ export async function runVerify(options: VerifyOptions, console: Console): Promi
 
   if (options.input) {
     const domain = resolveDomain(options.domain);
-    const { input, inputId } = domain.parseInput(readJsonFile(options.input, "input"));
+    // Text that arrived with the change — a PR body, a commit message — is
+    // untrusted data the gate scanned, never instructions it followed; the
+    // same treatment applies here, purely to reproduce the hash.
+    const context = options.context
+      ? [{ kind: "context", text: readTextFile(options.context, "context") }]
+      : [];
+    const { input, inputId } = domain.parseInput(readJsonFile(options.input, "input"), context);
     parsedInput = input;
     const actual = await hashCanonical(input);
     checks.push({
