@@ -34,13 +34,17 @@ node packages/cli/dist/changesafe.js gate --scenario scenarios/network/scenario-
 
 ```bash
 terraform show -json tfplan > tfplan.json
-changesafe gate --domain terraform --input tfplan.json --context pr-body.txt
+changesafe gate --domain terraform --input tfplan.json --context pr-body.txt --receipt r.json
+changesafe verify r.json --domain terraform --input tfplan.json --context pr-body.txt
 ```
 
 The Terraform domain derives the proposal from the plan itself — the plan
 already states what will change — so `--proposal` is neither needed nor
 accepted. `--context` carries text that travelled with the change (a pull
-request body); it is scanned for injected instructions and never obeyed.
+request body); it is scanned for injected instructions and never obeyed. It
+is folded into the receipt's `inputSha256`, so re-verifying a context-bearing
+receipt needs the same `--context` file passed back to `verify`, not just
+`--input`.
 
 Its policy set differs from the network domain's, and says why:
 `ROLLBACK_COMPLETE` is replaced by `REVERSIBILITY` because a plan has no
@@ -109,6 +113,8 @@ changesafe eval --provider <id>               # measure a model on the suite
 
 changesafe verify <receipt.json>              # recompute hashes and signature
                 [--input <file>] [--proposal <file>]   # and check it describes these
+                [--context <file>]            # needed with --input when the
+                                               # original gate call used --context
                 [--public-key <file>]         # check who signed it
                 [--skip-signature]            # integrity only, authorship unchecked
 
