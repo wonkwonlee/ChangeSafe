@@ -10,7 +10,7 @@ precedence: >
   On conflict, docs/ARCHITECTURE.md design commitments win over this file.
   This file wins over docs/OSS_ROADMAP.md sequencing.
   This file does not override AGENTS.md or CLAUDE.md operational rules.
-current_milestone: M0
+current_milestone: M2
 ```
 
 Read this before proposing, planning, or implementing any change in this

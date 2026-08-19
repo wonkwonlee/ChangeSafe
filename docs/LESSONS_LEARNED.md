@@ -23,3 +23,25 @@ question sharper instead of letting Tier 1 overclaim.
 
 This lesson is backed by `CS-ADV-001`, which found no counterexample under the
 captured-plan attack model but left Tier 2 and M2 questions open.
+
+## M1 close-out: a milestone's scope also has to answer for the last one's
+
+M0's private review produced ten attack hypotheses. M1 was scoped to the
+Terraform benign/hostile control flow only, so most of those hypotheses were
+never going to be M1's job — some named Kubernetes, some named the public
+app workbench, neither of which M1 touches. The mistake that scoping makes
+easy is letting "out of scope" quietly become "forgotten."
+
+Closing M1 required walking every M0 hypothesis to an explicit disposition:
+resolved in Terraform scope (`CS-ADV-001`, `CS-ADV-002`), resolved only for
+the Terraform channel of a broader hypothesis, or correctly deferred to a
+future Kubernetes- or app-track milestone. `CS-ADV-002` in particular
+surfaced a real residual gap even inside Terraform scope — a receipt's
+`policyVersion` does not identify the policy-pack file that produced its
+findings — and that gap is carried forward rather than closed by definition.
+
+The lesson: a milestone's exit gate is not just "did we find and fix
+something," it's "did every open question from the milestone that fed this
+one get an answer, even if the answer is 'still open, deferred on purpose.'"
+Silent deferral and quiet forgetting look identical from the outside; only a
+written disposition tells them apart.
