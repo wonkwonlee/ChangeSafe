@@ -189,6 +189,24 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(outcome.allowed).toBe(false);
   });
 
+  it("denies a uid-bound grant when the request's uid is missing (CS-ADV-008 follow-up)", async () => {
+    // Whether the uid check applies is the ISSUER's choice, not the
+    // request's: an authenticator that never populates userInfo.uid must
+    // not be able to silently downgrade a grant that specifically opted
+    // into uid-binding back to username-only matching.
+    const { signed, verifying } = await buildSignedGrant({
+      authorizedActorUid: "11111111-1111-1111-1111-111111111111",
+    });
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ userInfo: { username: ACTOR, groups: [] } }), // no uid
+      verifying,
+      NOW,
+      { expectedResource: "res-web-default" },
+    );
+    expect(outcome.allowed).toBe(false);
+  });
+
   it("allows when the grant carries no uid, matching by username alone (backward compatible)", async () => {
     const { signed, verifying } = await buildSignedGrant(); // no authorizedActorUid
     const outcome = await verifyGrantAgainstAdmission(

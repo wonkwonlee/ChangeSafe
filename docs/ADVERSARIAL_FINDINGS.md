@@ -873,3 +873,26 @@ Whether other Kubernetes identity fields (`groups`, `extra`) carry
 analogous binding gaps has not been evaluated — this finding addresses
 `uid` specifically because it was the one raised and verified, not because
 a broader audit of `userInfo`'s full shape was performed.
+
+### Amendment: the check was symmetric when it needed to be asymmetric
+
+Found by a second round of the same external review, on the fix commit
+itself. The first version only compared uids "when both sides have one" —
+`grant.authorizedActorUid !== undefined && request.userInfo.uid !==
+undefined && ...`. Since `AdmissionUserInfoSchema` permits an absent uid,
+an admission request from an authenticator that never populates
+`userInfo.uid` (or one routed to appear that way) silently skipped the
+check entirely and fell back to username-only matching — defeating a
+grant that specifically opted into uid-binding, exactly the protection
+this finding exists to provide.
+
+Fixed by making the condition asymmetric: whether the check applies is the
+*issuer's* choice (did they set `authorizedActorUid` when building the
+grant?), not the admission request's. If the grant carries a uid, the
+request must carry the identical one or be denied outright — a missing
+`request.userInfo.uid` is now a deny, not a silent downgrade. A grant
+issued with no uid at all (the still-supported weaker binding) is
+unaffected. Regression test: "denies a uid-bound grant when the request's
+uid is missing (CS-ADV-008 follow-up)" in
+`packages/kubernetes-enforcer/tests/verify.test.ts` — fails against the
+symmetric (first-version) condition.

@@ -85,15 +85,24 @@ export async function verifyGrantAgainstAdmission(
   // and recreating a ServiceAccount preserves its username while
   // Kubernetes assigns the new object a new uid, and a name-based
   // RoleBinding can restore the same access to the replacement — letting
-  // it exercise a grant actually issued for the deleted one. Enforced only
-  // when both sides have a uid to compare; grant.authorizedActorUid is
-  // optional exactly for identity providers that don't supply one.
-  if (
-    grant.authorizedActorUid !== undefined &&
-    request.userInfo.uid !== undefined &&
-    grant.authorizedActorUid !== request.userInfo.uid
-  ) {
-    return { allowed: false, reason: "authorized actor's uid does not match the requesting identity" };
+  // it exercise a grant actually issued for the deleted one.
+  //
+  // Asymmetric on purpose: whether this check applies is the ISSUER's
+  // choice (did they bind a uid when they built the grant?), not the
+  // ADMISSION REQUEST's. If the grant carries a uid, the request must
+  // carry the identical one or be denied outright — silently falling back
+  // to username-only whenever the request happened to omit a uid would let
+  // an authenticator that never populates `userInfo.uid` (or an attacker
+  // routed through one) defeat a grant that specifically opted into
+  // uid-binding. A grant issued with NO uid (the caller chose the weaker,
+  // still-supported binding) is unaffected either way.
+  if (grant.authorizedActorUid !== undefined) {
+    if (
+      request.userInfo.uid === undefined ||
+      grant.authorizedActorUid !== request.userInfo.uid
+    ) {
+      return { allowed: false, reason: "authorized actor's uid does not match the requesting identity" };
+    }
   }
 
   if (grant.operation !== request.operation) {
