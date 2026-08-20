@@ -87,6 +87,8 @@ const GrantRequestSchema = z.strictObject({
   operation: z.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
   resource: z.string().min(1).max(128),
   objectSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on oldObjectSha256. */
+  oldObjectSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   expiresAtUtc: TimestampSchema,
 });
 

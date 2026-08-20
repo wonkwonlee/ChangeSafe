@@ -19,6 +19,12 @@ export const AdmissionRequestSchema = z.looseObject({
   operation: AdmissionOperationSchema,
   userInfo: AdmissionUserInfoSchema,
   object: z.unknown(),
+  /**
+   * The object's state before this request, present on UPDATE (and DELETE,
+   * which this verifier doesn't handle yet — see webhook YAML comments).
+   * Absent on CREATE, since there is no prior state.
+   */
+  oldObject: z.unknown().optional(),
 });
 
 export const AdmissionReviewRequestSchema = z.looseObject({

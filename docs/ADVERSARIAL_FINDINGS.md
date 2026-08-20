@@ -1524,3 +1524,115 @@ domains.ts` and `features/reviews/durable-review-contract.ts` so this
 class of two-sources-of-truth gap cannot recur for a future domain, was
 not evaluated — that broader question is exactly the kind of design
 decision this finding defers rather than answers.
+
+## Finding CS-ADV-014
+
+### Hypothesis
+
+An UPDATE grant binds the exact reviewed transition — the object's state
+both before and after the approved change — not merely its target state.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/verify.ts`'s object-hash check
+- `packages/core/src/grant.ts`'s `AuthorizationGrantSchema`
+
+### Method
+
+Found by external review (Codex, on PR #75); verified against the actual
+verification logic rather than accepted on description — confirmed
+`verifyGrantAgainstAdmission` computed and compared only
+`kubernetesObjectSha256(request.object)` against `grant.objectSha256`,
+with no reference anywhere to `request.oldObject` (which the schema at the
+time did not even model).
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, "denies replaying an
+UPDATE grant against a diverged prior state (CS-ADV-014)" — issues a grant
+for v1→v2, confirms it allows the reviewed v1→v2 transition, then confirms
+it also (incorrectly, pre-fix) allowed a v3→v2 transition — an unreviewed
+revert from a state the object had since diverged to. Verified this test
+fails against the pre-fix code and passes against the fix.
+
+### Expected invariant
+
+A grant approving a specific reviewed transition cannot be replayed to
+authorize a different, unreviewed transition that merely shares the same
+target state.
+
+### Observed behavior
+
+A grant issued for a reviewed v1→v2 change remained valid for ANY
+admission request whose `object` hashed to v2, regardless of what
+`oldObject` was. If the resource diverged to an unreviewed v3 after grant
+issuance (through any other change, reviewed or not), the same v1→v2
+grant could still be presented to force the object from v3 back to v2 — a
+v3→v2 transition nobody ever reviewed, disguised as the already-approved
+v1→v2 one.
+
+### Severity
+
+Medium-High. Requires the object to have actually diverged from its
+reviewed starting state before the grant is exercised (a real but not
+trivial precondition — either a race with another legitimate change, or
+an attacker able to make an intervening unreviewed change in the first
+place, in which case they likely already have meaningful write access).
+Where reachable, it lets a stale, still-valid grant force a resource back
+to an old target state that is no longer the reviewed change it once was.
+
+### Root cause
+
+The grant's object binding was designed around "the target state a
+decision approved," matching how a receipt records what an approved
+proposal produces — but never accounted for the *starting* state the
+decision was actually reviewed against. For CREATE this distinction does
+not exist (there is no prior state); for UPDATE it does, and nothing
+recorded it.
+
+### Fix
+
+`AuthorizationGrantSchema` gains an optional `oldObjectSha256`, mirroring
+the `authorizedActorUid` pattern (`CS-ADV-008`): threaded through
+`IssueGrantOptions` (`decisions.ts`) and `GrantRequestSchema` (`http.ts`).
+`AdmissionRequestSchema` (`admission-review.ts`) gains an optional
+`oldObject` field to actually carry Kubernetes' own `oldObject` through to
+the verifier — it was silently dropped before (the schema was
+`z.looseObject` so it passed through in principle, but nothing typed or
+read it). `verifyGrantAgainstAdmission` now additionally hashes and
+compares `request.oldObject` against `grant.oldObjectSha256` whenever the
+grant supplies one.
+
+Asymmetric like the uid-binding fix: whether this check applies is the
+*issuer's* choice, not the request's — a grant issued with no
+`oldObjectSha256` (CREATE, where there's no prior state, or an UPDATE
+grant that didn't supply one) is unaffected, staying backward compatible
+with the client-asserted binding model this whole issuance side already
+has (`CS-ADV-004`) rather than making it mandatory and reopening that
+larger, still-deferred design question.
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`'s new CS-ADV-014 test
+(see Minimal reproducer) and a companion backward-compatibility test
+confirming an UPDATE grant with no `oldObjectSha256` still allows,
+matching by target state alone as before.
+
+### What this changed in the architecture
+
+`AuthorizationGrantSchema` and `AdmissionRequestSchema` each gained one
+optional field. No new dependency, no change to the signing/
+canonicalization scheme beyond the new field itself being part of what
+gets signed.
+
+### Remaining uncertainty
+
+Like `CS-ADV-004`, `oldObjectSha256` is caller-asserted at issuance, not
+server-derived from the receipt's actual before-state — a caller could in
+principle supply an `oldObjectSha256` that doesn't correspond to what the
+approved decision was actually reviewed against, which this fix does not
+close. Whether the shipped demo (`kind-repro.sh`) or `main.ts`'s
+production wiring should be updated to actually populate this field for
+UPDATE grants was not done in this pass — the field exists and is
+enforced when present, but nothing in this repository's own issuance path
+currently supplies it yet.

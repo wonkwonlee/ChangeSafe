@@ -49,6 +49,20 @@ export const AuthorizationGrantSchema = z
     /** Hash of the domain-normalized object this grant was issued against. */
     objectSha256: Sha256HexSchema,
     /**
+     * Hash of the object's state *before* the reviewed change, for an
+     * UPDATE grant. Without this, a grant approving a reviewed transition
+     * (e.g. image v1 -> v2) binds only the target state — if the object
+     * diverges after issuance (an unreviewed v1 -> v3), the same grant
+     * still matches on `objectSha256` alone and can be replayed to force
+     * the object back to v2 from v3, a transition nobody reviewed. Optional
+     * because CREATE has no prior state to bind (nothing to compare
+     * against) and because — like `objectSha256` itself — deriving this
+     * server-side from the evaluated proposal is deferred (see
+     * `CS-ADV-004`); when a caller doesn't supply it, verification falls
+     * back to binding only the target state, as before.
+     */
+    oldObjectSha256: Sha256HexSchema.optional(),
+    /**
      * The composed policy version of the receipt this grant came from, e.g.
      * `core-v0.2.0+kubernetes-v0.1.0`. Bounded generously: real composed
      * values are already ~30 characters, so a tighter bound would start

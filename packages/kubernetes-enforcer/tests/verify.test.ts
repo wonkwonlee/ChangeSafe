@@ -328,4 +328,47 @@ describe("verifyGrantAgainstAdmission", () => {
     // with it post-authorization must still be caught.
     expect(outcome.allowed).toBe(false);
   });
+
+  it("denies replaying an UPDATE grant against a diverged prior state (CS-ADV-014)", async () => {
+    // A grant approving v1 -> v2 binds only the target state (v2) unless
+    // oldObjectSha256 is set. Without it, the same grant could authorize
+    // v3 -> v2 (an unreviewed revert) just as easily as the reviewed
+    // v1 -> v2 — this proves oldObjectSha256, once supplied, closes that.
+    const v1 = { ...RESOURCE, spec: { replicas: 1 } };
+    const v2 = { ...RESOURCE, spec: { replicas: 2 } };
+    const v3 = { ...RESOURCE, spec: { replicas: 3 } };
+    const { signed, verifying } = await buildSignedGrant({
+      objectSha256: await objectHashOf(v2),
+      oldObjectSha256: await objectHashOf(v1),
+    });
+
+    const reviewed = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: v2, oldObject: v1 }),
+      verifying,
+      NOW,
+    );
+    expect(reviewed).toEqual({ allowed: true });
+
+    // Same grant, but the object actually diverged to v3 first — a replay
+    // attempting to force it back to v2 from a state nobody reviewed.
+    const replayed = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: v2, oldObject: v3 }),
+      verifying,
+      NOW,
+    );
+    expect(replayed.allowed).toBe(false);
+  });
+
+  it("allows an UPDATE grant with no oldObjectSha256, matching by target state alone (backward compatible)", async () => {
+    const { signed, verifying } = await buildSignedGrant(); // no oldObjectSha256
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: RESOURCE, oldObject: { ...RESOURCE, spec: { replicas: 999 } } }),
+      verifying,
+      NOW,
+    );
+    expect(outcome).toEqual({ allowed: true });
+  });
 });

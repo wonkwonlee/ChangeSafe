@@ -137,6 +137,30 @@ export async function verifyGrantAgainstAdmission(
     return { allowed: false, reason: "requested object does not match the object the grant authorized" };
   }
 
+  // Binding only the target state (above) is not enough for UPDATE: a grant
+  // approving a reviewed transition (v1 -> v2) still matches on
+  // objectSha256 alone if the object has since diverged to an unreviewed
+  // v3 and someone replays the grant to force it back to v2 — a v3 -> v2
+  // transition nobody reviewed. Asymmetric like the uid check above:
+  // whether this applies is the ISSUER's choice (did they bind a prior
+  // state when they built the grant?), not the request's. A grant issued
+  // with no oldObjectSha256 (CREATE, or an UPDATE grant that didn't supply
+  // one) is unaffected.
+  if (grant.oldObjectSha256 !== undefined) {
+    let oldObjectSha256: string;
+    try {
+      oldObjectSha256 = await kubernetesObjectSha256(request.oldObject);
+    } catch {
+      return { allowed: false, reason: "the admitted object's prior state could not be read" };
+    }
+    if (oldObjectSha256 !== grant.oldObjectSha256) {
+      return {
+        allowed: false,
+        reason: "the object's prior state does not match the state the grant was reviewed against",
+      };
+    }
+  }
+
   if (
     options.expectedPolicyVersion !== undefined &&
     grant.policyVersion !== options.expectedPolicyVersion

@@ -59,6 +59,8 @@ export interface IssueGrantOptions {
   operation: z.infer<typeof GrantOperationSchemaType>;
   resource: string;
   objectSha256: string;
+  /** See AuthorizationGrantSchema's doc comment on oldObjectSha256. */
+  oldObjectSha256?: string;
   expiresAtUtc: string;
   /**
    * The instant to record as the grant's `issuedAtUtc`. Callers that
@@ -209,6 +211,7 @@ export class DecisionService {
       operation: options.operation,
       resource: options.resource,
       objectSha256: options.objectSha256,
+      oldObjectSha256: options.oldObjectSha256,
       policyVersion: receipt.policyVersion,
       issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
       expiresAtUtc: options.expiresAtUtc,
