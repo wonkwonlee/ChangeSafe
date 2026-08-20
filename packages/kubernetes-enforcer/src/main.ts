@@ -67,13 +67,11 @@ async function main(): Promise<void> {
   );
 
   httpsServer.listen(port, () => {
-     
     console.log(`changesafe-kubernetes-enforcer listening on :${port}`);
   });
 }
 
 main().catch((error: unknown) => {
-   
   console.error(error);
   process.exitCode = 1;
 });

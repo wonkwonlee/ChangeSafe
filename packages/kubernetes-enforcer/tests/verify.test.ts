@@ -9,7 +9,7 @@ import {
   canonicalize,
 } from "@changesafe/core";
 import { normalizeRawResource } from "@changesafe/domain-kubernetes";
-import { verifyGrantAgainstAdmission } from "../src/verify";
+import { verifyGrantAgainstAdmission, GRANT_ANNOTATION } from "../src/verify";
 import type { AdmissionRequest } from "../src/admission-review";
 
 const RESOURCE = {
@@ -140,6 +140,64 @@ describe("verifyGrantAgainstAdmission", () => {
       NOW,
       { expectedPolicyVersion: "kubernetes-v0.2.0" },
     );
+    expect(outcome.allowed).toBe(false);
+  });
+
+  // The grant is issued against the object's hash *before* the grant is
+  // attached to it (src/verify.ts's objectHashOf excludes GRANT_ANNOTATION
+  // for exactly this reason). These two tests exercise that exclusion
+  // through the real production hashing path inside verifyGrantAgainstAdmission
+  // itself, not the local objectHashOf() helper above (which has no
+  // exclusion and would hide a regression here).
+
+  it("allows once the grant annotation itself is attached to the admitted object", async () => {
+    // objectSha256 is computed on RESOURCE, which carries no annotations at
+    // all, so this hash is identical whether or not the exclusion exists.
+    const { signed, verifying } = await buildSignedGrant();
+    const resourceWithGrantAnnotationAttached = {
+      ...RESOURCE,
+      metadata: {
+        ...RESOURCE.metadata,
+        annotations: { [GRANT_ANNOTATION]: "grant-jws-placeholder" },
+      },
+    };
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: resourceWithGrantAnnotationAttached }),
+      verifying,
+      NOW,
+      { expectedResource: "res-web-default" },
+    );
+    // If production's objectHashOf did NOT exclude GRANT_ANNOTATION, attaching
+    // it here would change the computed hash and this would incorrectly deny.
+    expect(outcome).toEqual({ allowed: true });
+  });
+
+  it("denies when a different annotation is tampered with after authorization", async () => {
+    const resourceWithOtherAnnotation = {
+      ...RESOURCE,
+      metadata: { ...RESOURCE.metadata, annotations: { "team.example.com/owner": "platform-team" } },
+    };
+    const { signed, verifying } = await buildSignedGrant({
+      objectSha256: await objectHashOf(resourceWithOtherAnnotation),
+    });
+    const tampered = {
+      ...resourceWithOtherAnnotation,
+      metadata: {
+        ...resourceWithOtherAnnotation.metadata,
+        annotations: { "team.example.com/owner": "attacker-team" },
+      },
+    };
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: tampered }),
+      verifying,
+      NOW,
+      { expectedResource: "res-web-default" },
+    );
+    // The exclusion is scoped to exactly GRANT_ANNOTATION; a non-grant
+    // annotation must still participate in the object hash, so tampering
+    // with it post-authorization must still be caught.
     expect(outcome.allowed).toBe(false);
   });
 });
