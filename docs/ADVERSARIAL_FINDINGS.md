@@ -276,3 +276,99 @@ has no dedicated unit test (explicitly deprioritized in the same fix round
 as lower value than standing up a new test file for one small function). It
 also does not address ledger recording, nonce/replay defenses, or E2/E3
 persistence — all explicitly deferred per the M2 design spec.
+
+## Finding CS-ADV-004
+
+### Hypothesis
+
+An `AuthorizationGrant` issued by `packages/server` binds an approved decision
+to the operation, resource, and canonical object that decision was actually
+about, as the M2 design spec's data flow states ("operation, resource,
+object_sha256 = derived from the same evaluated proposal (never re-entered)").
+
+### Attack surface
+
+- `GrantRequestSchema` and the `POST /reviews/:id/decisions` route in
+  `packages/server/src/http.ts`
+- `DecisionService#issueGrant` in `packages/server/src/decisions.ts`
+- `packages/kubernetes-enforcer/src/verify.ts`'s
+  `verifyGrantAgainstAdmission`, which consumes whatever binding it is given
+
+### Method
+
+Approve a real durable review in one domain (a network incident) through the
+authenticated OIDC decision route, and request a grant in the same call whose
+`resource` names a Kubernetes-shaped resource that review never mentioned and
+whose `objectSha256` is an arbitrary hash belonging to no object. Inspect the
+signed grant the server returns.
+
+### Minimal reproducer
+
+`packages/server/tests/reviews.test.ts`, the case "issues a grant whose
+resource and object hash the caller chose, unchecked". It decides
+`review-grant-unbound` (a network review) with
+`resource: "deployments/prod/unrelated-workload"` and
+`objectSha256: "b".repeat(64)`.
+
+### Expected invariant
+
+Every field a grant binds should be derived server-side from the same
+evaluated proposal the receipt records, so a grant cannot authorize an object
+or resource the approved decision was not about.
+
+### Observed behavior
+
+The server accepts the request, issues a signed grant carrying exactly the
+caller's `resource` and `objectSha256`, and returns HTTP 201. Only `receiptId`
+and `policyVersion` are server-derived; `operation`, `resource`, and
+`objectSha256` are copied unchanged from the request body with no
+cross-check against the reviewed proposal. The enforcer then verifies the
+admission request against that caller-chosen binding faithfully — it has no
+way to know the binding was never derived.
+
+### Severity
+
+Medium authorization-provenance gap. It creates no execution path, does not
+weaken any BLOCK finding, and cannot be reached without an authenticated
+approver identity: the actor who can mint a mis-bound grant is the actor who
+could have approved the corresponding change anyway. What it breaks is the
+claim the grant makes about *itself* — that its object binding descends from
+the decision it names.
+
+### Root cause
+
+Grant issuance was wired as a request-shaped feature of the decision endpoint
+rather than as a projection of the evaluated proposal. Deriving the binding
+server-side requires per-domain extraction of a stable resource id and a
+canonical object hash from a receipt's proposal, which no domain currently
+exposes to the server.
+
+### Fix
+
+No runtime fix in this pass; the gap is recorded rather than papered over.
+Server-side derivation is a future milestone with its own design (a
+`DomainAdapter`-level contract for "the resource and canonical object this
+proposal targets"), not a patch to a fix wave. `docs/M2_TECHNICAL_NOTE.md`
+now states plainly which grant fields are authoritative and which are
+caller-asserted.
+
+### Regression test
+
+`packages/server/tests/reviews.test.ts` locks the current behavior, gap
+included, so it is visible in the suite rather than only in prose; adding
+server-side derivation must fail that test and rewrite it.
+`tests/integration/m2-grant-issuance-to-enforcement.test.ts` covers the
+composed issuance-to-enforcement chain that made this gap visible.
+
+### What this changed in the architecture
+
+Nothing in runtime architecture changed. The change is claim discipline: a
+grant is documented as proving *which approved decision exists*, not that the
+object it authorizes is the object that decision was about.
+
+### Remaining uncertainty
+
+This finding does not establish whether a mis-bound grant is reachable by any
+identity weaker than an authenticated approver, does not address grants in the
+ledger, nonce/replay, or E2/E3 persistence, and does not evaluate a design for
+per-domain binding derivation.

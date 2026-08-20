@@ -816,6 +816,46 @@ describe("durable review decision HTTP API", () => {
     expect(response.status).toBe(422);
   });
 
+  // CS-ADV-004: the binding fields are caller-asserted, not derived.
+  //
+  // This locks the *current* behavior, gap included, so the gap is visible
+  // in the suite rather than only in prose. The review here is a network
+  // incident; the grant it mints names a Kubernetes resource and an
+  // objectSha256 belonging to nothing at all, and the server issues it. Only
+  // receiptId and policyVersion are server-derived. If a future milestone
+  // adds server-side derivation, this test must fail and be rewritten — that
+  // is the point of keeping it.
+  it("issues a grant whose resource and object hash the caller chose, unchecked", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-unbound"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-unbound",
+      {
+        decision: "approve",
+        grant: {
+          ...grantRequest,
+          // A Kubernetes-shaped resource id on a network review's receipt.
+          resource: "deployments/prod/unrelated-workload",
+          objectSha256: "b".repeat(64),
+        },
+      },
+      token,
+    );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      receiptId: string;
+      grant?: { grant: { resource: string; objectSha256: string; receiptId: string } };
+    };
+    expect(body.grant?.grant.resource).toBe("deployments/prod/unrelated-workload");
+    expect(body.grant?.grant.objectSha256).toBe("b".repeat(64));
+    // The receipt link is the one binding that is actually authoritative.
+    expect(body.grant?.grant.receiptId).toBe(body.receiptId);
+  });
+
   it("refuses an already-expired grant before anything reaches the ledger", async () => {
     const token = await context.idp.token();
     expect(
