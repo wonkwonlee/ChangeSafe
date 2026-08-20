@@ -27,7 +27,14 @@ export type VerifyOutcome = { allowed: true } | { allowed: false; reason: string
  */
 export const GRANT_ANNOTATION = "changesafe.dev/grant";
 
-function objectHashOf(raw: unknown): Promise<string> {
+/**
+ * The one canonical object hash for a Kubernetes resource, over the domain's
+ * own normalization pipeline. Exported because both sides of the grant
+ * (issuance and admission-time verification) must compute it identically —
+ * a second hand-rolled copy of these three lines is exactly the drift that
+ * produced CS-ADV-003, so callers use this rather than reimplementing it.
+ */
+export function kubernetesObjectSha256(raw: unknown): Promise<string> {
   const normalized = normalizeRawResource(raw, "ev-admission-review");
   const annotations = { ...normalized.metadata.annotations };
   delete annotations[GRANT_ANNOTATION];
@@ -78,7 +85,7 @@ export async function verifyGrantAgainstAdmission(
     return { allowed: false, reason: "grant resource does not match the requested resource" };
   }
 
-  if ((await objectHashOf(request.object)) !== grant.objectSha256) {
+  if ((await kubernetesObjectSha256(request.object)) !== grant.objectSha256) {
     return { allowed: false, reason: "requested object does not match the object the grant authorized" };
   }
 

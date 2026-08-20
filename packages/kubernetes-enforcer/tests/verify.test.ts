@@ -4,12 +4,13 @@ import {
   generateSigningKeyPair,
   importSigningKeyPair,
   importVerifyingKey,
-  sha256Hex,
   signGrant,
-  canonicalize,
 } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
-import { verifyGrantAgainstAdmission, GRANT_ANNOTATION } from "../src/verify";
+import {
+  verifyGrantAgainstAdmission,
+  kubernetesObjectSha256,
+  GRANT_ANNOTATION,
+} from "../src/verify";
 import type { AdmissionRequest } from "../src/admission-review";
 
 const RESOURCE = {
@@ -29,12 +30,9 @@ async function keys() {
   };
 }
 
-function objectHashOf(raw: unknown): Promise<string> {
-  const normalized = normalizeRawResource(raw, "ev-test");
-  return sha256Hex(
-    canonicalize({ identity: normalized.identity, metadata: normalized.metadata, spec: normalized.spec }),
-  );
-}
+// The production hash function itself, not a re-implementation of it: a
+// hand-rolled copy here is what let CS-ADV-003 through.
+const objectHashOf = kubernetesObjectSha256;
 
 async function buildSignedGrant(overrides: Partial<Record<string, unknown>> = {}) {
   const { keyPair, verifying } = await keys();
@@ -144,11 +142,12 @@ describe("verifyGrantAgainstAdmission", () => {
   });
 
   // The grant is issued against the object's hash *before* the grant is
-  // attached to it (src/verify.ts's objectHashOf excludes GRANT_ANNOTATION
-  // for exactly this reason). These two tests exercise that exclusion
-  // through the real production hashing path inside verifyGrantAgainstAdmission
-  // itself, not the local objectHashOf() helper above (which has no
-  // exclusion and would hide a regression here).
+  // attached to it (kubernetesObjectSha256 excludes GRANT_ANNOTATION for
+  // exactly this reason). These two tests exercise that exclusion through
+  // the real production hashing path inside verifyGrantAgainstAdmission:
+  // the fixture below is hashed without the annotation and admitted with
+  // it, so a removed or widened exclusion changes one side and not the
+  // other, and the assertion flips.
 
   it("allows once the grant annotation itself is attached to the admitted object", async () => {
     // objectSha256 is computed on RESOURCE, which carries no annotations at

@@ -5,7 +5,7 @@
  */
 export { createEnforcerServer, createEnforcerRequestListener } from "./server";
 export type { EnforcerServerOptions } from "./server";
-export { verifyGrantAgainstAdmission, GRANT_ANNOTATION } from "./verify";
+export { verifyGrantAgainstAdmission, kubernetesObjectSha256, GRANT_ANNOTATION } from "./verify";
 export type { VerifyOptions, VerifyOutcome } from "./verify";
 export {
   AdmissionReviewRequestSchema,
