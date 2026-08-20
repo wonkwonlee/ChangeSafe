@@ -1373,3 +1373,154 @@ change) — verified only by reading the resulting script's structure and a
 (pre-CS-ADV-012) kind run predates both the CREATE-routing fix and this
 reordering, so it does not itself validate the new sequence either.
 Re-running `kind-repro.sh` for real remains open follow-up work.
+
+## Finding CS-ADV-013
+
+### Hypothesis
+
+Registering the Kubernetes domain in `packages/server/src/domains.ts`
+(Task 3 of the M2 plan) makes the durable, authenticated HTTP review flow
+— `POST /reviews` then `POST /reviews/:id/decisions`, the only route that
+can issue a grant — actually reachable for a Kubernetes decision.
+
+### Attack surface
+
+- `features/reviews/durable-review-contract.ts`'s `DurableReviewDomainIdSchema`,
+  `DurableReviewSourceSchema`, `HistoricalDurableReviewSourceSchema`, and
+  both intake schemas' domain-schema branching
+- `packages/server/src/durable-review-store.ts`'s SQLite row schemas and
+  TypeScript types
+- `packages/server/src/http.ts`'s `pendingReviewSession`'s `domainShape`
+  classification
+
+### Method
+
+Found by external review (Codex, on PR #75); verified by reading the
+actual schemas rather than accepted on description. Confirmed
+`DurableReviewDomainIdSchema = z.enum(["network", "terraform"])` — a
+hardcoded two-domain enum with no third branch — and that
+`DurableReviewSourceSchema`/`HistoricalDurableReviewSourceSchema` are
+`z.discriminatedUnion("domainId", [...])` with exactly those same two
+literal branches, nothing else. Also checked `durable-review-store.ts`:
+`domain_id: z.enum(["network", "terraform"])` is hardcoded in at least two
+SQLite row schemas, plus the same literal union in several TypeScript type
+declarations and `ListOptionsSchema`. Also checked `http.ts`'s
+`pendingReviewSession`: `domainShape: network ? "simulated-state" :
+"external-diff"` — a boolean ternary with no Kubernetes case, which would
+misclassify Kubernetes as `external-diff` even if the schema gap above
+were closed (Kubernetes is `simulated-state`, matching network, not
+terraform).
+
+### Minimal reproducer
+
+Not directly unit-tested by this repo's existing suite, which is itself
+the tell: `packages/server/tests/domains-kubernetes.test.ts` (Task 3's own
+test) calls `resolveServerDomain("kubernetes")` directly, never through
+`POST /reviews`. `tests/integration/m2-grant-issuance-to-enforcement.test.ts`
+(this milestone's own composed issuance-to-verification test) calls
+`DecisionService.decide()`/`issueGrant()` directly, also bypassing the
+durable HTTP intake entirely. A reproducer would be: `POST /reviews` with
+`domainId: "kubernetes"` — `DurableReviewIntakeSchema.parse` rejects it at
+the schema boundary before `resolveServerDomain` is ever consulted.
+
+### Expected invariant
+
+Every domain `packages/server/src/domains.ts` registers is reachable
+through every HTTP route the server advertises for durable review and
+decision, not registered in one layer while gated out by an earlier one.
+
+### Observed behavior
+
+`POST /reviews` for a Kubernetes intake fails Zod validation immediately —
+`domainId` is not `"network" | "terraform"`. `POST /reviews/:id/decisions`
+can therefore never receive a pending Kubernetes review to decide, so it
+can never issue a grant backed by a real Kubernetes decision through the
+one HTTP route that issues grants at all. Every other piece of M2's
+Kubernetes support (grant schema, signing, verification, the enforcer) is
+real and tested; only the durable HTTP path that is supposed to connect a
+human approval to a grant is unreachable for this domain.
+
+### Severity
+
+High. Not a security bypass — the opposite: a domain that cannot be
+decided cannot be over-approved either — but it means the milestone's
+central advertised flow ("an approver reviews and decides through
+`changesafe serve`, and a grant is issued from that decision") does not
+work for Kubernetes today via the real API, only via direct
+`DecisionService` calls a caller would have to construct themselves,
+bypassing durability, authentication, and the pending-review workflow
+entirely.
+
+### Root cause
+
+`packages/server/src/domains.ts`'s `DOMAINS` registry (an internal lookup
+table `resolveServerDomain` reads) and `features/reviews/
+durable-review-contract.ts`'s `DurableReviewDomainIdSchema` (the HTTP
+intake boundary's own, separately-maintained domain enum) are two
+different sources of truth for "which domains does this server support,"
+and only the first was updated when Kubernetes was added. Task 3's own
+test (`domains-kubernetes.test.ts`) exercised only the first, so nothing
+in that task's review surfaced the second, earlier gate.
+
+### Fix
+
+Not fixed in this pass — this is real design and implementation work, not
+a schema enum widening:
+
+1. `DurableReviewDomainIdSchema`, `DurableReviewSourceSchema`, and
+   `HistoricalDurableReviewSourceSchema` all need a Kubernetes branch —
+   including a real design decision for `sourceKind` and what a
+   Kubernetes durable intake's `source` shape should record (the domain's
+   own `KubernetesSnapshotProvenanceSchema` distinguishes `cluster-api`
+   vs. `authored`, which does not map directly onto network's or
+   terraform's `origin` vocabulary without a decision).
+2. Both intake schemas' "content must satisfy its domain schema" branches
+   are two-way ternaries (`network ? IncidentBundleSchema :
+   TerraformInputSchema`) that would silently validate a `"kubernetes"`
+   domainId against `TerraformInputSchema` if the enum were widened without
+   also fixing this — a real bug waiting to happen, not just a missing
+   case.
+3. Kubernetes's proposal shape doesn't cleanly match either existing
+   model: network requires an eagerly-submitted structured
+   `NetworkChangeProposal`; terraform derives its diff from an immutable
+   submitted plan with proposals forbidden entirely; Kubernetes derives
+   its proposal from submitted manifest TEXT
+   (`packages/server/src/domains.ts`'s `kubernetes.resolveProposal` calls
+   `parseManifestDocuments(raw as string)`), a third shape this contract
+   has never accounted for. Deciding how manifest text fits the intake
+   envelope (as `input.content`? a new field?) is itself a design question.
+4. `durable-review-store.ts`'s SQLite row schemas and TypeScript types
+   hardcode the same two-domain enum in the persistence layer — widening
+   this touches on-disk schema, which existing rows must remain readable
+   against (this file already carries a historical-compatibility schema
+   for exactly this kind of concern, so precedent exists, but it still
+   needs doing correctly, not by pattern-matching quickly under review
+   pressure).
+5. `pendingReviewSession`'s `domainShape` ternary needs a real
+   three-way (or domain-driven) classification, not a boolean.
+
+Given the ledger consequences of getting a persisted-row schema wrong,
+this needs its own careful pass, not a same-day PR-review patch.
+
+### Regression test
+
+None added in this pass — see Minimal reproducer for why the existing
+suite doesn't already cover it, which is itself part of what this finding
+documents.
+
+### What this changed in the architecture
+
+Nothing. This is a documented gap, not a code change.
+
+### Remaining uncertainty
+
+Whether `changesafe.dev`'s CLI (`changesafe gate`/`analyze`) is affected by
+the same domain-shape question, or whether it has its own,
+already-correct Kubernetes wiring independent of the durable HTTP
+server's contract, was not checked. Whether the fix belongs in this
+contract file at all, versus a broader refactor toward a single
+domain-registry source of truth shared between `packages/server/src/
+domains.ts` and `features/reviews/durable-review-contract.ts` so this
+class of two-sources-of-truth gap cannot recur for a future domain, was
+not evaluated — that broader question is exactly the kind of design
+decision this finding defers rather than answers.

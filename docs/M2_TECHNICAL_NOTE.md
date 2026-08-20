@@ -166,6 +166,31 @@ admission time, so a grant issued against a manifest that omits a
 field the API server later defaults can produce a false DENY. That is the
 intended direction to fail in.
 
+### The durable HTTP review flow does not actually reach Kubernetes yet
+
+`packages/server/src/domains.ts` registers a `kubernetes` `ServerDomain`
+(Task 3 of the M2 plan), but that registry and the durable HTTP intake
+boundary (`features/reviews/durable-review-contract.ts`'s
+`DurableReviewDomainIdSchema = z.enum(["network", "terraform"])`) are two
+separate sources of truth for "which domains this server supports," and
+only the first was updated. **`POST /reviews` rejects a Kubernetes intake
+at the schema boundary before `resolveServerDomain` is ever consulted, so
+`POST /reviews/:id/decisions` — the only route that issues a grant — can
+never receive a pending Kubernetes review to decide.** Every other piece
+of Kubernetes support in M2 (the grant schema, signing, verification, the
+admission-webhook enforcer) is real, tested, and reachable; only the
+durable, authenticated HTTP path connecting a human approval to a grant is
+not, for this domain, today. `tests/integration/
+m2-grant-issuance-to-enforcement.test.ts` and `packages/server/tests/
+domains-kubernetes.test.ts` both call `DecisionService`/`resolveServerDomain`
+directly, which is exactly why neither test caught this — both bypass the
+HTTP intake layer this gap lives in. Recorded as **`CS-ADV-013`** in
+`docs/ADVERSARIAL_FINDINGS.md`. Closing it touches the durable review
+contract's schemas, the SQLite persistence layer's own hardcoded
+two-domain enum, and a real design question (Kubernetes' manifest-text
+proposal shape matches neither network's nor terraform's existing model)
+— real work, not fixed in this pass.
+
 ### The tier label itself is unprotected: the most severe open gap
 
 The entire two-tier `failurePolicy` design routes on one signal — the
