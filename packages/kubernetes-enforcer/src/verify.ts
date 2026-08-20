@@ -17,12 +17,24 @@ export interface VerifyOptions {
 
 export type VerifyOutcome = { allowed: true } | { allowed: false; reason: string };
 
+/**
+ * The annotation the grant itself travels in (see src/main.ts's readGrant).
+ * A grant is issued against the object's hash *before* the grant is
+ * attached to it, so that same annotation must be excluded here too — a
+ * grant embedded in the object it authorizes would otherwise invalidate its
+ * own object hash the instant it was attached, since the annotation it
+ * arrives in wasn't part of what was hashed when the grant was issued.
+ */
+export const GRANT_ANNOTATION = "changesafe.dev/grant";
+
 function objectHashOf(raw: unknown): Promise<string> {
   const normalized = normalizeRawResource(raw, "ev-admission-review");
+  const annotations = { ...normalized.metadata.annotations };
+  delete annotations[GRANT_ANNOTATION];
   return sha256Hex(
     canonicalize({
       identity: normalized.identity,
-      metadata: normalized.metadata,
+      metadata: { ...normalized.metadata, annotations },
       spec: normalized.spec,
     }),
   );

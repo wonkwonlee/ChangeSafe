@@ -7,14 +7,25 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     clientConfig:
-      url: https://changesafe-enforcer.changesafe-system.svc:8443/validate
+      service:
+        name: changesafe-enforcer
+        namespace: changesafe-system
+        path: /validate
+        port: 8443
       caBundle: <base64-ca-bundle>
-    objectSelector:
-      matchLabels: {}
-      matchExpressions: []
-    # Only resources actually annotated changesafe.dev/protected: "true"
-    # route here — fail-closed applies only to what was already declared
-    # protected, per Spec Decision 4.
+    # Kubernetes' objectSelector matches labels, not annotations, so it
+    # cannot directly select "has annotation changesafe.dev/protected:
+    # true" (verified empirically in the kind reproduction — see
+    # README.md). Routing to the Fail-open-refusing webhook is instead
+    # scoped by namespace: this repository's convention is that resources
+    # the K8S_PROTECTED_RESOURCE policy tracks live in a namespace labeled
+    # changesafe.dev/tier: protected. Namespace labels ARE selectable, and
+    # this keeps the split enforceable by a cluster operator (label the
+    # namespace) rather than by trusting an unauthenticated field on the
+    # object being admitted.
+    namespaceSelector:
+      matchLabels:
+        changesafe.dev/tier: protected
     rules:
       - apiGroups: ["apps", ""]
         apiVersions: ["v1"]

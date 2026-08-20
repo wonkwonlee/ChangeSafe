@@ -7,8 +7,22 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     clientConfig:
-      url: https://changesafe-enforcer.changesafe-system.svc:8443/validate
+      service:
+        name: changesafe-enforcer
+        namespace: changesafe-system
+        path: /validate
+        port: 8443
       caBundle: <base64-ca-bundle>
+    # Everything NOT in a namespace labeled changesafe.dev/tier: protected
+    # routes here instead — mutually exclusive with webhook-protected.yaml's
+    # namespaceSelector, so a given object is only ever evaluated by one of
+    # the two configurations. See webhook-protected.yaml for why this is
+    # namespace-scoped rather than objectSelector-scoped.
+    namespaceSelector:
+      matchExpressions:
+        - key: changesafe.dev/tier
+          operator: NotIn
+          values: ["protected"]
     rules:
       - apiGroups: ["apps", ""]
         apiVersions: ["v1"]

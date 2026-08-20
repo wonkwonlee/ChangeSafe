@@ -3,7 +3,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { SignedGrant } from "@changesafe/core";
 import { SignedGrantSchema } from "@changesafe/core";
 
-import { AdmissionReviewRequestSchema, buildAdmissionReviewResponse } from "./admission-review";
+import {
+  AdmissionReviewRequestSchema,
+  buildAdmissionReviewResponse,
+  type AdmissionReviewRequest,
+} from "./admission-review";
 import { verifyGrantAgainstAdmission } from "./verify";
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -19,12 +23,16 @@ export interface EnforcerServerOptions {
   resolveExpectedResource: (object: unknown) => string;
   expectedPolicyVersion?: string;
   /**
-   * How the grant physically arrives with the request. Left injectable —
-   * Task 10 decides and hard-codes the real mechanism (an annotation on the
-   * admitted object vs. a header vs. something else); this test seam is
-   * intentional per the spec's "resolve empirically" note.
+   * How the grant physically arrives with the request. Task 10 resolved
+   * this empirically: `kubectl apply` has no way to attach an out-of-band
+   * header, but the Kubernetes API server always forwards the full admitted
+   * object (including annotations) inside the AdmissionReview body — so the
+   * real mechanism is an annotation on the object itself, read from the
+   * already-parsed `review`. The raw `request` is still passed through for
+   * test doubles that read headers (see server.test.ts); production
+   * `readGrant` implementations should read `review.request.object`.
    */
-  readGrant: (request: IncomingMessage) => unknown | null;
+  readGrant: (request: IncomingMessage, review: AdmissionReviewRequest) => unknown | null;
 }
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
@@ -48,12 +56,24 @@ function send(response: ServerResponse, status: number, body: unknown): void {
   response.end(payload);
 }
 
-export function createEnforcerServer(options: EnforcerServerOptions): Server {
-  return createServer((request, response) => {
+/**
+ * The request listener alone, reusable by any HTTP(S) server — not just
+ * node:http's. `createEnforcerServer` uses this for tests and the plain-HTTP
+ * case; the deployed enforcer (src/main.ts) wraps it in node:https for real
+ * TLS termination, since ValidatingWebhookConfiguration requires HTTPS.
+ */
+export function createEnforcerRequestListener(
+  options: EnforcerServerOptions,
+): (request: IncomingMessage, response: ServerResponse) => void {
+  return (request, response) => {
     void handle(request, response, options).catch(() => {
       send(response, 500, { error: "internal error" });
     });
-  });
+  };
+}
+
+export function createEnforcerServer(options: EnforcerServerOptions): Server {
+  return createServer(createEnforcerRequestListener(options));
 }
 
 async function handle(
@@ -61,13 +81,18 @@ async function handle(
   response: ServerResponse,
   options: EnforcerServerOptions,
 ): Promise<void> {
-  if (request.method !== "POST" || request.url !== "/validate") {
+  // Kubernetes' admission webhook client appends its own query string (e.g.
+  // `?timeout=10s`) to the clientConfig path, so the real path must be
+  // compared without it — a real kind cluster exposed this; server.test.ts
+  // never did because it requests the bare path directly.
+  const path = request.url?.split("?", 1)[0];
+  if (request.method !== "POST" || path !== "/validate") {
     send(response, 404, { error: "not found" });
     return;
   }
 
   const review = AdmissionReviewRequestSchema.parse(await readBody(request));
-  const rawGrant = options.readGrant(request);
+  const rawGrant = options.readGrant(request, review);
 
   if (rawGrant === null) {
     send(

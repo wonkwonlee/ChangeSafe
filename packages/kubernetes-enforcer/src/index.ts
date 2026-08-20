@@ -3,9 +3,9 @@
  * Kubernetes admission-webhook boundary. Never calls the Kubernetes API;
  * only receives AdmissionReview webhook requests and answers allow/deny.
  */
-export { createEnforcerServer } from "./server";
+export { createEnforcerServer, createEnforcerRequestListener } from "./server";
 export type { EnforcerServerOptions } from "./server";
-export { verifyGrantAgainstAdmission } from "./verify";
+export { verifyGrantAgainstAdmission, GRANT_ANNOTATION } from "./verify";
 export type { VerifyOptions, VerifyOutcome } from "./verify";
 export {
   AdmissionReviewRequestSchema,
