@@ -69,6 +69,12 @@ function resolveInternalSpecifier(fromPath: string, specifier: string): string |
   if (!specifier.startsWith(".")) {
     return null;
   }
+  // Bundled scenario data. JSON has no imports of its own, so it cannot
+  // extend the graph toward a parser; walking into it would only fail to
+  // resolve a "<file>.json.ts" that never exists.
+  if (specifier.endsWith(".json")) {
+    return null;
+  }
   return path.resolve(path.dirname(fromPath), `${specifier}.ts`);
 }
 

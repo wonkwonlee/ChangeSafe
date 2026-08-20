@@ -5,9 +5,14 @@
  */
 export {
   KubernetesChangeProposalSchema,
+  KubernetesReplayFixtureSchema,
   KubernetesSnapshotSchema,
 } from "./schemas";
-export type { KubernetesChangeProposal, KubernetesSnapshot } from "./schemas";
+export type {
+  KubernetesChangeProposal,
+  KubernetesReplayFixture,
+  KubernetesSnapshot,
+} from "./schemas";
 export { normalizeSnapshot } from "./normalize";
 export { deriveManifestProposal } from "./manifest-proposal";
 export { kubernetesDomain } from "./adapter";

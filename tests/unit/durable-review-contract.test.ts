@@ -15,7 +15,6 @@ import {
   verifyReceiptProof,
 } from "@/features/reviews/durable-review-contract";
 import { NETWORK_SCENARIOS } from "@/scenarios";
-import { normalizePlan } from "@changesafe/domain-terraform";
 import type { IncidentBundle } from "@changesafe/domain-network";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
 import { hashCanonical } from "@changesafe/core";
@@ -24,8 +23,7 @@ const sha = (character: string) => character.repeat(64);
 
 function content(domainId: "network" | "terraform") {
   if (domainId === "network") return NETWORK_SCENARIOS[0]!.input as IncidentBundle;
-  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!;
-  return normalizePlan(fixture.plan, { planId: fixture.inputId, context: [...fixture.context] });
+  return TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!.input;
 }
 
 async function intake(domainId: "network" | "terraform") {

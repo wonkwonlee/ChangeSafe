@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { normalizePlan, type TerraformInput } from "@changesafe/domain-terraform";
+import type { TerraformInput } from "@changesafe/domain-terraform";
 import type { WorkflowState } from "@changesafe/core";
 
 import {
@@ -80,18 +80,11 @@ function exampleFor(sourceId: string) {
   return example;
 }
 
-function inputFor(fixture: TerraformPublicReplayFixture): TerraformInput {
-  return normalizePlan(fixture.plan, {
-    planId: fixture.inputId,
-    context: [...fixture.context],
-  });
-}
-
 function initialSource() {
   const fixture = fixtureFor(INITIAL_EXAMPLE.sourceId);
   return {
     sourceId: fixture.sourceId,
-    input: inputFor(fixture),
+    input: fixture.input,
     expectedInputId: fixture.inputId,
     session: INITIAL_EXAMPLE.session,
   };
@@ -170,7 +163,7 @@ export function TerraformWorkbenchShell({
   const [selectedSourceId, setSelectedSourceId] = useState(INITIAL_EXAMPLE.sourceId);
   const fixture = useMemo(() => fixtureFor(selectedSourceId), [selectedSourceId]);
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
-  const input = useMemo(() => inputFor(fixture), [fixture]);
+  const input = fixture.input;
   const workflow = controller.state.workflow;
   const outcomeHeadingRef = useRef<HTMLSpanElement>(null);
   const { setScenarioInUrl } = useScenarioDeepLink();
@@ -194,7 +187,7 @@ export function TerraformWorkbenchShell({
     const nextExample = exampleFor(sourceId);
     controller.rebind({
       sourceId: nextFixture.sourceId,
-      input: inputFor(nextFixture),
+      input: nextFixture.input,
       expectedInputId: nextFixture.inputId,
       session: nextExample.session,
     });

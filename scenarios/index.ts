@@ -1,54 +1,20 @@
-import { ScenarioExpectationsSchema, type ChangeProposal, type ScenarioExpectations } from "@changesafe/core";
-import { resolveScenarioDomain, type ScenarioFixture } from "./domains";
+import type { ChangeProposal, ScenarioExpectations } from "@changesafe/core";
+import type { ScenarioFixture } from "./domains";
+import { KUBERNETES_SCENARIOS } from "./kubernetes";
 import { NETWORK_SCENARIOS } from "./network";
+import { TERRAFORM_SCENARIOS } from "./terraform";
 
 export { NETWORK_SCENARIOS, getNetworkScenario, type NetworkScenarioDefinition } from "./network";
-
-import planJ from "./terraform/scenario-j-destroy-protected/incident.json";
-import expectationsJ from "./terraform/scenario-j-destroy-protected/expectations.json";
-import planK from "./terraform/scenario-k-capacity-scale-up/incident.json";
-import expectationsK from "./terraform/scenario-k-capacity-scale-up/expectations.json";
-import planN from "./terraform/scenario-n-stateless-replace/incident.json";
-import expectationsN from "./terraform/scenario-n-stateless-replace/expectations.json";
-import planO from "./terraform/scenario-o-stateful-replace-backed-up/incident.json";
-import expectationsO from "./terraform/scenario-o-stateful-replace-backed-up/expectations.json";
-import planP from "./terraform/scenario-p-injected-pr-context/incident.json";
-import expectationsP from "./terraform/scenario-p-injected-pr-context/expectations.json";
-import planT from "./terraform/scenario-t-blast-radius-drift/incident.json";
-import expectationsT from "./terraform/scenario-t-blast-radius-drift/expectations.json";
-import planU from "./terraform/scenario-u-unrecorded-prior-state/incident.json";
-import expectationsU from "./terraform/scenario-u-unrecorded-prior-state/expectations.json";
-
-import snapshotL from "./kubernetes/scenario-l-replica-zero/incident.json";
-import fixtureL from "./kubernetes/scenario-l-replica-zero/replay-fixture.json";
-import expectationsL from "./kubernetes/scenario-l-replica-zero/expectations.json";
-import snapshotM from "./kubernetes/scenario-m-selector-drift/incident.json";
-import fixtureM from "./kubernetes/scenario-m-selector-drift/replay-fixture.json";
-import expectationsM from "./kubernetes/scenario-m-selector-drift/expectations.json";
-import snapshotQ from "./kubernetes/scenario-q-safe-scale-up/incident.json";
-import fixtureQ from "./kubernetes/scenario-q-safe-scale-up/replay-fixture.json";
-import expectationsQ from "./kubernetes/scenario-q-safe-scale-up/expectations.json";
-import snapshotR from "./kubernetes/scenario-r-partial-replica-reduction/incident.json";
-import fixtureR from "./kubernetes/scenario-r-partial-replica-reduction/replay-fixture.json";
-import expectationsR from "./kubernetes/scenario-r-partial-replica-reduction/expectations.json";
-import snapshotS from "./kubernetes/scenario-s-privileged-injection/incident.json";
-import fixtureS from "./kubernetes/scenario-s-privileged-injection/replay-fixture.json";
-import expectationsS from "./kubernetes/scenario-s-privileged-injection/expectations.json";
-import snapshotV from "./kubernetes/scenario-v-protected-config-change/incident.json";
-import fixtureV from "./kubernetes/scenario-v-protected-config-change/replay-fixture.json";
-import expectationsV from "./kubernetes/scenario-v-protected-config-change/expectations.json";
-import snapshotW from "./kubernetes/scenario-w-mutable-image-tag/incident.json";
-import fixtureW from "./kubernetes/scenario-w-mutable-image-tag/replay-fixture.json";
-import expectationsW from "./kubernetes/scenario-w-mutable-image-tag/expectations.json";
-import snapshotX from "./kubernetes/scenario-x-missing-verification/incident.json";
-import fixtureX from "./kubernetes/scenario-x-missing-verification/replay-fixture.json";
-import expectationsX from "./kubernetes/scenario-x-missing-verification/expectations.json";
-import snapshotY from "./kubernetes/scenario-y-rollback-does-not-restore/incident.json";
-import fixtureY from "./kubernetes/scenario-y-rollback-does-not-restore/replay-fixture.json";
-import expectationsY from "./kubernetes/scenario-y-rollback-does-not-restore/expectations.json";
-import snapshotZ from "./kubernetes/scenario-z-orphaned-canary-service/incident.json";
-import fixtureZ from "./kubernetes/scenario-z-orphaned-canary-service/replay-fixture.json";
-import expectationsZ from "./kubernetes/scenario-z-orphaned-canary-service/expectations.json";
+export {
+  TERRAFORM_SCENARIOS,
+  getTerraformScenario,
+  type TerraformScenarioDefinition,
+} from "./terraform";
+export {
+  KUBERNETES_SCENARIOS,
+  getKubernetesScenario,
+  type KubernetesScenarioDefinition,
+} from "./kubernetes";
 
 export interface ScenarioDefinition {
   scenarioId: string;
@@ -70,227 +36,24 @@ export interface ScenarioDefinition {
 }
 
 /**
- * Static imports (rather than filesystem discovery) keep this module usable in
- * the browser bundle. The scenario harness in tests/integration additionally
- * walks the scenarios directory, so a scenario added on disk but never
- * registered here fails CI instead of being silently ignored.
+ * The cross-domain view of the corpus, composed from the three single-domain
+ * registries rather than re-declaring them. Each of those registries statically
+ * imports its own scenario JSON (rather than discovering it on disk) so it stays
+ * usable in a browser bundle, and validates every scenario against the
+ * production schemas at module load — a malformed input, fixture, or
+ * expectations file fails fast rather than shipping.
  *
- * Every scenario passes the production schemas at module load; a malformed
- * input, fixture, or expectations file fails fast rather than shipping.
+ * Splitting per domain is what keeps a public workbench route's static bundle
+ * free of the other domains' packages; this module pulls in all three and is
+ * therefore reachable only from server-side and test code. The scenario harness
+ * in tests/integration additionally walks the scenarios directory, so a
+ * scenario added on disk but never registered in its domain's module fails CI
+ * instead of being silently ignored.
  */
-function defineScenario(
-  domainId: string,
-  scenarioId: string,
-  label: string,
-  shortDescription: string,
-  rawInput: unknown,
-  rawFixture: unknown,
-  rawExpectations: unknown,
-): ScenarioDefinition {
-  const domain = resolveScenarioDomain(domainId);
-  const input = domain.parseInput(rawInput);
-  const expectations = ScenarioExpectationsSchema.parse(rawExpectations);
-  if (expectations.scenarioId !== scenarioId) {
-    throw new Error(
-      `expectations declare scenario "${expectations.scenarioId}", expected "${scenarioId}"`,
-    );
-  }
-
-  if (rawFixture !== null) {
-    if (!domain.parseFixture) {
-      throw new Error(`domain "${domainId}" derives its proposal and does not take a fixture`);
-    }
-    const declaredScenarioId = (rawFixture as { scenarioId?: unknown }).scenarioId;
-    if (declaredScenarioId !== scenarioId) {
-      throw new Error(
-        `fixture declares scenario "${String(declaredScenarioId)}", expected "${scenarioId}"`,
-      );
-    }
-    const fixture = domain.parseFixture(rawFixture);
-    return {
-      scenarioId,
-      domainId,
-      label,
-      shortDescription,
-      input,
-      inputId: domain.inputId(input),
-      proposal: fixture.proposal,
-      fixture,
-      expectations,
-    };
-  }
-
-  if (!domain.deriveProposal) {
-    throw new Error(`domain "${domainId}" has no fixture and cannot derive a proposal`);
-  }
-  return {
-    scenarioId,
-    domainId,
-    label,
-    shortDescription,
-    inputId: domain.inputId(input),
-    input,
-    proposal: domain.deriveProposal(input),
-    fixture: null,
-    expectations,
-  };
-}
-
 export const SCENARIOS: readonly ScenarioDefinition[] = [
   ...NETWORK_SCENARIOS,
-  defineScenario(
-    "terraform",
-    "scenario-j-destroy-protected",
-    "CHG-2201 — Retire an unused RDS instance",
-    "A cleanup plan destroys what looks like an idle database, but it is tagged as the primary datastore.",
-    planJ,
-    null,
-    expectationsJ,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-k-capacity-scale-up",
-    "CHG-2340 — Scale up the checkout worker instance",
-    "An instance-type bump plus a new CPU alarm for the checkout fleet; nothing is destroyed or replaced.",
-    planK,
-    null,
-    expectationsK,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-n-stateless-replace",
-    "CHG-2410 — Recreate the checkout worker instance for an AMI update",
-    "A routine AMI bump forces Terraform to replace the checkout worker instance in place; nothing stateful is touched.",
-    planN,
-    null,
-    expectationsN,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-o-stateful-replace-backed-up",
-    "CHG-2418 — Resize the checkout read replica instance class",
-    "An instance-class bump forces the checkout read replica to be destroyed and recreated; it is tagged as backed up.",
-    planO,
-    null,
-    expectationsO,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-p-injected-pr-context",
-    "CHG-2422 — Retire an idle billing database replica",
-    "A cleanup PR destroys a protected billing database; its description urges skipping review.",
-    planP,
-    null,
-    expectationsP,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-t-blast-radius-drift",
-    "CHG-2431 — Bump instance type across the worker fleet",
-    "A capacity change replaces twenty worker instances fleet-wide, well beyond a single-service scope.",
-    planT,
-    null,
-    expectationsT,
-  ),
-  defineScenario(
-    "terraform",
-    "scenario-u-unrecorded-prior-state",
-    "CHG-2437 — Remove an unused archive logs bucket",
-    "A plan to delete an S3 bucket carries no recorded prior state for it.",
-    planU,
-    null,
-    expectationsU,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-l-replica-zero",
-    "CHG-3110 — Scale down the checkout Deployment",
-    "A capacity-reduction change sets checkout's replica count to zero instead of the intended partial scale-down.",
-    snapshotL,
-    fixtureL,
-    expectationsL,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-m-selector-drift",
-    "CHG-3187 — Relabel the payments Deployment",
-    "A labeling cleanup on the payments Deployment drifts its pod template away from the Service selector that routes to it.",
-    snapshotM,
-    fixtureM,
-    expectationsM,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-q-safe-scale-up",
-    "CHG-3201 — Scale up the product-catalog Deployment",
-    "A forecast traffic increase ahead of a promotion prompts a routine replica increase for the catalog service.",
-    snapshotQ,
-    fixtureQ,
-    expectationsQ,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-r-partial-replica-reduction",
-    "CHG-3208 — Reduce cart service replicas during a low-traffic window",
-    "A cost-driven capacity reduction cuts the cart Deployment from 5 to 2 replicas, not to zero.",
-    snapshotR,
-    fixtureR,
-    expectationsR,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-s-privileged-injection",
-    "CHG-3214 — Debug a DNS issue on the checkout-api Deployment",
-    "An urgent-sounding incident note accompanies a change that newly enables host networking on checkout-api.",
-    snapshotS,
-    fixtureS,
-    expectationsS,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-v-protected-config-change",
-    "CHG-3220 — Adjust the pricing engine replica count",
-    "A minor capacity change targets a Deployment explicitly marked protected.",
-    snapshotV,
-    fixtureV,
-    expectationsV,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-w-mutable-image-tag",
-    "CHG-3227 — Roll recommendation service to a floating tag during a capacity trim",
-    "A cost-saving replica reduction ships alongside a switch to a mutable image tag.",
-    snapshotW,
-    fixtureW,
-    expectationsW,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-x-missing-verification",
-    "CHG-3233 — Scale up inventory-sync ahead of a stock reconciliation job",
-    "A replica increase for inventory-sync ships with a precondition check but no postcheck.",
-    snapshotX,
-    fixtureX,
-    expectationsX,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-y-rollback-does-not-restore",
-    "CHG-3241 — Scale up notification service and widen its rollout budget",
-    "A capacity and rollout-budget change for the notification Deployment ships with a rollback that doesn't fully restore the prior configuration.",
-    snapshotY,
-    fixtureY,
-    expectationsY,
-  ),
-  defineScenario(
-    "kubernetes",
-    "scenario-z-orphaned-canary-service",
-    "CHG-3268 — Add a canary Service for checkout-api",
-    "A release team wants canary traffic addressed separately, so the change adds a second Service alongside the stable one and touches nothing that already works.",
-    snapshotZ,
-    fixtureZ,
-    expectationsZ,
-  ),
+  ...TERRAFORM_SCENARIOS,
+  ...KUBERNETES_SCENARIOS,
 ];
 
 export function getScenario(scenarioId: string): ScenarioDefinition | undefined {

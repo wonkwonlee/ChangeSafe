@@ -18,7 +18,7 @@ test("Case 2 deep link pre-selects scenario-b-route-leak and shows the case-stud
 
 test("Case 3 deep link pre-selects scenario-p-injected-pr-context on the Terraform workbench", async ({ page }) => {
   await page.goto("/workbench/terraform?scenario=scenario-p-injected-pr-context");
-  const item = page.getByRole("button", { name: /Protected billing database/ });
+  const item = page.getByRole("button", { name: /Retire an idle billing database replica/ });
   await expect(item).toHaveAttribute("aria-pressed", "true");
   await expect(item.getByText("Case study")).toBeVisible();
 });
@@ -55,8 +55,8 @@ test("picking a scenario writes it into the URL and survives a reload", async ({
 });
 
 test("Kubernetes deep link pre-selects a bundled example", async ({ page }) => {
-  await page.goto("/workbench/kubernetes?scenario=kubernetes-selector-red-team");
+  await page.goto("/workbench/kubernetes?scenario=scenario-m-selector-drift");
   await expect(
-    page.getByRole("button", { name: /Service selector break/ }),
+    page.getByRole("button", { name: /Relabel the payments Deployment/ }),
   ).toHaveAttribute("aria-pressed", "true");
 });

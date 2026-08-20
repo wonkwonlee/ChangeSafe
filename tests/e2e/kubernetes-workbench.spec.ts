@@ -58,13 +58,17 @@ test("Kubernetes workbench navigation can switch domains", async ({ page }) => {
   await expect(page.getByRole("main", { name: "Terraform review canvas" })).toBeVisible();
 });
 
-test("Kubernetes public workbench preserves selector red-team provenance and blocks it", async ({ page }) => {
+test("Kubernetes public workbench blocks a selector-breaking change and restates its provenance honestly", async ({ page }) => {
   const dataRequests = await interceptDataRequests(page);
   await page.goto("/workbench/kubernetes");
 
-  await page.getByRole("button", { name: /Service selector break/ }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "Service selector break" })).toBeVisible();
-  await expect(page.getByText("Fixture provenance").locator("..")).toContainText("authored-red-team");
+  await page.getByRole("button", { name: /Relabel the payments Deployment/ }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "CHG-3187 — Relabel the payments Deployment" })).toBeVisible();
+  // The corpus declares this scenario's replay fixture authored_synthetic, and
+  // the UI must restate that rather than upgrade it to red-team because the
+  // gate happened to block: provenance describes how the proposal was made,
+  // not what the gate decided about it.
+  await expect(page.getByText("Fixture provenance").locator("..")).toContainText("authored-synthetic");
   await expect(page.getByText("Current snapshot relationships")).toBeVisible();
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.locator('[data-phase="BLOCKED"]')).toBeVisible();

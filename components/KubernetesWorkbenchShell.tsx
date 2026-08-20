@@ -26,7 +26,6 @@ import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/exampl
 import type { LoadedDomainCoverageCatalog } from "@/features/domains/registry";
 import {
   KUBERNETES_PUBLIC_REPLAY_FIXTURES,
-  KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
   type KubernetesPublicReplayFixture,
 } from "@/features/domains/kubernetes/fixtures";
 import { publicReplayTransport } from "@/features/reviews/publicReplayTransport";
@@ -71,7 +70,7 @@ function initialSource() {
   const fixture = fixtureFor(INITIAL_EXAMPLE.sourceId);
   return {
     sourceId: fixture.sourceId,
-    input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+    input: fixture.snapshot,
     expectedInputId: fixture.inputId,
     session: INITIAL_EXAMPLE.session,
   };
@@ -280,8 +279,14 @@ function WorkloadMatches({
   );
 }
 
-function ProposedDiff({ proposal }: { proposal: KubernetesChangeProposal }) {
-  const existing = new Map(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.map((resource) => [resource.resourceId, resource]));
+function ProposedDiff({
+  proposal,
+  snapshot,
+}: {
+  readonly proposal: KubernetesChangeProposal;
+  readonly snapshot: KubernetesSnapshot;
+}) {
+  const existing = new Map(snapshot.resources.map((resource) => [resource.resourceId, resource]));
   const [query, setQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const page = useMemo(
@@ -337,24 +342,24 @@ export function KubernetesWorkbenchShell({
   const example = useMemo(() => exampleFor(selectedSourceId), [selectedSourceId]);
   const workflow = controller.state.workflow;
   const relationCandidates = useMemo(
-    () => selectorRelationshipCandidates(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT),
-    [],
+    () => selectorRelationshipCandidates(fixture.snapshot),
+    [fixture.snapshot],
   );
   const resolveRelationship = useMemo(
-    () => createSelectorRelationshipResolver(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT),
-    [],
+    () => createSelectorRelationshipResolver(fixture.snapshot),
+    [fixture.snapshot],
   );
   const [resourceQuery, setResourceQuery] = useState("");
   const [resourcePageIndex, setResourcePageIndex] = useState(0);
   const resourcePage = useMemo(
     () =>
       searchAndPageOfflineCollection(
-        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources,
+        fixture.snapshot.resources,
         resourceQuery,
         (resource) => JSON.stringify(resource),
         resourcePageIndex,
       ),
-    [resourcePageIndex, resourceQuery],
+    [fixture.snapshot.resources, resourcePageIndex, resourceQuery],
   );
   const [relationQuery, setRelationQuery] = useState("");
   const [relationPageIndex, setRelationPageIndex] = useState(0);
@@ -381,8 +386,14 @@ export function KubernetesWorkbenchShell({
   const selectExample = useCallback((sourceId: string) => {
     const nextFixture = fixtureFor(sourceId);
     const nextExample = exampleFor(sourceId);
-    controller.rebind({ sourceId: nextFixture.sourceId, input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, expectedInputId: nextFixture.inputId, session: nextExample.session });
+    controller.rebind({ sourceId: nextFixture.sourceId, input: nextFixture.snapshot, expectedInputId: nextFixture.inputId, session: nextExample.session });
     setSelectedSourceId(sourceId);
+    // Each scenario replays against its own snapshot, so evidence paging and
+    // search from the previous selection no longer address anything.
+    setResourceQuery("");
+    setResourcePageIndex(0);
+    setRelationQuery("");
+    setRelationPageIndex(0);
     setScenarioInUrl(sourceId);
     setUnknownScenarioId(null);
   }, [controller, setScenarioInUrl]);
@@ -439,7 +450,7 @@ export function KubernetesWorkbenchShell({
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="proposal-title"><Label>Evaluated proposal</Label><h2 id="proposal-title" className="mt-2 text-base font-semibold">Replay result only</h2><ProposalPanel state={workflow} /></section>
           <section className="rounded-lg border border-edge bg-raised p-4" aria-labelledby="inventory-title">
             <Label>Namespace inventory</Label>
-            <h2 id="inventory-title" className="mt-2 text-base font-semibold">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.length} captured offline resources</h2>
+            <h2 id="inventory-title" className="mt-2 text-base font-semibold">{fixture.snapshot.resources.length} captured offline resources</h2>
             <p className="mt-2 text-xs text-ink-faint">Deterministic evaluation always covers the complete snapshot; search and paging bound only the rendered inventory.</p>
             <EvidencePager
               id="kubernetes-resource-search"
@@ -481,14 +492,14 @@ export function KubernetesWorkbenchShell({
               </table>
             </div>
           </section>
-          <section className="min-w-0 rounded-lg border border-edge bg-raised p-4" aria-labelledby="manifest-title"><Label>Current / proposed manifest diff</Label><h2 id="manifest-title" className="mt-2 text-base font-semibold">Bundled manifest proposal</h2><p className="mt-2 text-sm text-ink-dim">Image, workload security context, protected-resource labels, and Service selector effects are review evidence. Proposed manifests are data only and are never applied.</p><ProposedDiff proposal={fixture.proposal} /></section>
+          <section className="min-w-0 rounded-lg border border-edge bg-raised p-4" aria-labelledby="manifest-title"><Label>Current / proposed manifest diff</Label><h2 id="manifest-title" className="mt-2 text-base font-semibold">Bundled manifest proposal</h2><p className="mt-2 text-sm text-ink-dim">Image, workload security context, protected-resource labels, and Service selector effects are review evidence. Proposed manifests are data only and are never applied.</p><ProposedDiff proposal={fixture.proposal} snapshot={fixture.snapshot} /></section>
           <div>
             <DomainCoverageCatalog catalog={coverageCatalog} evaluatedPolicyIds={hasFindings(workflow) ? workflow.findings.map((finding) => finding.policyId) : []} simulationDisclosure="Kubernetes has an offline sandbox capability, but this public replay never requests simulation because it has no decision authority." source={{ sourceId: selectedSourceId, source: example.session.source, analysisMode: example.session.analysisMode, provenance: example.session.provenance }} />
           </div>
         </div>
       </main>
       <aside aria-label="Kubernetes review authority" className="min-w-0 self-start rounded-xl border border-edge bg-surface p-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"><Label>Airlock status</Label><section className="mt-4 border-t border-edge pt-4" aria-labelledby="risk-title"><h2 id="risk-title" className="text-sm font-semibold">Risk</h2><RiskValue riskLevel={hasFindings(workflow) ? workflow.riskLevel : null} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="decision-title"><h2 id="decision-title" className="text-sm font-semibold">Decision</h2><DecisionPanel state={workflow} /></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="simulation-title"><h2 id="simulation-title" className="text-sm font-semibold">Simulation</h2><p className="mt-2 text-sm text-ink-dim">Unavailable and not run. Kubernetes has an offline sandbox capability, but public replay is decision-free and this route provides no validated simulation result.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="receipt-title"><h2 id="receipt-title" className="text-sm font-semibold">Receipt</h2><p className="mt-2 text-sm text-ink-dim">Not created. This ephemeral public replay has no durable decision or signed receipt.</p></section><section className="mt-4 border-t border-edge pt-4" aria-labelledby="execution-title"><h2 id="execution-title" className="text-sm font-semibold">Cluster contact or apply</h2><p className="mt-2 text-sm text-ink-dim">Not performed or observed. ChangeSafe never contacts this cluster or applies infrastructure changes.</p></section></aside>
-      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 lg:col-start-1 lg:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${candidate.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`} disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
+      <aside aria-label="Kubernetes review context" className="min-w-0 rounded-xl border border-edge bg-surface p-4 lg:col-start-1 lg:row-start-1"><Label>Kubernetes examples</Label><h2 className="mt-2 text-lg font-semibold">{fixture.label}</h2><ul className="mt-4 grid gap-2" role="list" aria-label="Bundled Kubernetes examples">{KUBERNETES_REVIEW_EXAMPLES.map((candidate) => <li key={candidate.sourceId}><button aria-pressed={candidate.sourceId === selectedSourceId} className={`w-full rounded border px-3 py-2 text-left text-sm hover:border-active focus:outline-none focus:ring-2 focus:ring-active disabled:cursor-wait ${candidate.sourceId === selectedSourceId ? "border-active bg-active/10 text-ink" : "border-edge text-ink-dim"}`} disabled={workflow.phase === "ANALYZING"} onClick={() => selectExample(candidate.sourceId)} type="button"><span className="block font-medium text-ink">{candidate.label}</span><span className="mt-1 block text-xs">{candidate.description}</span></button></li>)}</ul><section id="sources" className="mt-5 border-t border-edge pt-4" aria-labelledby="source-title"><h2 id="source-title" className="text-sm font-semibold">Offline source</h2><dl className="mt-3 grid gap-3 text-xs"><div><dt className="text-ink-faint">Snapshot ID</dt><dd className="mt-1 font-mono">{fixture.snapshot.snapshotId}</dd></div><div><dt className="text-ink-faint">Namespace</dt><dd className="mt-1">{fixture.snapshot.provenance.namespaces.join(", ")}</dd></div><div><dt className="text-ink-faint">Fixture provenance</dt><dd className="mt-1">{fixture.provenance}</dd></div><div><dt className="text-ink-faint">Policy version</dt><dd className="mt-1 font-mono">{example.session.policyVersion}</dd></div></dl></section></aside>
     </div>
   </div>;
 }

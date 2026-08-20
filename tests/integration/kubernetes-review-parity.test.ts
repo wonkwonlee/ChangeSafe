@@ -10,7 +10,6 @@ import { POST as reviewPost } from "@/app/api/reviews/analyze/route";
 import { KUBERNETES_REVIEW_EXAMPLES } from "@/features/domains/kubernetes/examples";
 import {
   KUBERNETES_PUBLIC_REPLAY_FIXTURES,
-  KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
   type KubernetesPublicReplayFixture,
 } from "@/features/domains/kubernetes/fixtures";
 import {
@@ -72,19 +71,19 @@ describe("Kubernetes public replay parity", () => {
       const result = await replayResult(fixture);
       const expected = evaluatePolicies(
         kubernetesDomain,
-        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+        fixture.snapshot,
         fixture.proposal,
       );
 
       // Fixture data, rather than route or controller output, is authoritative
-      // for public replay provenance. Kubernetes bundled sources never claim a
-      // model or provider produced their authored manifests.
+      // for public replay provenance — including the corpus's own distinct
+      // fixture identity and notes, not the scenario id standing in for them.
       expect(result.provenance).toEqual({
         classification: fixture.provenance,
-        model: null,
+        model: fixture.model,
         provider: null,
-        fixtureId: fixture.sourceId,
-        notes: null,
+        fixtureId: fixture.fixtureId,
+        notes: fixture.notes,
       });
       expect(result.session).toEqual(example.session);
       expect(result.session).toMatchObject({
@@ -115,8 +114,8 @@ describe("Kubernetes public replay parity", () => {
 
       let state = initialReviewControllerState<KubernetesSnapshot>({
         sourceId: fixture.sourceId,
-        input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-        expectedInputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
+        input: fixture.snapshot,
+        expectedInputId: fixture.snapshot.snapshotId,
         session: example.session,
       });
       const attemptId = `attempt-kubernetes-parity-${fixture.sourceId}`;
