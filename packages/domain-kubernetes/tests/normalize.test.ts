@@ -240,6 +240,36 @@ describe("canonicalizeAdmittedResource", () => {
     );
   });
 
+  it("includes client-owned metadata the first version discarded (finalizers, ownerReferences)", () => {
+    // The first version of canonicalizeAdmittedResource only kept
+    // annotations/labels, so client-controllable fields it didn't name —
+    // finalizers, ownerReferences — never entered the hash. An
+    // include-list of "known" fields silently drops the next one nobody
+    // thought to name; this proves the exclude-list approach keeps them.
+    const withClientMetadata = {
+      ...workload,
+      metadata: {
+        ...workload.metadata,
+        finalizers: ["kubernetes.io/pvc-protection"],
+        ownerReferences: [{ apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-rs", uid: "owner-1" }],
+      },
+    };
+    const canonical = canonicalizeAdmittedResource(withClientMetadata, "ev-test");
+    expect(canonical.metadata.finalizers).toEqual(["kubernetes.io/pvc-protection"]);
+    expect(canonical.metadata.ownerReferences).toEqual([
+      { apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-rs", uid: "owner-1" },
+    ]);
+
+    // Changing either one must change the hash.
+    const tamperedFinalizers = {
+      ...withClientMetadata,
+      metadata: { ...withClientMetadata.metadata, finalizers: [] },
+    };
+    expect(canonicalize(canonicalizeAdmittedResource(withClientMetadata, "ev-test"))).not.toBe(
+      canonicalize(canonicalizeAdmittedResource(tamperedFinalizers, "ev-test")),
+    );
+  });
+
   it("changes canonical output when spec content actually changes", () => {
     const tampered = {
       ...workload,

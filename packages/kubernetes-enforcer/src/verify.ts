@@ -38,7 +38,9 @@ export const GRANT_ANNOTATION = "changesafe.dev/grant";
  */
 export function kubernetesObjectSha256(raw: unknown): Promise<string> {
   const canonicalized = canonicalizeAdmittedResource(raw, "ev-admission-review");
-  const annotations = { ...canonicalized.metadata.annotations };
+  const annotations = {
+    ...(canonicalized.metadata.annotations as Record<string, string> | undefined),
+  };
   delete annotations[GRANT_ANNOTATION];
   return sha256Hex(
     canonicalize({

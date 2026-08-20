@@ -509,3 +509,30 @@ accepted availability cost, not resolved), does not extend to any resource
 kind beyond the four this domain already supports, and — like CS-ADV-004 —
 does not change that the object hash itself is still caller-asserted at
 issuance time rather than server-derived from a reviewed proposal.
+
+### Amendment: `metadata` had the identical bug, one layer up
+
+Found by a second round of the same external review, on the fix commit
+itself. `canonicalizeAdmittedResource`'s first version fixed `spec` but
+still projected `metadata` down to an include-list of exactly
+`annotations`/`labels` — the identical class of gap the rest of this
+finding describes, just relocated: `finalizers` and `ownerReferences` are
+both real, client-controllable `ObjectMeta` fields (garbage-collection and
+deletion-blocking behavior respectively) that never entered the hash, so
+changing either after authorization went undetected the same way an
+unhashed spec field did.
+
+Fixed in the same function by inverting the approach: instead of building
+`metadata` from an include-list of named fields, it now takes the full
+parsed `metadata` object and deletes an explicit exclude-list of
+server-owned/managed keys (`resourceVersion`, `uid`, `generation`,
+`managedFields`, `creationTimestamp`, `deletionTimestamp`,
+`deletionGracePeriodSeconds`, `selfLink`, `clusterName`, plus `name`/
+`namespace` which `identity` already carries). An unrecognized future
+metadata field now defaults to being *included* in the hash, which can only
+cost an extra false DENY — never silently reintroduce this bug class for a
+field nobody thought to name. Regression test: `canonicalizeAdmittedResource`
+describe block in `packages/domain-kubernetes/tests/normalize.test.ts`,
+"includes client-owned metadata the first version discarded (finalizers,
+ownerReferences)" — fails against the intermediate (spec-fixed,
+metadata-still-broken) code.

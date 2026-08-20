@@ -226,10 +226,20 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
  * UPDATE change any field the projection discards while keeping the same
  * hash, so a grant for one workload authorized a materially different one.
  *
- * Only `metadata`'s server-owned/managed keys (`resourceVersion`, `uid`,
- * `generation`, `managedFields`, `creationTimestamp`, ...) and `status` are
- * excluded — the same server-owned-field exclusion Decision 5 always
- * intended, just applied without discarding real spec content alongside it.
+ * `metadata` keeps every field EXCEPT the explicit server-owned/managed
+ * keys below (plus `name`/`namespace`, already carried in `identity`) —
+ * the same server-owned-field exclusion Decision 5 always intended, just
+ * applied without discarding real spec content alongside it. This is an
+ * exclude-list, not an include-list, deliberately: an include-list of
+ * "known" client fields (as the first version of this function had, and
+ * as `normalizeRawResource`'s `annotations`/`labels`-only projection still
+ * has) silently drops any client-settable field nobody thought to name —
+ * `finalizers` and `ownerReferences` are both real, client-controllable
+ * fields an UPDATE can carry, and both were missing from that first
+ * version. An unrecognized FUTURE metadata field defaults to being
+ * INCLUDED in the hash under this list, which can only cost an extra
+ * false DENY, never a false ALLOW — see the failure-direction note below.
+ *
  * `spec`'s own K8s-server-side defaulting (e.g. an unset `strategy.type`
  * becoming `"RollingUpdate"`) is deliberately NOT normalized away: a grant
  * issued against a manifest that omits a field the API server later
@@ -240,23 +250,42 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
  * will actually see it (e.g. via a dry-run apply), not the raw authored
  * manifest, to avoid the false-DENY case in practice.
  */
+const SERVER_OWNED_METADATA_KEYS = [
+  "name",
+  "namespace",
+  "uid",
+  "resourceVersion",
+  "generation",
+  "creationTimestamp",
+  "deletionTimestamp",
+  "deletionGracePeriodSeconds",
+  "managedFields",
+  "selfLink",
+  "clusterName",
+] as const;
+
 export function canonicalizeAdmittedResource(
   raw: unknown,
   evidenceId: string,
-): { evidenceId: string; identity: KubernetesIdentity; metadata: { annotations: Record<string, string>; labels: Record<string, string> }; spec: unknown } {
+): { evidenceId: string; identity: KubernetesIdentity; metadata: Record<string, unknown>; spec: unknown } {
   const envelope = parseOrThrow(
     RawResourceEnvelopeSchema,
     raw,
     "A Kubernetes resource is malformed.",
   );
   const identity = identityOfRawResource(envelope);
+  const metadata: Record<string, unknown> = { ...envelope.metadata };
+  for (const key of SERVER_OWNED_METADATA_KEYS) delete metadata[key];
+  if (metadata.annotations !== undefined) {
+    metadata.annotations = sortRecord(metadata.annotations as Record<string, string>);
+  }
+  if (metadata.labels !== undefined) {
+    metadata.labels = sortRecord(metadata.labels as Record<string, string>);
+  }
   return {
     evidenceId,
     identity,
-    metadata: {
-      annotations: sortRecord(envelope.metadata.annotations),
-      labels: sortRecord(envelope.metadata.labels),
-    },
+    metadata,
     spec: envelope.spec ?? {},
   };
 }
