@@ -6,11 +6,9 @@ import {
   importVerifyingKey,
   signGrant,
   AuthorizationGrantSchema,
-  canonicalize,
-  sha256Hex,
 } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
 import { createEnforcerServer } from "../src/server";
+import { kubernetesObjectSha256 } from "../src/verify";
 
 const RESOURCE = {
   apiVersion: "apps/v1",
@@ -19,12 +17,8 @@ const RESOURCE = {
   spec: { replicas: 3 },
 };
 
-function objectHashOf(raw: unknown): Promise<string> {
-  const normalized = normalizeRawResource(raw, "ev-test");
-  return sha256Hex(
-    canonicalize({ identity: normalized.identity, metadata: normalized.metadata, spec: normalized.spec }),
-  );
-}
+// The production hash function itself; see verify.ts's kubernetesObjectSha256.
+const objectHashOf = kubernetesObjectSha256;
 
 let server: ReturnType<typeof createEnforcerServer> | undefined;
 
@@ -117,6 +111,104 @@ describe("createEnforcerServer", () => {
           object: RESOURCE,
         },
       }),
+    });
+
+    const body = (await response.json()) as { response: { allowed: boolean } };
+    expect(response.status).toBe(200);
+    expect(body.response.allowed).toBe(false);
+  });
+
+  // A malformed grant must never be *weaker* than a missing one. Kubernetes
+  // reads any non-2xx reply as "the webhook could not be called" and applies
+  // failurePolicy — which is `Ignore` (ADMIT) on the default-tier webhook —
+  // so a 500 here would turn garbage in the annotation into an admission.
+
+  async function denyingServer(readGrant: () => unknown | null) {
+    return createEnforcerServer({
+      trustedPublicKey: await importVerifyingKey((await generateSigningKeyPair()).publicKeyPem),
+      now: () => new Date("2026-08-19T12:30:00.000Z"),
+      resolveExpectedResource: () => "res-web-default",
+      readGrant,
+    });
+  }
+
+  const reviewBody = (uid: string) =>
+    JSON.stringify({
+      apiVersion: "admission.k8s.io/v1",
+      kind: "AdmissionReview",
+      request: {
+        uid,
+        operation: "UPDATE",
+        userInfo: { username: "system:serviceaccount:ops:changesafe-applier", groups: [] },
+        object: RESOURCE,
+      },
+    });
+
+  it("denies (200, not 500) when the attached grant is well-formed JSON but not a SignedGrant", async () => {
+    server = await denyingServer(() => ({ totally: "not a grant" }));
+    const base = await listen(server);
+
+    const response = await fetch(`${base}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: reviewBody("req-malformed-grant"),
+    });
+
+    const body = (await response.json()) as {
+      response: { uid: string; allowed: boolean; status?: { message: string } };
+    };
+    expect(response.status).toBe(200);
+    expect(body.response.allowed).toBe(false);
+    expect(body.response.uid).toBe("req-malformed-grant");
+  });
+
+  it("denies (200, not 500) when the admitted object cannot be normalized", async () => {
+    const pem = await generateSigningKeyPair();
+    const keyPair = await importSigningKeyPair(pem.privateKeyPem);
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: "grant-test-0002",
+      receiptId: "rcpt-test-0002",
+      authorizedActor: "system:serviceaccount:ops:changesafe-applier",
+      operation: "UPDATE",
+      resource: "res-web-default",
+      objectSha256: await objectHashOf(RESOURCE),
+      policyVersion: "kubernetes-v0.2.0",
+      issuedAtUtc: "2026-08-19T12:00:00.000Z",
+      expiresAtUtc: "2026-08-19T13:00:00.000Z",
+    });
+    const signed = await signGrant(grant, keyPair, { signedAtUtc: "2026-08-19T12:00:00.000Z" });
+
+    server = createEnforcerServer({
+      trustedPublicKey: await importVerifyingKey(pem.publicKeyPem),
+      now: () => new Date("2026-08-19T12:30:00.000Z"),
+      // The real main.ts wiring: normalizeRawResource throws on a
+      // non-normalizable object (a DELETE review's null `object`, say).
+      resolveExpectedResource: () => {
+        throw new Error("not a normalizable Kubernetes resource");
+      },
+      readGrant: () => signed,
+    });
+    const base = await listen(server);
+
+    const response = await fetch(`${base}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: reviewBody("req-unnormalizable-object"),
+    });
+
+    const body = (await response.json()) as { response: { allowed: boolean } };
+    expect(response.status).toBe(200);
+    expect(body.response.allowed).toBe(false);
+  });
+
+  it("denies (200, not 500) when the AdmissionReview body itself is malformed", async () => {
+    server = await denyingServer(() => null);
+    const base = await listen(server);
+
+    const response = await fetch(`${base}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiVersion: "admission.k8s.io/v1", kind: "AdmissionReview" }),
     });
 
     const body = (await response.json()) as { response: { allowed: boolean } };

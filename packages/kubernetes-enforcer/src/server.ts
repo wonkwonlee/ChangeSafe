@@ -91,7 +91,33 @@ async function handle(
     return;
   }
 
-  const review = AdmissionReviewRequestSchema.parse(await readBody(request));
+  // Bad input is an answer, not an outage.
+  //
+  // Kubernetes treats any non-2xx webhook reply as "the webhook could not be
+  // called" and applies `failurePolicy` — which on the default-tier webhook
+  // is `Ignore`, i.e. ADMIT. So letting a schema-validation failure escape to
+  // the generic 500 handler would make a *malformed* grant annotation
+  // strictly weaker than no grant at all: a missing grant denies (below),
+  // while a garbage one would fail open. The verifier received input it can
+  // read a verdict from, so it answers 200 with an explicit denial instead.
+  // The 500/`failurePolicy` path stays reserved for the condition verify.ts
+  // documents as outside its responsibility: the verifier process itself
+  // being unreachable.
+  let raw: unknown;
+  let review: AdmissionReviewRequest;
+  try {
+    raw = await readBody(request);
+    review = AdmissionReviewRequestSchema.parse(raw);
+  } catch {
+    // No parsed review means no trustworthy uid; recover it best-effort so a
+    // real API server can still correlate the denial with its request.
+    send(response, 200, buildAdmissionReviewResponse(recoverUid(raw), {
+      allowed: false,
+      message: "admission review request could not be read",
+    }));
+    return;
+  }
+
   const rawGrant = options.readGrant(request, review);
 
   if (rawGrant === null) {
@@ -106,8 +132,23 @@ async function handle(
     return;
   }
 
-  const signedGrant: SignedGrant = SignedGrantSchema.parse(rawGrant);
-  const expectedResource = options.resolveExpectedResource(review.request.object);
+  let signedGrant: SignedGrant;
+  let expectedResource: string;
+  try {
+    signedGrant = SignedGrantSchema.parse(rawGrant);
+    expectedResource = options.resolveExpectedResource(review.request.object);
+  } catch {
+    send(
+      response,
+      200,
+      buildAdmissionReviewResponse(review.request.uid, {
+        allowed: false,
+        message: "the attached AuthorizationGrant or admitted object could not be read",
+      }),
+    );
+    return;
+  }
+
   const outcome = await verifyGrantAgainstAdmission(
     signedGrant,
     review.request,
@@ -124,4 +165,10 @@ async function handle(
       outcome.allowed ? { allowed: true } : { allowed: false, message: outcome.reason },
     ),
   );
+}
+
+/** Best-effort `request.uid` from a body that failed schema validation. */
+function recoverUid(raw: unknown): string {
+  const uid = (raw as { request?: { uid?: unknown } } | null)?.request?.uid;
+  return typeof uid === "string" ? uid : "";
 }
