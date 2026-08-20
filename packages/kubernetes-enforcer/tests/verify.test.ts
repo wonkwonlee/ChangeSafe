@@ -172,6 +172,49 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(outcome.allowed).toBe(false);
   });
 
+  it("denies when the same username belongs to a different uid (CS-ADV-008: recreated ServiceAccount)", async () => {
+    // Deleting and recreating a ServiceAccount preserves its username but
+    // Kubernetes assigns the new object a new uid. A name-based
+    // RoleBinding can restore the same access to the replacement — this
+    // proves that alone can't reuse a grant issued for the deleted one.
+    const { signed, verifying } = await buildSignedGrant({
+      authorizedActorUid: "11111111-1111-1111-1111-111111111111",
+    });
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ userInfo: { username: ACTOR, uid: "22222222-2222-2222-2222-222222222222", groups: [] } }),
+      verifying,
+      NOW,
+    );
+    expect(outcome.allowed).toBe(false);
+  });
+
+  it("allows when the grant carries no uid, matching by username alone (backward compatible)", async () => {
+    const { signed, verifying } = await buildSignedGrant(); // no authorizedActorUid
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ userInfo: { username: ACTOR, uid: "any-uid-at-all", groups: [] } }),
+      verifying,
+      NOW,
+      { expectedResource: "res-web-default" },
+    );
+    expect(outcome).toEqual({ allowed: true });
+  });
+
+  it("allows when both sides' uids match", async () => {
+    const { signed, verifying } = await buildSignedGrant({
+      authorizedActorUid: "11111111-1111-1111-1111-111111111111",
+    });
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ userInfo: { username: ACTOR, uid: "11111111-1111-1111-1111-111111111111", groups: [] } }),
+      verifying,
+      NOW,
+      { expectedResource: "res-web-default" },
+    );
+    expect(outcome).toEqual({ allowed: true });
+  });
+
   it("denies a grant signed by an untrusted key (replay with a forged grant)", async () => {
     const { signed } = await buildSignedGrant();
     const otherKeys = await keys();

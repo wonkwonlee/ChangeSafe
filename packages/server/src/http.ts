@@ -69,6 +69,8 @@ const ReviewIntakeBodySchema = z.strictObject({
  */
 const GrantRequestSchema = z.strictObject({
   authorizedActor: z.string().min(1).max(255),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on authorizedActorUid. */
+  authorizedActorUid: z.string().min(1).max(255).optional(),
   operation: z.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
   resource: z.string().min(1).max(128),
   objectSha256: z.string().regex(/^[a-f0-9]{64}$/),

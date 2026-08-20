@@ -63,6 +63,14 @@ describe("AuthorizationGrantSchema", () => {
     ).toBe(false);
   });
 
+  it("accepts a grant carrying the actor's Kubernetes uid alongside its username", () => {
+    expect(
+      AuthorizationGrantSchema.safeParse(
+        buildGrant({ authorizedActorUid: "11111111-1111-1111-1111-111111111111" }),
+      ).success,
+    ).toBe(true);
+  });
+
   it("rejects unknown fields (strict object)", () => {
     expect(
       AuthorizationGrantSchema.safeParse({ ...buildGrant(), extra: "nope" }).success,

@@ -771,3 +771,105 @@ Whether the same unrecoverable-response class of gap exists for the
 receipt itself in any other durable route, independent of grants, has not
 been checked — `GET /reviews/:id/receipt-proof` appears to cover the
 receipt specifically, but that was not exhaustively verified here.
+
+## Finding CS-ADV-008
+
+### Hypothesis
+
+`verifyGrantAgainstAdmission`'s actor check binds a grant to the specific
+Kubernetes principal it was issued for, not merely to a username string
+that principal happened to hold at issuance time.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/verify.ts`'s actor comparison
+- `packages/core/src/grant.ts`'s `AuthorizationGrantSchema`, which (before
+  this fix) had no field for a Kubernetes uid at all
+
+### Method
+
+Found by external review (Codex, on PR #75); verified against Kubernetes'
+own identity model rather than taken on faith. Kubernetes' `userInfo.uid`
+is tied to the specific `ServiceAccount` (or other principal) object, not
+its name: deleting and recreating a `ServiceAccount` preserves the
+`username` string but Kubernetes assigns the new object a new `uid`. A
+name-based `RoleBinding` (matching on the subject's `name`, the common
+case) restores the same access to the replacement principal.
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, "denies when the same
+username belongs to a different uid (CS-ADV-008: recreated ServiceAccount)"
+— builds a grant for `authorizedActor: ACTOR` with a specific
+`authorizedActorUid`, then verifies an admission request from the same
+`username` but a different `uid`, and confirms the pre-fix comparison
+(username only) would have allowed it.
+
+### Expected invariant
+
+A grant authorizes the specific principal it was issued for, not any
+future principal that happens to share that principal's name.
+
+### Observed behavior
+
+`verifyGrantAgainstAdmission` compared only `grant.authorizedActor` against
+`request.userInfo.username`. `AuthorizationGrantSchema` had no field for
+`userInfo.uid` at all, so no comparison against it was possible even in
+principle. A grant issued for `system:serviceaccount:ops:changesafe-
+applier` remained valid for admission requests from ANY principal
+presenting that same username, regardless of whether it was the same
+underlying Kubernetes object the grant was actually issued for.
+
+### Severity
+
+Medium. Reachable only by whoever can delete and recreate a specific
+already-privileged ServiceAccount (or otherwise cause a new principal to
+receive the same username) within the grant's expiry window and while a
+name-based RoleBinding restores its access — a real, non-trivial attack
+path, but one requiring the target account's deletion first, which is
+itself a privileged and typically auditable action.
+
+### Root cause
+
+Spec Decision 3 says `authorized_actor` is compared "directly against
+Kubernetes' own `AdmissionReview.request.userInfo`" — accurate as written,
+but the implementation only ever read one field of that structure
+(`username`) despite `userInfo.uid` already being modeled in
+`AdmissionUserInfoSchema` as an available (if optional) field. Not a
+violation of Decision 3's "no new ChangeSafe-owned identity system"
+constraint to fix — `uid` is Kubernetes' own vocabulary, not a new one —
+just an incomplete first use of it.
+
+### Fix
+
+`AuthorizationGrantSchema` gains `authorizedActorUid` (optional, since not
+every identity provider populates a stable uid). Threaded through
+`IssueGrantOptions` (`packages/server/src/decisions.ts`) and
+`GrantRequestSchema` (`packages/server/src/http.ts`) alongside the
+existing `authorizedActor`. `verifyGrantAgainstAdmission` now additionally
+compares `grant.authorizedActorUid` against `request.userInfo.uid` when
+BOTH are present; when either side lacks one, verification falls back to
+the pre-existing username-only comparison — backward compatible with
+already-issued grants and identity providers that never supply a uid.
+
+### Regression test
+
+`packages/core/tests/grant.test.ts`, "accepts a grant carrying the actor's
+Kubernetes uid alongside its username"; `packages/kubernetes-enforcer/
+tests/verify.test.ts`'s three new cases (denies on uid mismatch even with
+matching username, allows when no uid is present on either side, allows
+when both uids match) — all pass against the fixed code and the first
+would fail against the pre-fix comparison.
+
+### What this changed in the architecture
+
+`AuthorizationGrantSchema` gained one optional field. No new identity
+system, no new dependency, no change to the signature/canonicalization
+scheme beyond the new field itself being part of what gets signed.
+
+### Remaining uncertainty
+
+Whether other Kubernetes identity fields (`groups`, `extra`) carry
+analogous binding gaps has not been evaluated — this finding addresses
+`uid` specifically because it was the one raised and verified, not because
+a broader audit of `userInfo`'s full shape was performed.

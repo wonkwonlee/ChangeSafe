@@ -54,6 +54,8 @@ export interface SignedDecisionOutcome extends DecisionOutcome {
 
 export interface IssueGrantOptions {
   authorizedActor: string;
+  /** See AuthorizationGrantSchema's doc comment on authorizedActorUid. */
+  authorizedActorUid?: string;
   operation: z.infer<typeof GrantOperationSchemaType>;
   resource: string;
   objectSha256: string;
@@ -203,6 +205,7 @@ export class DecisionService {
       grantId: `grant-${globalThis.crypto.randomUUID()}`,
       receiptId: receipt.receiptId,
       authorizedActor: options.authorizedActor,
+      authorizedActorUid: options.authorizedActorUid,
       operation: options.operation,
       resource: options.resource,
       objectSha256: options.objectSha256,

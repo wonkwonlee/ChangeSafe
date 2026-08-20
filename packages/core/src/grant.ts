@@ -29,6 +29,20 @@ export const AuthorizationGrantSchema = z
      * Never a ChangeSafe-owned identity or claim.
      */
     authorizedActor: z.string().min(1).max(255),
+    /**
+     * The same identity's stable Kubernetes `userInfo.uid`, when the caller
+     * has one to bind. `username` alone is not stable across a principal's
+     * lifetime: deleting and recreating a ServiceAccount preserves its
+     * username while Kubernetes assigns the new object a new `uid`, and a
+     * name-based RoleBinding can restore the same access to the replacement
+     * — letting it exercise a grant that was actually issued for the
+     * deleted one. Still the enforcement boundary's own vocabulary, not a
+     * new identity system: `userInfo.uid` is a field Kubernetes' own
+     * `AdmissionReview.request.userInfo` already carries. Optional because
+     * not every identity provider populates a stable uid; when either side
+     * lacks one, verification falls back to the username-only comparison.
+     */
+    authorizedActorUid: z.string().min(1).max(255).optional(),
     operation: GrantOperationSchema,
     /** Opaque stable resource identifier from the domain's own scheme. */
     resource: z.string().min(1).max(128),

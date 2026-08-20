@@ -81,6 +81,21 @@ export async function verifyGrantAgainstAdmission(
     return { allowed: false, reason: "authorized actor does not match the requesting identity" };
   }
 
+  // username alone is not stable across a principal's lifetime: deleting
+  // and recreating a ServiceAccount preserves its username while
+  // Kubernetes assigns the new object a new uid, and a name-based
+  // RoleBinding can restore the same access to the replacement — letting
+  // it exercise a grant actually issued for the deleted one. Enforced only
+  // when both sides have a uid to compare; grant.authorizedActorUid is
+  // optional exactly for identity providers that don't supply one.
+  if (
+    grant.authorizedActorUid !== undefined &&
+    request.userInfo.uid !== undefined &&
+    grant.authorizedActorUid !== request.userInfo.uid
+  ) {
+    return { allowed: false, reason: "authorized actor's uid does not match the requesting identity" };
+  }
+
   if (grant.operation !== request.operation) {
     return { allowed: false, reason: "grant operation does not match the requested operation" };
   }
