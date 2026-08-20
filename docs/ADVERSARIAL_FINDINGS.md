@@ -1240,3 +1240,105 @@ evaluated — `expectedPolicyVersion` genuinely cannot be derived from the
 admission request itself (it depends on which policy version is currently
 active for the deployment), so it may be a legitimately different case,
 but that distinction was not explicitly re-examined here.
+
+## Finding CS-ADV-012
+
+### Hypothesis
+
+Both `ValidatingWebhookConfiguration`s intercept every operation the
+enforcer's own verification logic supports, so a workload's admission is
+never silently skipped for an operation the system claims to cover.
+
+### Attack surface
+
+- `examples/m2-kubernetes-enforcer/webhook-protected.yaml` and
+  `webhook-default.yaml`'s `rules[].operations`
+
+### Method
+
+Found by external review (Codex, on PR #75); verified against Kubernetes'
+own `ValidatingWebhookConfiguration` rule-matching contract (`operations`
+is the exact set the webhook is invoked for, not a superset) and against
+this repo's own code, not accepted on description: confirmed
+`GrantOperationSchema` (`packages/core/src/grant.ts`) and
+`AdmissionOperationSchema` (`packages/kubernetes-enforcer/src/
+admission-review.ts`) both already include `CREATE`, and
+`verifyGrantAgainstAdmission`'s operation comparison has no UPDATE-only
+special-casing (`grep` for hardcoded `"UPDATE"` in
+`packages/kubernetes-enforcer/src` found only the enum declaration itself)
+— CREATE was fully supported in code and simply never routed to it.
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, "allows a matching
+CREATE grant and request" — confirms the verifier itself handles CREATE
+correctly; the gap was routing, not verification logic, so this is a
+positive-path confirmation rather than a failing-then-fixed reproducer
+(there was nothing to fix in `verify.ts` — see Fix below).
+
+### Expected invariant
+
+Creating a brand-new protected-tier workload requires a valid grant, the
+same as updating an existing one.
+
+### Observed behavior
+
+Both webhook configurations' `rules[].operations` listed only `["UPDATE"]`.
+A CREATE admission request — a principal creating an entirely new
+Deployment/StatefulSet/DaemonSet/Service — was never routed to the
+enforcer at all, on either the protected or default tier, even while the
+enforcer was fully healthy. Unlike `CS-ADV-006` (the `/scale` subresource
+gap) and `CS-ADV-009` (the unprotected tier label), this gap required no
+special exemption — the code to handle it already existed and worked; the
+webhook manifests simply never asked Kubernetes to send it there.
+
+### Severity
+
+High. Reachable by anyone able to create a new resource of a
+grant-protected kind in a protected namespace, with no privileged
+identity, no grant tampering, and no need for the enforcer to be
+unavailable — the webhook being perfectly healthy makes no difference.
+
+### Root cause
+
+The webhook manifests and their explanatory comments were written focused
+on the UPDATE case (matching the milestone's demo, which scales an
+existing Deployment) and the DELETE exclusion (which needed a real,
+deliberate justification — `oldObject` handling doesn't exist yet). CREATE
+fell through the gap between those two: unlike DELETE, nothing about it
+needed special handling, so there was no explicit decision to leave it out
+— it appears to have simply been overlooked rather than deliberately
+deferred.
+
+### Fix
+
+Added `"CREATE"` to `rules[].operations` in both `webhook-protected.yaml`
+and `webhook-default.yaml`, alongside `"UPDATE"`. No application code
+changed — `verifyGrantAgainstAdmission` already handles a CREATE request
+identically to an UPDATE one (compare operation, hash the admitted
+object, no `oldObject` needed since CREATE has no prior state to diff
+against).
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`'s new CREATE test (see
+Minimal reproducer) — a positive-path confirmation, not a
+fails-then-passes regression test, since the defect was in the YAML
+routing configuration, which the unit suite cannot exercise (same
+limitation as `CS-ADV-006`/`CS-ADV-009`).
+
+### What this changed in the architecture
+
+Nothing in application code. Two YAML manifests now register one more
+already-supported operation.
+
+### Remaining uncertainty
+
+The kind-cluster demo transcript (`examples/m2-kubernetes-enforcer/
+demo-transcript.txt`) only exercises UPDATE (scaling `spec.replicas`);
+CREATE is now unit-tested and correctly routed per this fix, but has not
+been exercised against a live cluster the way UPDATE was. Whether `CONNECT`
+(the fourth operation `GrantOperationSchema`/`AdmissionOperationSchema`
+both model) has an analogous routing gap was not checked — Kubernetes
+issues CONNECT primarily for subresources like `exec`/`proxy`, which raises
+questions similar to `CS-ADV-006`'s and was out of scope here.

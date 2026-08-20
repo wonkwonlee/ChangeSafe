@@ -151,6 +151,20 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(outcome.allowed).toBe(false);
   });
 
+  it("allows a matching CREATE grant and request (CS-ADV-012: webhook rules now register CREATE too)", async () => {
+    // Confirms CREATE is genuinely supported end to end, not just accepted
+    // by GrantOperationSchema — the webhook YAML gap (operations: ["UPDATE"]
+    // only) was purely a routing omission, not a missing code path.
+    const { signed, verifying } = await buildSignedGrant({ operation: "CREATE" });
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ operation: "CREATE" }),
+      verifying,
+      NOW,
+    );
+    expect(outcome).toEqual({ allowed: true });
+  });
+
   it("denies on operation substitution", async () => {
     const { signed, verifying } = await buildSignedGrant();
     const outcome = await verifyGrantAgainstAdmission(
