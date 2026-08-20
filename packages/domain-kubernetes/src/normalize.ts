@@ -249,6 +249,15 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
  * grants should compute this hash against the object as the API server
  * will actually see it (e.g. via a dry-run apply), not the raw authored
  * manifest, to avoid the false-DENY case in practice.
+ *
+ * `deletionTimestamp`/`deletionGracePeriodSeconds` are deliberately NOT
+ * excluded, unlike the true server-bookkeeping fields below: they record
+ * whether a deletion has been requested, a lifecycle change that alters
+ * what an UPDATE grant means. A grant reviewed against a not-yet-deleting
+ * object (e.g. "remove this finalizer") must not silently also authorize
+ * removing that finalizer once the object has entered termination —
+ * finalizer removal on a terminating object triggers actual garbage
+ * collection, a materially different, unreviewed outcome (`CS-ADV-015`).
  */
 const SERVER_OWNED_METADATA_KEYS = [
   "name",
@@ -257,8 +266,6 @@ const SERVER_OWNED_METADATA_KEYS = [
   "resourceVersion",
   "generation",
   "creationTimestamp",
-  "deletionTimestamp",
-  "deletionGracePeriodSeconds",
   "managedFields",
   "selfLink",
   "clusterName",

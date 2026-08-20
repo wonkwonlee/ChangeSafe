@@ -282,6 +282,24 @@ describe("canonicalizeAdmittedResource", () => {
       canonicalize(canonicalizeAdmittedResource(tampered, "ev-test")),
     );
   });
+
+  it("changes canonical output when deletion lifecycle state changes (CS-ADV-015)", () => {
+    // A grant reviewed against a not-yet-deleting object (e.g. "remove
+    // this finalizer") must not silently also authorize the same edit on
+    // a now-terminating object — finalizer removal on a terminating
+    // object triggers actual garbage collection, an unreviewed outcome.
+    const terminating = {
+      ...workload,
+      metadata: {
+        ...workload.metadata,
+        deletionTimestamp: "2026-07-28T00:05:00.000Z",
+        deletionGracePeriodSeconds: 30,
+      },
+    };
+    expect(canonicalize(canonicalizeAdmittedResource(workload, "ev-test"))).not.toBe(
+      canonicalize(canonicalizeAdmittedResource(terminating, "ev-test")),
+    );
+  });
 });
 
 describe("manifest-derived proposals", () => {
