@@ -66,7 +66,7 @@ function defineTerraformScenario(
   const { context, ...plan } = rawInput as {
     context?: { kind: string; text: string }[];
   } & Record<string, unknown>;
-  const input = normalizePlan(plan, { context });
+  const input = normalizePlan(plan, { context, planId: scenarioId });
   const expectations = ScenarioExpectationsSchema.parse(rawExpectations);
   if (expectations.scenarioId !== scenarioId) {
     throw new Error(

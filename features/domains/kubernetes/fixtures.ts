@@ -201,6 +201,13 @@ export interface KubernetesPublicReplayFixture {
   readonly provenance: "authored-synthetic" | "authored-red-team" | "captured-replay";
   /** Non-null exactly when `provenance` is `captured-replay`, per `ReviewProposalProvenanceSchema`. */
   readonly model: string | null;
+  /**
+   * The corpus's own distinct fixture identity (e.g. `fix-aa-...-red-team`)
+   * for scenario-derived fixtures; `sourceId` for the hand-authored
+   * structural fixture, which has no separate corpus fixture to name.
+   */
+  readonly fixtureId: string;
+  readonly notes: string | null;
   /** The snapshot this proposal is evaluated against; scenarios carry their own. */
   readonly snapshot: KubernetesSnapshot;
   /**
@@ -256,6 +263,8 @@ function scenarioFixture(
     description: scenario.shortDescription,
     provenance: reviewFixtureProvenance(scenario.fixture.provenance),
     model: scenario.fixture.model,
+    fixtureId: scenario.fixture.fixtureId,
+    notes: scenario.fixture.notes,
     snapshot: scenario.input,
     manifestDocuments: null,
     // Already validated by `KubernetesReplayFixtureSchema` at corpus load.
@@ -292,6 +301,9 @@ function deriveFixture(
     provenance,
     // Every `deriveFixture` call site is hand-authored, never captured.
     model: null,
+    // Not corpus-derived, so there is no separate fixture identity to carry.
+    fixtureId: sourceId,
+    notes: null,
     snapshot: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
     manifestDocuments,
     proposal,

@@ -248,8 +248,8 @@ async function resolvePublicReplay(
       provenance: source.provenance,
       proposalProvenance: {
         model: source.model,
-        fixtureId: source.sourceId,
-        notes: null,
+        fixtureId: source.fixtureId,
+        notes: source.notes,
       },
       effectCapability: "sandbox-simulation",
     };

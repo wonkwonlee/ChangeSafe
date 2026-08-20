@@ -76,14 +76,14 @@ describe("Kubernetes public replay parity", () => {
       );
 
       // Fixture data, rather than route or controller output, is authoritative
-      // for public replay provenance. Kubernetes bundled sources never claim a
-      // model or provider produced their authored manifests.
+      // for public replay provenance — including the corpus's own distinct
+      // fixture identity and notes, not the scenario id standing in for them.
       expect(result.provenance).toEqual({
         classification: fixture.provenance,
-        model: null,
+        model: fixture.model,
         provider: null,
-        fixtureId: fixture.sourceId,
-        notes: null,
+        fixtureId: fixture.fixtureId,
+        notes: fixture.notes,
       });
       expect(result.session).toEqual(example.session);
       expect(result.session).toMatchObject({
