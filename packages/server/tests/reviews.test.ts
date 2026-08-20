@@ -976,4 +976,30 @@ describe("durable review decision HTTP API", () => {
       context.reviews.getResolution("review-grant-update-no-old-hash", aliceOwner()),
     ).toBeNull();
   });
+
+  it("refuses a CREATE grant carrying oldObjectSha256 before anything reaches the ledger", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-create-with-old-hash"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    // The inverse of the UPDATE case above: AuthorizationGrantSchema now
+    // rejects a CREATE grant that carries oldObjectSha256 (CREATE has no
+    // prior state), but that rejection only runs inside issueGrant, which
+    // is called AFTER resolvePending. Without a pre-ledger check for this
+    // precondition too, this request would commit the decision and only
+    // then discover the grant is unissuable.
+    const response = await decideReview(
+      "review-grant-create-with-old-hash",
+      { decision: "approve", grant: { ...grantRequest, operation: "CREATE" } },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(
+      context.reviews.getResolution("review-grant-create-with-old-hash", aliceOwner()),
+    ).toBeNull();
+  });
 });

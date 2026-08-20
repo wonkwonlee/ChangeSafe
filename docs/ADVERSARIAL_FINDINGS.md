@@ -1711,6 +1711,18 @@ learned the grant request was invalid. Regression test:
 `packages/server/tests/reviews.test.ts`, "refuses an UPDATE grant with no
 oldObjectSha256 before anything reaches the ledger".
 
+**2b. The same pre-ledger gap, for the inverse CREATE case.** Found in a
+fourth round, directly on fix (2): once the core schema rejected
+`oldObjectSha256` on CREATE (see 4 below), an approved CREATE decision
+carrying one hit exactly the same sequence — `resolvePending` committed,
+then `issueGrant`'s parse rejected the grant. Fixed by adding the
+matching pre-ledger check for CREATE alongside the UPDATE one, so both
+operation-dependent conditions are enforced at the request boundary
+before the review resolves. Verified pre-fix: 422 with the decision
+already ledgered. Regression test: `packages/server/tests/reviews.test.ts`,
+"refuses a CREATE grant carrying oldObjectSha256 before anything reaches
+the ledger".
+
 **3. The kind-cluster demo never supplied `oldObjectSha256`.** The prior
 amendment's "Remaining uncertainty" section already flagged this as
 undone. `examples/m2-kubernetes-enforcer/kind-repro.sh`'s Demo step 1

@@ -442,6 +442,21 @@ async function handle(
           "missing it here would only be discovered after the decision is committed.",
       );
     }
+    // The inverse of the check above, for the same reason: CREATE has no
+    // prior state, and AuthorizationGrantSchema now rejects a CREATE grant
+    // that carries oldObjectSha256 — but that rejection also only happens
+    // inside issueGrant, after resolvePending has already committed.
+    if (
+      body.grant &&
+      body.grant.operation === "CREATE" &&
+      body.grant.oldObjectSha256 !== undefined
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "A CREATE grant must not carry oldObjectSha256 (AuthorizationGrantSchema enforces this) — " +
+          "CREATE has no prior state, and this would only be discovered after the decision is committed.",
+      );
+    }
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
       ...pendingReviewRequest(pending),
       decision: body.decision,
