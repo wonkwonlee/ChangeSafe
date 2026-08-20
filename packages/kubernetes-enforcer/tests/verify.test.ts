@@ -84,6 +84,64 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(outcome.allowed).toBe(false);
   });
 
+  it("denies when a field the policy projection discards is changed post-authorization (CS-ADV-005)", async () => {
+    // command/args/env/resources are read by no current policy, so
+    // normalizeRawResource's policy projection drops them — reusing that
+    // projection for the object hash let this exact tampering through
+    // undetected (CS-ADV-005). kubernetesObjectSha256 must not.
+    const workload = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name: "web", namespace: "default" },
+      spec: {
+        replicas: 3,
+        template: {
+          spec: {
+            containers: [
+              {
+                name: "app",
+                image: "example.com/app:1.0",
+                command: ["serve", "--safe-mode"],
+                env: [{ name: "FEATURE_FLAG", value: "off" }],
+                resources: { limits: { memory: "256Mi" } },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const workloadTampered = {
+      ...workload,
+      spec: {
+        ...workload.spec,
+        template: {
+          spec: {
+            containers: [
+              {
+                ...workload.spec.template.spec.containers[0],
+                command: ["serve", "--unsafe-mode"],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    // The two objects really do differ only in a projection-discarded field.
+    expect(await objectHashOf(workload)).not.toBe(await objectHashOf(workloadTampered));
+
+    const { signed, verifying } = await buildSignedGrant({
+      objectSha256: await objectHashOf(workload),
+    });
+    const outcome = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ object: workloadTampered }),
+      verifying,
+      NOW,
+    );
+    expect(outcome.allowed).toBe(false);
+  });
+
   it("denies on resource substitution", async () => {
     const { signed, verifying } = await buildSignedGrant({ resource: "res-a-different-resource" });
     const outcome = await verifyGrantAgainstAdmission(signed, admissionRequest(), verifying, NOW, {

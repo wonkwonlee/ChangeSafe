@@ -4,7 +4,7 @@ import {
   verifyGrantSignature,
   type SignedGrant,
 } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
+import { canonicalizeAdmittedResource } from "@changesafe/domain-kubernetes";
 
 import type { AdmissionRequest } from "./admission-review";
 
@@ -28,21 +28,23 @@ export type VerifyOutcome = { allowed: true } | { allowed: false; reason: string
 export const GRANT_ANNOTATION = "changesafe.dev/grant";
 
 /**
- * The one canonical object hash for a Kubernetes resource, over the domain's
- * own normalization pipeline. Exported because both sides of the grant
+ * The one canonical object hash for a Kubernetes resource, over
+ * `canonicalizeAdmittedResource` — NOT `normalizeRawResource`, which is a
+ * lossy policy projection that discards spec fields no policy currently
+ * reads (see CS-ADV-005). Exported because both sides of the grant
  * (issuance and admission-time verification) must compute it identically —
- * a second hand-rolled copy of these three lines is exactly the drift that
+ * a second hand-rolled copy of these lines is exactly the drift that
  * produced CS-ADV-003, so callers use this rather than reimplementing it.
  */
 export function kubernetesObjectSha256(raw: unknown): Promise<string> {
-  const normalized = normalizeRawResource(raw, "ev-admission-review");
-  const annotations = { ...normalized.metadata.annotations };
+  const canonicalized = canonicalizeAdmittedResource(raw, "ev-admission-review");
+  const annotations = { ...canonicalized.metadata.annotations };
   delete annotations[GRANT_ANNOTATION];
   return sha256Hex(
     canonicalize({
-      identity: normalized.identity,
-      metadata: { ...normalized.metadata, annotations },
-      spec: normalized.spec,
+      identity: canonicalized.identity,
+      metadata: { ...canonicalized.metadata, annotations },
+      spec: canonicalized.spec,
     }),
   );
 }

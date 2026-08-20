@@ -372,3 +372,140 @@ This finding does not establish whether a mis-bound grant is reachable by any
 identity weaker than an authenticated approver, does not address grants in the
 ledger, nonce/replay, or E2/E3 persistence, and does not evaluate a design for
 per-domain binding derivation.
+
+## Finding CS-ADV-005
+
+### Hypothesis
+
+`kubernetesObjectSha256` (`packages/kubernetes-enforcer/src/verify.ts`), the
+hash both grant issuance and admission-time verification use to bind a grant
+to an exact object state, captures every field of the admitted object that
+matters to what actually runs — not just the fields today's Kubernetes
+policies happen to read.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/verify.ts`'s `kubernetesObjectSha256`
+  (before this fix: built on `normalizeRawResource`)
+- `packages/domain-kubernetes/src/normalize.ts`'s `normalizeRawResource`,
+  whose own doc comment states its actual purpose: "Project a raw
+  Kubernetes API object into the strict policy-relevant model. Server-owned
+  metadata, status, and unselected spec fields are discarded."
+
+### Method
+
+Found by external review (a Codex-based automated review of PR #75) rather
+than an internal exercise of the adversarial gate; reproduced and confirmed
+against the actual normalization code before being recorded here, per this
+file's own promotion rule that review feedback is not a finding until
+verified. Construct two Deployment objects identical except for a container
+`command` array, and compare both `normalizeRawResource`'s projected spec
+and `kubernetesObjectSha256`'s hash for each.
+
+### Minimal reproducer
+
+- `packages/kubernetes-enforcer/tests/verify.test.ts`, "denies when a field
+  the policy projection discards is changed post-authorization (CS-ADV-005)"
+- `packages/domain-kubernetes/tests/normalize.test.ts`, describe block
+  `canonicalizeAdmittedResource`, "preserves spec fields the policy
+  projection discards (CS-ADV-005)"
+
+### Expected invariant
+
+A grant's `objectSha256` must change whenever the admitted object's `spec`
+changes in any field, so a grant issued for one object can never be reused,
+even partially, to authorize a materially different one.
+
+### Observed behavior
+
+`normalizeRawResource`'s per-kind spec projection (built for policy
+evaluation) keeps only the fields today's five Kubernetes policies read —
+for a container, only `name`, `image`, and a `securityContext` subset;
+`command`, `args`, `env`, `resources` (limits/requests), and ports are never
+projected in at all. `kubernetesObjectSha256` reused that projection as its
+hash input (fix #4 of the branch's earlier final-review fix wave unified
+three separate hash implementations onto this one function, but that
+function's underlying projection was itself already lossy — unifying it
+made the drift risk go away without touching this gap). Two admission
+requests whose containers differ only in `command`/`args`/`env`/`resources`
+produced the identical `objectSha256`, so a grant issued against one
+admitted the other. This directly defeats the exact-object binding the
+whole M2 milestone exists to provide, for exactly the class of field a
+malicious or careless post-authorization edit would target.
+
+### Severity
+
+Critical for the milestone's central safety claim. Reachable by anyone who
+can both obtain a valid grant for *a* Deployment/StatefulSet/DaemonSet/
+Service (the same authenticated-approver reachability class as CS-ADV-004)
+and subsequently submit a modified manifest for admission — no signature
+forgery or actor/operation/resource substitution needed, only editing a
+field the hash never covered. Unlike CS-ADV-004 (an authorization-provenance
+gap that widens who a grant trusts), this is a false ALLOW on a materially
+different object, the exact failure mode Decision 4/5 designed the object
+hash to prevent.
+
+### Root cause
+
+Decision 5's design spec reasoned that reusing the existing normalization
+pipeline was safe because it "uses `z.looseObject` to keep only known,
+policy-relevant fields" and drops only K8s server-owned additions (`uid`,
+`resourceVersion`, `managedFields`, `creationTimestamp`, defaulted fields).
+That premise was false: the pipeline's per-kind spec projection was written
+for policy evaluation and discards real, user-authored spec content no
+current policy inspects — a materially different category of loss than
+"server-owned metadata," which the spec's own reasoning did not
+distinguish.
+
+### Fix
+
+`packages/domain-kubernetes/src/normalize.ts` gains
+`canonicalizeAdmittedResource`, a second, purpose-built function for
+authorization-binding hashes: identical envelope parsing and identity
+derivation to `normalizeRawResource`, but the entire `spec` is kept verbatim
+rather than routed through the kind-specific policy projection. Only
+`metadata`'s explicitly server-owned/managed keys are excluded, matching
+what Decision 5 always intended. `normalizeRawResource` itself is
+unchanged — it still serves policy evaluation, which is a different
+consumer with a different (and correct) reason to be selective.
+`kubernetesObjectSha256` now calls the new function.
+
+This intentionally does NOT normalize away K8s server-side spec defaulting
+(e.g. an omitted `strategy.type` becoming `"RollingUpdate"`), so a grant
+issued against a manifest that omits a field the API server later defaults
+can mismatch and produce a false DENY at admission time. That is the
+accepted, safe failure direction for an authorization gate: a spurious DENY
+costs availability; a spurious ALLOW — CS-ADV-005 itself — costs the
+authorization boundary's entire purpose. Operators should compute a grant's
+`objectSha256` against the object as the API server will actually admit it
+(e.g. via a dry-run apply), not the raw authored manifest, documented in
+`packages/domain-kubernetes/src/normalize.ts`'s doc comment on the new
+function.
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/verify.test.ts` and
+`packages/domain-kubernetes/tests/normalize.test.ts` both assert that a
+`command`-only change produces a different canonical hash and, at the
+`verifyGrantAgainstAdmission` layer, an explicit DENY — proven to fail
+against the pre-fix code (the old projection produced identical hashes for
+both objects).
+
+### What this changed in the architecture
+
+`packages/domain-kubernetes` now exposes two normalization entry points
+with deliberately different completeness guarantees for deliberately
+different consumers: `normalizeRawResource` (policy-relevant projection) and
+`canonicalizeAdmittedResource` (full-fidelity, authorization-binding). Both
+share envelope parsing and identity derivation so they cannot silently
+diverge on what counts as the same resource, only on how much of its spec
+they retain.
+
+### Remaining uncertainty
+
+This fix does not address K8s server-side spec defaulting divergence
+between gate-time and admission-time hashing (documented above as an
+accepted availability cost, not resolved), does not extend to any resource
+kind beyond the four this domain already supports, and — like CS-ADV-004 —
+does not change that the object hash itself is still caller-asserted at
+issuance time rather than server-derived from a reviewed proposal.

@@ -215,6 +215,53 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
 }
 
 /**
+ * Canonicalize a raw Kubernetes API object for exact-object authorization
+ * binding (grant issuance and admission-time verification) — NOT for policy
+ * evaluation. Unlike `normalizeRawResource`, this keeps the entire `spec`
+ * verbatim rather than projecting it down to the fields today's policies
+ * happen to read: a grant must bind to the object actually admitted,
+ * including fields no policy currently inspects (container `command`,
+ * `args`, `env`, `resources`, `ports`; Service `ports`; volumes; ...).
+ * Reusing the policy projection for this purpose was CS-ADV-005 — it let an
+ * UPDATE change any field the projection discards while keeping the same
+ * hash, so a grant for one workload authorized a materially different one.
+ *
+ * Only `metadata`'s server-owned/managed keys (`resourceVersion`, `uid`,
+ * `generation`, `managedFields`, `creationTimestamp`, ...) and `status` are
+ * excluded — the same server-owned-field exclusion Decision 5 always
+ * intended, just applied without discarding real spec content alongside it.
+ * `spec`'s own K8s-server-side defaulting (e.g. an unset `strategy.type`
+ * becoming `"RollingUpdate"`) is deliberately NOT normalized away: a grant
+ * issued against a manifest that omits a field the API server later
+ * defaults can therefore mismatch and DENY at admission time. That is the
+ * safe failure direction for an authorization gate — a spurious DENY is a
+ * usability cost; a spurious ALLOW is a security bypass. Callers issuing
+ * grants should compute this hash against the object as the API server
+ * will actually see it (e.g. via a dry-run apply), not the raw authored
+ * manifest, to avoid the false-DENY case in practice.
+ */
+export function canonicalizeAdmittedResource(
+  raw: unknown,
+  evidenceId: string,
+): { evidenceId: string; identity: KubernetesIdentity; metadata: { annotations: Record<string, string>; labels: Record<string, string> }; spec: unknown } {
+  const envelope = parseOrThrow(
+    RawResourceEnvelopeSchema,
+    raw,
+    "A Kubernetes resource is malformed.",
+  );
+  const identity = identityOfRawResource(envelope);
+  return {
+    evidenceId,
+    identity,
+    metadata: {
+      annotations: sortRecord(envelope.metadata.annotations),
+      labels: sortRecord(envelope.metadata.labels),
+    },
+    spec: envelope.spec ?? {},
+  };
+}
+
+/**
  * Project a raw Kubernetes API object into the strict policy-relevant model.
  * Server-owned metadata, status, and unselected spec fields are discarded.
  */

@@ -137,6 +137,35 @@ decision exists and which one it is; it does not prove that the object it
 authorizes is the object that decision was about.** The enforcer's checks
 are exactly as strong as the binding it was handed.
 
+### The object hash: what it covers now, and what it covered before a fix
+
+Even for the fields a grant DOES bind server-side-verified at admission
+time, the object hash itself must actually capture the whole object.
+`kubernetesObjectSha256` originally computed that hash over
+`normalizeRawResource`'s output — a projection `packages/domain-kubernetes`
+built for policy evaluation, which keeps only the fields today's five
+policies read (a container's `name`, `image`, and a `securityContext`
+subset; a Deployment's `replicas`/`strategy`; a Service's `type`/
+`selector`) and silently discards everything else, including container
+`command`, `args`, `env`, and `resources`, and Service `ports`. Two objects
+differing only in one of those discarded fields hashed identically, so a
+grant issued against one authorized admission of the other — recorded as
+`CS-ADV-005` in `docs/ADVERSARIAL_FINDINGS.md` and found by external review
+of this PR, not the internal adversarial-gate exercise.
+
+The fix adds `canonicalizeAdmittedResource` alongside `normalizeRawResource`
+in `packages/domain-kubernetes` — same envelope parsing and identity
+derivation, but the full `spec` is kept rather than projected, and only
+`metadata`'s server-owned/managed keys are excluded. `normalizeRawResource`
+itself is untouched; policy evaluation still uses it, correctly, since
+projecting to policy-relevant fields is the right thing for that consumer.
+`kubernetesObjectSha256` now uses the new function. See `CS-ADV-005` for the
+full before/after and the accepted tradeoff this introduces: the hash no
+longer tolerates K8s server-side spec defaulting between gate time and
+admission time, so a grant issued against a manifest that omits a
+field the API server later defaults can produce a false DENY. That is the
+intended direction to fail in.
+
 ### What the kind demo exercised, and what only the unit suite did
 
 The kind reproduction exercised signature verification, actor, operation,

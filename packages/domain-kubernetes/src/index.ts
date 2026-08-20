@@ -42,7 +42,7 @@ export type {
 
 export { resourceIdOf } from "./identity";
 export { normalizeSnapshot } from "./normalize";
-export { normalizeRawResource } from "./normalize";
+export { normalizeRawResource, canonicalizeAdmittedResource } from "./normalize";
 export { deriveManifestProposal } from "./manifest-proposal";
 export { parseManifestDocuments } from "./manifests";
 export { parseKubernetesPath } from "./paths";
