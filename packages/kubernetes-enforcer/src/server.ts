@@ -10,7 +10,20 @@ import {
 } from "./admission-review";
 import { verifyGrantAgainstAdmission } from "./verify";
 
-const MAX_BODY_BYTES = 1024 * 1024;
+// kube-apiserver's own `--max-request-bytes` defaults to 3 MiB per request,
+// so a single Deployment/StatefulSet/etc. is bounded at that size. An
+// UPDATE's AdmissionReview carries the object TWICE (`request.object` and
+// `request.oldObject`), so a legitimately-sized update can approach 2x that
+// before envelope overhead. 1 MiB was too tight: a valid, ordinary UPDATE
+// could exceed it, and the too-large path (below) cannot echo the request's
+// `uid` once `readBody` has thrown, which Kubernetes treats as a malformed
+// webhook response — a webhook-unreachable failure, not a denial — so on
+// `webhook-default.yaml`'s `failurePolicy: Ignore` this let a merely large
+// but legitimate update bypass verification entirely. 8 MiB comfortably
+// covers the realistic worst case (2x the apiserver's default per-object
+// ceiling, plus envelope overhead) while still bounding memory against a
+// genuinely oversized/malicious body.
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export interface EnforcerServerOptions {
   trustedPublicKey: CryptoKey;

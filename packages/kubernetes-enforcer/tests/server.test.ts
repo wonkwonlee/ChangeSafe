@@ -201,6 +201,46 @@ describe("createEnforcerServer", () => {
     expect(body.response.allowed).toBe(false);
   });
 
+  it("processes (not denies-by-truncation) an ordinary UPDATE whose old+new objects exceed 1 MiB combined", async () => {
+    // Kubernetes carries BOTH object and oldObject on an UPDATE, so a single
+    // ordinary Deployment (well under any per-object size a cluster would
+    // reject) can combine to exceed a too-tight body cap. This must not be
+    // treated the same as a malformed/oversized-malicious body: the request
+    // is legitimate, so its real uid must survive and the check must still
+    // run — this is exactly the gap the 1 MiB -> 8 MiB cap raise closed.
+    const padding = "x".repeat(600 * 1024); // ~600 KiB per object
+    const largeResource = { ...RESOURCE, metadata: { ...RESOURCE.metadata, annotations: { padding } } };
+    server = await denyingServer(() => null); // no grant attached: exercises the real path, expects a real deny (not a truncation artifact)
+    const base = await listen(server);
+
+    const response = await fetch(`${base}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        apiVersion: "admission.k8s.io/v1",
+        kind: "AdmissionReview",
+        request: {
+          uid: "req-large-update",
+          operation: "UPDATE",
+          userInfo: { username: "system:serviceaccount:ops:changesafe-applier", groups: [] },
+          object: largeResource,
+          oldObject: largeResource,
+        },
+      }),
+    });
+
+    const body = (await response.json()) as {
+      response: { uid: string; allowed: boolean; status?: { message: string } };
+    };
+    expect(response.status).toBe(200);
+    // The real uid must survive — a lost/empty uid here is exactly what
+    // makes Kubernetes treat the response as invalid and fall back to
+    // failurePolicy instead of trusting this explicit denial.
+    expect(body.response.uid).toBe("req-large-update");
+    expect(body.response.allowed).toBe(false);
+    expect(body.response.status?.message).toBe("no AuthorizationGrant was attached to this request");
+  });
+
   it("denies (200, not 500) when the AdmissionReview body itself is malformed", async () => {
     server = await denyingServer(() => null);
     const base = await listen(server);
