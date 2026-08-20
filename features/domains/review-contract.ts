@@ -12,17 +12,26 @@ import {
 } from "@changesafe/core";
 
 /**
- * Upper bound on operations this transport will carry.
+ * Upper bounds on this transport's proposal shape.
  *
- * Core's exported `ChangeProposalSchema` defaults to 10, which is the right
- * ceiling for a *model-authored* proposal — a model asking to touch more than
- * ten things is itself the signal. Nothing on this wire is model-authored:
- * every proposal here is machine-derived from a bundled artifact by a domain,
- * and both non-network domains deliberately permit far more
- * (`TerraformChangeProposalSchema` 2000, `KubernetesChangeProposalSchema`
- * 5000). Reusing the model-authored default here silently failed any plan
- * touching more than ten resources — `scenario-t-blast-radius-drift` is
- * exactly such a plan, and blast radius is the thing it exists to demonstrate.
+ * Core's exported `ChangeProposalSchema` defaults to 10 operations and 20
+ * evidence ids per claim, which are the right ceilings for a *model-authored*
+ * proposal — a model asking to touch more than ten things, or cite more than
+ * twenty evidence ids for one claim, is itself the signal. Nothing on this
+ * wire is model-authored: every proposal here is machine-derived from a
+ * bundled artifact by a domain, and both non-network domains deliberately
+ * permit far more operations (`TerraformChangeProposalSchema` 2000,
+ * `KubernetesChangeProposalSchema` 5000). Reusing the model-authored defaults
+ * here silently failed any plan touching more than ten resources —
+ * `scenario-t-blast-radius-drift` is exactly such a plan, and blast radius is
+ * the thing it exists to demonstrate.
+ *
+ * Terraform's `deriveProposal` additionally cites one evidence id per changed
+ * resource in its single diagnosis claim, so a plan with more than twenty
+ * changes needs `maxEvidenceIdsPerClaim` raised too, not just
+ * `maxOperations` — `TerraformChangeProposalSchema` itself permits up to
+ * 2000, and a scenario at 21+ changes silently 500'd here until this matched
+ * it.
  *
  * This bounds the response, not the request: `MAX_BODY_BYTES` in
  * `app/api/reviews/analyze/route.ts` remains the input-side control, and the
@@ -30,9 +39,12 @@ import {
  * authority on what a valid proposal for that domain looks like.
  */
 export const MAX_TRANSPORTED_PROPOSAL_OPERATIONS = 2000;
+export const MAX_TRANSPORTED_EVIDENCE_IDS_PER_CLAIM = 2000;
 
-const ChangeProposalSchema = makeProposalSchemas(JsonValueSchema, {
+/** Exported for direct schema-level testing of the ceilings above. */
+export const ReviewTransportChangeProposalSchema = makeProposalSchemas(JsonValueSchema, {
   maxOperations: MAX_TRANSPORTED_PROPOSAL_OPERATIONS,
+  maxEvidenceIdsPerClaim: MAX_TRANSPORTED_EVIDENCE_IDS_PER_CLAIM,
 }).proposal;
 
 /**
@@ -323,7 +335,7 @@ export const ReviewAnalysisResultSchema = z
     sourceId: IdSchema,
     inputId: IdSchema,
     input: JsonValueSchema,
-    proposal: ChangeProposalSchema,
+    proposal: ReviewTransportChangeProposalSchema,
     findings: z.array(PolicyFindingSchema).min(1).max(64),
     riskLevel: RiskLevelSchema,
     provenance: ReviewProposalProvenanceSchema,

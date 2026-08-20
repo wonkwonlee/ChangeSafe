@@ -28220,8 +28220,10 @@ import { createServer } from "node:http";
 
 // ../../features/domains/review-contract.ts
 var MAX_TRANSPORTED_PROPOSAL_OPERATIONS = 2e3;
-var ChangeProposalSchema2 = makeProposalSchemas(JsonValueSchema, {
-  maxOperations: MAX_TRANSPORTED_PROPOSAL_OPERATIONS
+var MAX_TRANSPORTED_EVIDENCE_IDS_PER_CLAIM = 2e3;
+var ReviewTransportChangeProposalSchema = makeProposalSchemas(JsonValueSchema, {
+  maxOperations: MAX_TRANSPORTED_PROPOSAL_OPERATIONS,
+  maxEvidenceIdsPerClaim: MAX_TRANSPORTED_EVIDENCE_IDS_PER_CLAIM
 }).proposal;
 var REVIEW_CONTRACT_VERSION = "2.0.0";
 var DomainIdSchema = external_exports.string().regex(
@@ -28451,7 +28453,7 @@ var ReviewAnalysisResultSchema = external_exports.strictObject({
   sourceId: IdSchema,
   inputId: IdSchema,
   input: JsonValueSchema,
-  proposal: ChangeProposalSchema2,
+  proposal: ReviewTransportChangeProposalSchema,
   findings: external_exports.array(PolicyFindingSchema).min(1).max(64),
   riskLevel: RiskLevelSchema,
   provenance: ReviewProposalProvenanceSchema,

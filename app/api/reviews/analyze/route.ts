@@ -247,7 +247,7 @@ async function resolvePublicReplay(
           : "authored-fixture",
       provenance: source.provenance,
       proposalProvenance: {
-        model: null,
+        model: source.model,
         fixtureId: source.sourceId,
         notes: null,
       },
