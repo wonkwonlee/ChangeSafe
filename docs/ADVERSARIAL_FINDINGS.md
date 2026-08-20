@@ -1663,3 +1663,73 @@ now all supply `oldObjectSha256`; each was updated. Regression test:
 `packages/core/tests/grant.test.ts`, "rejects an UPDATE grant with no
 oldObjectSha256 (CS-ADV-014 follow-up)" — verified to fail against the
 optional (first-version) schema and pass against the fix.
+
+### Amendment: three follow-on gaps in the oldObjectSha256 binding itself
+
+Found by a third round of the same external review, on PR #75 after the
+prior two amendments landed. All three were verified against the actual
+code (not accepted on description) and each got a regression test proven
+to fail pre-fix and pass post-fix.
+
+**1. `deletionTimestamp`/`deletionGracePeriodSeconds` were excluded from
+the grant's object hash.** `canonicalizeAdmittedResource`
+(`packages/domain-kubernetes/src/normalize.ts`) treats server-owned
+bookkeeping fields (`resourceVersion`, `managedFields`, ...) as excluded
+from the hash a grant binds against, by design — the exclude-list shape is
+deliberate so unknown future fields default to being hashed (safe
+direction: extra false DENY, never false ALLOW). But
+`deletionTimestamp`/`deletionGracePeriodSeconds` were folded into that same
+exclude-list even though they are not server bookkeeping — they record
+whether deletion has been *requested*, a lifecycle change that alters what
+an UPDATE grant actually means. A grant reviewed against a not-yet-deleting
+object (e.g. "remove this finalizer") stayed valid, unchanged, once that
+object entered termination — and finalizer removal on a terminating object
+triggers actual Kubernetes garbage collection, a materially different,
+unreviewed outcome. Fixed by removing both keys from
+`SERVER_OWNED_METADATA_KEYS`, so a deletion-lifecycle change now changes
+the canonical hash like any other unreviewed drift. Regression test:
+`packages/domain-kubernetes/tests/normalize.test.ts`, "changes canonical
+output when deletion lifecycle state changes (CS-ADV-015)".
+
+**2. A missing `oldObjectSha256` on an UPDATE grant request was only
+caught after the decision was already committed.**
+`AuthorizationGrantSchema.superRefine` (added in the prior amendment)
+correctly rejects this — but that check runs inside `issueGrant`, called
+from `packages/server/src/http.ts`'s decision route AFTER
+`resolvePending()` has already ledgered the approval. A caller sending an
+UPDATE grant request with no `oldObjectSha256` got the decision committed
+to the ledger, and only then a 422 telling them the grant itself could not
+be issued — an unrecoverable partial-success response, the same shape of
+bug the existing `expiresAtUtc`/`MIN_GRANT_LIFETIME_MS` pre-ledger check
+already exists to prevent for a different field. Fixed by adding the same
+kind of pre-ledger check: `POST /reviews/:id/decisions` now rejects an
+UPDATE grant request missing `oldObjectSha256` with 400 REQUEST_INVALID
+before `resolvePending` runs. Verified pre-fix: the same request returned
+422 (from `issueGrant`'s internal parse) with `ledger.count()` already
+incremented — confirming the decision had committed before the caller
+learned the grant request was invalid. Regression test:
+`packages/server/tests/reviews.test.ts`, "refuses an UPDATE grant with no
+oldObjectSha256 before anything reaches the ledger".
+
+**3. The kind-cluster demo never supplied `oldObjectSha256`.** The prior
+amendment's "Remaining uncertainty" section already flagged this as
+undone. `examples/m2-kubernetes-enforcer/kind-repro.sh`'s Demo step 1
+built an UPDATE grant from `current`/`candidate` (the object fetched from
+the live cluster and the same object with `replicas` bumped) but only ever
+hashed `candidate` into `objectSha256`, leaving the grant's prior-state
+binding entirely unexercised in the one place meant to demonstrate the
+real enforcement path end to end. Fixed by hashing `current` (the
+object's state *before* the reviewed replica change, fetched via `kubectl
+get` before `candidate` is constructed) into a new `oldObjectSha256` field
+on the grant, using the same `kubernetesObjectSha256` the enforcer itself
+uses. Not independently regression-tested (the script drives a live kind
+cluster this environment cannot run); verified by structural review
+against `verifyGrantAgainstAdmission` (`packages/kubernetes-enforcer/src/
+verify.ts`), which already compares `request.oldObject`'s hash against
+`grant.oldObjectSha256` whenever present, and by `bash -n` syntax check.
+
+None of these three change `AuthorizationGrantSchema`'s shape or
+`policyVersion` — no version bump. (1) changes what
+`canonicalizeAdmittedResource` includes in its hash, not the grant schema
+itself, so it needed no policy version bump either: it is a normalization
+fix, not a policy behavior change.
