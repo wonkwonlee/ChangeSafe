@@ -380,6 +380,19 @@ async function handle(
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    // Checked here, before anything is ledgered, because grant issuance
+    // happens after the ledger append below: a grant request that
+    // AuthorizationGrantSchema would reject must fail while the decision can
+    // still be abandoned, not after it is committed and the caller is told
+    // the request failed. `expiresAtUtc` is the one per-request grant
+    // precondition the body schema cannot see — it is only invalid relative
+    // to the server clock the grant is issued against.
+    if (body.grant && Date.parse(body.grant.expiresAtUtc) <= Date.parse(serverNow(options))) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "A grant's expiresAtUtc must be in the future at issuance time.",
+      );
+    }
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
       ...pendingReviewRequest(pending),
       decision: body.decision,
@@ -436,6 +449,20 @@ async function handle(
         };
       },
     );
+    // Issued after the receipt is signed and appended, because a grant that
+    // named a receipt the ledger never accepted would authorize against a
+    // decision with no durable record. The cost of that ordering is that a
+    // throw here surfaces as an error response for a decision that did
+    // commit. Every per-request way `issueGrant` can throw is therefore
+    // ruled out before the ledger write: the approve/reject and
+    // blocking-finding checks in `#prepare`, the strict `GrantRequestSchema`
+    // envelope, and the `expiresAtUtc` check above. What remains is
+    // `#requireSigningCapability`, which `decideSigned` already demanded of
+    // this same service — a service-level misconfiguration that cannot
+    // newly appear mid-request. A caller who does see an error after a
+    // commit is not left guessing: the decision is idempotent by
+    // `receiptId`, so replaying the same request recovers the stored
+    // outcome via `#recoverSignedOutcome` rather than deciding twice.
     const grant =
       body.decision === "approve" && body.grant
         ? await options.decisions.issueGrant(decided.outcome.receipt, body.grant)

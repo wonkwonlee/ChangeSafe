@@ -815,4 +815,29 @@ describe("durable review decision HTTP API", () => {
 
     expect(response.status).toBe(422);
   });
+
+  it("refuses an already-expired grant before anything reaches the ledger", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-expired"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    // A well-formed timestamp the grant schema still rejects (expiry at or
+    // before issuance). Grant issuance runs after the receipt is appended,
+    // so without the pre-ledger check this would commit a decision and then
+    // answer the caller with an error.
+    const response = await decideReview(
+      "review-grant-expired",
+      {
+        decision: "approve",
+        grant: { ...grantRequest, expiresAtUtc: "2000-01-01T00:00:00.000Z" },
+      },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-expired", aliceOwner())).toBeNull();
+  });
 });
