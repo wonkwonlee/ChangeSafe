@@ -470,11 +470,20 @@ async function handle(
     // which previously left a race where the two reads could disagree.
     // What remains is `#requireSigningCapability`, which `decideSigned`
     // already demanded of this same service — a service-level
-    // misconfiguration that cannot newly appear mid-request. A caller who
-    // does see an error after a commit is not left guessing: the decision
-    // is idempotent by `receiptId`, so replaying the same request recovers
-    // the stored outcome via `#recoverSignedOutcome` rather than deciding
-    // twice.
+    // misconfiguration that cannot newly appear mid-request, so this
+    // should not throw in practice. If it somehow does, or if the response
+    // carrying the grant is simply lost in transit, a retry does NOT
+    // recover it: by this point `resolvePending` has already appended the
+    // resolution, so `#claimDecision`'s resolution-exists guard rejects
+    // the retry with `ILLEGAL_TRANSITION` before `issueGrant` is ever
+    // called again — `#recoverSignedOutcome` (decisions.ts) only covers
+    // the earlier claimed-but-not-yet-resolved crash window, not this one.
+    // The receipt itself stays recoverable via `GET /reviews/:id/receipt-
+    // proof`; the grant does not. Recorded as `CS-ADV-007`
+    // (`docs/ADVERSARIAL_FINDINGS.md`, distinct from `CS-ADV-004`'s
+    // issuance-binding gap) — an issued grant with no durable record and
+    // no recovery path, exactly the counterexample the M2 design spec's
+    // "grants in the ledger" deferral said would justify building it.
     const grant =
       body.decision === "approve" && body.grant
         ? await options.decisions.issueGrant(decided.outcome.receipt, {

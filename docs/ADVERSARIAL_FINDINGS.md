@@ -656,3 +656,118 @@ Whether `daemonsets`/`services` have analogous subresource-routing gaps for
 operations this system cares about has not been checked. Whether option 1
 or 2 above (or leaving the gap open) is the right call is an operational
 decision this finding surfaces but does not make.
+
+## Finding CS-ADV-007
+
+### Hypothesis
+
+If a client disconnects after `POST /reviews/:id/decisions` durably
+resolves a decision (the receipt is ledgered, and — when requested — a
+grant is signed) but before the response reaches it, retrying the same
+request recovers the grant rather than losing it.
+
+### Attack surface
+
+- `packages/server/src/http.ts`'s `POST /reviews/:id/decisions` handler
+- `packages/server/src/durable-review-store.ts`'s `DurableReviewStore#resolvePending`
+  and `#claimDecision`
+- `packages/server/src/decisions.ts`'s `#recoverSignedOutcome` (the
+  existing idempotent-recovery path for `decideSigned`, referenced by an
+  `http.ts` comment as covering this — verified below that it does not,
+  for this specific window)
+
+### Method
+
+Found by external review (Codex, on PR #75); traced through the actual
+call chain rather than accepted at face value, since an `http.ts` comment
+already claimed recovery worked ("the decision is idempotent by
+`receiptId`, so replaying the same request recovers the stored outcome via
+`#recoverSignedOutcome`"). Read `#claimDecision`'s three-way branch
+(`durable-review-store.ts`): no pending review → reject; a resolution
+already exists → `ILLEGAL_TRANSITION`; a claim exists but no resolution yet
+→ return the existing claim and proceed. Confirmed the middle branch — the
+one that actually reaches `#recoverSignedOutcome` — only covers the narrow
+window between claiming a decision and appending its resolution (e.g. a
+mid-request crash), not the window this finding is about: after the
+resolution is fully appended.
+
+### Expected invariant
+
+A response the server already committed to (a signed receipt in the
+ledger, a signed grant derived from it) is recoverable by the client that
+requested it, not stranded because one HTTP response failed to arrive.
+
+### Observed behavior
+
+Once `#appendResolution` succeeds, any retry of the same
+`POST /reviews/:id/decisions` request hits `#claimDecision`'s
+`getResolution(...)` check first and throws `ILLEGAL_TRANSITION`
+immediately — `resolvePending`'s `issue` callback (which calls
+`decideSigned`/`issueGrant`) is never invoked again, so
+`#recoverSignedOutcome` is never reached for this window. The receipt
+itself remains recoverable via `GET /reviews/:id/receipt-proof`
+(`options.reviews.getResolution`), but that resolution record carries only
+receipt fields — no grant. A grant that was signed and returned in a
+response the client never received exists nowhere durable: not in the
+ledger (deliberately, per this file's own `packages/ledger` stays
+receipt-only note above), not in the resolution record, and not
+recoverable by retry. The client's only recourse is a new review and
+decision cycle to obtain a replacement grant for the same already-approved
+change.
+
+### Severity
+
+Medium — an availability/operability gap, not a security bypass: no BLOCK
+finding is weakened, no forged signature is accepted, and the failure mode
+is "cannot obtain a valid grant" rather than "obtains an invalid one." The
+cost falls on the legitimate caller, not on an attacker.
+
+### Root cause
+
+Grant issuance was added onto an existing idempotent-recovery design built
+for receipts alone. `#recoverSignedOutcome` genuinely does make
+`decideSigned` idempotent by `receiptId` — but `resolvePending`'s own
+resolution-exists guard, which predates grants entirely, fails the whole
+request closed before that recovery path is ever reached. The `http.ts`
+comment describing this as covered was accurate for the receipt but did
+not account for the grant riding along on the same, single, unrepeatable
+response.
+
+### Fix
+
+Not fixed in this pass. This is the counterexample the M2 design spec's
+own "Explicitly deferred" section named in advance: "Grants in the ledger
+... Attack case to test: can a grant exist and be exercised with no
+durable record that it was ever issued? If the M2 adversarial gate finds
+this is a real audit gap, extend the ledger then." This finding is that
+audit gap, concretely: a grant existed, was signed, and is now
+unrecoverable and untracked. Whether to act on the spec's own stated
+trigger (persist issued grants, e.g. alongside the resolution record) is a
+call for whoever owns this milestone next, not something to build
+unilaterally in a PR review response — it reopens deferred scope with its
+own design questions (what persisted-grant storage looks like, whether
+`packages/ledger` is the right home or a separate durable-review-store
+table, and how `CS-ADV-004`'s issuance-binding gap interacts with any
+persisted record).
+
+### Regression test
+
+None. Reproducing the exact race (append succeeds, response is dropped)
+needs fault injection into the HTTP response path, not covered by the
+existing test doubles.
+
+### What this changed in the architecture
+
+Nothing. This is a documented gap, not a code change. It also corrects an
+inaccurate code comment: `packages/server/src/http.ts`'s claim that
+`#recoverSignedOutcome` covers "replaying the same request" is true only
+for the pre-resolution crash window, not for a response lost after full
+commit — worth fixing the comment's wording in a future pass even without
+building the underlying recovery mechanism.
+
+### Remaining uncertainty
+
+Whether the same unrecoverable-response class of gap exists for the
+receipt itself in any other durable route, independent of grants, has not
+been checked — `GET /reviews/:id/receipt-proof` appears to cover the
+receipt specifically, but that was not exhaustively verified here.
