@@ -422,6 +422,26 @@ async function handle(
           "so it cannot expire before the decision finishes committing and the response reaches the caller.",
       );
     }
+    // The same reasoning as the expiresAtUtc check above, for a second
+    // per-request precondition GrantRequestSchema can't see:
+    // AuthorizationGrantSchema requires oldObjectSha256 for UPDATE, but
+    // that requirement lives in @changesafe/core and GrantRequestSchema
+    // (the HTTP body's own schema) doesn't duplicate it — an UPDATE grant
+    // missing it would otherwise pass this route's own validation, commit
+    // the decision via resolvePending below, and only then be rejected by
+    // issueGrant's internal AuthorizationGrantSchema.parse, after the
+    // decision is already irreversibly resolved.
+    if (
+      body.grant &&
+      body.grant.operation === "UPDATE" &&
+      body.grant.oldObjectSha256 === undefined
+    ) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "An UPDATE grant's oldObjectSha256 is required (AuthorizationGrantSchema enforces this) — " +
+          "missing it here would only be discovered after the decision is committed.",
+      );
+    }
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
       ...pendingReviewRequest(pending),
       decision: body.decision,
