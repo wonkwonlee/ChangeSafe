@@ -177,3 +177,102 @@ provenance.
 
 This finding does not establish a remediation, bind plan freshness,
 workspace/state/source revision, or address Tier 2 effects or M2 authority.
+
+## Finding CS-ADV-003
+
+### Hypothesis
+
+The `objectHashOf` exclusion in `packages/kubernetes-enforcer/src/verify.ts`,
+which drops the `changesafe.dev/grant` annotation before hashing an admitted
+object, could be silently broken or silently widened (excluding annotations
+generally, not just the grant annotation) without any test noticing.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/verify.ts`'s non-exported `objectHashOf`
+  helper, reached only through `verifyGrantAgainstAdmission`.
+- `packages/kubernetes-enforcer/tests/verify.test.ts`, Task 8's 8-case
+  attack suite.
+
+### Method
+
+A task reviewer inspected `verify.test.ts` after the kind-cluster
+reproduction (Task 10 Step 4, commit `369e51a`) and found that the test
+file's own local `objectHashOf` helper — used only to compute expected
+`objectSha256` values for fixtures — hashed `{ identity, metadata, spec }`
+with no exclusion logic at all, and the shared `RESOURCE` fixture had no
+`annotations` field. The production exclusion in `src/verify.ts` was
+therefore never exercised by any of the 8 existing tests; they passed only
+because the exclusion is a no-op on annotation-less fixtures.
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, two tests added in the
+fix round on commit `3332773`:
+
+- "allows once the grant annotation itself is attached to the admitted
+  object" — issues a grant against an annotation-less resource, then admits
+  a copy of that resource with the `changesafe.dev/grant` annotation
+  attached, and asserts `{ allowed: true }`. Had the production exclusion
+  been a no-op or removed, attaching the annotation would have changed the
+  computed hash and produced a DENY instead.
+- "denies when a different annotation is tampered with after
+  authorization" — issues a grant against a resource carrying an unrelated
+  annotation, then admits a copy with that annotation's *value* changed
+  (not the grant annotation), and asserts `allowed: false`. This proves the
+  exclusion is scoped to exactly `changesafe.dev/grant` and not to
+  annotations generally, since a broadened exclusion would be a bypass.
+
+### Expected invariant
+
+A grant's `objectSha256` must be computed identically on the issuing side
+(object with no grant annotation yet) and the verifying side (object with
+the grant annotation attached), and no other annotation may be excluded
+from that hash.
+
+### Observed behavior
+
+Both new tests passed on their first run against the existing, unmodified
+production `objectHashOf` (`packages/kubernetes-enforcer/tests/verify.test.ts`,
+10/10 tests passing after the fix round). The production exclusion logic
+itself was correct from the start — the gap was in test coverage, not in
+the shipped behavior: nothing had ever forced the exclusion path to run.
+
+### Severity
+
+Low-to-medium test-coverage gap. It did not represent a live defect in
+production behavior, but it left the object-substitution attack case's
+adjacent annotation-tampering variant completely unverified — a regression
+that broke or widened the exclusion could have shipped undetected.
+
+### Root cause
+
+`verify.test.ts`'s hand-rolled `objectHashOf` test helper diverged from the
+real, non-exported `objectHashOf` in `src/verify.ts` without either helper
+being kept in sync, and the shared `RESOURCE` fixture never exercised an
+object carrying any annotations at all.
+
+### Fix
+
+Added the two tests above, which reach the real production `objectHashOf`
+through `verifyGrantAgainstAdmission` rather than duplicating the exclusion
+logic in the test file, so a future change to the exclusion is exercised
+directly instead of through a parallel implementation that could drift.
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/verify.test.ts` — 10/10 tests passing,
+including the two annotation-exclusion cases above.
+
+### What this changed in the architecture
+
+Nothing in runtime architecture changed; the shipped exclusion logic was
+correct before and after this finding. The change is test coverage only.
+
+### Remaining uncertainty
+
+This finding does not address `main.ts`'s `readGrantFromAnnotation`, which
+has no dedicated unit test (explicitly deprioritized in the same fix round
+as lower value than standing up a new test file for one small function). It
+also does not address ledger recording, nonce/replay defenses, or E2/E3
+persistence — all explicitly deferred per the M2 design spec.
