@@ -94,25 +94,26 @@ run kubectl -n changesafe-system create secret generic changesafe-enforcer-signi
   --from-file=public-key.pem="${WORK_DIR}/grant-public.pem"
 run kubectl -n changesafe-system rollout status deploy/changesafe-enforcer --timeout=60s
 
-# --- 7. Register the two-tier ValidatingWebhookConfigurations ---------------
-log ""
-log "--- Registering webhook-protected.yaml (failurePolicy: Fail) and webhook-default.yaml (failurePolicy: Ignore) ---"
-CA_B64=$(base64 < "${WORK_DIR}/ca-cert.pem" | tr -d '\n')
-sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-protected.yaml" > "${WORK_DIR}/webhook-protected.rendered.yaml"
-sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-default.yaml" > "${WORK_DIR}/webhook-default.rendered.yaml"
-
-# Two demo namespaces: webhook-protected.yaml routes by namespaceSelector on
+# --- 7. Create the two demo namespaces --------------------------------------
+# webhook-protected.yaml routes by namespaceSelector on
 # changesafe.dev/tier=protected (see webhook-protected.yaml's comment for
 # why — objectSelector cannot match an annotation).
+log ""
+log "--- Creating the two demo namespaces ---"
 run kubectl create namespace changesafe-protected-demo
 run kubectl label namespace changesafe-protected-demo changesafe.dev/tier=protected
 run kubectl create namespace changesafe-default-demo
-run kubectl apply -f "${WORK_DIR}/webhook-protected.rendered.yaml" -f "${WORK_DIR}/webhook-default.rendered.yaml"
 
-# --- 8. Deploy the target resources (CREATE is not intercepted — only
-#        UPDATE/DELETE are, so bootstrapping needs no grant) ----------------
+# --- 8. Bootstrap the target Deployments BEFORE the webhooks are registered -
+# Both webhook configs now intercept CREATE as well as UPDATE (CS-ADV-012),
+# so creating these after registration would need a grant for the very
+# first apply too — a real operator protects an ALREADY-RUNNING resource
+# (matching K8S_PROTECTED_RESOURCE's own model: the changesafe.dev/protected
+# annotation marks something already there), not one that never existed
+# without a grant. Bootstrapping before the webhooks even exist is the
+# realistic sequence, not a workaround.
 log ""
-log "--- Creating the demo Deployments (CREATE is not in the webhook rules) ---"
+log "--- Creating the demo Deployments (before the webhooks exist, so no grant is needed yet) ---"
 cat > "${WORK_DIR}/web-protected.yaml" <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -154,7 +155,17 @@ EOF
 run kubectl apply -f "${WORK_DIR}/web-protected.yaml"
 run kubectl apply -f "${WORK_DIR}/web-default.yaml"
 
-# --- 9. Demo step 1 — ALLOW: issue a grant for a benign replica change,
+# --- 9. Register the two-tier ValidatingWebhookConfigurations ---------------
+# Now that the baseline Deployments exist, turn on enforcement: every
+# CREATE/UPDATE from here on needs a grant.
+log ""
+log "--- Registering webhook-protected.yaml (failurePolicy: Fail) and webhook-default.yaml (failurePolicy: Ignore) ---"
+CA_B64=$(base64 < "${WORK_DIR}/ca-cert.pem" | tr -d '\n')
+sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-protected.yaml" > "${WORK_DIR}/webhook-protected.rendered.yaml"
+sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-default.yaml" > "${WORK_DIR}/webhook-default.rendered.yaml"
+run kubectl apply -f "${WORK_DIR}/webhook-protected.rendered.yaml" -f "${WORK_DIR}/webhook-default.rendered.yaml"
+
+# --- 10. Demo step 1 — ALLOW: issue a grant for a benign replica change,
 #        attach it via the changesafe.dev/grant annotation, apply it -------
 log ""
 log "=== Demo step 1: ALLOW (grant matches the exact object it authorizes) ==="
@@ -211,7 +222,7 @@ if [ "${ACTUAL_REPLICAS}" != "4" ]; then
   exit 1
 fi
 
-# --- 10. Demo step 2 — DENY: reuse the SAME grant against a different
+# --- 11. Demo step 2 — DENY: reuse the SAME grant against a different
 #         object (replicas: 5 instead of the grant's authorized 4) ---------
 log ""
 log "=== Demo step 2: DENY (same grant, modified object — object hash mismatch) ==="
@@ -239,7 +250,7 @@ if [ "${ACTUAL_REPLICAS}" != "4" ]; then
   exit 1
 fi
 
-# --- 11. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
+# --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
 log "=== Demo step 3: fail-closed (protected) vs fail-open (default) when the enforcer is unreachable ==="
 run kubectl -n changesafe-system scale deploy/changesafe-enforcer --replicas=0

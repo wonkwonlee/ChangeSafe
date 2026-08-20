@@ -1342,3 +1342,34 @@ been exercised against a live cluster the way UPDATE was. Whether `CONNECT`
 both model) has an analogous routing gap was not checked — Kubernetes
 issues CONNECT primarily for subresources like `exec`/`proxy`, which raises
 questions similar to `CS-ADV-006`'s and was out of scope here.
+
+### Amendment: the fix broke the demo's own bootstrap sequence
+
+Found by a second round of the same external review, on the fix commit
+itself. `examples/m2-kubernetes-enforcer/kind-repro.sh` registered both
+webhook configurations, THEN applied the two baseline demo Deployments
+with no grant attached, with a comment explicitly justifying this as safe:
+"CREATE is not intercepted — only UPDATE/DELETE are, so bootstrapping
+needs no grant." Registering CREATE (this finding's own fix) made that
+comment wrong and, under `set -euo pipefail`, would have made the very
+first `kubectl apply` in the script fail closed on the protected tier —
+aborting the reproduction before any of the three demo steps ran.
+
+Fixed by reordering: the two baseline Deployments are now created BEFORE
+the webhook configurations are registered, matching how a real operator
+would actually use this system — protecting an already-running resource
+(the same model `K8S_PROTECTED_RESOURCE`'s own annotation uses), not
+requiring a grant for a resource that never existed without one.
+Namespace creation stays where it was (still needed before the Deployments
+can target it); only the webhook registration itself moved, from before
+the bootstrap Deployments to after. The stale comment was replaced with
+one explaining why the new order is the realistic sequence, not a
+workaround.
+
+This reordering has NOT been re-run against a live kind cluster as part of
+this fix (no cluster was available in the environment that made the
+change) — verified only by reading the resulting script's structure and a
+`bash -n` syntax check. The demo transcript recorded from the original
+(pre-CS-ADV-012) kind run predates both the CREATE-routing fix and this
+reordering, so it does not itself validate the new sequence either.
+Re-running `kind-repro.sh` for real remains open follow-up work.
