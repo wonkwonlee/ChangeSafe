@@ -28,15 +28,11 @@ function request(sourceId: string, contractVersion: string): Request {
 
 describe("POST /api/reviews/analyze Kubernetes public replay", () => {
   it.each([
-    ["kubernetes-safe-scale", "LOW", false, "authored-synthetic"],
-    ["kubernetes-reduced-availability", "MEDIUM", false, "authored-synthetic"],
-    ["kubernetes-mutable-image-tag", "HIGH", false, "authored-synthetic"],
-    [
-      "kubernetes-selector-red-team",
-      "CRITICAL",
-      true,
-      "authored-red-team",
-    ],
+    ["scenario-q-safe-scale-up", "LOW", false, "authored-synthetic"],
+    ["scenario-r-partial-replica-reduction", "MEDIUM", false, "authored-synthetic"],
+    ["scenario-w-mutable-image-tag", "HIGH", false, "authored-synthetic"],
+    ["scenario-m-selector-drift", "CRITICAL", true, "authored-synthetic"],
+    ["scenario-v-protected-config-change", "CRITICAL", true, "authored-synthetic"],
   ] as const)(
     "evaluates %s as an offline simulated-state replay without decision authority",
     async (sourceId, expectedRisk, expectedBlock, expectedProvenance) => {

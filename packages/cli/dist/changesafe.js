@@ -28219,6 +28219,10 @@ function bearerToken(authorization) {
 import { createServer } from "node:http";
 
 // ../../features/domains/review-contract.ts
+var MAX_TRANSPORTED_PROPOSAL_OPERATIONS = 2e3;
+var ChangeProposalSchema2 = makeProposalSchemas(JsonValueSchema, {
+  maxOperations: MAX_TRANSPORTED_PROPOSAL_OPERATIONS
+}).proposal;
 var REVIEW_CONTRACT_VERSION = "2.0.0";
 var DomainIdSchema = external_exports.string().regex(
   /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/,
@@ -28447,7 +28451,7 @@ var ReviewAnalysisResultSchema = external_exports.strictObject({
   sourceId: IdSchema,
   inputId: IdSchema,
   input: JsonValueSchema,
-  proposal: ChangeProposalSchema,
+  proposal: ChangeProposalSchema2,
   findings: external_exports.array(PolicyFindingSchema).min(1).max(64),
   riskLevel: RiskLevelSchema,
   provenance: ReviewProposalProvenanceSchema,

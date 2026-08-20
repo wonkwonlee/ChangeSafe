@@ -225,10 +225,9 @@ async function resolvePublicReplay(
   }
 
   if (domainId === "kubernetes") {
-    const {
-      KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-      KUBERNETES_PUBLIC_REPLAY_SOURCES,
-    } = await import("@/features/domains/kubernetes/fixtures");
+    const { KUBERNETES_PUBLIC_REPLAY_SOURCES } = await import(
+      "@/features/domains/kubernetes/fixtures"
+    );
     const source = KUBERNETES_PUBLIC_REPLAY_SOURCES.find(
       (candidate) => candidate.sourceId === sourceId,
     );
@@ -239,10 +238,13 @@ async function resolvePublicReplay(
       return { kind: "unsupported" };
     }
     return {
-      inputId: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.snapshotId,
-      input: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
+      inputId: source.snapshot.snapshotId,
+      input: source.snapshot,
       proposal: source.proposal,
-      source: "authored-fixture",
+      source:
+        source.provenance === "captured-replay"
+          ? "bundled-replay"
+          : "authored-fixture",
       provenance: source.provenance,
       proposalProvenance: {
         model: null,
@@ -263,17 +265,11 @@ async function resolvePublicReplay(
   if (!fixture) {
     return null;
   }
-  const { deriveProposal, normalizePlan } = await import(
-    "@changesafe/domain-terraform"
-  );
-  const input = normalizePlan(fixture.plan, {
-    planId: fixture.inputId,
-    context: [...fixture.context],
-  });
+  const { deriveProposal } = await import("@changesafe/domain-terraform");
   return {
-    inputId: input.planId,
-    input,
-    proposal: deriveProposal(input),
+    inputId: fixture.input.planId,
+    input: fixture.input,
+    proposal: deriveProposal(fixture.input),
     source: "authored-fixture",
     provenance: fixture.provenance,
     proposalProvenance: {

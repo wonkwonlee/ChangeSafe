@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   ChangeOpKindSchema,
-  ChangeProposalSchema,
   EvidenceIdSchema,
   IdSchema,
   JsonValueSchema,
@@ -9,7 +8,32 @@ import {
   RiskLevelSchema,
   StatePathSchema,
   deriveRiskLevel,
+  makeProposalSchemas,
 } from "@changesafe/core";
+
+/**
+ * Upper bound on operations this transport will carry.
+ *
+ * Core's exported `ChangeProposalSchema` defaults to 10, which is the right
+ * ceiling for a *model-authored* proposal — a model asking to touch more than
+ * ten things is itself the signal. Nothing on this wire is model-authored:
+ * every proposal here is machine-derived from a bundled artifact by a domain,
+ * and both non-network domains deliberately permit far more
+ * (`TerraformChangeProposalSchema` 2000, `KubernetesChangeProposalSchema`
+ * 5000). Reusing the model-authored default here silently failed any plan
+ * touching more than ten resources — `scenario-t-blast-radius-drift` is
+ * exactly such a plan, and blast radius is the thing it exists to demonstrate.
+ *
+ * This bounds the response, not the request: `MAX_BODY_BYTES` in
+ * `app/api/reviews/analyze/route.ts` remains the input-side control, and the
+ * domain's own proposal schema in `features/domains/registry.ts` remains the
+ * authority on what a valid proposal for that domain looks like.
+ */
+export const MAX_TRANSPORTED_PROPOSAL_OPERATIONS = 2000;
+
+const ChangeProposalSchema = makeProposalSchemas(JsonValueSchema, {
+  maxOperations: MAX_TRANSPORTED_PROPOSAL_OPERATIONS,
+}).proposal;
 
 /**
  * Version 2 makes `policyVersion` mandatory on every session envelope.

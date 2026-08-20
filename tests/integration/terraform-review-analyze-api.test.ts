@@ -22,14 +22,10 @@ function request(sourceId: string, contractVersion: string): Request {
 
 describe("POST /api/reviews/analyze Terraform public replay", () => {
   it.each([
-    ["terraform-safe-scale-up", "LOW", false, "authored-synthetic"],
-    ["terraform-destroys-database", "CRITICAL", true, "authored-synthetic"],
-    [
-      "terraform-protected-and-injected",
-      "CRITICAL",
-      true,
-      "authored-red-team",
-    ],
+    ["scenario-k-capacity-scale-up", "LOW", false, "authored-synthetic"],
+    ["scenario-j-destroy-protected", "CRITICAL", true, "authored-red-team"],
+    ["scenario-p-injected-pr-context", "CRITICAL", true, "authored-red-team"],
+    ["terraform-large-plan-boundary", "LOW", false, "authored-synthetic"],
   ] as const)(
     "evaluates %s as an external diff without a simulation or durable decision",
     async (sourceId, expectedRisk, expectedBlock, expectedProvenance) => {
