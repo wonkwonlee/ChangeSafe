@@ -166,6 +166,26 @@ admission time, so a grant issued against a manifest that omits a
 field the API server later defaults can produce a false DENY. That is the
 intended direction to fail in.
 
+### What the webhook actually intercepts: the scale-subresource gap
+
+Neither `examples/m2-kubernetes-enforcer/webhook-protected.yaml` nor
+`webhook-default.yaml` names `deployments/scale`/`statefulsets/scale` in
+its `rules[].resources`. Kubernetes routes subresource requests (`kubectl
+scale`, a direct `Scale` `PATCH`, and every HorizontalPodAutoscaler-driven
+resize) separately from normal object UPDATEs, and a rule naming only the
+parent resource does not implicitly cover its subresources. **A protected
+Deployment or StatefulSet's replica count can currently be changed through
+the scale subresource with no grant check at all — not denied, simply
+never routed to the enforcer.** This is a real gap in exactly the field
+this milestone's own demo uses to prove the system works
+(`spec.replicas`), reachable by anything with ordinary scale RBAC, no
+approver identity required. Recorded as `CS-ADV-006` in
+`docs/ADVERSARIAL_FINDINGS.md`, which also lays out the two remediation
+options and why neither was chosen unilaterally in this pass — closing it
+means either building real `Scale`-object handling or accepting that
+scaling breaks entirely on protected resources until that exists, and that
+tradeoff is an operational decision, not a code fix.
+
 ### What the kind demo exercised, and what only the unit suite did
 
 The kind reproduction exercised signature verification, actor, operation,

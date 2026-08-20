@@ -536,3 +536,123 @@ describe block in `packages/domain-kubernetes/tests/normalize.test.ts`,
 "includes client-owned metadata the first version discarded (finalizers,
 ownerReferences)" — fails against the intermediate (spec-fixed,
 metadata-still-broken) code.
+
+## Finding CS-ADV-006
+
+### Hypothesis
+
+`examples/m2-kubernetes-enforcer/webhook-protected.yaml` and
+`webhook-default.yaml` intercept every UPDATE that changes a protected
+Deployment or StatefulSet's replica count.
+
+### Attack surface
+
+- `examples/m2-kubernetes-enforcer/webhook-protected.yaml` and
+  `webhook-default.yaml`'s `rules[].resources` lists
+- `packages/kubernetes-enforcer/src/admission-review.ts`'s
+  `AdmissionRequestSchema`, which has no `resource`/`subResource` fields to
+  detect this case even if a request did arrive
+
+### Method
+
+Found by external review (Codex, on PR #75); verified against Kubernetes'
+own admission-control contract rather than taken on faith. Kubernetes
+requires a `ValidatingWebhookConfiguration` rule to name a subresource
+explicitly (`"deployments/scale"`) to intercept requests to it — a rule
+listing only `"deployments"` does not implicitly cover `deployments/scale`,
+and `kubectl scale`, a `Scale` subresource `PATCH`, and every
+HorizontalPodAutoscaler-driven resize all go through that subresource, not
+a normal object UPDATE.
+
+### Minimal reproducer
+
+Not a runnable test — this is a webhook-routing gap, not application logic
+the unit suite can exercise: `packages/kubernetes-enforcer`'s server would
+correctly deny a `Scale`-shaped admission object if one ever reached it
+(`Scale`'s `kind` is not one of the four kinds `identityOfRawResource`
+supports, so `canonicalizeAdmittedResource` throws and the malformed-input
+handling from `CS-ADV-005`'s sibling fix (`87765ad`, PR #75) answers with an
+explicit deny). The gap is that Kubernetes never routes the request to the
+webhook at all when `resources` doesn't name the subresource, so that deny
+path is never reached — the reproducer would require a live cluster and
+`kubectl scale`, not a unit test.
+
+### Expected invariant
+
+Every UPDATE to a protected workload's replica count — however it arrives —
+requires a valid grant, matching `K8S_WORKLOAD_AVAILABILITY`'s own existing
+treatment of replica changes as policy-relevant
+(`packages/domain-kubernetes/src/policies/workload-availability.ts`), and
+matching AGENTS.md's "a missing verdict must never read as approval."
+
+### Observed behavior
+
+Neither webhook configuration's `rules[].resources` names `deployments/scale`
+or `statefulsets/scale`. A `kubectl scale`, a direct `Scale` subresource
+`PATCH`, or an HPA-driven resize is never sent to the enforcer at all — not
+denied, not evaluated, simply never routed there by the API server. This is
+a silent, total, undetectable bypass of every grant check (signature,
+actor, object hash, expiry) for exactly the field this milestone's own
+90-second demo uses to prove the system works (`spec.replicas`).
+
+### Severity
+
+High — higher than `CS-ADV-004`. That gap requires an already-authenticated
+approver to exploit; this one requires no privileged actor at all —
+anything with ordinary `scale` RBAC (which is broader than, and
+independent of, whatever RBAC gates a normal `PATCH`), or an HPA object
+already present in the cluster for entirely unrelated reasons, bypasses the
+grant system automatically and continuously. No BLOCK finding is weakened
+and no signature is forged — the request simply never reaches a point
+where either would be checked.
+
+### Root cause
+
+The webhook manifests and the `AdmissionRequestSchema` were both written
+against the milestone's demo path (`kubectl apply`/`patch` against the
+normal object endpoint) without accounting for Kubernetes' separate
+subresource routing for `scale`, `status`, and others. Nothing in the M2
+design spec's data flow or the implementation plan mentions subresources.
+
+### Fix
+
+Not fixed in this pass — this needs a real design decision, not a drive-by
+webhook YAML edit, because the two available options are both consequential
+and neither is obviously correct without an operator's input:
+
+1. **Register `deployments/scale`/`statefulsets/scale` and build real
+   `Scale`-object handling** — extend `AdmissionRequestSchema` with the
+   `resource`/`subResource`/`namespace`/`name` fields the real
+   `AdmissionReview.request` carries (present today only as
+   `z.looseObject`'s passthrough, not modeled), resolve identity from those
+   fields rather than the `Scale` object's own `apiVersion`/`kind` (which
+   don't self-report as `Deployment`/`StatefulSet`), and decide what a
+   `Scale`-subresource grant binds to given `Scale`'s payload is far
+   smaller than a full object hash. Real work with its own design, not a
+   fix-wave patch.
+2. **Register the subresource with no `Scale` handling built**, which
+   (given the existing malformed-input handling) means every scale
+   operation on a protected-tier resource is unconditionally denied —
+   converts a silent bypass into a loud, safe failure, but breaks
+   HPA-driven autoscaling entirely for protected resources until (1) is
+   built. A real availability cost, and a decision about cluster behavior
+   this repository should not make unilaterally in a PR review response.
+
+Neither is implemented here. This finding exists so the gap is visible and
+prioritizable rather than discovered later.
+
+### Regression test
+
+None — see Minimal reproducer above for why this is not unit-testable
+without a live cluster.
+
+### What this changed in the architecture
+
+Nothing. This is a documented gap, not a code change.
+
+### Remaining uncertainty
+
+Whether `daemonsets`/`services` have analogous subresource-routing gaps for
+operations this system cares about has not been checked. Whether option 1
+or 2 above (or leaving the gap open) is the right call is an operational
+decision this finding surfaces but does not make.
