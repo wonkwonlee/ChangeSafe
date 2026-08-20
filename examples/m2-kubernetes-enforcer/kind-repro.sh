@@ -185,6 +185,12 @@ candidate.spec.replicas = 4;
 
 const normalized = normalizeRawResource(candidate, 'ev-demo-step1');
 const objectSha256 = await kubernetesObjectSha256(candidate);
+// AuthorizationGrantSchema requires this for UPDATE (CS-ADV-014): the
+// object's state BEFORE the reviewed change, hashed the same way as the
+// target state, so the enforcer can tell an unreviewed prior-state drift
+// (a since-mutated object replayed against a stale grant) from a
+// legitimately reviewed transition.
+const oldObjectSha256 = await kubernetesObjectSha256(current);
 
 const keyPair = await importSigningKeyPair(readFileSync('${WORK_DIR}/grant-private.pem', 'utf8'));
 const grant = AuthorizationGrantSchema.parse({
@@ -194,6 +200,7 @@ const grant = AuthorizationGrantSchema.parse({
   operation: 'UPDATE',
   resource: normalized.resourceId,
   objectSha256,
+  oldObjectSha256,
   // The value the real system composes and records in receipts, not a
   // hand-written stand-in. Note the enforcer's drift check is inert in this
   // demo: EXPECTED_POLICY_VERSION is deliberately unset in
