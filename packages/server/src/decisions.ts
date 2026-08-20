@@ -1,4 +1,5 @@
 import {
+  AuthorizationGrantSchema,
   canonicalize,
   computePolicyCoverage,
   computePublicKeyId,
@@ -8,6 +9,7 @@ import {
   evaluatePolicies,
   hasBlockingFinding,
   initialState,
+  signGrant,
   signReceipt,
   transition,
   validateProposalEvidence,
@@ -16,14 +18,17 @@ import {
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
+  type GrantOperationSchema as GrantOperationSchemaType,
   type PolicyCoverage,
   type PolicyFinding,
   type RiskLevel,
   type SimulationResult,
+  type SignedGrant,
   type SignedReceipt,
   type WorkflowState,
 } from "@changesafe/core";
 import type { Ledger, LedgerEntry } from "@changesafe/ledger";
+import { z } from "zod";
 
 import { resolveServerDomain } from "./domains";
 
@@ -45,6 +50,14 @@ export interface DecisionOutcome {
 
 export interface SignedDecisionOutcome extends DecisionOutcome {
   record: SignedReceipt;
+}
+
+export interface IssueGrantOptions {
+  authorizedActor: string;
+  operation: z.infer<typeof GrantOperationSchemaType>;
+  resource: string;
+  objectSha256: string;
+  expiresAtUtc: string;
 }
 
 export interface DurableDecisionIssuance {
@@ -156,6 +169,38 @@ export class DecisionService {
       );
     }
     return { ...outcome, record: outcome.record };
+  }
+
+  /**
+   * Issue a signed AuthorizationGrant from an already-approved receipt.
+   *
+   * Requires a signing key for the same reason `decideSigned` does: an
+   * unsigned grant would be indistinguishable from one anyone could forge,
+   * and a grant that cannot prove who issued it authorizes nothing.
+   */
+  async issueGrant(receipt: ChangeReceipt, options: IssueGrantOptions): Promise<SignedGrant> {
+    this.#requireSigningCapability();
+    if (receipt.decision !== "approved") {
+      throw new DomainError(
+        "ILLEGAL_TRANSITION",
+        `Receipt ${receipt.receiptId} was not approved and cannot authorize a grant.`,
+      );
+    }
+
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: `grant-${globalThis.crypto.randomUUID()}`,
+      receiptId: receipt.receiptId,
+      authorizedActor: options.authorizedActor,
+      operation: options.operation,
+      resource: options.resource,
+      objectSha256: options.objectSha256,
+      policyVersion: receipt.policyVersion,
+      issuedAtUtc: this.#options.now?.() ?? new Date().toISOString(),
+      expiresAtUtc: options.expiresAtUtc,
+    });
+
+    // Non-null: #requireSigningCapability already confirmed this above.
+    return signGrant(grant, this.#options.signingKeyPair!);
   }
 
   async decide(
