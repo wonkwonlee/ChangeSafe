@@ -21,6 +21,11 @@ const RESOURCE = {
 };
 const RESOURCE_MODIFIED = { ...RESOURCE, spec: { replicas: 99 } };
 const ACTOR = "system:serviceaccount:ops:changesafe-applier";
+// resourceIdOf({apiVersion:"apps/v1",kind:"Deployment",namespace:"default",name:"web"}) —
+// verifyGrantAgainstAdmission now derives this from the admitted object
+// itself (CS-ADV-011), so a grant's `resource` field must equal it for
+// real, not an arbitrary test double string.
+const RESOURCE_ID = "res-1823f5f395a75605";
 
 async function keys() {
   const pem = await generateSigningKeyPair();
@@ -41,7 +46,7 @@ async function buildSignedGrant(overrides: Partial<Record<string, unknown>> = {}
     receiptId: "rcpt-test-0001",
     authorizedActor: ACTOR,
     operation: "UPDATE",
-    resource: "res-web-default",
+    resource: RESOURCE_ID,
     objectSha256: await objectHashOf(RESOURCE),
     policyVersion: "kubernetes-v0.2.0",
     issuedAtUtc: "2026-08-19T12:00:00.000Z",
@@ -67,9 +72,7 @@ const NOW = () => new Date("2026-08-19T12:30:00.000Z");
 describe("verifyGrantAgainstAdmission", () => {
   it("allows a matching grant and request", async () => {
     const { signed, verifying } = await buildSignedGrant();
-    const outcome = await verifyGrantAgainstAdmission(signed, admissionRequest(), verifying, NOW, {
-      expectedResource: "res-web-default",
-    });
+    const outcome = await verifyGrantAgainstAdmission(signed, admissionRequest(), verifying, NOW);
     expect(outcome).toEqual({ allowed: true });
   });
 
@@ -144,9 +147,7 @@ describe("verifyGrantAgainstAdmission", () => {
 
   it("denies on resource substitution", async () => {
     const { signed, verifying } = await buildSignedGrant({ resource: "res-a-different-resource" });
-    const outcome = await verifyGrantAgainstAdmission(signed, admissionRequest(), verifying, NOW, {
-      expectedResource: "res-web-default",
-    });
+    const outcome = await verifyGrantAgainstAdmission(signed, admissionRequest(), verifying, NOW);
     expect(outcome.allowed).toBe(false);
   });
 
@@ -202,7 +203,6 @@ describe("verifyGrantAgainstAdmission", () => {
       admissionRequest({ userInfo: { username: ACTOR, groups: [] } }), // no uid
       verifying,
       NOW,
-      { expectedResource: "res-web-default" },
     );
     expect(outcome.allowed).toBe(false);
   });
@@ -214,7 +214,6 @@ describe("verifyGrantAgainstAdmission", () => {
       admissionRequest({ userInfo: { username: ACTOR, uid: "any-uid-at-all", groups: [] } }),
       verifying,
       NOW,
-      { expectedResource: "res-web-default" },
     );
     expect(outcome).toEqual({ allowed: true });
   });
@@ -228,7 +227,6 @@ describe("verifyGrantAgainstAdmission", () => {
       admissionRequest({ userInfo: { username: ACTOR, uid: "11111111-1111-1111-1111-111111111111", groups: [] } }),
       verifying,
       NOW,
-      { expectedResource: "res-web-default" },
     );
     expect(outcome).toEqual({ allowed: true });
   });
@@ -284,7 +282,6 @@ describe("verifyGrantAgainstAdmission", () => {
       admissionRequest({ object: resourceWithGrantAnnotationAttached }),
       verifying,
       NOW,
-      { expectedResource: "res-web-default" },
     );
     // If production's objectHashOf did NOT exclude GRANT_ANNOTATION, attaching
     // it here would change the computed hash and this would incorrectly deny.
@@ -311,7 +308,6 @@ describe("verifyGrantAgainstAdmission", () => {
       admissionRequest({ object: tampered }),
       verifying,
       NOW,
-      { expectedResource: "res-web-default" },
     );
     // The exclusion is scoped to exactly GRANT_ANNOTATION; a non-grant
     // annotation must still participate in the object hash, so tampering

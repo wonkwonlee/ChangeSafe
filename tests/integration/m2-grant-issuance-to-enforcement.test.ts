@@ -119,28 +119,28 @@ function admissionRequest(object: unknown): AdmissionRequest {
 
 describe("M2: a server-issued grant enforced at the admission boundary", () => {
   it("allows the exact object the approved decision authorized", async () => {
-    const { signed, verifying, resource, policyVersion } = await issueRealGrant();
+    const { signed, verifying, policyVersion } = await issueRealGrant();
 
     const outcome = await verifyGrantAgainstAdmission(
       signed,
       admissionRequest(ADMITTED_OBJECT),
       verifying,
       NOW,
-      { expectedResource: resource, expectedPolicyVersion: policyVersion },
+      { expectedPolicyVersion: policyVersion },
     );
 
     expect(outcome).toEqual({ allowed: true });
   });
 
   it("denies once the admitted object is mutated after authorization", async () => {
-    const { signed, verifying, resource, policyVersion } = await issueRealGrant();
+    const { signed, verifying, policyVersion } = await issueRealGrant();
 
     const outcome = await verifyGrantAgainstAdmission(
       signed,
       admissionRequest({ ...ADMITTED_OBJECT, spec: { replicas: 99 } }),
       verifying,
       NOW,
-      { expectedResource: resource, expectedPolicyVersion: policyVersion },
+      { expectedPolicyVersion: policyVersion },
     );
 
     expect(outcome).toEqual({
@@ -150,7 +150,7 @@ describe("M2: a server-issued grant enforced at the admission boundary", () => {
   });
 
   it("carries the receipt's own policy version, so the drift check is real", async () => {
-    const { signed, verifying, resource, policyVersion } = await issueRealGrant();
+    const { signed, verifying, policyVersion } = await issueRealGrant();
     expect(signed.grant.policyVersion).toBe(policyVersion);
 
     const outcome = await verifyGrantAgainstAdmission(
@@ -158,7 +158,7 @@ describe("M2: a server-issued grant enforced at the admission boundary", () => {
       admissionRequest(ADMITTED_OBJECT),
       verifying,
       NOW,
-      { expectedResource: resource, expectedPolicyVersion: `${policyVersion}-next` },
+      { expectedPolicyVersion: `${policyVersion}-next` },
     );
 
     expect(outcome.allowed).toBe(false);

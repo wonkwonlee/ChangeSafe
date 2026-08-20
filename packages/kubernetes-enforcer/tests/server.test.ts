@@ -16,6 +16,10 @@ const RESOURCE = {
   metadata: { name: "web", namespace: "default" },
   spec: { replicas: 3 },
 };
+// resourceIdOf({apiVersion:"apps/v1",kind:"Deployment",namespace:"default",name:"web"}) —
+// verifyGrantAgainstAdmission derives this from the admitted object itself
+// (CS-ADV-011), so a grant's `resource` field must equal it for real.
+const RESOURCE_ID = "res-1823f5f395a75605";
 
 // The production hash function itself; see verify.ts's kubernetesObjectSha256.
 const objectHashOf = kubernetesObjectSha256;
@@ -44,7 +48,7 @@ describe("createEnforcerServer", () => {
       receiptId: "rcpt-test-0001",
       authorizedActor: "system:serviceaccount:ops:changesafe-applier",
       operation: "UPDATE",
-      resource: "res-web-default",
+      resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
@@ -55,7 +59,6 @@ describe("createEnforcerServer", () => {
     server = createEnforcerServer({
       trustedPublicKey: verifying,
       now: () => new Date("2026-08-19T12:30:00.000Z"),
-      resolveExpectedResource: () => "res-web-default",
       // The grant must physically travel with the request; Task 10 decides
       // the real attachment mechanism. For this test, the server reads it
       // from a header the test supplies directly.
@@ -93,7 +96,6 @@ describe("createEnforcerServer", () => {
     server = createEnforcerServer({
       trustedPublicKey: (await importVerifyingKey((await generateSigningKeyPair()).publicKeyPem)),
       now: () => new Date("2026-08-19T12:30:00.000Z"),
-      resolveExpectedResource: () => "res-web-default",
       readGrant: () => null,
     });
     const base = await listen(server);
@@ -127,7 +129,6 @@ describe("createEnforcerServer", () => {
     return createEnforcerServer({
       trustedPublicKey: await importVerifyingKey((await generateSigningKeyPair()).publicKeyPem),
       now: () => new Date("2026-08-19T12:30:00.000Z"),
-      resolveExpectedResource: () => "res-web-default",
       readGrant,
     });
   }
@@ -170,7 +171,7 @@ describe("createEnforcerServer", () => {
       receiptId: "rcpt-test-0002",
       authorizedActor: "system:serviceaccount:ops:changesafe-applier",
       operation: "UPDATE",
-      resource: "res-web-default",
+      resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
@@ -181,19 +182,27 @@ describe("createEnforcerServer", () => {
     server = createEnforcerServer({
       trustedPublicKey: await importVerifyingKey(pem.publicKeyPem),
       now: () => new Date("2026-08-19T12:30:00.000Z"),
-      // The real main.ts wiring: normalizeRawResource throws on a
-      // non-normalizable object (a DELETE review's null `object`, say).
-      resolveExpectedResource: () => {
-        throw new Error("not a normalizable Kubernetes resource");
-      },
       readGrant: () => signed,
     });
     const base = await listen(server);
 
+    // A DELETE review's `object` is genuinely `null` in real Kubernetes
+    // AdmissionReview payloads — canonicalizeAdmittedResource (inside
+    // verifyGrantAgainstAdmission) throws on it, which this must catch and
+    // answer as an explicit deny, not let escape to the 500 handler.
     const response = await fetch(`${base}/validate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: reviewBody("req-unnormalizable-object"),
+      body: JSON.stringify({
+        apiVersion: "admission.k8s.io/v1",
+        kind: "AdmissionReview",
+        request: {
+          uid: "req-unnormalizable-object",
+          operation: "UPDATE",
+          userInfo: { username: "system:serviceaccount:ops:changesafe-applier", groups: [] },
+          object: null,
+        },
+      }),
     });
 
     const body = (await response.json()) as { response: { allowed: boolean } };

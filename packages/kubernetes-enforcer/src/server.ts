@@ -28,12 +28,6 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 export interface EnforcerServerOptions {
   trustedPublicKey: CryptoKey;
   now: () => Date;
-  /**
-   * Resolve the expected domain resource id for this admission request
-   * (via @changesafe/domain-kubernetes's resourceIdOf) so verify.ts can
-   * check it against the grant's `resource` field.
-   */
-  resolveExpectedResource: (object: unknown) => string;
   expectedPolicyVersion?: string;
   /**
    * How the grant physically arrives with the request. Task 10 resolved
@@ -146,28 +140,32 @@ async function handle(
   }
 
   let signedGrant: SignedGrant;
-  let expectedResource: string;
   try {
     signedGrant = SignedGrantSchema.parse(rawGrant);
-    expectedResource = options.resolveExpectedResource(review.request.object);
   } catch {
     send(
       response,
       200,
       buildAdmissionReviewResponse(review.request.uid, {
         allowed: false,
-        message: "the attached AuthorizationGrant or admitted object could not be read",
+        message: "the attached AuthorizationGrant could not be read",
       }),
     );
     return;
   }
 
+  // Resource resolution and object normalization now happen inside
+  // verifyGrantAgainstAdmission itself (it derives the expected resource
+  // from the admitted object directly, rather than trusting a caller to
+  // supply it — see CS-ADV-011), and that function catches its own
+  // normalization failures rather than throwing, so no separate try/catch
+  // is needed here for that case.
   const outcome = await verifyGrantAgainstAdmission(
     signedGrant,
     review.request,
     options.trustedPublicKey,
     options.now,
-    { expectedResource, expectedPolicyVersion: options.expectedPolicyVersion },
+    { expectedPolicyVersion: options.expectedPolicyVersion },
   );
 
   send(

@@ -1120,3 +1120,123 @@ than that in a real deployment (e.g. a heavily loaded ledger), the same
 class of gap could reappear at a longer timescale; this fix narrows the
 window, it does not make the check latency-independent (e.g. by measuring
 actual elapsed time and re-validating just before the response is sent).
+
+## Finding CS-ADV-011
+
+### Hypothesis
+
+`verifyGrantAgainstAdmission`'s exported public contract — "verify a signed
+AuthorizationGrant authorizes exactly this admission request: correct
+signer, actor, operation, resource, object state..." — cannot be weakened
+by how a caller invokes it; the resource binding is always checked.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/verify.ts`'s exported
+  `verifyGrantAgainstAdmission` and its `VerifyOptions`
+- Any consumer of `@changesafe/kubernetes-enforcer` other than the shipped
+  `server.ts`/`main.ts` — this is a public library export, not an internal
+  detail, so future integrators are as much the attack surface as the
+  code shipped in this repo today
+
+### Method
+
+Found by external review (Codex, on PR #75); verified against the actual
+signature and call sites rather than accepted on description.
+`VerifyOptions.expectedResource` was optional (`?: string`), and the check
+itself was `if (options.expectedResource !== undefined && grant.resource
+!== options.expectedResource)` — with the default `options = {}`, calling
+the exported function with no fifth argument at all skipped resource
+verification entirely. Confirmed the one shipped caller
+(`packages/kubernetes-enforcer/src/server.ts`) always supplied it via
+`options.resolveExpectedResource`, so the shipped enforcer itself was never
+exposed — the gap was in the public contract for any OTHER caller.
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, "denies on resource
+substitution" — calls `verifyGrantAgainstAdmission` with no options
+argument at all and a grant naming a different resource than the admitted
+object; confirmed to return `allowed: true` against the pre-fix optional
+check and `allowed: false` against the fix.
+
+### Expected invariant
+
+A caller of the exported verification function cannot accidentally get a
+weaker guarantee than the function's own documentation promises, by
+omitting an option or simply not knowing it existed.
+
+### Observed behavior
+
+Any call to `verifyGrantAgainstAdmission` without `expectedResource` —
+whether from a future integrator, a test, or a refactor that dropped the
+option by accident — silently skipped resource verification while still
+returning explicit ALLOW/DENY, indistinguishable from a fully-checked
+result to the caller.
+
+### Severity
+
+Medium. Not reachable through the code shipped in this repo (the one real
+caller always supplied the option), so this is a latent API-contract
+defect rather than an exploited path — but for an open-source library
+whose entire purpose is being embedded by third-party operators, an
+optional security-relevant parameter that silently downgrades protection
+when omitted is a real footgun, not a hypothetical one.
+
+### Root cause
+
+`expectedResource` was designed as an injectable option because deriving
+it needs domain-specific logic (`@changesafe/domain-kubernetes`'s identity
+resolution) that `verify.ts` didn't originally call directly — but
+`verify.ts` already imports `canonicalizeAdmittedResource` from that same
+package for the object hash, and that function already computes the
+identity `resourceIdOf` needs. The dependency to derive it internally
+already existed; it just wasn't used for this purpose.
+
+### Fix
+
+Removed `expectedResource` from `VerifyOptions` entirely.
+`verifyGrantAgainstAdmission` now derives the expected resource directly
+from `request.object` via `resourceIdOf(canonicalizeAdmittedResource(...).identity)`
+— the same canonicalization the object-hash check already performs — making
+the check unconditional rather than optional. This also let
+`resolveExpectedResource` be removed from `EnforcerServerOptions`
+(`server.ts`) and its wiring in `main.ts`: the injectable callback existed
+only to do what `verify.ts` can now do itself.
+
+The internal derivation can throw (an unsupported or malformed object) —
+caught inside `verifyGrantAgainstAdmission` itself now, not left to the
+caller, so the function's own documented "never throws" contract is
+actually kept. `server.ts` previously caught this by coincidence, because
+it called an equivalent `resolveExpectedResource` ahead of this function;
+removing that parameter would have removed that incidental protection too
+if the throw weren't handled internally — this was caught and fixed in the
+same pass rather than shipped as a second regression.
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`'s "denies on resource
+substitution" (see Minimal reproducer); `packages/kubernetes-enforcer/
+tests/server.test.ts`'s "denies (200, not 500) when the admitted object
+cannot be normalized" was rewritten to trigger the failure through a
+genuinely unnormalizable admitted object (`object: null`, as a real DELETE
+review carries) rather than simulating it via the now-removed injectable
+callback, and still passes — confirming the internal try/catch covers what
+the removed external one used to.
+
+### What this changed in the architecture
+
+`EnforcerServerOptions` lost one field (`resolveExpectedResource`);
+`VerifyOptions` lost one field (`expectedResource`). No new dependency —
+`verify.ts` already depended on `@changesafe/domain-kubernetes` for the
+object hash and now uses one more export (`resourceIdOf`) from the same
+package.
+
+### Remaining uncertainty
+
+Whether any other `VerifyOptions` field (`expectedPolicyVersion`) warrants
+the same "derive it, don't trust a caller to supply it" treatment was not
+evaluated — `expectedPolicyVersion` genuinely cannot be derived from the
+admission request itself (it depends on which policy version is currently
+active for the deployment), so it may be a legitimately different case,
+but that distinction was not explicitly re-examined here.

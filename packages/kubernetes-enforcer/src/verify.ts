@@ -4,13 +4,11 @@ import {
   verifyGrantSignature,
   type SignedGrant,
 } from "@changesafe/core";
-import { canonicalizeAdmittedResource } from "@changesafe/domain-kubernetes";
+import { canonicalizeAdmittedResource, resourceIdOf } from "@changesafe/domain-kubernetes";
 
 import type { AdmissionRequest } from "./admission-review";
 
 export interface VerifyOptions {
-  /** Resolved by the caller via @changesafe/domain-kubernetes's resourceIdOf. */
-  expectedResource?: string;
   /** Checked against the grant's recorded policyVersion when supplied. */
   expectedPolicyVersion?: string;
 }
@@ -109,11 +107,33 @@ export async function verifyGrantAgainstAdmission(
     return { allowed: false, reason: "grant operation does not match the requested operation" };
   }
 
-  if (options.expectedResource !== undefined && grant.resource !== options.expectedResource) {
+  // Derived from the admitted object itself, the same way
+  // kubernetesObjectSha256 derives its hash — this check can never be
+  // silently skipped by a caller forgetting to supply it (it previously
+  // could, via an optional `expectedResource` option every caller other
+  // than the shipped server happened to always pass). Both derivations can
+  // throw (an object of an unsupported kind, or otherwise malformed) —
+  // caught here, not left to the caller, so this function actually keeps
+  // its own documented contract of never throwing. `server.ts` used to
+  // catch exactly this by coincidence, because it called an equivalent
+  // resolveExpectedResource ahead of this function; removing that
+  // parameter removed that incidental protection too, so it has to live
+  // here now, not just at the one call site that happened to need it.
+  let expectedResource: string;
+  let objectSha256: string;
+  try {
+    const canonicalized = canonicalizeAdmittedResource(request.object, "ev-admission-review");
+    expectedResource = resourceIdOf(canonicalized.identity);
+    objectSha256 = await kubernetesObjectSha256(request.object);
+  } catch {
+    return { allowed: false, reason: "the admitted object could not be read" };
+  }
+
+  if (grant.resource !== expectedResource) {
     return { allowed: false, reason: "grant resource does not match the requested resource" };
   }
 
-  if ((await kubernetesObjectSha256(request.object)) !== grant.objectSha256) {
+  if (objectSha256 !== grant.objectSha256) {
     return { allowed: false, reason: "requested object does not match the object the grant authorized" };
   }
 

@@ -23,7 +23,6 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttpsServer } from "node:https";
 
 import { importVerifyingKey } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
 
 import { createEnforcerRequestListener } from "./server";
 import { GRANT_ANNOTATION } from "./verify";
@@ -53,7 +52,6 @@ async function main(): Promise<void> {
   const listener = createEnforcerRequestListener({
     trustedPublicKey,
     now: () => new Date(),
-    resolveExpectedResource: (object) => normalizeRawResource(object, "ev-admission-review").resourceId,
     expectedPolicyVersion,
     readGrant: readGrantFromAnnotation,
   });
