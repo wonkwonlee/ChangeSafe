@@ -161,7 +161,13 @@ describe("verifyGrantAgainstAdmission", () => {
     // Confirms CREATE is genuinely supported end to end, not just accepted
     // by GrantOperationSchema — the webhook YAML gap (operations: ["UPDATE"]
     // only) was purely a routing omission, not a missing code path.
-    const { signed, verifying } = await buildSignedGrant({ operation: "CREATE" });
+    // CREATE has no prior state to bind (CS-ADV-014 follow-up): the
+    // schema now rejects oldObjectSha256 on a CREATE grant, so the
+    // UPDATE-shaped default from buildSignedGrant must be cleared here.
+    const { signed, verifying } = await buildSignedGrant({
+      operation: "CREATE",
+      oldObjectSha256: undefined,
+    });
     const outcome = await verifyGrantAgainstAdmission(
       signed,
       admissionRequest({ operation: "CREATE" }),

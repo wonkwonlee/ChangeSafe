@@ -90,6 +90,13 @@ export const AuthorizationGrantSchema = z
         message: "oldObjectSha256 is required for an UPDATE grant — every UPDATE has a prior state to bind against, unlike CREATE",
       });
     }
+    if (grant.operation === "CREATE" && grant.oldObjectSha256 !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["oldObjectSha256"],
+        message: "oldObjectSha256 must be absent for a CREATE grant — CREATE has no prior state, and admitting one here would let a stale prior-state hash silently pass validation without ever being checked against anything",
+      });
+    }
   });
 
 export type AuthorizationGrant = z.infer<typeof AuthorizationGrantSchema>;

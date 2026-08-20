@@ -84,6 +84,14 @@ describe("AuthorizationGrantSchema", () => {
     expect(AuthorizationGrantSchema.safeParse(withoutOldObjectSha256).success).toBe(true);
   });
 
+  it("rejects a CREATE grant carrying an oldObjectSha256 (CS-ADV-014 follow-up)", () => {
+    expect(
+      AuthorizationGrantSchema.safeParse(
+        buildGrant({ operation: "CREATE", oldObjectSha256: "c".repeat(64) }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown fields (strict object)", () => {
     expect(
       AuthorizationGrantSchema.safeParse({ ...buildGrant(), extra: "nope" }).success,
