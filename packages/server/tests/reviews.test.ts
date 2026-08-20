@@ -856,6 +856,74 @@ describe("durable review decision HTTP API", () => {
     expect(body.grant?.grant.receiptId).toBe(body.receiptId);
   });
 
+  it("refuses a grant whose window is too short to survive issuance and delivery", async () => {
+    // The pre-ledger check only guaranteed expiresAtUtc was strictly after
+    // the captured issuedAtUtc — not that the gap between them was large
+    // enough to survive resolvePending's ledger work and the response
+    // reaching the caller. Needs a FIXED (non-advancing) clock, not the
+    // shared context's incrementing one, so the 2-second window below is
+    // deterministically inside MIN_GRANT_LIFETIME_MS rather than depending
+    // on how many now() calls happen to land between two requests.
+    const idp = await FakeIdp.create();
+    const ledger = Ledger.open(":memory:");
+    const reviews = DurableReviewStore.open(":memory:");
+    const pem = await generateSigningKeyPair();
+    const FIXED_NOW = "2026-07-30T05:00:00.000Z";
+    const server = createDecisionServer({
+      ledger,
+      reviews,
+      verifier: new OidcVerifier(
+        { issuer: idp.issuer, audience: "changesafe", jwksUri: `${idp.issuer}/jwks` },
+        { fetch: idp.fetch() },
+      ),
+      decisions: new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-test",
+        signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
+      }),
+      now: () => FIXED_NOW,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const token = await idp.token();
+      const postResponse = await fetch(`${baseUrl}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(await pendingNetworkReview("review-grant-too-short")),
+      });
+      expect(postResponse.status).toBe(201);
+
+      const response = await fetch(`${baseUrl}/reviews/review-grant-too-short/decisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          decision: "approve",
+          // 2 seconds after a FIXED now — strictly after it (would have
+          // passed the pre-fix check) but well under MIN_GRANT_LIFETIME_MS.
+          grant: { ...grantRequest, expiresAtUtc: "2026-07-30T05:00:02.000Z" },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(ledger.count()).toBe(0);
+      expect(
+        reviews.getResolution("review-grant-too-short", {
+          tenantId: idp.issuer,
+          issuer: idp.issuer,
+          subject: "user-alice",
+          scope: "self-hosted-review",
+        }),
+      ).toBeNull();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      reviews.close();
+      ledger.close();
+    }
+  });
+
   it("refuses an already-expired grant before anything reaches the ledger", async () => {
     const token = await context.idp.token();
     expect(

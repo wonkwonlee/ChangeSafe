@@ -22,6 +22,19 @@ import { buildReceiptProof } from "./receipt-proof";
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 /**
+ * The pre-ledger expiresAtUtc check only guarantees a grant's window is
+ * non-empty at the instant it's captured — it says nothing about whether
+ * that window survives long enough to actually be usable. `resolvePending`
+ * (ledger append included) still runs after this check, and the response
+ * still has to reach the caller after that; an expiresAtUtc set only
+ * moments after `grantIssuedAtUtc` can pass validation and still arrive
+ * already-expired, since the enforcer checks the real clock, not the
+ * grant's backdated `issuedAtUtc`. This margin is a deliberately generous,
+ * round number for that round-trip, not a measured bound.
+ */
+const MIN_GRANT_LIFETIME_MS = 5000;
+
+/**
  * Distinct from a schema failure: the body was never read, so telling the
  * caller it did not match a shape would be a guess about content nobody
  * looked at.
@@ -397,10 +410,14 @@ async function handle(
     // precondition the body schema cannot see — it is only invalid relative
     // to the server clock the grant is issued against.
     const grantIssuedAtUtc = serverNow(options);
-    if (body.grant && Date.parse(body.grant.expiresAtUtc) <= Date.parse(grantIssuedAtUtc)) {
+    if (
+      body.grant &&
+      Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS
+    ) {
       throw new DomainError(
         "REQUEST_INVALID",
-        "A grant's expiresAtUtc must be in the future at issuance time.",
+        `A grant's expiresAtUtc must be at least ${MIN_GRANT_LIFETIME_MS}ms after issuance time, ` +
+          "so it cannot expire before the decision finishes committing and the response reaches the caller.",
       );
     }
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({

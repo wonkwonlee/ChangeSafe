@@ -1027,3 +1027,96 @@ namespace-edit RBAC for an unrelated purpose, or a compromised operator)
 was not investigated. Whether `daemonsets`/`services`' own namespace
 membership could be independently reassigned to route around this some
 other way was not checked either.
+
+## Finding CS-ADV-010
+
+### Hypothesis
+
+A grant that passes the durable decision route's pre-ledger expiry check
+retains a meaningful, usable window once it actually reaches the caller.
+
+### Attack surface
+
+- `packages/server/src/http.ts`'s pre-ledger `expiresAtUtc` check (the
+  `grantIssuedAtUtc`/atomic-clock fix from `CS-ADV-007`'s sibling race fix)
+
+### Method
+
+Found by external review (Codex, on PR #75), as a follow-up on the
+already-fixed clock-race issue; verified by tracing the actual sequence of
+work between the pre-check and the response reaching the caller rather
+than accepted on description. The pre-check (`expiresAtUtc >
+grantIssuedAtUtc`) runs before `resolvePending` — which appends a ledger
+entry, real I/O — and the HTTP response still has to serialize and
+transmit after that. None of that elapsed time was accounted for.
+
+### Minimal reproducer
+
+`packages/server/tests/reviews.test.ts`, "refuses a grant whose window is
+too short to survive issuance and delivery" — issues a decision with
+`expiresAtUtc` set to exactly 2 seconds after a FIXED captured
+`grantIssuedAtUtc` (deterministic, using an isolated server + non-advancing
+clock rather than the file's normal incrementing fake clock, so the
+2-second gap is exact and not subject to how many clock reads happen to
+land between requests). Confirmed to return 201 (accepted) against the
+pre-fix check and 400 (rejected) against the fix.
+
+### Expected invariant
+
+A grant's expiry window, once it reaches the caller, is never so short
+that ordinary issuance latency has already consumed it.
+
+### Observed behavior
+
+The pre-ledger check only required `expiresAtUtc` to be strictly after the
+captured `grantIssuedAtUtc` — any margin above zero passed, including one
+millisecond. `resolvePending`'s ledger append and the response
+transmission both still take real wall-clock time afterward, so a caller
+requesting a very short-lived grant (whether by mistake or by design)
+could receive a 201 with a grant that the enforcer's real-clock check
+(`verifyGrantAgainstAdmission`) would immediately treat as already
+expired — a committed, successfully-issued approval that was never
+actually usable.
+
+### Severity
+
+Low-medium. Not a security bypass (nothing is authorized that shouldn't
+be) — the failure direction is the safe one, an unusable grant, not an
+overly permissive one. The cost is caller confusion/wasted round trips for
+a narrow, self-inflicted input (requesting a near-immediate expiry), not
+an externally-exploitable attack.
+
+### Root cause
+
+`CS-ADV-007`'s sibling clock-race fix made the pre-check and the grant's
+recorded `issuedAtUtc` use one atomically-captured instant, closing the
+race where the two could disagree — but "the two values agree" and "the
+gap between them is large enough to survive real issuance latency" are
+different properties, and only the first was actually checked.
+
+### Fix
+
+Added `MIN_GRANT_LIFETIME_MS = 5000` (`packages/server/src/http.ts`): the
+pre-ledger check now requires `expiresAtUtc - grantIssuedAtUtc >=
+5000ms`, not merely `> 0`. A deliberately generous, round number for
+ledger-append-plus-response-transmission latency, not a measured bound.
+
+### Regression test
+
+`packages/server/tests/reviews.test.ts`'s new test (see Minimal reproducer
+above) — verified to fail against the pre-fix check before the fix was
+restored.
+
+### What this changed in the architecture
+
+Nothing structural — one constant and a stricter inequality in an existing
+check.
+
+### Remaining uncertainty
+
+5000ms is a chosen, not measured, margin — no production latency data
+informed it. If `resolvePending` or response transmission is ever slower
+than that in a real deployment (e.g. a heavily loaded ledger), the same
+class of gap could reappear at a longer timescale; this fix narrows the
+window, it does not make the check latency-independent (e.g. by measuring
+actual elapsed time and re-validating just before the response is sent).
