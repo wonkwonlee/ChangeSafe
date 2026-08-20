@@ -58,6 +58,18 @@ export interface IssueGrantOptions {
   resource: string;
   objectSha256: string;
   expiresAtUtc: string;
+  /**
+   * The instant to record as the grant's `issuedAtUtc`. Callers that
+   * pre-validate `expiresAtUtc` against "now" before issuance (as the
+   * durable decision route does, since a rejected grant must fail before
+   * the decision is ledgered) MUST pass the exact same captured instant
+   * here — reading the clock a second time inside `issueGrant` opened a
+   * race where a grant valid at the pre-check could expire by the time
+   * `issueGrant` ran, throwing AFTER the receipt was already committed to
+   * the ledger. Defaults to `this.#options.now?.()` for callers with no
+   * such pre-check to stay atomic with.
+   */
+  issuedAtUtc?: string;
 }
 
 export interface DurableDecisionIssuance {
@@ -195,7 +207,7 @@ export class DecisionService {
       resource: options.resource,
       objectSha256: options.objectSha256,
       policyVersion: receipt.policyVersion,
-      issuedAtUtc: this.#options.now?.() ?? new Date().toISOString(),
+      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
       expiresAtUtc: options.expiresAtUtc,
     });
 

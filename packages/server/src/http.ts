@@ -380,6 +380,13 @@ async function handle(
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    // Captured once and reused as the grant's own issuedAtUtc below, rather
+    // than re-reading the clock inside issueGrant: two separate reads left
+    // a race where a grant valid at this pre-check could expire by the time
+    // issueGrant ran (after the ledger write), throwing for a decision that
+    // had already committed — and since the pre-check compares against a
+    // clock that only advances, a caller's retry could never pass it
+    // either, permanently stranding an approved decision with no grant.
     // Checked here, before anything is ledgered, because grant issuance
     // happens after the ledger append below: a grant request that
     // AuthorizationGrantSchema would reject must fail while the decision can
@@ -387,7 +394,8 @@ async function handle(
     // the request failed. `expiresAtUtc` is the one per-request grant
     // precondition the body schema cannot see — it is only invalid relative
     // to the server clock the grant is issued against.
-    if (body.grant && Date.parse(body.grant.expiresAtUtc) <= Date.parse(serverNow(options))) {
+    const grantIssuedAtUtc = serverNow(options);
+    if (body.grant && Date.parse(body.grant.expiresAtUtc) <= Date.parse(grantIssuedAtUtc)) {
       throw new DomainError(
         "REQUEST_INVALID",
         "A grant's expiresAtUtc must be in the future at issuance time.",
@@ -456,16 +464,23 @@ async function handle(
     // commit. Every per-request way `issueGrant` can throw is therefore
     // ruled out before the ledger write: the approve/reject and
     // blocking-finding checks in `#prepare`, the strict `GrantRequestSchema`
-    // envelope, and the `expiresAtUtc` check above. What remains is
-    // `#requireSigningCapability`, which `decideSigned` already demanded of
-    // this same service — a service-level misconfiguration that cannot
-    // newly appear mid-request. A caller who does see an error after a
-    // commit is not left guessing: the decision is idempotent by
-    // `receiptId`, so replaying the same request recovers the stored
-    // outcome via `#recoverSignedOutcome` rather than deciding twice.
+    // envelope, and the `expiresAtUtc` check above — made atomic with this
+    // call by passing the exact same `grantIssuedAtUtc` instant as
+    // `issuedAtUtc` rather than letting `issueGrant` read the clock again,
+    // which previously left a race where the two reads could disagree.
+    // What remains is `#requireSigningCapability`, which `decideSigned`
+    // already demanded of this same service — a service-level
+    // misconfiguration that cannot newly appear mid-request. A caller who
+    // does see an error after a commit is not left guessing: the decision
+    // is idempotent by `receiptId`, so replaying the same request recovers
+    // the stored outcome via `#recoverSignedOutcome` rather than deciding
+    // twice.
     const grant =
       body.decision === "approve" && body.grant
-        ? await options.decisions.issueGrant(decided.outcome.receipt, body.grant)
+        ? await options.decisions.issueGrant(decided.outcome.receipt, {
+            ...body.grant,
+            issuedAtUtc: grantIssuedAtUtc,
+          })
         : undefined;
 
     send(response, 201, {

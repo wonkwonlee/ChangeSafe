@@ -61,6 +61,47 @@ describe("DecisionService.issueGrant", () => {
     expect(await verifyGrantSignature(grant, verifying)).toBe("valid");
   });
 
+  it("uses a caller-supplied issuedAtUtc instead of its own clock, closing the pre-check/issuance race", async () => {
+    // The service's own clock is set far in the future relative to
+    // expiresAtUtc — if issueGrant read this clock for issuedAtUtc (the
+    // pre-fix behavior), AuthorizationGrantSchema would reject the grant
+    // as already-expired even though the HTTP route's pre-ledger check
+    // (using a different, earlier clock reading) had already let the
+    // request proceed and the decision had already been ledgered. A
+    // caller-supplied issuedAtUtc must take precedence so the two checks
+    // stay atomic against one captured instant, not two independent reads.
+    const pem = await generateSigningKeyPair();
+    const keyPair = await importSigningKeyPair(pem.privateKeyPem);
+    const ledger = Ledger.open(":memory:");
+    const decisions = new DecisionService({
+      ledger,
+      appVersion: "test-1.0.0",
+      signingKeyPair: keyPair,
+      now: () => "2026-08-19T14:00:00.000Z", // after the grant's expiresAtUtc
+    });
+    const outcome = await decisions.decide(
+      {
+        domain: "network",
+        sourceId: "scenario-a-failover",
+        input: SAFE.incident,
+        proposal: SAFE.proposal,
+        decision: "approve",
+      },
+      { subject: "approver-1", issuer: "https://issuer.example", email: null },
+    );
+
+    const grant = await decisions.issueGrant(outcome.receipt, {
+      authorizedActor: "system:serviceaccount:ops:changesafe-applier",
+      operation: "UPDATE",
+      resource: "res-0123456789abcdef",
+      objectSha256: "a".repeat(64),
+      expiresAtUtc: "2026-08-19T13:00:00.000Z",
+      issuedAtUtc: "2026-08-19T12:00:00.000Z", // the instant a pre-check would have captured
+    });
+
+    expect(grant.grant.issuedAtUtc).toBe("2026-08-19T12:00:00.000Z");
+  });
+
   it("refuses to issue a grant from a non-approved receipt", async () => {
     const { decisions } = await buildService();
     const outcome = await decisions.decide(
