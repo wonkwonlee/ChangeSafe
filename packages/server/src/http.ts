@@ -67,9 +67,28 @@ const ReviewIntakeBodySchema = z.strictObject({
  * submits only the final approve/reject intent; Kubernetes or any caller
  * finding/risk/receipt field is therefore rejected by this strict envelope.
  */
-const ReviewDecisionBodySchema = z.strictObject({
-  decision: z.enum(["approve", "reject"]),
+const GrantRequestSchema = z.strictObject({
+  authorizedActor: z.string().min(1).max(255),
+  operation: z.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
+  resource: z.string().min(1).max(128),
+  objectSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  expiresAtUtc: TimestampSchema,
 });
+
+const ReviewDecisionBodySchema = z
+  .strictObject({
+    decision: z.enum(["approve", "reject"]),
+    grant: GrantRequestSchema.optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.decision === "reject" && body.grant) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["grant"],
+        message: "a rejected decision cannot carry grant parameters",
+      });
+    }
+  });
 
 export interface DecisionServerOptions {
   ledger: Ledger;
@@ -417,6 +436,11 @@ async function handle(
         };
       },
     );
+    const grant =
+      body.decision === "approve" && body.grant
+        ? await options.decisions.issueGrant(decided.outcome.receipt, body.grant)
+        : undefined;
+
     send(response, 201, {
       receiptId: decided.outcome.receipt.receiptId,
       decision: decided.outcome.receipt.decision,
@@ -426,6 +450,7 @@ async function handle(
       chainSha256: decided.outcome.chainSha256,
       record: decided.outcome.record,
       resolution: decided.resolution,
+      ...(grant ? { grant } : {}),
     });
     return;
   }

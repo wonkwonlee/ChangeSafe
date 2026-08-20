@@ -758,4 +758,61 @@ describe("durable review decision HTTP API", () => {
     expect(context.ledger.count()).toBe(1);
     expect(context.reviews.getResolution("review-concurrent-decision", aliceOwner())).not.toBeNull();
   });
+
+  const grantRequest = {
+    authorizedActor: "system:serviceaccount:default:deployer",
+    operation: "UPDATE" as const,
+    resource: "deployments/default/checkout",
+    objectSha256: "a".repeat(64),
+    expiresAtUtc: "2099-01-01T00:00:00.000Z",
+  };
+
+  it("issues a signed AuthorizationGrant from an approved decision when requested", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-approve"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-approve",
+      { decision: "approve", grant: grantRequest },
+      token,
+    );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      receiptId: string;
+      grant?: { grant: { receiptId: string }; signature: unknown };
+    };
+    expect(body.grant).toBeDefined();
+    expect(body.grant?.grant.receiptId).toBe(body.receiptId);
+  });
+
+  it("omits the grant field from the response when none was requested", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-omitted"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview("review-grant-omitted", { decision: "approve" }, token);
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("grant");
+  });
+
+  it("rejects a reject decision that also carries grant parameters", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-on-reject"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-on-reject",
+      { decision: "reject", grant: grantRequest },
+      token,
+    );
+
+    expect(response.status).toBe(422);
+  });
 });
