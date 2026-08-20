@@ -49,17 +49,20 @@ export const AuthorizationGrantSchema = z
     /** Hash of the domain-normalized object this grant was issued against. */
     objectSha256: Sha256HexSchema,
     /**
-     * Hash of the object's state *before* the reviewed change, for an
-     * UPDATE grant. Without this, a grant approving a reviewed transition
-     * (e.g. image v1 -> v2) binds only the target state — if the object
-     * diverges after issuance (an unreviewed v1 -> v3), the same grant
-     * still matches on `objectSha256` alone and can be replayed to force
-     * the object back to v2 from v3, a transition nobody reviewed. Optional
-     * because CREATE has no prior state to bind (nothing to compare
-     * against) and because — like `objectSha256` itself — deriving this
-     * server-side from the evaluated proposal is deferred (see
-     * `CS-ADV-004`); when a caller doesn't supply it, verification falls
-     * back to binding only the target state, as before.
+     * Hash of the object's state *before* the reviewed change. Required for
+     * UPDATE (enforced below): without it, a grant approving a reviewed
+     * transition (e.g. image v1 -> v2) binds only the target state — if the
+     * object diverges after issuance (an unreviewed v1 -> v3), the same
+     * grant still matches on `objectSha256` alone and can be replayed to
+     * force the object back to v2 from v3, a transition nobody reviewed
+     * (`CS-ADV-014`). Unlike `authorizedActorUid` (optional because some
+     * identity providers genuinely never populate a uid), every UPDATE has
+     * a prior state by definition — there is no legitimate case for an
+     * UPDATE grant to omit this, so it is not optional for that operation.
+     * Absent (and inapplicable) for CREATE, which has no prior state to
+     * bind against at all. Still caller-asserted at issuance like
+     * `objectSha256` itself — deriving it server-side from the evaluated
+     * proposal remains deferred, see `CS-ADV-004`.
      */
     oldObjectSha256: Sha256HexSchema.optional(),
     /**
@@ -78,6 +81,13 @@ export const AuthorizationGrantSchema = z
         code: "custom",
         path: ["expiresAtUtc"],
         message: "expiresAtUtc must be strictly after issuedAtUtc",
+      });
+    }
+    if (grant.operation === "UPDATE" && grant.oldObjectSha256 === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["oldObjectSha256"],
+        message: "oldObjectSha256 is required for an UPDATE grant — every UPDATE has a prior state to bind against, unlike CREATE",
       });
     }
   });

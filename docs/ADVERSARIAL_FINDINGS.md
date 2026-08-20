@@ -1636,3 +1636,30 @@ production wiring should be updated to actually populate this field for
 UPDATE grants was not done in this pass — the field exists and is
 enforced when present, but nothing in this repository's own issuance path
 currently supplies it yet.
+
+### Amendment: optional was the wrong default for UPDATE
+
+Found by a second round of the same external review, on the fix commit
+itself. The first version made `oldObjectSha256` optional and asymmetric,
+mirroring the `authorizedActorUid` pattern (`CS-ADV-008`) — but that
+mirroring didn't actually transfer: `authorizedActorUid` is optional
+because some identity providers genuinely never populate a stable uid,
+a real environmental constraint. An UPDATE's prior state has no
+equivalent excuse — every UPDATE has one by definition. Making it merely
+optional meant the exact replay this finding exists to close remained
+fully available to any caller who simply chose not to supply the field,
+since nothing forced them to.
+
+Fixed by making `AuthorizationGrantSchema`'s existing `superRefine` also
+require `oldObjectSha256` whenever `operation === "UPDATE"` — not just in
+`GrantRequestSchema` at the HTTP boundary, but in the schema every signed
+grant is validated against on both sides (issuance via
+`AuthorizationGrantSchema.parse`, and verification via `SignedGrantSchema`
+embedding the same schema) — so no caller, present or future, can
+construct or accept a well-formed UPDATE grant without it. CREATE remains
+exempt, since it genuinely has no prior state to bind. This ripples into
+every fixture across the test suite that builds an UPDATE grant, which
+now all supply `oldObjectSha256`; each was updated. Regression test:
+`packages/core/tests/grant.test.ts`, "rejects an UPDATE grant with no
+oldObjectSha256 (CS-ADV-014 follow-up)" — verified to fail against the
+optional (first-version) schema and pass against the fix.

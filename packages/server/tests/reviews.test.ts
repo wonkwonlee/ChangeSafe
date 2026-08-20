@@ -764,6 +764,7 @@ describe("durable review decision HTTP API", () => {
     operation: "UPDATE" as const,
     resource: "deployments/default/checkout",
     objectSha256: "a".repeat(64),
+    oldObjectSha256: "b".repeat(64),
     expiresAtUtc: "2099-01-01T00:00:00.000Z",
   };
 

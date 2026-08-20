@@ -21,6 +21,7 @@ function buildGrant(overrides: Partial<AuthorizationGrant> = {}): AuthorizationG
     operation: "UPDATE",
     resource: "res-0123456789abcdef",
     objectSha256: "a".repeat(64),
+    oldObjectSha256: "b".repeat(64),
     policyVersion: "kubernetes-v0.2.0",
     issuedAtUtc: "2026-08-19T12:00:00.000Z",
     expiresAtUtc: "2026-08-19T13:00:00.000Z",

@@ -97,6 +97,11 @@ async function issueRealGrant() {
     operation: "UPDATE",
     resource: normalized.resourceId,
     objectSha256: await kubernetesObjectSha256(ADMITTED_OBJECT),
+    // The snapshot's own resource IS the reviewed starting state — the
+    // decision approved a change from exactly this to ADMITTED_OBJECT.
+    // oldObjectSha256 is now required on every UPDATE grant (CS-ADV-014
+    // follow-up).
+    oldObjectSha256: await kubernetesObjectSha256(SNAPSHOT.resources[0]),
     expiresAtUtc: EXPIRES_AT,
   });
 
@@ -108,12 +113,13 @@ async function issueRealGrant() {
   };
 }
 
-function admissionRequest(object: unknown): AdmissionRequest {
+function admissionRequest(object: unknown, oldObject: unknown = SNAPSHOT.resources[0]): AdmissionRequest {
   return {
     uid: "req-m2-1",
     operation: "UPDATE",
     userInfo: { username: ACTOR, groups: [] },
     object,
+    oldObject,
   } as AdmissionRequest;
 }
 

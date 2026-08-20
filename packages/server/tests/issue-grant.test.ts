@@ -53,6 +53,7 @@ describe("DecisionService.issueGrant", () => {
       operation: "UPDATE",
       resource: "res-0123456789abcdef",
       objectSha256: "a".repeat(64),
+      oldObjectSha256: "b".repeat(64),
       expiresAtUtc: "2026-08-19T13:00:00.000Z",
     });
 
@@ -95,6 +96,7 @@ describe("DecisionService.issueGrant", () => {
       operation: "UPDATE",
       resource: "res-0123456789abcdef",
       objectSha256: "a".repeat(64),
+      oldObjectSha256: "b".repeat(64),
       expiresAtUtc: "2026-08-19T13:00:00.000Z",
       issuedAtUtc: "2026-08-19T12:00:00.000Z", // the instant a pre-check would have captured
     });

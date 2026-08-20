@@ -20,6 +20,9 @@ const RESOURCE = {
 // verifyGrantAgainstAdmission derives this from the admitted object itself
 // (CS-ADV-011), so a grant's `resource` field must equal it for real.
 const RESOURCE_ID = "res-1823f5f395a75605";
+// A reviewed starting state, distinct from RESOURCE — oldObjectSha256 is
+// required on every UPDATE grant (CS-ADV-014 follow-up).
+const RESOURCE_PRIOR = { ...RESOURCE, spec: { replicas: 1 } };
 
 // The production hash function itself; see verify.ts's kubernetesObjectSha256.
 const objectHashOf = kubernetesObjectSha256;
@@ -50,6 +53,7 @@ describe("createEnforcerServer", () => {
       operation: "UPDATE",
       resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
+      oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
       expiresAtUtc: "2026-08-19T13:00:00.000Z",
@@ -83,6 +87,7 @@ describe("createEnforcerServer", () => {
           operation: "UPDATE",
           userInfo: { username: "system:serviceaccount:ops:changesafe-applier", groups: [] },
           object: RESOURCE,
+          oldObject: RESOURCE_PRIOR,
         },
       }),
     });
@@ -173,6 +178,7 @@ describe("createEnforcerServer", () => {
       operation: "UPDATE",
       resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
+      oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
       expiresAtUtc: "2026-08-19T13:00:00.000Z",

@@ -20,6 +20,10 @@ const RESOURCE = {
   spec: { replicas: 3 },
 };
 const RESOURCE_MODIFIED = { ...RESOURCE, spec: { replicas: 99 } };
+// The reviewed starting state, for tests that don't specifically exercise
+// CS-ADV-014's own before/after distinction — oldObjectSha256 is now
+// required on every UPDATE grant, so a default fixture needs one.
+const RESOURCE_PRIOR = { ...RESOURCE, spec: { replicas: 1 } };
 const ACTOR = "system:serviceaccount:ops:changesafe-applier";
 // resourceIdOf({apiVersion:"apps/v1",kind:"Deployment",namespace:"default",name:"web"}) —
 // verifyGrantAgainstAdmission now derives this from the admitted object
@@ -48,6 +52,7 @@ async function buildSignedGrant(overrides: Partial<Record<string, unknown>> = {}
     operation: "UPDATE",
     resource: RESOURCE_ID,
     objectSha256: await objectHashOf(RESOURCE),
+    oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
     policyVersion: "kubernetes-v0.2.0",
     issuedAtUtc: "2026-08-19T12:00:00.000Z",
     expiresAtUtc: "2026-08-19T13:00:00.000Z",
@@ -63,6 +68,7 @@ function admissionRequest(overrides: Partial<AdmissionRequest> = {}): AdmissionR
     operation: "UPDATE",
     userInfo: { username: ACTOR, groups: [] },
     object: RESOURCE,
+    oldObject: RESOURCE_PRIOR,
     ...overrides,
   } as AdmissionRequest;
 }
@@ -361,11 +367,20 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(replayed.allowed).toBe(false);
   });
 
-  it("allows an UPDATE grant with no oldObjectSha256, matching by target state alone (backward compatible)", async () => {
-    const { signed, verifying } = await buildSignedGrant(); // no oldObjectSha256
+  // An UPDATE grant with no oldObjectSha256 can no longer even be
+  // constructed — AuthorizationGrantSchema itself now requires it for
+  // UPDATE (CS-ADV-014 follow-up); see packages/core/tests/grant.test.ts,
+  // "rejects an UPDATE grant with no oldObjectSha256," for that boundary.
+  // A CREATE grant has no prior state to bind and stays exempt:
+
+  it("allows a CREATE grant with no oldObjectSha256, since CREATE has no prior state", async () => {
+    const { signed, verifying } = await buildSignedGrant({
+      operation: "CREATE",
+      oldObjectSha256: undefined,
+    });
     const outcome = await verifyGrantAgainstAdmission(
       signed,
-      admissionRequest({ object: RESOURCE, oldObject: { ...RESOURCE, spec: { replicas: 999 } } }),
+      admissionRequest({ operation: "CREATE", oldObject: undefined }),
       verifying,
       NOW,
     );
