@@ -26,6 +26,11 @@ webhooks:
     rules:
       - apiGroups: ["apps", ""]
         apiVersions: ["v1"]
-        operations: ["UPDATE", "DELETE"]
+        # UPDATE only: a DELETE AdmissionReview carries the resource in
+        # `oldObject`, not `object`, which this verifier does not yet read.
+        # Registering DELETE would produce a verdict with no real object
+        # check behind it, so it is left unregistered rather than
+        # silently mishandled (future enhancement).
+        operations: ["UPDATE"]
         resources: ["deployments", "statefulsets", "daemonsets", "services"]
     failurePolicy: Ignore

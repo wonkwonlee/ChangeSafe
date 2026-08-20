@@ -37,6 +37,12 @@ spec:
               value: /certs/tls.crt
             - name: TLS_KEY_PATH
               value: /certs/tls.key
+            # EXPECTED_POLICY_VERSION is deliberately not set here, so the
+            # enforcer's policy-version-drift check does not run in this
+            # demo. Setting it would pin the demo to one composed policy
+            # version (see POLICY_VERSION in @changesafe/domain-kubernetes)
+            # and every recorded transcript with it. The drift check is
+            # covered by the unit suite, not by this cluster run.
             - name: TRUSTED_PUBLIC_KEY_PEM
               valueFrom:
                 secretKeyRef:

@@ -160,8 +160,12 @@ log ""
 log "=== Demo step 1: ALLOW (grant matches the exact object it authorizes) ==="
 kubectl -n changesafe-protected-demo get deploy web -o json > "${WORK_DIR}/web-current.json"
 node --input-type=module -e "
-import { importSigningKeyPair, signGrant, AuthorizationGrantSchema, canonicalize, sha256Hex } from '${REPO_ROOT}/packages/core/dist/index.js';
-import { normalizeRawResource } from '${REPO_ROOT}/packages/domain-kubernetes/dist/index.js';
+import { importSigningKeyPair, signGrant, AuthorizationGrantSchema } from '${REPO_ROOT}/packages/core/dist/index.js';
+import { normalizeRawResource, POLICY_VERSION } from '${REPO_ROOT}/packages/domain-kubernetes/dist/index.js';
+// The enforcer's own hash function, imported rather than reimplemented: the
+// two sides of a grant must hash identically, and a local copy of that
+// computation here is exactly the drift CS-ADV-003 recorded.
+import { kubernetesObjectSha256 } from '${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const current = JSON.parse(readFileSync('${WORK_DIR}/web-current.json', 'utf8'));
@@ -169,7 +173,7 @@ const candidate = JSON.parse(JSON.stringify(current));
 candidate.spec.replicas = 4;
 
 const normalized = normalizeRawResource(candidate, 'ev-demo-step1');
-const objectSha256 = await sha256Hex(canonicalize({ identity: normalized.identity, metadata: normalized.metadata, spec: normalized.spec }));
+const objectSha256 = await kubernetesObjectSha256(candidate);
 
 const keyPair = await importSigningKeyPair(readFileSync('${WORK_DIR}/grant-private.pem', 'utf8'));
 const grant = AuthorizationGrantSchema.parse({
@@ -179,7 +183,12 @@ const grant = AuthorizationGrantSchema.parse({
   operation: 'UPDATE',
   resource: normalized.resourceId,
   objectSha256,
-  policyVersion: 'kubernetes-v0.2.0',
+  // The value the real system composes and records in receipts, not a
+  // hand-written stand-in. Note the enforcer's drift check is inert in this
+  // demo: EXPECTED_POLICY_VERSION is deliberately unset in
+  // enforcer-deployment.yaml, so this field is carried but not compared here.
+  // The drift check itself is covered by the unit suite.
+  policyVersion: POLICY_VERSION,
   issuedAtUtc: new Date(Date.now() - 60000).toISOString(),
   expiresAtUtc: new Date(Date.now() + 3600000).toISOString(),
 });

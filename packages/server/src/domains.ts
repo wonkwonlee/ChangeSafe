@@ -20,6 +20,7 @@ import {
   runKubernetesSimulation,
 } from "@changesafe/domain-kubernetes";
 import type { SimulationResult } from "@changesafe/core";
+import { z } from "zod";
 
 /**
  * Domains the decision server can decide in.
@@ -84,7 +85,9 @@ const kubernetes: ServerDomain = {
     // derives the declarative diff against the snapshot itself, the same
     // way Terraform derives a proposal from a plan rather than accepting
     // a client-supplied one.
-    const manifestSet = parseManifestDocuments(raw as string);
+    // Validated, not cast: `raw` is request-body input, and a non-string here
+    // must fail as a boundary rejection rather than reach the parser.
+    const manifestSet = parseManifestDocuments(z.string().parse(raw));
     return deriveManifestProposal(
       input as Parameters<typeof deriveManifestProposal>[0],
       manifestSet,

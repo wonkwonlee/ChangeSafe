@@ -24,7 +24,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "build:cli": "npm run build -w changesafe",
-    "build:packages": "npm run build -w @changesafe/core && npm run build -w @changesafe/domain-network && npm run build -w @changesafe/domain-terraform && npm run build -w @changesafe/domain-kubernetes && npm run build -w @changesafe/kubernetes-collector",
+    "build:packages": "npm run build -w @changesafe/core && npm run build -w @changesafe/domain-network && npm run build -w @changesafe/domain-terraform && npm run build -w @changesafe/domain-kubernetes && npm run build -w @changesafe/kubernetes-collector && npm run build -w @changesafe/kubernetes-enforcer",
     "build:bundle:v0.1.0": "env -u CHANGESAFE_DEMO_SIGNING_KEY npm run build:cli --silent && node scripts/build-v0.1.0-bundle.mjs",
     "verify:v0.1.0": "npm run build:cli --silent && node scripts/verify-v0.1.0.mjs",
     "changesafe": "node packages/cli/dist/changesafe.js",

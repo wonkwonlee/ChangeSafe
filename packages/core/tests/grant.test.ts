@@ -46,6 +46,23 @@ describe("AuthorizationGrantSchema", () => {
     ).toBe(false);
   });
 
+  it("accepts a real composed policy version with room to grow", () => {
+    // What `issueGrant` actually copies off a receipt today, plus headroom:
+    // a 32-character bound would already be one version-digit away from
+    // rejecting a legitimate receipt.
+    expect(
+      AuthorizationGrantSchema.safeParse(
+        buildGrant({ policyVersion: "core-v10.20.30+kubernetes-v10.20.30" }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("rejects an implausibly long policy version", () => {
+    expect(
+      AuthorizationGrantSchema.safeParse(buildGrant({ policyVersion: "v".repeat(65) })).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown fields (strict object)", () => {
     expect(
       AuthorizationGrantSchema.safeParse({ ...buildGrant(), extra: "nope" }).success,

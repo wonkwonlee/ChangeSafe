@@ -34,7 +34,13 @@ export const AuthorizationGrantSchema = z
     resource: z.string().min(1).max(128),
     /** Hash of the domain-normalized object this grant was issued against. */
     objectSha256: Sha256HexSchema,
-    policyVersion: z.string().min(1).max(32),
+    /**
+     * The composed policy version of the receipt this grant came from, e.g.
+     * `core-v0.2.0+kubernetes-v0.1.0`. Bounded generously: real composed
+     * values are already ~30 characters, so a tighter bound would start
+     * rejecting legitimate receipts after a couple of version-digit growths.
+     */
+    policyVersion: z.string().min(1).max(64),
     issuedAtUtc: TimestampSchema,
     expiresAtUtc: TimestampSchema,
   })

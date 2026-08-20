@@ -46,6 +46,12 @@ describe("kubernetes server domain", () => {
     expect(proposal.operations.length).toBeGreaterThan(0);
   });
 
+  it("rejects a non-string manifest body instead of casting it", () => {
+    const domain = resolveServerDomain("kubernetes");
+    const { input } = domain.parseInput(SNAPSHOT);
+    expect(() => domain.resolveProposal(input, { not: "manifest text" })).toThrow();
+  });
+
   it("simulates", () => {
     const domain = resolveServerDomain("kubernetes");
     const { input } = domain.parseInput(SNAPSHOT);
