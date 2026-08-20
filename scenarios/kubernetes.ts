@@ -40,6 +40,9 @@ import expectationsY from "./kubernetes/scenario-y-rollback-does-not-restore/exp
 import snapshotZ from "./kubernetes/scenario-z-orphaned-canary-service/incident.json";
 import fixtureZ from "./kubernetes/scenario-z-orphaned-canary-service/replay-fixture.json";
 import expectationsZ from "./kubernetes/scenario-z-orphaned-canary-service/expectations.json";
+import snapshotAA from "./kubernetes/scenario-aa-tier-wide-scale-out/incident.json";
+import fixtureAA from "./kubernetes/scenario-aa-tier-wide-scale-out/replay-fixture.json";
+import expectationsAA from "./kubernetes/scenario-aa-tier-wide-scale-out/expectations.json";
 
 /** A fixture-derived proposal plus how it was produced. */
 export interface KubernetesScenarioFixture {
@@ -193,6 +196,14 @@ export const KUBERNETES_SCENARIOS: readonly KubernetesScenarioDefinition[] = [
     snapshotY,
     fixtureY,
     expectationsY,
+  ),
+  defineKubernetesScenario(
+    "scenario-aa-tier-wide-scale-out",
+    "CHG-3312 — Scale out the search tier during an indexing backlog",
+    "An indexing backlog on one search Deployment prompts a change that adds a replica to all three Deployments in the tier.",
+    snapshotAA,
+    fixtureAA,
+    expectationsAA,
   ),
   defineKubernetesScenario(
     "scenario-z-orphaned-canary-service",

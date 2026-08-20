@@ -1,0 +1,30 @@
+{
+  "scenarioId": "scenario-aa-tier-wide-scale-out",
+  "teaches": "Scope discipline is a safety property in Kubernetes too. The incident implicates one Deployment, but the proposal applies the same one-replica bump to all three in the tier. Every operation is individually valid, availability-safe and exactly reversible, so no Kubernetes policy objects — the deterministic count of distinct resources touched is the only thing standing between a templated change and two workloads nobody asked to touch.",
+  "policies": {
+    "PATCH_SCHEMA": "PASS",
+    "K8S_PRIVILEGE_ESCALATION": "PASS",
+    "K8S_WORKLOAD_AVAILABILITY": "PASS",
+    "K8S_SERVICE_SELECTOR": "PASS",
+    "K8S_PROTECTED_RESOURCE": "PASS",
+    "K8S_MUTABLE_IMAGE": "PASS",
+    "BLAST_RADIUS": "BLOCK",
+    "ROLLBACK_COMPLETE": "PASS",
+    "VERIFICATION_REQUIRED": "PASS",
+    "UNTRUSTED_INSTRUCTION": "PASS"
+  },
+  "riskLevel": "CRITICAL",
+  "approvable": false,
+  "simulation": null,
+  "affectedResources": {
+    "BLAST_RADIUS": [
+      "kubernetes-resource:res-4b563f20694239c5",
+      "kubernetes-resource:res-dcc6e61fab2cd78e",
+      "kubernetes-resource:res-fb79954504def828"
+    ]
+  },
+  "corpus": {
+    "adversarial": true,
+    "failureModes": ["excessive-blast-radius"]
+  }
+}

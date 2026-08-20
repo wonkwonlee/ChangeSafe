@@ -1,0 +1,4 @@
+{
+  "title": "CHG-3312 — Scale out the search tier during an indexing backlog",
+  "summary": "An indexing backlog on one search Deployment prompts a change that adds a replica to all three Deployments in the tier."
+}

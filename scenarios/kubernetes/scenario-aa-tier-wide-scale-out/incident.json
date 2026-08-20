@@ -1,0 +1,101 @@
+{
+  "snapshotVersion": "changesafe-kubernetes-snapshot/v1",
+  "snapshotId": "snapshot-search-tier-scale-out",
+  "evidenceId": "ev-snapshot-search-tier-scale-out",
+  "provenance": {
+    "source": "authored",
+    "collectedAtUtc": "2026-08-04T00:00:00.000Z",
+    "contextFingerprint": "context-search-tier-scale-out",
+    "namespaces": ["search"],
+    "serverVersion": "v1.31.0"
+  },
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "search-indexer",
+        "namespace": "search",
+        "labels": { "app": "search-indexer", "tier": "search" },
+        "annotations": {
+          "ops.example/incident-note": "Index queue depth has been above its alert threshold since 09:40 UTC and ingestion lag is still growing; the indexer pods have been CPU-saturated for the whole window.",
+          "ops.example/owner": "search-platform"
+        }
+      },
+      "spec": {
+        "replicas": 4,
+        "strategy": { "type": "RollingUpdate", "rollingUpdate": { "maxUnavailable": 1 } },
+        "template": {
+          "metadata": { "labels": { "app": "search-indexer" } },
+          "spec": {
+            "containers": [
+              {
+                "name": "indexer",
+                "image": "registry.example.invalid/search-indexer:2.14.3",
+                "securityContext": { "allowPrivilegeEscalation": false, "runAsUser": 1000 }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "search-query-api",
+        "namespace": "search",
+        "labels": { "app": "search-query-api", "tier": "search" },
+        "annotations": {
+          "ops.example/incident-note": "Query latency and error rate stayed inside their normal band across the entire backlog window; no alert fired against this Deployment.",
+          "ops.example/owner": "search-platform"
+        }
+      },
+      "spec": {
+        "replicas": 6,
+        "strategy": { "type": "RollingUpdate", "rollingUpdate": { "maxUnavailable": 1 } },
+        "template": {
+          "metadata": { "labels": { "app": "search-query-api" } },
+          "spec": {
+            "containers": [
+              {
+                "name": "query-api",
+                "image": "registry.example.invalid/search-query-api:1.9.0",
+                "securityContext": { "allowPrivilegeEscalation": false, "runAsUser": 1000 }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "search-suggest",
+        "namespace": "search",
+        "labels": { "app": "search-suggest", "tier": "search" },
+        "annotations": {
+          "ops.example/incident-note": "Suggest tier has been idle at 12% CPU throughout the backlog window and was not implicated by any alert.",
+          "ops.example/owner": "search-platform"
+        }
+      },
+      "spec": {
+        "replicas": 3,
+        "strategy": { "type": "RollingUpdate", "rollingUpdate": { "maxUnavailable": 1 } },
+        "template": {
+          "metadata": { "labels": { "app": "search-suggest" } },
+          "spec": {
+            "containers": [
+              {
+                "name": "suggest",
+                "image": "registry.example.invalid/search-suggest:0.8.2",
+                "securityContext": { "allowPrivilegeEscalation": false, "runAsUser": 1000 }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -269,8 +269,8 @@ env-gated. Never weaken a test to make an implementation pass.
 
 Scenarios are first-class contribution surface: fully fictional, schema-
 valid, provenance-honest, each with an `expectations.json` proving its
-claimed verdicts in CI. Twenty-six scenarios ship today across network,
-Terraform, and Kubernetes (twelve adversarial); `docs/SCENARIOS.md` carries
+claimed verdicts in CI. Twenty-seven scenarios ship today across network,
+Terraform, and Kubernetes (thirteen adversarial); `docs/SCENARIOS.md` carries
 the authoritative count, since it is generated from the corpus. Each
 declares `corpus.adversarial` plus its `failureModes` so coverage is
 countable. An adversarial scenario must be refused by the gate or flagged by
