@@ -896,3 +896,134 @@ unaffected. Regression test: "denies a uid-bound grant when the request's
 uid is missing (CS-ADV-008 follow-up)" in
 `packages/kubernetes-enforcer/tests/verify.test.ts` — fails against the
 symmetric (first-version) condition.
+
+## Finding CS-ADV-009
+
+### Hypothesis
+
+The `changesafe.dev/tier: protected` namespace label — the sole signal
+that routes a workload's admission requests to the fail-closed
+(`webhook-protected.yaml`) vs. fail-open (`webhook-default.yaml`)
+configuration — is itself protected from being changed without going
+through the same grant system it exists to gate into.
+
+### Attack surface
+
+- `examples/m2-kubernetes-enforcer/webhook-protected.yaml` and
+  `webhook-default.yaml`'s `rules[].resources` (both list only
+  `deployments`, `statefulsets`, `daemonsets`, `services` — never
+  `namespaces`)
+- Whatever RBAC grants `namespace` label-edit permission in a real
+  cluster, which is commonly a different, sometimes broader role than
+  workload-edit RBAC (platform/infra teams often manage namespaces without
+  owning the applications inside them)
+
+### Method
+
+Found by external review (Codex, on PR #75); verified by reading both
+webhook manifests directly rather than accepted on description alone —
+confirmed neither `rules` block names `namespaces` as a covered resource.
+Also checked whether any EXISTING policy protects this label:
+`packages/domain-kubernetes/src/policies/protected-resource.ts`'s
+`K8S_PROTECTED_RESOURCE` policy protects the `changesafe.dev/protected`
+RESOURCE annotation at gate time — a related but entirely separate
+mechanism from the `changesafe.dev/tier` NAMESPACE label used purely for
+admission-time webhook routing. Nothing protects the latter.
+
+### Minimal reproducer
+
+Not a runnable test — same category as `CS-ADV-006`, a webhook-routing gap
+rather than application logic the unit suite can exercise. In a live
+cluster: as any principal with RBAC to patch Namespace labels (not
+workload RBAC), remove or change `changesafe.dev/tier: protected` on a
+namespace holding grant-protected workloads. No admission review is
+generated for this change at all — the API server has no webhook
+registered to intercept it.
+
+### Expected invariant
+
+The classification that decides whether a namespace's workloads are
+fail-open or fail-closed cannot itself be changed by an action the grant
+system never evaluates.
+
+### Observed behavior
+
+Removing or altering the tier label succeeds unconditionally, with no
+grant check, no signature, no actor binding — nothing, because the label
+lives on a resource kind (`Namespace`) neither webhook configuration's
+`rules` covers. Every subsequent admission request for that namespace's
+workloads is then evaluated by `webhook-default.yaml`'s `failurePolicy:
+Ignore` instead of `webhook-protected.yaml`'s `failurePolicy: Fail` — the
+entire two-tier trust model silently downgrades from fail-closed to
+fail-open for every future change, and nothing in the system ever
+evaluates whether that downgrade itself should have required
+authorization.
+
+### Severity
+
+Critical — structurally, the most severe finding in this pass. Every other
+finding here (`CS-ADV-005` through `CS-ADV-008`) concerns a gap in how
+*individual* grant checks are computed or bound; this one bypasses the
+mechanism that decides whether grant checks apply to a namespace's
+workloads *at all*, and the actor who can exploit it needs only
+namespace-label RBAC, not any workload-level access and not a stolen or
+misused grant. It is also the one finding in this document that requires
+no interaction with the grant system whatsoever to exploit — the tier
+label is plain Kubernetes metadata the enforcer never sees a request for.
+
+### Root cause
+
+Decision 4's two-tier `failurePolicy` design (per the M2 design spec and
+the empirical kind-cluster finding that `objectSelector` cannot match
+annotations) routes by namespace label because "namespace labels ARE
+selectable" (per `webhook-protected.yaml`'s own comment) — but nothing in
+that design considered that the routing signal itself needed the same
+protection as the resources it routes. The webhook manifests were scoped
+to the milestone's stated resource kinds (Deployment/StatefulSet/
+DaemonSet/Service) without accounting for the namespace-level metadata the
+whole routing scheme depends on.
+
+### Fix
+
+Not fixed in this pass — closing it is real, undecided design work, not a
+YAML tweak:
+
+1. **A `namespaces`/UPDATE rule alone, with no new logic, is not enough
+   and is actively harmful if built carelessly.** Registering it against
+   the existing enforcer would deny EVERY namespace update outright (the
+   enforcer's malformed-input handling denies any object it can't
+   normalize, and `Namespace` is not one of the four supported kinds) —
+   correctly closing this gap but breaking all namespace management
+   cluster-wide, an availability regression far larger than the security
+   gap it would fix.
+2. **A real fix needs new, `Namespace`-specific logic**: detect
+   specifically whether `changesafe.dev/tier` changed between `oldObject`
+   and `object` (not just deny all namespace updates), and decide what
+   authorizes that specific change — does altering a namespace's
+   protection tier go through the same grant flow as a workload change
+   (bootstrapping question: who approves a decision to change a namespace
+   FROM protected TO unprotected?), or is it deliberately kept outside the
+   grant system and gated by RBAC alone with just a webhook-level DENY as
+   a backstop against accidental drift? Both are defensible; neither
+   should be decided inside a PR review response.
+3. Whether `Namespace` DELETE (which also destroys the label along with
+   the whole namespace) needs separate consideration wasn't evaluated
+   here either.
+
+### Regression test
+
+None — see Minimal reproducer above for why this needs a live cluster, not
+a unit test.
+
+### What this changed in the architecture
+
+Nothing. This is a documented gap, not a code change.
+
+### Remaining uncertainty
+
+Whether this is exploitable by an identity narrower than "can edit
+Namespace labels" (e.g. via a mutating webhook, a controller with
+namespace-edit RBAC for an unrelated purpose, or a compromised operator)
+was not investigated. Whether `daemonsets`/`services`' own namespace
+membership could be independently reassigned to route around this some
+other way was not checked either.

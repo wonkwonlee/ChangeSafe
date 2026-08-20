@@ -166,6 +166,29 @@ admission time, so a grant issued against a manifest that omits a
 field the API server later defaults can produce a false DENY. That is the
 intended direction to fail in.
 
+### The tier label itself is unprotected: the most severe open gap
+
+The entire two-tier `failurePolicy` design routes on one signal — the
+`changesafe.dev/tier: protected` namespace label — and neither webhook
+configuration's `rules` names `namespaces` as a covered resource. **Anyone
+with RBAC to edit a Namespace's labels (not workload RBAC) can remove or
+change that label with no grant check, no signature, nothing, silently
+downgrading every workload in that namespace from fail-closed to
+fail-open for all future changes.** Unlike every other gap in this
+document, exploiting this needs no interaction with the grant system at
+all — the routing signal is plain metadata the enforcer never receives an
+admission request for. Recorded as `CS-ADV-006`'s sibling, `CS-ADV-007`'s
+sibling in severity, and specifically as **`CS-ADV-009`** in
+`docs/ADVERSARIAL_FINDINGS.md`, which is structurally the most severe
+finding in this pass — it bypasses the mechanism that decides whether
+grant checks apply at all, rather than a gap in one particular check.
+Registering a naive catch-all webhook rule for `namespaces` would make
+this worse, not better (it would deny all namespace management
+cluster-wide, since the enforcer has no `Namespace`-shaped logic at all);
+a real fix needs new object-shape handling and an undecided design
+question about whether changing a namespace's protection tier should
+itself require a grant. Not fixed in this pass — see `CS-ADV-009` for why.
+
 ### What the webhook actually intercepts: the scale-subresource gap
 
 Neither `examples/m2-kubernetes-enforcer/webhook-protected.yaml` nor
