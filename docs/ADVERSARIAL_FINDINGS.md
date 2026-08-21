@@ -1745,3 +1745,107 @@ None of these three change `AuthorizationGrantSchema`'s shape or
 `canonicalizeAdmittedResource` includes in its hash, not the grant schema
 itself, so it needed no policy version bump either: it is a normalization
 fix, not a policy behavior change.
+
+## Finding CS-ADV-016
+
+### Hypothesis
+
+An UPDATE grant binds the specific resource *incarnation* that was
+reviewed, not merely a resource name whose current state happens to match.
+
+### Attack surface
+
+- `packages/domain-kubernetes/src/normalize.ts`'s
+  `SERVER_OWNED_METADATA_KEYS` (excludes `uid` from the grant object hash)
+- `packages/kubernetes-enforcer/src/verify.ts`'s binding checks
+- `packages/core/src/grant.ts`'s `AuthorizationGrantSchema`
+
+### Method
+
+Found by external review (Codex, on PR #75, the round after `CS-ADV-015`).
+Verified against the code rather than accepted on description: `uid` is in
+the exclude-list, so two objects differing only in `metadata.uid`
+canonicalize identically; nothing else in the grant or the verifier
+referenced a uid for the *resource* (only `authorizedActorUid` exists, for
+the actor).
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/verify.test.ts`, "denies replaying an
+UPDATE grant against a recreated incarnation of the same resource
+(CS-ADV-016)" — asserts first that the original and a recreated object
+(same name, same spec, different uid) hash identically, then that a grant
+issued for the original allows against it and is refused against the
+recreation. Verified to fail against the pre-fix code.
+
+### Expected invariant
+
+A grant issued against one object cannot authorize a transition on a
+different object that merely reuses its name.
+
+### Observed behavior
+
+Delete `web`, recreate `web` with the same spec, and a still-valid UPDATE
+grant for the original authorized the same transition on the replacement:
+`resource` (kind/namespace/name) matched, `objectSha256` matched, and —
+because the prior-state hash excludes `uid` too — `oldObjectSha256`
+matched as well. Nothing in the grant distinguished the two incarnations.
+
+### Severity
+
+Medium. Exploiting it needs a same-name recreation inside the grant's
+validity window; in a protected namespace that recreation itself needs a
+CREATE grant (DELETE is not webhook-registered, so deletion is free). So
+the realistic shape is a *reviewed* recreate followed by a *stale* UPDATE
+grant being replayed onto it — a transition nobody reviewed on that
+object, and the same class of name-vs-identity confusion `CS-ADV-008`
+closed for actors.
+
+### Root cause
+
+`uid` was excluded from the object hash deliberately and correctly: a
+CREATE grant is issued before the object exists, so its uid is unknowable
+at issuance and cannot be part of a hash the issuer must precompute. But
+that exclusion was never compensated for on UPDATE, where the incarnation
+does exist and does have a stable identity to bind.
+
+### Fix
+
+Codex offered two shapes — put `uid` back into the hash for UPDATE, or
+carry it as a separately verified grant field. The second is taken,
+mirroring `authorizedActorUid`/`oldObjectSha256`: `AuthorizationGrantSchema`
+gains `resourceUid`, required for UPDATE and rejected for CREATE (both in
+the schema's `superRefine`, so issuance and verification share it), and
+`verifyGrantAgainstAdmission` compares it against
+`request.oldObject.metadata.uid` — the incarnation actually being changed,
+read via a never-throwing accessor so the function keeps its no-throw
+contract; a missing or non-string uid is refused, not waved through. Hash
+semantics are unchanged, which keeps CREATE hashing precomputable.
+Threaded through `IssueGrantOptions`, `GrantRequestSchema`, and — applying
+today's own lesson from the `CS-ADV-014` amendments directly — both
+pre-ledger checks in `POST /reviews/:id/decisions`, so neither condition
+is first discovered after the decision commits. `kind-repro.sh` supplies
+`current.metadata.uid`.
+
+### Regression test
+
+The reproducer above, plus `packages/core/tests/grant.test.ts` (UPDATE
+without / CREATE with `resourceUid` both rejected) and
+`packages/server/tests/reviews.test.ts` (both pre-ledger refusals, each
+verified pre-fix to return 422 with the decision already ledgered).
+
+### What this changed in the architecture
+
+One new optional-in-shape, required-by-operation field on
+`AuthorizationGrantSchema`, opaque to core. Every UPDATE fixture in the
+suite now carries a uid on its prior object and `resourceUid` on its
+grant. No hash or `policyVersion` change.
+
+### Remaining uncertainty
+
+Like every binding field on the issuance side, `resourceUid` is
+caller-asserted (`CS-ADV-004`). And the grant schema is meant to be
+domain-agnostic; "an existing resource always has a stable uid" is true of
+Kubernetes and of every enforcement boundary currently contemplated, but a
+future domain without such an identifier would need this requirement
+revisited rather than worked around with a placeholder value.

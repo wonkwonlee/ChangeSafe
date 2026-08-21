@@ -23,7 +23,12 @@ const RESOURCE_MODIFIED = { ...RESOURCE, spec: { replicas: 99 } };
 // The reviewed starting state, for tests that don't specifically exercise
 // CS-ADV-014's own before/after distinction — oldObjectSha256 is now
 // required on every UPDATE grant, so a default fixture needs one.
-const RESOURCE_PRIOR = { ...RESOURCE, spec: { replicas: 1 } };
+const RESOURCE_UID = "11111111-2222-3333-4444-555555555555";
+const RESOURCE_PRIOR = {
+  ...RESOURCE,
+  metadata: { ...RESOURCE.metadata, uid: RESOURCE_UID },
+  spec: { replicas: 1 },
+};
 const ACTOR = "system:serviceaccount:ops:changesafe-applier";
 // resourceIdOf({apiVersion:"apps/v1",kind:"Deployment",namespace:"default",name:"web"}) —
 // verifyGrantAgainstAdmission now derives this from the admitted object
@@ -53,6 +58,7 @@ async function buildSignedGrant(overrides: Partial<Record<string, unknown>> = {}
     resource: RESOURCE_ID,
     objectSha256: await objectHashOf(RESOURCE),
     oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
+    resourceUid: RESOURCE_UID,
     policyVersion: "kubernetes-v0.2.0",
     issuedAtUtc: "2026-08-19T12:00:00.000Z",
     expiresAtUtc: "2026-08-19T13:00:00.000Z",
@@ -167,6 +173,7 @@ describe("verifyGrantAgainstAdmission", () => {
     const { signed, verifying } = await buildSignedGrant({
       operation: "CREATE",
       oldObjectSha256: undefined,
+      resourceUid: undefined,
     });
     const outcome = await verifyGrantAgainstAdmission(
       signed,
@@ -346,9 +353,12 @@ describe("verifyGrantAgainstAdmission", () => {
     // oldObjectSha256 is set. Without it, the same grant could authorize
     // v3 -> v2 (an unreviewed revert) just as easily as the reviewed
     // v1 -> v2 — this proves oldObjectSha256, once supplied, closes that.
-    const v1 = { ...RESOURCE, spec: { replicas: 1 } };
+    // Prior states carry the live object's uid, as they always do on a real
+    // UPDATE — the grant binds it (CS-ADV-016), and this test is about the
+    // state divergence, not the incarnation.
+    const v1 = { ...RESOURCE_PRIOR, spec: { replicas: 1 } };
     const v2 = { ...RESOURCE, spec: { replicas: 2 } };
-    const v3 = { ...RESOURCE, spec: { replicas: 3 } };
+    const v3 = { ...RESOURCE_PRIOR, spec: { replicas: 3 } };
     const { signed, verifying } = await buildSignedGrant({
       objectSha256: await objectHashOf(v2),
       oldObjectSha256: await objectHashOf(v1),
@@ -373,6 +383,48 @@ describe("verifyGrantAgainstAdmission", () => {
     expect(replayed.allowed).toBe(false);
   });
 
+  it("denies replaying an UPDATE grant against a recreated incarnation of the same resource (CS-ADV-016)", async () => {
+    // State hashes exclude server-assigned identity on purpose, so a
+    // Deployment deleted and recreated under the same name, with the same
+    // spec, hashes identically to the original — objectSha256 AND
+    // oldObjectSha256 both still match. Only the uid tells the two
+    // incarnations apart, so the grant has to bind it.
+    const original = RESOURCE_PRIOR;
+    const recreated = {
+      ...RESOURCE_PRIOR,
+      metadata: { ...RESOURCE_PRIOR.metadata, uid: "99999999-8888-7777-6666-555555555555" },
+    };
+    expect(await objectHashOf(original)).toBe(await objectHashOf(recreated));
+
+    const { signed, verifying } = await buildSignedGrant({ resourceUid: RESOURCE_UID });
+
+    const reviewed = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ oldObject: original }),
+      verifying,
+      NOW,
+    );
+    expect(reviewed).toEqual({ allowed: true });
+
+    const replayed = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ oldObject: recreated }),
+      verifying,
+      NOW,
+    );
+    expect(replayed.allowed).toBe(false);
+
+    // A prior object with no readable uid at all is refused, not waved
+    // through: the binding is only as strong as its weakest-shaped input.
+    const uidless = await verifyGrantAgainstAdmission(
+      signed,
+      admissionRequest({ oldObject: { ...RESOURCE_PRIOR, metadata: RESOURCE.metadata } }),
+      verifying,
+      NOW,
+    );
+    expect(uidless.allowed).toBe(false);
+  });
+
   // An UPDATE grant with no oldObjectSha256 can no longer even be
   // constructed — AuthorizationGrantSchema itself now requires it for
   // UPDATE (CS-ADV-014 follow-up); see packages/core/tests/grant.test.ts,
@@ -383,6 +435,7 @@ describe("verifyGrantAgainstAdmission", () => {
     const { signed, verifying } = await buildSignedGrant({
       operation: "CREATE",
       oldObjectSha256: undefined,
+      resourceUid: undefined,
     });
     const outcome = await verifyGrantAgainstAdmission(
       signed,

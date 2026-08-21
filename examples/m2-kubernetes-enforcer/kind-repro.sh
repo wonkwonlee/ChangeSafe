@@ -201,6 +201,10 @@ const grant = AuthorizationGrantSchema.parse({
   resource: normalized.resourceId,
   objectSha256,
   oldObjectSha256,
+  // The live object's own uid (CS-ADV-016): binds the grant to THIS
+  // incarnation of web, not to any future Deployment that happens to be
+  // recreated under the same name with the same spec.
+  resourceUid: current.metadata.uid,
   // The value the real system composes and records in receipts, not a
   // hand-written stand-in. Note the enforcer's drift check is inert in this
   // demo: EXPECTED_POLICY_VERSION is deliberately unset in

@@ -22,7 +22,12 @@ const RESOURCE = {
 const RESOURCE_ID = "res-1823f5f395a75605";
 // A reviewed starting state, distinct from RESOURCE — oldObjectSha256 is
 // required on every UPDATE grant (CS-ADV-014 follow-up).
-const RESOURCE_PRIOR = { ...RESOURCE, spec: { replicas: 1 } };
+const RESOURCE_UID = "11111111-2222-3333-4444-555555555555";
+const RESOURCE_PRIOR = {
+  ...RESOURCE,
+  metadata: { ...RESOURCE.metadata, uid: RESOURCE_UID },
+  spec: { replicas: 1 },
+};
 
 // The production hash function itself; see verify.ts's kubernetesObjectSha256.
 const objectHashOf = kubernetesObjectSha256;
@@ -54,6 +59,7 @@ describe("createEnforcerServer", () => {
       resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
       oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
+      resourceUid: RESOURCE_UID,
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
       expiresAtUtc: "2026-08-19T13:00:00.000Z",
@@ -179,6 +185,7 @@ describe("createEnforcerServer", () => {
       resource: RESOURCE_ID,
       objectSha256: await objectHashOf(RESOURCE),
       oldObjectSha256: await objectHashOf(RESOURCE_PRIOR),
+      resourceUid: RESOURCE_UID,
       policyVersion: "kubernetes-v0.2.0",
       issuedAtUtc: "2026-08-19T12:00:00.000Z",
       expiresAtUtc: "2026-08-19T13:00:00.000Z",

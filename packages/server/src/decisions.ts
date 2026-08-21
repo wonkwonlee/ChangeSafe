@@ -61,6 +61,8 @@ export interface IssueGrantOptions {
   objectSha256: string;
   /** See AuthorizationGrantSchema's doc comment on oldObjectSha256. */
   oldObjectSha256?: string;
+  /** See AuthorizationGrantSchema's doc comment on resourceUid. */
+  resourceUid?: string;
   expiresAtUtc: string;
   /**
    * The instant to record as the grant's `issuedAtUtc`. Callers that
@@ -212,6 +214,7 @@ export class DecisionService {
       resource: options.resource,
       objectSha256: options.objectSha256,
       oldObjectSha256: options.oldObjectSha256,
+      resourceUid: options.resourceUid,
       policyVersion: receipt.policyVersion,
       issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
       expiresAtUtc: options.expiresAtUtc,

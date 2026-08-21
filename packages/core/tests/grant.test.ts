@@ -10,6 +10,7 @@ function buildGrant(overrides: Partial<Record<string, unknown>> = {}) {
     resource: "res-0123456789abcdef",
     objectSha256: "a".repeat(64),
     oldObjectSha256: "b".repeat(64),
+    resourceUid: "11111111-2222-3333-4444-555555555555",
     policyVersion: "kubernetes-v0.2.0",
     issuedAtUtc: "2026-08-19T12:00:00.000Z",
     expiresAtUtc: "2026-08-19T13:00:00.000Z",
@@ -78,10 +79,27 @@ describe("AuthorizationGrantSchema", () => {
     expect(AuthorizationGrantSchema.safeParse(withoutOldObjectSha256).success).toBe(false);
   });
 
-  it("accepts a CREATE grant with no oldObjectSha256 (there is no prior state to bind)", () => {
-    const { oldObjectSha256: _oldObjectSha256, ...withoutOldObjectSha256 } = buildGrant({ operation: "CREATE" });
+  it("accepts a CREATE grant with no oldObjectSha256 and no resourceUid (nothing exists yet to bind)", () => {
+    const {
+      oldObjectSha256: _oldObjectSha256,
+      resourceUid: _resourceUid,
+      ...createGrant
+    } = buildGrant({ operation: "CREATE" });
     void _oldObjectSha256;
-    expect(AuthorizationGrantSchema.safeParse(withoutOldObjectSha256).success).toBe(true);
+    void _resourceUid;
+    expect(AuthorizationGrantSchema.safeParse(createGrant).success).toBe(true);
+  });
+
+  it("rejects an UPDATE grant with no resourceUid (CS-ADV-016)", () => {
+    const { resourceUid: _resourceUid, ...withoutResourceUid } = buildGrant();
+    void _resourceUid;
+    expect(AuthorizationGrantSchema.safeParse(withoutResourceUid).success).toBe(false);
+  });
+
+  it("rejects a CREATE grant carrying a resourceUid (CS-ADV-016)", () => {
+    const { oldObjectSha256: _oldObjectSha256, ...createGrant } = buildGrant({ operation: "CREATE" });
+    void _oldObjectSha256;
+    expect(AuthorizationGrantSchema.safeParse(createGrant).success).toBe(false);
   });
 
   it("rejects a CREATE grant carrying an oldObjectSha256 (CS-ADV-014 follow-up)", () => {

@@ -66,6 +66,23 @@ export const AuthorizationGrantSchema = z
      */
     oldObjectSha256: Sha256HexSchema.optional(),
     /**
+     * The enforcement boundary's own stable identifier for the resource
+     * *incarnation* this grant was issued against (Kubernetes'
+     * `metadata.uid`). `resource` names a resource by kind, namespace, and
+     * name, and `objectSha256`/`oldObjectSha256` bind its state — but a
+     * workload deleted and recreated under the same name is a different
+     * object that hashes identically whenever its other canonical state
+     * matches, since server-assigned identity is deliberately excluded from
+     * that hash. Without this field a still-valid UPDATE grant issued for
+     * the original incarnation would authorize the same transition on its
+     * replacement (`CS-ADV-016`). Required for UPDATE (enforced below) by
+     * the same reasoning as `oldObjectSha256`: an existing resource always
+     * has one. Absent for CREATE, where the incarnation does not exist yet
+     * and its uid is unknowable at issuance. Opaque to core, like
+     * `authorizedActorUid`.
+     */
+    resourceUid: z.string().min(1).max(255).optional(),
+    /**
      * The composed policy version of the receipt this grant came from, e.g.
      * `core-v0.2.0+kubernetes-v0.1.0`. Bounded generously: real composed
      * values are already ~30 characters, so a tighter bound would start
@@ -95,6 +112,20 @@ export const AuthorizationGrantSchema = z
         code: "custom",
         path: ["oldObjectSha256"],
         message: "oldObjectSha256 must be absent for a CREATE grant — CREATE has no prior state, and admitting one here would let a stale prior-state hash silently pass validation without ever being checked against anything",
+      });
+    }
+    if (grant.operation === "UPDATE" && grant.resourceUid === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resourceUid"],
+        message: "resourceUid is required for an UPDATE grant — an existing resource always has a stable uid, and without it the grant binds a name, not the incarnation that was reviewed",
+      });
+    }
+    if (grant.operation === "CREATE" && grant.resourceUid !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resourceUid"],
+        message: "resourceUid must be absent for a CREATE grant — the resource does not exist yet, so its uid is unknowable at issuance",
       });
     }
   });

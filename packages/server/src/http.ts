@@ -89,6 +89,8 @@ const GrantRequestSchema = z.strictObject({
   objectSha256: z.string().regex(/^[a-f0-9]{64}$/),
   /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on oldObjectSha256. */
   oldObjectSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on resourceUid. */
+  resourceUid: z.string().min(1).max(255).optional(),
   expiresAtUtc: TimestampSchema,
 });
 
@@ -455,6 +457,23 @@ async function handle(
         "REQUEST_INVALID",
         "A CREATE grant must not carry oldObjectSha256 (AuthorizationGrantSchema enforces this) — " +
           "CREATE has no prior state, and this would only be discovered after the decision is committed.",
+      );
+    }
+    // Same pair of operation-dependent preconditions for resourceUid
+    // (CS-ADV-016), for the same reason: AuthorizationGrantSchema enforces
+    // both, but only inside issueGrant, after the decision has committed.
+    if (body.grant && body.grant.operation === "UPDATE" && body.grant.resourceUid === undefined) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "An UPDATE grant's resourceUid is required (AuthorizationGrantSchema enforces this) — " +
+          "missing it here would only be discovered after the decision is committed.",
+      );
+    }
+    if (body.grant && body.grant.operation === "CREATE" && body.grant.resourceUid !== undefined) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "A CREATE grant must not carry resourceUid (AuthorizationGrantSchema enforces this) — " +
+          "the resource does not exist yet, and this would only be discovered after the decision is committed.",
       );
     }
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({

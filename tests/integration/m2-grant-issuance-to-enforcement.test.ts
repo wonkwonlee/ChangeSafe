@@ -46,7 +46,7 @@ const SNAPSHOT = {
     {
       apiVersion: "apps/v1",
       kind: "Deployment",
-      metadata: { name: "web", namespace: "default" },
+      metadata: { name: "web", namespace: "default", uid: "11111111-2222-3333-4444-555555555555" },
       spec: { replicas: 2 },
     },
   ],
@@ -102,6 +102,7 @@ async function issueRealGrant() {
     // oldObjectSha256 is now required on every UPDATE grant (CS-ADV-014
     // follow-up).
     oldObjectSha256: await kubernetesObjectSha256(SNAPSHOT.resources[0]),
+    resourceUid: "11111111-2222-3333-4444-555555555555",
     expiresAtUtc: EXPIRES_AT,
   });
 

@@ -50,9 +50,24 @@ export function kubernetesObjectSha256(raw: unknown): Promise<string> {
 }
 
 /**
+ * Read `metadata.uid` off an untyped admitted object without trusting its
+ * shape: anything other than a non-empty string reads as "no uid", which
+ * the uid-binding check then refuses. Never throws, so the caller keeps
+ * its never-throws contract.
+ */
+function metadataUidOf(raw: unknown): string | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const metadata = (raw as { metadata?: unknown }).metadata;
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const uid = (metadata as { uid?: unknown }).uid;
+  return typeof uid === "string" && uid.length > 0 ? uid : undefined;
+}
+
+/**
  * Verify a signed AuthorizationGrant authorizes exactly this admission
- * request: correct signer, actor, operation, resource, object state, and
- * not expired or drifted onto a different policy version.
+ * request: correct signer, actor, operation, resource, resource
+ * incarnation, object state, and not expired or drifted onto a different
+ * policy version.
  *
  * This function only ever returns an explicit allow/deny — it has no
  * concept of "the verifier is unreachable" (that failure mode does not
@@ -157,6 +172,24 @@ export async function verifyGrantAgainstAdmission(
       return {
         allowed: false,
         reason: "the object's prior state does not match the state the grant was reviewed against",
+      };
+    }
+  }
+
+  // State hashes deliberately exclude server-assigned identity, so a
+  // workload deleted and recreated under the same name hashes identically
+  // to the original whenever its other canonical state matches — and a
+  // still-valid UPDATE grant for the original would otherwise authorize the
+  // same transition on its replacement, a different object nobody reviewed
+  // (CS-ADV-016). Bound via the prior incarnation (`oldObject`), which is
+  // the object actually being changed; the API server already refuses an
+  // UPDATE whose submitted `metadata.uid` disagrees with the stored one.
+  if (grant.resourceUid !== undefined) {
+    const priorUid = metadataUidOf(request.oldObject);
+    if (priorUid === undefined || priorUid !== grant.resourceUid) {
+      return {
+        allowed: false,
+        reason: "the resource's uid does not match the incarnation the grant was issued for",
       };
     }
   }

@@ -765,6 +765,7 @@ describe("durable review decision HTTP API", () => {
     resource: "deployments/default/checkout",
     objectSha256: "a".repeat(64),
     oldObjectSha256: "b".repeat(64),
+    resourceUid: "11111111-2222-3333-4444-555555555555",
     expiresAtUtc: "2099-01-01T00:00:00.000Z",
   };
 
@@ -1001,5 +1002,45 @@ describe("durable review decision HTTP API", () => {
     expect(
       context.reviews.getResolution("review-grant-create-with-old-hash", aliceOwner()),
     ).toBeNull();
+  });
+
+  it("refuses an UPDATE grant with no resourceUid before anything reaches the ledger (CS-ADV-016)", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-update-no-uid"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    const { resourceUid: _omit, ...updateGrantWithoutUid } = grantRequest;
+    void _omit;
+    const response = await decideReview(
+      "review-grant-update-no-uid",
+      { decision: "approve", grant: updateGrantWithoutUid },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-update-no-uid", aliceOwner())).toBeNull();
+  });
+
+  it("refuses a CREATE grant carrying a resourceUid before anything reaches the ledger (CS-ADV-016)", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-create-with-uid"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    const { oldObjectSha256: _omit, ...createGrantWithUid } = { ...grantRequest, operation: "CREATE" as const };
+    void _omit;
+    const response = await decideReview(
+      "review-grant-create-with-uid",
+      { decision: "approve", grant: createGrantWithUid },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-create-with-uid", aliceOwner())).toBeNull();
   });
 });
