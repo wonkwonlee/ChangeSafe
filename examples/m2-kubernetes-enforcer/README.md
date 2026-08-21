@@ -4,8 +4,13 @@ Two ValidatingWebhookConfigurations implement Spec Decision 4's two-tier
 failurePolicy:
 
 - `webhook-protected.yaml` (`failurePolicy: Fail`) — every CREATE/UPDATE
-  in a **namespace labeled `changesafe.dev/tier: protected`**. This is the
-  routing condition, and the only one: Kubernetes' `objectSelector` matches
+  of a **Deployment, StatefulSet, DaemonSet, or Service** in a **namespace
+  labeled `changesafe.dev/tier: protected`**. Both conditions are exact:
+  the webhook's `rules` register only those four kinds, so Pods, Jobs,
+  ConfigMaps, Secrets, and every other kind in the same namespace never
+  invoke either webhook at all — they are not grant-gated, healthy enforcer
+  or not. And the namespace label is the routing condition, and the only
+  one: Kubernetes' `objectSelector` matches
   labels, not annotations, so the `changesafe.dev/protected: "true"`
   annotation the `K8S_PROTECTED_RESOURCE` policy tracks cannot route a
   request by itself (see "Two open problems" below). An annotated workload
