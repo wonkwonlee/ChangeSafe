@@ -7,8 +7,11 @@
  *
  * - TRUSTED_PUBLIC_KEY_PEM: Ed25519 public key (PEM) the enforcer trusts
  *   grant signatures against.
- * - EXPECTED_POLICY_VERSION: optional; grants signed against a different
- *   policyVersion are rejected as drifted.
+ * - EXPECTED_POLICY_VERSION: optional override of the policy version the
+ *   enforcer holds grants to; defaults to the bundled domain's own
+ *   POLICY_VERSION (see resolveExpectedPolicyVersion). Grants signed
+ *   against a different policyVersion are rejected as drifted — always,
+ *   not only when an operator remembers to set this.
  * - PORT: HTTPS listen port (default 8443).
  * - TLS_CERT_PATH / TLS_KEY_PATH: PEM cert/key for the HTTPS listener.
  *
@@ -24,7 +27,7 @@ import { createServer as createHttpsServer } from "node:https";
 
 import { importVerifyingKey } from "@changesafe/core";
 
-import { createEnforcerRequestListener } from "./server";
+import { createEnforcerRequestListener, resolveExpectedPolicyVersion } from "./server";
 import { GRANT_ANNOTATION } from "./verify";
 
 function requireEnv(name: string): string {
@@ -47,7 +50,7 @@ function readGrantFromAnnotation(_request: unknown, review: { request: { object:
 async function main(): Promise<void> {
   const trustedPublicKey = await importVerifyingKey(requireEnv("TRUSTED_PUBLIC_KEY_PEM"));
   const port = Number(process.env.PORT ?? "8443");
-  const expectedPolicyVersion = process.env.EXPECTED_POLICY_VERSION;
+  const expectedPolicyVersion = resolveExpectedPolicyVersion(process.env);
 
   const listener = createEnforcerRequestListener({
     trustedPublicKey,
@@ -65,7 +68,9 @@ async function main(): Promise<void> {
   );
 
   httpsServer.listen(port, () => {
-    console.log(`changesafe-kubernetes-enforcer listening on :${port}`);
+    console.log(
+      `changesafe-kubernetes-enforcer listening on :${port} (holding grants to policyVersion ${expectedPolicyVersion})`,
+    );
   });
 }
 

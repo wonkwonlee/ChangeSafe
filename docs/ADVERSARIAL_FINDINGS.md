@@ -1849,3 +1849,99 @@ domain-agnostic; "an existing resource always has a stable uid" is true of
 Kubernetes and of every enforcement boundary currently contemplated, but a
 future domain without such an identifier would need this requirement
 revisited rather than worked around with a placeholder value.
+
+## Finding CS-ADV-017
+
+### Hypothesis
+
+A deployed enforcer always holds grants to the active policy version; a
+grant issued under an obsolete policy set cannot be admitted after an
+upgrade merely because its signing key and expiry survived it.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/main.ts` (reads `EXPECTED_POLICY_VERSION`)
+- `examples/m2-kubernetes-enforcer/enforcer-deployment.yaml` (leaves it unset)
+- `packages/kubernetes-enforcer/src/verify.ts` (skips the drift comparison
+  when no expectation is supplied)
+
+### Method
+
+Found by external review (Codex, on PR #75). Verified against the code:
+`main.ts` passed `process.env.EXPECTED_POLICY_VERSION` straight through
+with no default, the shipped Deployment deliberately omitted it, and the
+verifier's drift branch is guarded by `options.expectedPolicyVersion !==
+undefined`. The unit suite exercised only the opt-in branch.
+
+### Minimal reproducer
+
+No single test reproduces the deployment-level gap, since it lives in
+how the entrypoint is configured rather than in any function's logic.
+The closest proof is structural: `main.ts` resolved `undefined` from an
+unset environment, and `verify.test.ts`'s drift test only ever passes an
+explicit expectation. The fix's regression tests (below) pin the new
+resolution behaviour.
+
+### Expected invariant
+
+The policy-version-drift check runs on every admission decision. Binding
+it is not something a deployment can decline by omission.
+
+### Observed behavior
+
+With the shipped manifest, the enforcer ran with the drift check off. Any
+grant signed by a still-trusted key and not yet expired was admissible
+regardless of which policy set had produced its receipt — so a policy
+upgrade that tightened a rule did not invalidate grants already issued
+under the looser one for as long as those grants lived.
+
+### Severity
+
+Medium-High. Bounded by grant lifetime and by the signing key not being
+rotated at upgrade time; unbounded in the sense that nothing in the
+shipped configuration would ever have caught it, and the comments framed
+the omission as a harmless demo simplification.
+
+### Root cause
+
+The drift check was designed as opt-in so the demo would not be pinned to
+one composed version string. That framing treated the check as a
+nice-to-have rather than part of the invariant, and the deployment
+manifest inherited the omission as if it were the recommended setting.
+
+### Fix
+
+`resolveExpectedPolicyVersion(env)` in `server.ts`: `EXPECTED_POLICY_VERSION`
+is now an *override*; absent or empty, the enforcer binds to the
+`POLICY_VERSION` bundled in `@changesafe/domain-kubernetes` — the image
+is built from the same checkout as the policies it guards, so that
+constant is the active policy set by construction. `main.ts` uses it and
+logs the bound version at startup. The library-level option stays
+optional so tests can exercise both branches; only the runnable
+entrypoint loses the ability to run unbound. The Deployment comment,
+`kind-repro.sh`, and `docs/M2_TECHNICAL_NOTE.md` are rewritten to say the
+check is live (the demo grant already carries the same `POLICY_VERSION`,
+so the kind run still passes); the recorded transcript is noted as
+predating this.
+
+### Regression test
+
+`packages/kubernetes-enforcer/tests/server.test.ts`,
+"resolveExpectedPolicyVersion (CS-ADV-017)": absent env → bundled
+version; empty string → bundled version; explicit override honoured; and
+no input resolves to a value the verifier would read as "skip".
+
+### What this changed in the architecture
+
+`@changesafe/kubernetes-enforcer` already depended on
+`@changesafe/domain-kubernetes`; it now imports `POLICY_VERSION` from it.
+No schema or hash change.
+
+### Remaining uncertainty
+
+Binding to the bundled constant assumes the enforcer image is rebuilt
+when policies change. An operator who upgrades the decision server's
+policies but keeps running an older enforcer image gets the *opposite*
+failure — new grants denied as drifted — which is the safe direction, and
+the startup log line makes the bound version visible, but it is still an
+operational coupling worth stating in deployment docs when those exist.

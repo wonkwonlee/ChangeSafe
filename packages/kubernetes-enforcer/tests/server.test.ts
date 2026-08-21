@@ -7,7 +7,8 @@ import {
   signGrant,
   AuthorizationGrantSchema,
 } from "@changesafe/core";
-import { createEnforcerServer } from "../src/server";
+import { POLICY_VERSION } from "@changesafe/domain-kubernetes";
+import { createEnforcerServer, resolveExpectedPolicyVersion } from "../src/server";
 import { kubernetesObjectSha256 } from "../src/verify";
 
 const RESOURCE = {
@@ -44,6 +45,34 @@ async function listen(s: ReturnType<typeof createEnforcerServer>): Promise<strin
   const { port } = s.address() as AddressInfo;
   return `http://127.0.0.1:${port}`;
 }
+
+describe("resolveExpectedPolicyVersion (CS-ADV-017)", () => {
+  // A deployed enforcer must never run with the drift check unbound: an
+  // unexpired grant issued under an obsolete policy set would otherwise
+  // stay admissible after a policy upgrade whenever the signing key
+  // survives it. Absent or empty env binds to the bundled POLICY_VERSION.
+  it("defaults to the bundled domain POLICY_VERSION when the env var is absent", () => {
+    expect(resolveExpectedPolicyVersion({})).toBe(POLICY_VERSION);
+  });
+
+  it("treats an empty env var as absent rather than binding to the empty string", () => {
+    expect(resolveExpectedPolicyVersion({ EXPECTED_POLICY_VERSION: "" })).toBe(POLICY_VERSION);
+  });
+
+  it("honours an explicit override", () => {
+    expect(resolveExpectedPolicyVersion({ EXPECTED_POLICY_VERSION: "core-v9.0.0+kubernetes-v9.0.0" })).toBe(
+      "core-v9.0.0+kubernetes-v9.0.0",
+    );
+  });
+
+  it("never resolves to something the verifier would treat as 'skip the check'", () => {
+    for (const env of [{}, { EXPECTED_POLICY_VERSION: "" }, { EXPECTED_POLICY_VERSION: undefined }]) {
+      const resolved = resolveExpectedPolicyVersion(env);
+      expect(typeof resolved).toBe("string");
+      expect(resolved.length).toBeGreaterThan(0);
+    }
+  });
+});
 
 describe("createEnforcerServer", () => {
   it("allows a request whose grant matches", async () => {

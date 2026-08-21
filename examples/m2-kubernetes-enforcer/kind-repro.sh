@@ -206,10 +206,11 @@ const grant = AuthorizationGrantSchema.parse({
   // recreated under the same name with the same spec.
   resourceUid: current.metadata.uid,
   // The value the real system composes and records in receipts, not a
-  // hand-written stand-in. Note the enforcer's drift check is inert in this
-  // demo: EXPECTED_POLICY_VERSION is deliberately unset in
-  // enforcer-deployment.yaml, so this field is carried but not compared here.
-  // The drift check itself is covered by the unit suite.
+  // hand-written stand-in — and the value the enforcer compares against:
+  // with EXPECTED_POLICY_VERSION unset in enforcer-deployment.yaml the
+  // enforcer defaults to its own bundled POLICY_VERSION (CS-ADV-017), so
+  // the drift check is live in this run and this grant passes it because
+  // both sides were built from the same checkout.
   policyVersion: POLICY_VERSION,
   issuedAtUtc: new Date(Date.now() - 60000).toISOString(),
   expiresAtUtc: new Date(Date.now() + 3600000).toISOString(),

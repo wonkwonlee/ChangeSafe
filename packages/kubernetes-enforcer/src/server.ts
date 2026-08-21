@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { SignedGrant } from "@changesafe/core";
 import { SignedGrantSchema } from "@changesafe/core";
+import { POLICY_VERSION } from "@changesafe/domain-kubernetes";
 
 import {
   AdmissionReviewRequestSchema,
@@ -24,6 +25,23 @@ import { verifyGrantAgainstAdmission } from "./verify";
 // ceiling, plus envelope overhead) while still bounding memory against a
 // genuinely oversized/malicious body.
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The policy version a deployed enforcer holds grants to. `EXPECTED_POLICY_VERSION`
+ * overrides; otherwise the bundled domain's own `POLICY_VERSION` is the
+ * binding — the enforcer image is built from the same checkout as the
+ * policies it guards, so that constant IS the active policy set. Leaving
+ * this unbound is not an option a deployment can take by omission
+ * (CS-ADV-017): a signing key that survives a policy upgrade would
+ * otherwise keep every unexpired grant issued under the obsolete policies
+ * admissible, because `verifyGrantAgainstAdmission` skips the drift
+ * comparison when no expectation is supplied. An empty string counts as
+ * unset, matching how the rest of the entrypoint reads its environment.
+ */
+export function resolveExpectedPolicyVersion(env: Readonly<Record<string, string | undefined>>): string {
+  const override = env.EXPECTED_POLICY_VERSION;
+  return override !== undefined && override.length > 0 ? override : POLICY_VERSION;
+}
 
 export interface EnforcerServerOptions {
   trustedPublicKey: CryptoKey;

@@ -237,13 +237,21 @@ tradeoff is an operational decision, not a code fix.
 ### What the kind demo exercised, and what only the unit suite did
 
 The kind reproduction exercised signature verification, actor, operation,
-resource, object hash, and expiry against a live API server. It did **not**
-exercise the policy-version-drift check: `EXPECTED_POLICY_VERSION` is
-deliberately unset in `examples/m2-kubernetes-enforcer/enforcer-deployment.yaml`,
-which makes that comparison inert in the cluster run. Drift is covered by
+resource, object hash, and expiry against a live API server. At the time
+of the recorded run it did **not** exercise the policy-version-drift
+check: `EXPECTED_POLICY_VERSION` was unset in
+`examples/m2-kubernetes-enforcer/enforcer-deployment.yaml`, and the
+enforcer then skipped the comparison entirely. `CS-ADV-017` found that
+this was not merely a demo simplification but a deployment hazard — a
+signing key surviving a policy upgrade kept every unexpired grant from the
+obsolete policy set admissible — and the enforcer now defaults to the
+`POLICY_VERSION` bundled in its own image, with the environment variable
+demoted to an override. A rerun of the demo therefore exercises the drift
+check live (both sides are built from the same checkout, so the demo grant
+passes it); the recorded transcript predates that and should be read as
+such. The deny path for drift is covered by
 `packages/kubernetes-enforcer/tests/verify.test.ts` and
-`tests/integration/m2-grant-issuance-to-enforcement.test.ts`, not by the
-demo.
+`tests/integration/m2-grant-issuance-to-enforcement.test.ts`.
 
 ## Demo transcript
 
