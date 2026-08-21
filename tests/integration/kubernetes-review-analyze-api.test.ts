@@ -28,18 +28,14 @@ function request(sourceId: string, contractVersion: string): Request {
 
 describe("POST /api/reviews/analyze Kubernetes public replay", () => {
   it.each([
-    ["kubernetes-safe-scale", "LOW", false, "authored-synthetic"],
-    ["kubernetes-reduced-availability", "MEDIUM", false, "authored-synthetic"],
-    ["kubernetes-mutable-image-tag", "HIGH", false, "authored-synthetic"],
-    [
-      "kubernetes-selector-red-team",
-      "CRITICAL",
-      true,
-      "authored-red-team",
-    ],
+    ["scenario-q-safe-scale-up", "LOW", false, "authored-synthetic", "fix-q-safe-scale-up"],
+    ["scenario-r-partial-replica-reduction", "MEDIUM", false, "authored-synthetic", "fix-r-partial-replica-reduction"],
+    ["scenario-w-mutable-image-tag", "HIGH", false, "authored-synthetic", "fix-w-mutable-image-tag"],
+    ["scenario-m-selector-drift", "CRITICAL", true, "authored-synthetic", "fix-m-selector-drift"],
+    ["scenario-v-protected-config-change", "CRITICAL", true, "authored-synthetic", "fix-v-protected-config-change"],
   ] as const)(
     "evaluates %s as an offline simulated-state replay without decision authority",
-    async (sourceId, expectedRisk, expectedBlock, expectedProvenance) => {
+    async (sourceId, expectedRisk, expectedBlock, expectedProvenance, expectedFixtureId) => {
       const descriptor = KUBERNETES_REVIEW_EXAMPLES.find(
         (example) => example.sourceId === sourceId,
       );
@@ -72,7 +68,8 @@ describe("POST /api/reviews/analyze Kubernetes public replay", () => {
           classification: expectedProvenance,
           model: null,
           provider: null,
-          fixtureId: sourceId,
+          // The corpus's own distinct fixture id, not the scenario id.
+          fixtureId: expectedFixtureId,
         },
         effectCapability: { kind: "sandbox-simulation" },
       });

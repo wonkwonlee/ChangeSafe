@@ -337,8 +337,8 @@ and ephemeral: it evaluates but does not decide, simulate, or issue receipts.
   smuggling plus an invalid patch target, and — the most interesting — a
   change every policy passes that the sandbox still flags. Nine network
   scenarios, six adversarial, all nine failure modes covered. The corpus
-  since grew to 26 scenarios across all three domains (nine network, ten
-  kubernetes, seven terraform; 12 adversarial) — the generated scenario
+  since grew to 27 scenarios across all three domains (nine network, eleven
+  kubernetes, seven terraform; 13 adversarial) — the generated scenario
   gallery is the authoritative count.
 - **Scenario gallery.** `changesafe scenario gallery` generates
   `docs/SCENARIOS.md` including the failure-mode coverage table with gaps

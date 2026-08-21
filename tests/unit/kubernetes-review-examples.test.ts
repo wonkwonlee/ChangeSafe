@@ -19,22 +19,48 @@ import {
   REVIEW_CONTRACT_VERSION,
   ReviewExampleDescriptorSchema,
 } from "@/features/domains/review-contract";
+import { KUBERNETES_SCENARIOS } from "@/scenarios/kubernetes";
+
+/**
+ * Non-scenario sources the picker keeps deliberately. Each proves a structural
+ * property no narrative scenario in `scenarios/kubernetes/*` is shaped to
+ * exercise: presentation bounds, and pre-review rejection of a manifest kind
+ * outside the offline contract.
+ */
+const STRUCTURAL_FIXTURE_IDS = ["kubernetes-large-manifest-boundary"] as const;
 
 describe("Kubernetes review examples", () => {
-  it("publishes each supported fictional replay fixture exactly once", () => {
+  it("publishes every registered Kubernetes scenario plus the structural fixtures, exactly once", () => {
     const ids = KUBERNETES_REVIEW_EXAMPLES.map((example) => example.sourceId);
 
+    // The scenario corpus drives the picker: a scenario added to
+    // scenarios/kubernetes.ts must surface publicly with no change here.
     expect(ids).toEqual([
-      "kubernetes-safe-scale",
-      "kubernetes-reduced-availability",
-      "kubernetes-mutable-image-tag",
-      "kubernetes-protected-resource-change",
-      "kubernetes-selector-red-team",
-      "kubernetes-large-manifest-boundary",
+      ...KUBERNETES_SCENARIOS.map((scenario) => scenario.scenarioId),
+      ...STRUCTURAL_FIXTURE_IDS,
     ]);
+    expect(ids).toHaveLength(
+      KUBERNETES_SCENARIOS.length + STRUCTURAL_FIXTURE_IDS.length,
+    );
     expect(new Set(ids).size).toBe(ids.length);
     expect(KUBERNETES_PUBLIC_REPLAY_FIXTURES.map((fixture) => fixture.sourceId)).toEqual(ids);
-    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(7);
+    // Plus the unsupported source, which is a known id but never an example.
+    expect(KUBERNETES_PUBLIC_REPLAY_SOURCES).toHaveLength(ids.length + 1);
+  });
+
+  it("carries each scenario's own label and description", () => {
+    for (const scenario of KUBERNETES_SCENARIOS) {
+      const example = KUBERNETES_REVIEW_EXAMPLES.find(
+        (candidate) => candidate.sourceId === scenario.scenarioId,
+      );
+      expect(example, scenario.scenarioId).toBeDefined();
+      expect(example).toMatchObject({
+        label: scenario.label,
+        description: scenario.shortDescription,
+        // No docs/CASE_STUDIES.md case is a Kubernetes scenario yet.
+        caseStudy: null,
+      });
+    }
   });
 
   it("uses valid simulated-state public replay descriptors without durable authority", () => {
@@ -46,7 +72,6 @@ describe("Kubernetes review examples", () => {
         session: {
           domainShape: "simulated-state",
           runtimeMode: "public-replay",
-          source: "authored-fixture",
           analysisMode: "replay",
           capabilities: {
             sandboxSimulation: true,
@@ -60,91 +85,65 @@ describe("Kubernetes review examples", () => {
     }
   });
 
-  it("derives deterministic safe and blocked policy outcomes from the sole offline fixture source", () => {
-    const outcomes = KUBERNETES_PUBLIC_REPLAY_FIXTURES.map((fixture) => ({
-      sourceId: fixture.sourceId,
-      evaluation: evaluatePolicies(
-        kubernetesDomain,
-        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-        fixture.proposal,
-      ),
-      canonicalProposal: canonicalize(fixture.proposal),
-    }));
-
-    expect(outcomes).toMatchObject([
-      {
-        sourceId: "kubernetes-safe-scale",
-        evaluation: { riskLevel: "LOW" },
-      },
-      {
-        sourceId: "kubernetes-reduced-availability",
-        evaluation: { riskLevel: "MEDIUM" },
-      },
-      {
-        sourceId: "kubernetes-mutable-image-tag",
-        evaluation: { riskLevel: "HIGH" },
-      },
-      {
-        sourceId: "kubernetes-protected-resource-change",
-        evaluation: { riskLevel: "CRITICAL" },
-      },
-      {
-        sourceId: "kubernetes-selector-red-team",
-        evaluation: { riskLevel: "CRITICAL" },
-      },
-      {
-        sourceId: "kubernetes-large-manifest-boundary",
-      },
-    ]);
-    expect(outcomes[0]?.evaluation.findings.some((finding) => finding.status === "BLOCK")).toBe(false);
-    expect(outcomes[1]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_WORKLOAD_AVAILABILITY", status: "WARN" }),
-    );
-    expect(outcomes[2]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_MUTABLE_IMAGE", status: "WARN" }),
-    );
-    expect(outcomes[2]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_WORKLOAD_AVAILABILITY", status: "WARN" }),
-    );
-    expect(outcomes[3]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
-    );
-    expect(outcomes[4]?.evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_SERVICE_SELECTOR", status: "BLOCK" }),
-    );
-    for (const fixture of KUBERNETES_PUBLIC_REPLAY_FIXTURES) {
-      const freshlyDerived = deriveManifestProposal(
-        KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-        { documents: [...fixture.manifestDocuments] },
+  it("evaluates each scenario against its own snapshot and reproduces its declared contract", () => {
+    for (const scenario of KUBERNETES_SCENARIOS) {
+      const fixture = KUBERNETES_PUBLIC_REPLAY_FIXTURES.find(
+        (candidate) => candidate.sourceId === scenario.scenarioId,
       );
-      expect(canonicalize(freshlyDerived.proposal)).toBe(canonicalize(fixture.proposal));
+      expect(fixture, scenario.scenarioId).toBeDefined();
+      if (!fixture) continue;
+
+      // Each Kubernetes scenario carries its own snapshot; sharing one across
+      // the picker would silently evaluate a proposal against the wrong state.
+      expect(fixture.snapshot, scenario.scenarioId).toBe(scenario.input);
+      expect(fixture.inputId).toBe(scenario.input.snapshotId);
+
+      const evaluation = evaluatePolicies(
+        kubernetesDomain,
+        fixture.snapshot,
+        fixture.proposal,
+      );
+      // The corpus's expectations.json is the authority for the verdict; the
+      // public picker must not be able to show a different one.
+      expect(evaluation.riskLevel, scenario.scenarioId).toBe(
+        scenario.expectations.riskLevel,
+      );
+      for (const finding of evaluation.findings) {
+        expect(
+          scenario.expectations.policies[finding.policyId],
+          `${scenario.scenarioId}/${finding.policyId}`,
+        ).toBe(finding.status);
+      }
       expect(canonicalize(resolveKubernetesPublicReplayFixture(fixture.sourceId).proposal)).toBe(
-        outcomes.find((outcome) => outcome.sourceId === fixture.sourceId)?.canonicalProposal,
+        canonicalize(fixture.proposal),
       );
     }
   });
 
-  it("keeps authored provenance honest and rejects the unsupported adversarial source before a result exists", () => {
-    expect(KUBERNETES_REVIEW_EXAMPLES).toMatchObject([
-      { sourceId: "kubernetes-safe-scale", session: { provenance: "authored-synthetic" } },
-      {
-        sourceId: "kubernetes-reduced-availability",
-        session: { provenance: "authored-synthetic" },
-      },
-      {
-        sourceId: "kubernetes-mutable-image-tag",
-        session: { provenance: "authored-synthetic" },
-      },
-      {
-        sourceId: "kubernetes-protected-resource-change",
-        session: { provenance: "authored-synthetic" },
-      },
-      { sourceId: "kubernetes-selector-red-team", session: { provenance: "authored-red-team" } },
-      {
-        sourceId: "kubernetes-large-manifest-boundary",
-        session: { provenance: "authored-synthetic" },
-      },
-    ]);
+  it("restates the corpus's own provenance rather than inferring one", () => {
+    for (const scenario of KUBERNETES_SCENARIOS) {
+      const example = KUBERNETES_REVIEW_EXAMPLES.find(
+        (candidate) => candidate.sourceId === scenario.scenarioId,
+      );
+      const expected =
+        scenario.fixture.provenance === "captured"
+          ? "captured-replay"
+          : scenario.fixture.provenance === "authored_red_team"
+            ? "authored-red-team"
+            : "authored-synthetic";
+      expect(example?.session.provenance, scenario.scenarioId).toBe(expected);
+      expect(example?.session.source, scenario.scenarioId).toBe(
+        expected === "captured-replay" ? "bundled-replay" : "authored-fixture",
+      );
+      // An adversarial scenario may still ship an honestly authored proposal;
+      // provenance is never derived from the scenario's corpus flag.
+      if (scenario.fixture.provenance !== "captured") {
+        expect(example?.session.provenance).not.toBe("captured-replay");
+      }
+    }
+  });
+
+  it("rejects the unsupported adversarial source before a result exists", () => {
     expect(KUBERNETES_UNSUPPORTED_PUBLIC_REPLAY_SOURCE).toMatchObject({
       sourceId: "kubernetes-unsupported-secret",
       provenance: "authored-red-team",
@@ -160,39 +159,14 @@ describe("Kubernetes review examples", () => {
     ).toThrow(/unsupported/i);
   });
 
-  it("blocks a protected resource even when only its replica count changes", () => {
-    const fixture = KUBERNETES_PUBLIC_REPLAY_FIXTURES.find(
-      (candidate) => candidate.sourceId === "kubernetes-protected-resource-change",
-    );
-    expect(fixture).toBeDefined();
-    if (!fixture) return;
-
-    // The proposal touches exactly one Deployment, and the only material
-    // change in it is spec.replicas — not the protection annotation itself —
-    // so a passing evaluation here would mean protection only guards against
-    // losing the annotation, not against changing the spec at all.
-    expect(fixture.proposal.operations).toHaveLength(1);
-    const [operation] = fixture.proposal.operations;
-    expect(operation?.op).toBe("replace");
-
-    const evaluation = evaluatePolicies(
-      kubernetesDomain,
-      KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
-      fixture.proposal,
-    );
-    expect(evaluation.riskLevel).toBe("CRITICAL");
-    expect(evaluation.findings).toContainEqual(
-      expect.objectContaining({ policyId: "K8S_PROTECTED_RESOURCE", status: "BLOCK" }),
-    );
-  });
-
-  it("ships schema-valid large snapshot associations and a long manifest proposal", () => {
+  it("keeps the presentation-boundary fixture no scenario is large enough to replace", () => {
     const largeFixture = KUBERNETES_PUBLIC_REPLAY_FIXTURES.find(
       (fixture) => fixture.sourceId === "kubernetes-large-manifest-boundary",
     );
     expect(largeFixture).toBeDefined();
     if (!largeFixture) return;
 
+    expect(largeFixture.snapshot).toBe(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT);
     const workerResources = KUBERNETES_PUBLIC_REPLAY_SNAPSHOT.resources.filter(
       (resource) =>
         resource.identity.kind === "Deployment" &&
@@ -204,5 +178,25 @@ describe("Kubernetes review examples", () => {
       LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT,
     );
     expect(JSON.stringify(largeFixture.proposal).length).toBeGreaterThan(12_000);
+
+    // The corpus's Kubernetes scenarios are all single-operation, small-
+    // inventory narratives, so none of them exercises the paging bounds this
+    // fixture exists to prove.
+    for (const scenario of KUBERNETES_SCENARIOS) {
+      expect(scenario.proposal.operations.length).toBeLessThan(
+        LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT,
+      );
+      expect(scenario.input.resources.length).toBeLessThan(
+        LARGE_KUBERNETES_WORKLOAD_COUNT,
+      );
+    }
+
+    // The hand-authored fixture still derives through the production path.
+    const freshlyDerived = deriveManifestProposal(KUBERNETES_PUBLIC_REPLAY_SNAPSHOT, {
+      documents: [...(largeFixture.manifestDocuments ?? [])],
+    });
+    expect(canonicalize(freshlyDerived.proposal)).toBe(
+      canonicalize(largeFixture.proposal),
+    );
   });
 });

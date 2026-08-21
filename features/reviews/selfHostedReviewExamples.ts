@@ -1,5 +1,4 @@
 import { hashCanonical } from "@changesafe/core";
-import { normalizePlan } from "@changesafe/domain-terraform";
 
 import type { IncidentBundle } from "@changesafe/domain-network";
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "@/features/domains/terraform/fixtures";
@@ -77,10 +76,6 @@ export async function createSelfHostedIntake(
     ({ sourceId }) => sourceId === example.sourceId,
   );
   if (!fixture) throw new Error("The selected Terraform artifact is unavailable.");
-  const input = normalizePlan(fixture.plan, {
-    planId: fixture.inputId,
-    context: [...fixture.context],
-  });
   return {
     domainId: "terraform",
     source: {
@@ -92,8 +87,8 @@ export async function createSelfHostedIntake(
     },
     input: {
       inputId: fixture.inputId,
-      inputSha256: await hashCanonical(input),
-      content: input,
+      inputSha256: await hashCanonical(fixture.input),
+      content: fixture.input,
     },
   };
 }

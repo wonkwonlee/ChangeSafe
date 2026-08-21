@@ -12,7 +12,6 @@ import {
   importSigningKeyPair,
   importVerifyingKey,
 } from "@changesafe/core";
-import { normalizePlan } from "@changesafe/domain-terraform";
 import { Ledger } from "@changesafe/ledger";
 
 import { TERRAFORM_PUBLIC_REPLAY_FIXTURES } from "../../../features/domains/terraform/fixtures";
@@ -146,11 +145,12 @@ async function pendingBlockedNetworkReview(reviewId = "review-network-blocked") 
 }
 
 async function pendingTerraformReview(reviewId = "review-terraform-one") {
-  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES[0]!;
-  const content = normalizePlan(fixture.plan, {
-    planId: fixture.inputId,
-    context: [...fixture.context],
-  });
+  // A non-blocking plan: this exercise ends in an approver decision, which a
+  // BLOCKED review must refuse outright.
+  const fixture = TERRAFORM_PUBLIC_REPLAY_FIXTURES.find(
+    ({ sourceId }) => sourceId === "scenario-k-capacity-scale-up",
+  )!;
+  const content = fixture.input;
   return {
     reviewId,
     intake: {

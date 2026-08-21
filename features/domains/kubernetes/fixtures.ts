@@ -1,4 +1,4 @@
-import { DomainError } from "@changesafe/core";
+import { DomainError, type FixtureProvenance } from "@changesafe/core";
 import {
   KubernetesChangeProposalSchema,
   deriveManifestProposal,
@@ -6,6 +6,11 @@ import {
   type KubernetesChangeProposal,
   type KubernetesSnapshot,
 } from "@changesafe/domain-kubernetes/offline";
+
+import {
+  KUBERNETES_SCENARIOS,
+  type KubernetesScenarioDefinition,
+} from "../../../scenarios/kubernetes";
 
 export const LARGE_KUBERNETES_WORKLOAD_COUNT = 150;
 export const LARGE_KUBERNETES_PROPOSAL_OPERATION_COUNT = 10;
@@ -176,140 +181,6 @@ const rawSnapshot = {
   ],
 } as const;
 
-const safeScaleManifest = {
-  apiVersion: "apps/v1",
-  kind: "Deployment",
-  metadata: {
-    name: "web",
-    namespace: "demo",
-    labels: { app: "web", tier: "frontend" },
-    annotations: { "example.invalid/owner": "platform" },
-  },
-  spec: {
-    replicas: 3,
-    strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 1 } },
-    template: {
-      metadata: { labels: { app: "web" } },
-      spec: {
-        containers: [
-          {
-            name: "web",
-            image: "registry.example.invalid/web:v2",
-            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
-          },
-        ],
-      },
-    },
-  },
-} as const;
-
-const selectorBreakingManifest = {
-  ...safeScaleManifest,
-  spec: {
-    ...safeScaleManifest.spec,
-    template: {
-      ...safeScaleManifest.spec.template,
-      metadata: { labels: { app: "untrusted-replacement" } },
-    },
-  },
-} as const;
-
-/**
- * Reduces `web` from its captured 2 replicas to 1 with the image left
- * untouched, so this trips exactly one policy (`K8S_WORKLOAD_AVAILABILITY`
- * WARN) and lands at MEDIUM risk — the gate's middle path was previously
- * unreachable from this picker, which only ever exposed a clean LOW example
- * or a fully-blocked CRITICAL one.
- */
-const reducedAvailabilityManifest = {
-  apiVersion: "apps/v1",
-  kind: "Deployment",
-  metadata: {
-    name: "web",
-    namespace: "demo",
-    labels: { app: "web", tier: "frontend" },
-    annotations: { "example.invalid/owner": "platform" },
-  },
-  spec: {
-    replicas: 1,
-    strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 1 } },
-    template: {
-      metadata: { labels: { app: "web" } },
-      spec: {
-        containers: [
-          {
-            name: "web",
-            image: "registry.example.invalid/web:v1",
-            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
-          },
-        ],
-      },
-    },
-  },
-} as const;
-
-/**
- * Reduces `web` to 1 replica *and* swaps its pinned tag for `:latest`, so
- * this independently trips both `K8S_WORKLOAD_AVAILABILITY` and
- * `K8S_MUTABLE_IMAGE` — two WARNs, landing at HIGH risk without touching
- * privilege escalation or resource protection.
- */
-const mutableImageManifest = {
-  ...reducedAvailabilityManifest,
-  spec: {
-    ...reducedAvailabilityManifest.spec,
-    template: {
-      ...reducedAvailabilityManifest.spec.template,
-      spec: {
-        containers: [
-          {
-            name: "web",
-            image: "registry.example.invalid/web:latest",
-            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
-          },
-        ],
-      },
-    },
-  },
-} as const;
-
-/**
- * Bumps only `spec.replicas` on a resource annotated `changesafe.dev/protected:
- * true`. This is deliberately the smallest possible change — even a
- * single-replica increase is enough to trip K8S_PROTECTED_RESOURCE, because
- * Kubernetes has no delete operation and protection means the spec cannot
- * change at all, not "cannot be removed."
- */
-const protectedResourceChangeManifest = {
-  apiVersion: "apps/v1",
-  kind: "Deployment",
-  metadata: {
-    name: "pricing-engine",
-    namespace: "demo",
-    labels: { app: "pricing-engine", tier: "backend" },
-    annotations: {
-      "example.invalid/owner": "billing",
-      "changesafe.dev/protected": "true",
-    },
-  },
-  spec: {
-    replicas: 3,
-    strategy: { type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } },
-    template: {
-      metadata: { labels: { app: "pricing-engine" } },
-      spec: {
-        containers: [
-          {
-            name: "pricing-engine",
-            image: "registry.example.invalid/pricing-engine:v4",
-            securityContext: { allowPrivilegeEscalation: false, runAsUser: 1000 },
-          },
-        ],
-      },
-    },
-  },
-} as const;
-
 const unsupportedSecretManifest = {
   apiVersion: "v1",
   kind: "Secret",
@@ -323,18 +194,28 @@ export const KUBERNETES_PUBLIC_REPLAY_SNAPSHOT: KubernetesSnapshot =
 
 export interface KubernetesPublicReplayFixture {
   readonly kind: "replay";
-  readonly sourceId:
-    | "kubernetes-safe-scale"
-    | "kubernetes-reduced-availability"
-    | "kubernetes-mutable-image-tag"
-    | "kubernetes-selector-red-team"
-    | "kubernetes-large-manifest-boundary"
-    | "kubernetes-protected-resource-change";
+  readonly sourceId: string;
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
-  readonly provenance: "authored-synthetic" | "authored-red-team";
-  readonly manifestDocuments: readonly unknown[];
+  readonly provenance: "authored-synthetic" | "authored-red-team" | "captured-replay";
+  /** Non-null exactly when `provenance` is `captured-replay`, per `ReviewProposalProvenanceSchema`. */
+  readonly model: string | null;
+  /**
+   * The corpus's own distinct fixture identity (e.g. `fix-aa-...-red-team`)
+   * for scenario-derived fixtures; `sourceId` for the hand-authored
+   * structural fixture, which has no separate corpus fixture to name.
+   */
+  readonly fixtureId: string;
+  readonly notes: string | null;
+  /** The snapshot this proposal is evaluated against; scenarios carry their own. */
+  readonly snapshot: KubernetesSnapshot;
+  /**
+   * The manifest documents the proposal was derived from, for the hand-authored
+   * fixtures that build one. Null for scenario-derived fixtures, whose proposal
+   * is the corpus's own `replay-fixture.json` rather than a derivation.
+   */
+  readonly manifestDocuments: readonly unknown[] | null;
   readonly proposal: KubernetesChangeProposal;
 }
 
@@ -353,15 +234,53 @@ export type KubernetesPublicReplaySource =
   | KubernetesUnsupportedPublicReplaySource;
 
 /**
- * Every fixture evaluates against the one shared `KUBERNETES_PUBLIC_REPLAY_SNAPSHOT`
- * (there is no per-fixture state to replay against), so `inputId` is always
- * that snapshot's own id — never a per-fixture identifier. The server route
- * always echoes the snapshot's real id back regardless of which fixture was
- * requested, and the client's `expectedInputId` check requires exact
+ * The corpus declares each replay fixture's provenance itself; this only
+ * renames it into the review contract's vocabulary. Never infer provenance
+ * from a scenario being adversarial — an authored red-team *scenario* can
+ * still ship an honestly authored-synthetic proposal.
+ */
+export function reviewFixtureProvenance(
+  provenance: FixtureProvenance,
+): KubernetesPublicReplayFixture["provenance"] {
+  switch (provenance) {
+    case "captured":
+      return "captured-replay";
+    case "authored_synthetic":
+      return "authored-synthetic";
+    case "authored_red_team":
+      return "authored-red-team";
+  }
+}
+
+function scenarioFixture(
+  scenario: KubernetesScenarioDefinition,
+): KubernetesPublicReplayFixture {
+  return Object.freeze({
+    kind: "replay" as const,
+    sourceId: scenario.scenarioId,
+    inputId: scenario.inputId,
+    label: scenario.label,
+    description: scenario.shortDescription,
+    provenance: reviewFixtureProvenance(scenario.fixture.provenance),
+    model: scenario.fixture.model,
+    fixtureId: scenario.fixture.fixtureId,
+    notes: scenario.fixture.notes,
+    snapshot: scenario.input,
+    manifestDocuments: null,
+    // Already validated by `KubernetesReplayFixtureSchema` at corpus load.
+    proposal: scenario.fixture.proposal,
+  });
+}
+
+/**
+ * A hand-authored fixture evaluated against the shared
+ * `KUBERNETES_PUBLIC_REPLAY_SNAPSHOT`. `inputId` is that snapshot's own id —
+ * never a per-fixture identifier. The route echoes the evaluated snapshot's
+ * real id back and the client's `expectedInputId` check requires exact
  * equality, so a per-fixture `inputId` here would make every replay fail.
  */
 function deriveFixture(
-  sourceId: KubernetesPublicReplayFixture["sourceId"],
+  sourceId: string,
   label: string,
   description: string,
   provenance: KubernetesPublicReplayFixture["provenance"],
@@ -380,48 +299,29 @@ function deriveFixture(
     label,
     description,
     provenance,
+    // Every `deriveFixture` call site is hand-authored, never captured.
+    model: null,
+    // Not corpus-derived, so there is no separate fixture identity to carry.
+    fixtureId: sourceId,
+    notes: null,
+    snapshot: KUBERNETES_PUBLIC_REPLAY_SNAPSHOT,
     manifestDocuments,
     proposal,
   });
 }
 
+/**
+ * Every fictional Kubernetes state the public workbench can replay.
+ *
+ * The scenario corpus (`scenarios/kubernetes/*`) is the content: adding a
+ * scenario there surfaces it here with no change to this file. The one
+ * remaining hand-authored replay fixture is structural rather than narrative —
+ * it proves bounded, searchable presentation past `MAX_VISIBLE_OFFLINE_ITEMS`,
+ * which no scenario is large enough to exercise.
+ */
 export const KUBERNETES_PUBLIC_REPLAY_FIXTURES: readonly KubernetesPublicReplayFixture[] =
   Object.freeze([
-    deriveFixture(
-      "kubernetes-safe-scale",
-      "Safe web scale-up",
-      "A fictional offline Deployment scale-up evaluated in the Kubernetes sandbox.",
-      "authored-synthetic",
-      [safeScaleManifest],
-    ),
-    deriveFixture(
-      "kubernetes-reduced-availability",
-      "Reduced availability",
-      "A fictional replica reduction on an existing Deployment — one warning, MEDIUM risk, and still approvable.",
-      "authored-synthetic",
-      [reducedAvailabilityManifest],
-    ),
-    deriveFixture(
-      "kubernetes-mutable-image-tag",
-      "Mutable image tag",
-      "A fictional move to an unpinned :latest tag combined with a replica reduction — two independent warnings, HIGH risk.",
-      "authored-synthetic",
-      [mutableImageManifest],
-    ),
-    deriveFixture(
-      "kubernetes-protected-resource-change",
-      "Protected resource change",
-      "A fictional single-replica bump on a Deployment annotated changesafe.dev/protected: true — protection means the spec cannot change at all, not just that it cannot be removed.",
-      "authored-synthetic",
-      [protectedResourceChangeManifest],
-    ),
-    deriveFixture(
-      "kubernetes-selector-red-team",
-      "Service selector break",
-      "A fictional red-team manifest that leaves the existing Service selector without a workload match.",
-      "authored-red-team",
-      [selectorBreakingManifest],
-    ),
+    ...KUBERNETES_SCENARIOS.map(scenarioFixture),
     deriveFixture(
       "kubernetes-large-manifest-boundary",
       "Large manifest boundary",

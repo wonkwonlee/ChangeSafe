@@ -29,8 +29,8 @@ const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
     mainName: "Terraform review canvas",
     contextName: "Terraform review context",
     authorityName: "Terraform review authority",
-    initialOutcomeName: "Safe scale-up",
-    blockedExampleName: /Protected resource with injected PR text/,
+    initialOutcomeName: "CHG-2340 — Scale up the checkout worker instance",
+    blockedExampleName: /Retire an idle billing database replica/,
     evidenceHeading: "Resources and actions",
     tableName: "Terraform resource changes",
     tableColumnCount: 4,
@@ -40,8 +40,8 @@ const PUBLIC_WORKBENCHES: readonly PublicWorkbench[] = [
     mainName: "Kubernetes review canvas",
     contextName: "Kubernetes review context",
     authorityName: "Kubernetes review authority",
-    initialOutcomeName: "Safe web scale-up",
-    blockedExampleName: /Service selector break/,
+    initialOutcomeName: "CHG-3201 — Scale up the product-catalog Deployment",
+    blockedExampleName: /Relabel the payments Deployment/,
     evidenceHeading: "Current snapshot relationships",
     tableName: "Kubernetes Service selector relationships",
     tableColumnCount: 3,
@@ -260,6 +260,9 @@ test("keeps large Kubernetes inventory, nested selector matches, and proposal op
   page,
 }) => {
   await page.goto("/workbench/kubernetes");
+  // Every scenario carries its own small snapshot, so the large inventory is
+  // reachable only through the fixture authored to exercise these bounds.
+  await page.getByRole("button", { name: /Large manifest boundary/ }).click();
 
   await expect(
     page.getByText("Showing 1–8 of 154 resources."),
@@ -288,9 +291,6 @@ test("keeps large Kubernetes inventory, nested selector matches, and proposal op
     }),
   ).toBeVisible();
 
-  await page
-    .getByRole("button", { name: /Large manifest boundary/ })
-    .click();
   await expect(
     page.getByText("Showing 1–8 of 10 operations."),
   ).toBeVisible();

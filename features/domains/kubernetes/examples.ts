@@ -43,7 +43,12 @@ export const KUBERNETES_REVIEW_EXAMPLES: readonly ReviewExampleDescriptor[] =
           domainShape: kubernetesMetadata.domainShape,
           capabilities: publicReplayCapabilities,
           runtimeMode: "public-replay",
-          source: "authored-fixture",
+          // Provenance is the corpus's own declaration; a captured proposal
+          // must never be presented as an authored fixture, or the reverse.
+          source:
+            fixture.provenance === "captured-replay"
+              ? "bundled-replay"
+              : "authored-fixture",
           analysisMode: "replay",
           provenance: fixture.provenance,
         },

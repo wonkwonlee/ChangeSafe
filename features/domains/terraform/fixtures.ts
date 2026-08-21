@@ -1,23 +1,9 @@
-import destroysDatabasePlan from "../../../packages/domain-terraform/tests/fixtures/destroys-database.tfplan.json";
-import protectedAndInjectedPlan from "../../../packages/domain-terraform/tests/fixtures/protected-and-injected.tfplan.json";
-import safeScaleUpPlan from "../../../packages/domain-terraform/tests/fixtures/safe-scale-up.tfplan.json";
-import injectedPrContextIncident from "../../../scenarios/terraform/scenario-p-injected-pr-context/incident.json";
+import { normalizePlan, type TerraformInput } from "@changesafe/domain-terraform";
 
-import type { NormalizeOptions } from "@changesafe/domain-terraform";
-
-import { INJECTED_PULL_REQUEST_BODY } from "./injected-pr-body";
-
-/**
- * `scenario-p-injected-pr-context` is Case 3 in `docs/CASE_STUDIES.md`, so
- * this fixture uses the scenario's own canonical `incident.json` (its
- * `context` field destructured off, matching `scenarios/domains.ts` and
- * `packages/cli/src/scenario.ts`) rather than a hand-duplicated plan —
- * `terraform-protected-and-injected` above is a thematically similar but
- * distinct fixture and stays untouched; citing the wrong one here would be
- * a provenance-honesty problem, not a simplification.
- */
-const { context: injectedPrContextContext, ...injectedPrContextPlan } =
-  injectedPrContextIncident as { context?: { kind: string; text: string }[] } & Record<string, unknown>;
+import {
+  TERRAFORM_SCENARIOS,
+  type TerraformScenarioDefinition,
+} from "../../../scenarios/terraform";
 
 export const LARGE_TERRAFORM_CHANGE_COUNT = 10;
 
@@ -63,85 +49,73 @@ const largeBoundaryPlan = Object.freeze({
 });
 
 /**
- * Fictional Terraform plans used by the public replay workbench.
+ * A public replay entry point for the Terraform workbench: an already-normalized
+ * fictional plan plus the provenance the UI must state about it.
  *
- * The plans deliberately remain in the Terraform package test-fixture
- * directory so the package and showcase consume one immutable source rather
- * than carrying duplicated JSON that could drift. They are never uploaded,
- * fetched, or executed: this registry only exposes bundled replay inputs.
+ * The normalized `input` is the single authority for both the picker and
+ * `app/api/reviews/analyze/route.ts`, so the client's `expectedInputId` check
+ * compares two views of the same value rather than two independent
+ * normalizations that could drift.
  */
 export interface TerraformPublicReplayFixture {
-  readonly sourceId:
-    | "terraform-safe-scale-up"
-    | "terraform-destroys-database"
-    | "terraform-protected-and-injected"
-    | "terraform-large-plan-boundary"
-    | "scenario-p-injected-pr-context";
+  readonly sourceId: string;
   readonly inputId: string;
   readonly label: string;
   readonly description: string;
   readonly provenance: "authored-synthetic" | "authored-red-team";
-  readonly plan: unknown;
-  readonly context: ReadonlyArray<
-    Readonly<NonNullable<NormalizeOptions["context"]>[number]>
-  >;
+  readonly input: TerraformInput;
 }
 
+/**
+ * Terraform is external-diff, so a scenario carries no replay fixture whose
+ * provenance could be read. `corpus.adversarial` is the corpus's own honest
+ * declaration of whether the plan was authored as a red-team artifact.
+ */
+export function scenarioReplayProvenance(
+  scenario: TerraformScenarioDefinition,
+): TerraformPublicReplayFixture["provenance"] {
+  return scenario.expectations.corpus.adversarial
+    ? "authored-red-team"
+    : "authored-synthetic";
+}
+
+function scenarioFixture(
+  scenario: TerraformScenarioDefinition,
+): TerraformPublicReplayFixture {
+  return Object.freeze({
+    sourceId: scenario.scenarioId,
+    inputId: scenario.inputId,
+    label: scenario.label,
+    description: scenario.shortDescription,
+    provenance: scenarioReplayProvenance(scenario),
+    input: scenario.input,
+  });
+}
+
+/**
+ * Every fictional Terraform plan the public workbench can replay.
+ *
+ * The scenario corpus (`scenarios/terraform/*`) is the content: adding a
+ * scenario there surfaces it here with no change to this file. The one
+ * remaining hand-authored fixture is structural rather than narrative: every
+ * one of its changes carries an oversized value, which is what forces the
+ * per-value JSON preview to truncate. `scenario-t-blast-radius-drift` already
+ * pushes past `MAX_VISIBLE_OFFLINE_ITEMS` on change *count*, but its
+ * individual values are small, so the two bounds are proven by different
+ * inputs. None of these are ever uploaded, fetched, or executed.
+ */
 export const TERRAFORM_PUBLIC_REPLAY_FIXTURES: readonly TerraformPublicReplayFixture[] =
   Object.freeze([
-    Object.freeze({
-      sourceId: "terraform-safe-scale-up",
-      inputId: "terraform-safe-scale-up",
-      label: "Safe scale-up",
-      description:
-        "A fictional three-resource capacity increase derived from a bundled Terraform plan.",
-      provenance: "authored-synthetic",
-      plan: safeScaleUpPlan,
-      context: [],
-    }),
-    Object.freeze({
-      sourceId: "terraform-destroys-database",
-      inputId: "terraform-destroys-database",
-      label: "Database destroy",
-      description:
-        "A fictional Terraform plan that deletes a database and must be blocked by deterministic policy.",
-      provenance: "authored-synthetic",
-      plan: destroysDatabasePlan,
-      context: [],
-    }),
-    Object.freeze({
-      sourceId: "terraform-protected-and-injected",
-      inputId: "terraform-protected-and-injected",
-      label: "Protected resource with injected PR text",
-      description:
-        "A fictional red-team plan that replaces protected storage while its bundled PR text attempts to influence review.",
-      provenance: "authored-red-team",
-      plan: protectedAndInjectedPlan,
-      context: Object.freeze([
-        Object.freeze({
-          kind: "pull request body",
-          text: INJECTED_PULL_REQUEST_BODY,
-        }),
-      ]),
-    }),
+    ...TERRAFORM_SCENARIOS.map(scenarioFixture),
     Object.freeze({
       sourceId: "terraform-large-plan-boundary",
       inputId: "terraform-large-plan-boundary",
       label: "Large plan boundary",
       description:
         "A fictional 10-change plan with large values that proves bounded, searchable external-diff presentation.",
-      provenance: "authored-synthetic",
-      plan: largeBoundaryPlan,
-      context: [],
-    }),
-    Object.freeze({
-      sourceId: "scenario-p-injected-pr-context",
-      inputId: "scenario-p-injected-pr-context",
-      label: "Protected billing database",
-      description:
-        "CHG-2422 — a fictional cleanup PR destroys a protected billing database; its description urges skipping review.",
-      provenance: "authored-red-team",
-      plan: injectedPrContextPlan,
-      context: Object.freeze(injectedPrContextContext ?? []),
+      provenance: "authored-synthetic" as const,
+      input: normalizePlan(largeBoundaryPlan, {
+        planId: "terraform-large-plan-boundary",
+      }),
     }),
   ]);

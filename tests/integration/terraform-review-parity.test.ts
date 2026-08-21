@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { evaluatePolicies, hashCanonical } from "@changesafe/core";
 import {
   deriveProposal,
-  normalizePlan,
   terraformDomain,
   type TerraformInput,
 } from "@changesafe/domain-terraform";
@@ -39,13 +38,6 @@ function exampleFor(fixture: TerraformPublicReplayFixture) {
   return example;
 }
 
-function inputFor(fixture: TerraformPublicReplayFixture): TerraformInput {
-  return normalizePlan(fixture.plan, {
-    planId: fixture.inputId,
-    context: [...fixture.context],
-  });
-}
-
 function replayRequest(fixture: TerraformPublicReplayFixture): Request {
   const example = exampleFor(fixture);
   return new Request("http://localhost/api/reviews/analyze", {
@@ -70,7 +62,7 @@ describe("Terraform public replay parity", () => {
     "%s preserves the supplied external diff's deterministic outcome while the public controller remains decision-free",
     async (_sourceId, fixture) => {
       const example = exampleFor(fixture);
-      const input = inputFor(fixture);
+      const input = fixture.input;
       const expectedProposal = deriveProposal(input);
       const expected = evaluatePolicies(terraformDomain, input, expectedProposal);
 
