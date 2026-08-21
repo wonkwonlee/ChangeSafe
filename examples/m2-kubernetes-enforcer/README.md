@@ -3,9 +3,15 @@
 Two ValidatingWebhookConfigurations implement Spec Decision 4's two-tier
 failurePolicy:
 
-- `webhook-protected.yaml` (`failurePolicy: Fail`) — resources the
-  `K8S_PROTECTED_RESOURCE` policy already tracks via the
-  `changesafe.dev/protected: "true"` annotation.
+- `webhook-protected.yaml` (`failurePolicy: Fail`) — every CREATE/UPDATE
+  in a **namespace labeled `changesafe.dev/tier: protected`**. This is the
+  routing condition, and the only one: Kubernetes' `objectSelector` matches
+  labels, not annotations, so the `changesafe.dev/protected: "true"`
+  annotation the `K8S_PROTECTED_RESOURCE` policy tracks cannot route a
+  request by itself (see "Two open problems" below). An annotated workload
+  in an *unlabeled* namespace is therefore **not** fail-closed — it routes
+  to the default webhook and is admitted if the enforcer is down. Operators
+  must label the namespaces that hold protected resources.
 - `webhook-default.yaml` (`failurePolicy: Ignore`) — everything else.
 
 **Status: run and verified against a real kind cluster** (`kind v0.32.0`,
