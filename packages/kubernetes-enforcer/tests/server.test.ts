@@ -132,6 +132,66 @@ describe("createEnforcerServer", () => {
     expect(body.response.allowed).toBe(true);
   });
 
+  it("honours a valid grant exactly once, and a denied attempt does not consume it (CS-ADV-018)", async () => {
+    // A CREATE grant has no prior state or uid to bind, DELETE is not
+    // webhook-registered, and verification is stateless — so without
+    // use-state, delete + resubmit the identical grant-bearing manifest
+    // would ALLOW again for as long as the grant lives.
+    const pem = await generateSigningKeyPair();
+    const keyPair = await importSigningKeyPair(pem.privateKeyPem);
+    const verifying = await importVerifyingKey(pem.publicKeyPem);
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: "grant-test-create-0001",
+      receiptId: "rcpt-test-0001",
+      authorizedActor: "system:serviceaccount:ops:changesafe-applier",
+      operation: "CREATE",
+      resource: RESOURCE_ID,
+      objectSha256: await objectHashOf(RESOURCE),
+      policyVersion: "kubernetes-v0.2.0",
+      issuedAtUtc: "2026-08-19T12:00:00.000Z",
+      expiresAtUtc: "2026-08-19T13:00:00.000Z",
+    });
+    const signed = await signGrant(grant, keyPair, { signedAtUtc: "2026-08-19T12:00:00.000Z" });
+
+    server = createEnforcerServer({
+      trustedPublicKey: verifying,
+      now: () => new Date("2026-08-19T12:30:00.000Z"),
+      readGrant: (request) => {
+        const header = request.headers["x-changesafe-grant"];
+        return typeof header === "string" ? JSON.parse(header) : null;
+      },
+    });
+    const base = await listen(server);
+    const create = (uid: string, object: unknown) =>
+      fetch(`${base}/validate`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-changesafe-grant": JSON.stringify(signed) },
+        body: JSON.stringify({
+          apiVersion: "admission.k8s.io/v1",
+          kind: "AdmissionReview",
+          request: {
+            uid,
+            operation: "CREATE",
+            userInfo: { username: "system:serviceaccount:ops:changesafe-applier", groups: [] },
+            object,
+          },
+        }),
+      }).then((r) => r.json() as Promise<{ response: { allowed: boolean; status?: { message: string } } }>);
+
+    // A mismatching object is denied on its merits and must NOT burn the grant.
+    const mistyped = await create("req-0", { ...RESOURCE, spec: { replicas: 99 } });
+    expect(mistyped.response.allowed).toBe(false);
+    expect(mistyped.response.status?.message).not.toMatch(/already been exercised/);
+
+    const first = await create("req-1", RESOURCE);
+    expect(first.response.allowed).toBe(true);
+
+    // The replay: object deleted out-of-band, identical manifest + grant resubmitted.
+    const replay = await create("req-2", RESOURCE);
+    expect(replay.response.allowed).toBe(false);
+    expect(replay.response.status?.message).toMatch(/already been exercised/);
+  });
+
   it("denies when no grant is attached", async () => {
     server = createEnforcerServer({
       trustedPublicKey: (await importVerifyingKey((await generateSigningKeyPair()).publicKeyPem)),

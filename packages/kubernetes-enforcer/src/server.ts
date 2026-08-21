@@ -9,6 +9,7 @@ import {
   buildAdmissionReviewResponse,
   type AdmissionReviewRequest,
 } from "./admission-review";
+import { createInMemoryGrantUseRegistry, type GrantUseRegistry } from "./use-state";
 import { verifyGrantAgainstAdmission } from "./verify";
 
 // kube-apiserver's own `--max-request-bytes` defaults to 3 MiB per request,
@@ -58,6 +59,14 @@ export interface EnforcerServerOptions {
    * `readGrant` implementations should read `review.request.object`.
    */
   readGrant: (request: IncomingMessage, review: AdmissionReviewRequest) => unknown | null;
+  /**
+   * Where exercised grants are recorded so a grant is honoured at most once
+   * (CS-ADV-018). Defaults to a process-local in-memory registry, created
+   * once per listener; see `use-state.ts` for what that does and does not
+   * cover. Inject a shared/durable implementation for multi-replica
+   * deployments.
+   */
+  grantUses?: GrantUseRegistry;
 }
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
@@ -90,8 +99,14 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 export function createEnforcerRequestListener(
   options: EnforcerServerOptions,
 ): (request: IncomingMessage, response: ServerResponse) => void {
+  // One registry per listener, not per request: the whole point is that
+  // the record outlives the request that created it.
+  const resolved: EnforcerServerOptions = {
+    ...options,
+    grantUses: options.grantUses ?? createInMemoryGrantUseRegistry(),
+  };
   return (request, response) => {
-    void handle(request, response, options).catch(() => {
+    void handle(request, response, resolved).catch(() => {
       send(response, 500, { error: "internal error" });
     });
   };
@@ -186,14 +201,29 @@ async function handle(
     { expectedPolicyVersion: options.expectedPolicyVersion },
   );
 
-  send(
-    response,
-    200,
-    buildAdmissionReviewResponse(
-      review.request.uid,
-      outcome.allowed ? { allowed: true } : { allowed: false, message: outcome.reason },
-    ),
-  );
+  // Use-state is checked LAST, and only on an otherwise-valid grant, so a
+  // denied attempt never consumes anything: a mistyped patch must not burn
+  // the human decision it was trying to exercise. On ALLOW the grant is
+  // consumed in the same synchronous step that decides the answer, so two
+  // concurrent attempts cannot both see it unused (Node's event loop makes
+  // consume() atomic within this process — the registry's documented
+  // scope). `grantUses` is always set by createEnforcerRequestListener;
+  // the fallback only exists for direct callers of handle() in tests.
+  const result =
+    !outcome.allowed
+      ? { allowed: false as const, message: outcome.reason }
+      : (options.grantUses ?? createInMemoryGrantUseRegistry()).consume(
+            signedGrant.grant.grantId,
+            Date.parse(signedGrant.grant.expiresAtUtc),
+            options.now().getTime(),
+          )
+        ? { allowed: true as const }
+        : {
+            allowed: false as const,
+            message: "grant has already been exercised; a grant authorizes exactly one admission",
+          };
+
+  send(response, 200, buildAdmissionReviewResponse(review.request.uid, result));
 }
 
 /** Best-effort `request.uid` from a body that failed schema validation. */

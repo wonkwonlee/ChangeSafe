@@ -1945,3 +1945,98 @@ policies but keeps running an older enforcer image gets the *opposite*
 failure — new grants denied as drifted — which is the safe direction, and
 the startup log line makes the bound version visible, but it is still an
 operational coupling worth stating in deployment docs when those exist.
+
+## Finding CS-ADV-018
+
+### Hypothesis
+
+One human decision authorizes one admission. A grant cannot be exercised
+again after the object it created has been deleted.
+
+### Attack surface
+
+- `packages/kubernetes-enforcer/src/server.ts` (stateless request handling)
+- `packages/core/src/grant.ts` (CREATE grants carry no prior-state or uid binding — correctly)
+- `examples/m2-kubernetes-enforcer/webhook-*.yaml` (DELETE unregistered)
+
+### Method
+
+Found by external review (Codex, on PR #75), immediately after
+`CS-ADV-016`/`017` landed. Verified against the code: a CREATE grant's
+only bindings are actor, operation, resource, object hash, policy
+version, and expiry — every one of which is identical between the first
+CREATE and a re-CREATE of the same manifest. `verifyGrantAgainstAdmission`
+keeps no state across calls, and nothing on the request distinguishes
+the two.
+
+### Minimal reproducer
+
+`packages/kubernetes-enforcer/tests/server.test.ts`, "honours a valid
+grant exactly once, and a denied attempt does not consume it
+(CS-ADV-018)" — posts the same valid CREATE grant twice through the real
+server: first ALLOW, second DENY. Verified to fail (second ALLOW) with the
+use-state check disabled.
+
+### Expected invariant
+
+A signed grant is honoured at most once.
+
+### Observed behavior
+
+An actor allowed to delete the resource (DELETE is deliberately outside
+the webhook) could delete it and resubmit the identical grant-bearing
+manifest; every check passed again, for every incarnation, until expiry.
+
+### Severity
+
+High in principle — it is exactly the replay the M2 attack list names —
+bounded in practice by the grant's lifetime and by the actor needing
+delete rights on a protected resource. `CS-ADV-016` closed the analogous
+UPDATE path by binding the incarnation; CREATE cannot be closed that way
+because at issuance there is no incarnation to bind.
+
+### Root cause
+
+Use-state was deliberately left out of the base grant shape, to be added
+only on a demonstrated counterexample. This is the counterexample: for
+CREATE, exact-binding has nothing incarnation-specific to bind, so
+exact-binding alone cannot distinguish first use from replay.
+
+### Fix
+
+`GrantUseRegistry` (`use-state.ts`): `createEnforcerRequestListener`
+creates one per listener (injectable via `EnforcerServerOptions.grantUses`),
+and `handle()` consumes the `grantId` in the same synchronous step that
+decides ALLOW — after every other check, so a denied attempt never burns
+the decision it was trying to exercise. Records are keyed by the signed
+`grantId` and dropped once the grant's own `expiresAtUtc` passes, when
+verification would refuse it anyway, so memory stays bounded. Applied to
+all operations for one uniform rule; for UPDATE it is already implied by
+the prior-state binding. No infrastructure write: the record is the
+enforcer's own memory, never a cluster object.
+
+### Regression test
+
+The reproducer above, plus `tests/use-state.test.ts` (single consumption,
+independence across ids, expiry-bounded forgetting, atomicity under a
+burst of identical attempts).
+
+### What this changed in the architecture
+
+The enforcer is no longer stateless: it holds a small, bounded,
+process-local record of exercised grants. One new optional option and one
+new exported interface; verification itself (`verify.ts`) is unchanged
+and still pure.
+
+### Remaining uncertainty
+
+The default registry is process-local. An enforcer restart, or a
+multi-replica deployment without a shared registry, reopens the window
+for a grant's remaining lifetime — strictly narrower than before, and
+stated in the code rather than implied away, but not closed. A durable,
+replica-shared use-state (ledger-backed, or the enforcer consulting the
+issuer) is the deferred design item this finding promotes from "if ever"
+to "when." The other edge is deliberate: an ALLOW the API server then
+fails to persist has still consumed the grant, so the caller needs a
+fresh decision — a false DENY, consistent with ALLOW not being a
+persistence attestation (`docs/M2_TECHNICAL_NOTE.md`).

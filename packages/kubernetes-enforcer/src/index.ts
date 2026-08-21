@@ -5,6 +5,8 @@
  */
 export { createEnforcerServer, createEnforcerRequestListener } from "./server";
 export type { EnforcerServerOptions } from "./server";
+export { createInMemoryGrantUseRegistry } from "./use-state";
+export type { GrantUseRegistry } from "./use-state";
 export { verifyGrantAgainstAdmission, kubernetesObjectSha256, GRANT_ANNOTATION } from "./verify";
 export type { VerifyOptions, VerifyOutcome } from "./verify";
 export {

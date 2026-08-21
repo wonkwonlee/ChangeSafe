@@ -101,9 +101,16 @@ an audit gap. This was an explicit design decision
 "Explicitly deferred"), not something missed: the M2 design spec treats
 grants-in-the-ledger as a candidate future attack case, to be built only if
 a real counterexample (not a hypothetical one) demonstrates the audit gap
-matters in practice. The same document explicitly defers nonce/use-state/
-revocation beyond the base signature-plus-expiry-plus-exact-binding shape,
-and explicitly rejects (not merely defers) a ChangeSafe-owned identity or
+matters in practice. The same document deferred nonce/use-state/
+revocation beyond the base signature-plus-expiry-plus-exact-binding shape
+"until an attack case demonstrates replay the base shape cannot catch" —
+and one did: a CREATE grant, having by definition no prior state or
+resource uid to bind, could be exercised again after an out-of-band delete
+(`CS-ADV-018`). The enforcer now honours each `grantId` at most once per
+process (`packages/kubernetes-enforcer/src/use-state.ts`); a durable,
+replica-shared use-state remains the deferred design item, and the
+process-local scope is stated in that file rather than glossed. The spec
+explicitly rejects (not merely defers) a ChangeSafe-owned identity or
 claims system — grant identity is Kubernetes' own `AdmissionReview`
 `userInfo`, nothing new was introduced.
 
