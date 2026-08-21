@@ -246,10 +246,9 @@ this was not merely a demo simplification but a deployment hazard — a
 signing key surviving a policy upgrade kept every unexpired grant from the
 obsolete policy set admissible — and the enforcer now defaults to the
 `POLICY_VERSION` bundled in its own image, with the environment variable
-demoted to an override. A rerun of the demo therefore exercises the drift
-check live (both sides are built from the same checkout, so the demo grant
-passes it); the recorded transcript predates that and should be read as
-such. The deny path for drift is covered by
+demoted to an override. The demo was re-run after that change, so the
+check is live in the recorded transcript (both sides are built from the same
+checkout, so the demo grant passes it). The deny path for drift is covered by
 `packages/kubernetes-enforcer/tests/verify.test.ts` and
 `tests/integration/m2-grant-issuance-to-enforcement.test.ts`.
 

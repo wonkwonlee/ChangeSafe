@@ -25,7 +25,12 @@ builds and loads the enforcer image, stands up the cluster, deploys the
 enforcer behind TLS, registers both webhooks, and runs all three demo steps
 below against a real Kubernetes API server — no piece of it is simulated.
 The full transcript from an actual run is in `demo-transcript.txt` in this
-directory; the excerpts below are taken directly from it.
+directory; the excerpts below are taken directly from it. The transcript was
+re-recorded after the CREATE-enforcement bootstrap reordering (`CS-ADV-012`)
+and the prior-state, resource-uid, and live policy-version bindings
+(`CS-ADV-014`, `CS-ADV-016`, `CS-ADV-017`), so the step-1 grant it shows
+carries `oldObjectSha256` and `resourceUid` and passes a drift check that
+is actually running.
 
 ## Two open problems, resolved empirically
 
@@ -140,7 +145,7 @@ and, separately, an unprotected one:
 $ kubectl -n changesafe-system scale deploy/changesafe-enforcer --replicas=0
 deployment.apps/changesafe-enforcer scaled
 $ kubectl -n changesafe-protected-demo patch deployment web --type=merge -p '{"spec":{"replicas":6}}'
-Error from server (InternalError): Internal error occurred: failed calling webhook "protected.enforcer.changesafe.dev": failed to call webhook: Post "https://changesafe-enforcer.changesafe-system.svc:8443/validate?timeout=10s": dial tcp 10.96.252.95:8443: connect: connection refused
+Error from server (InternalError): Internal error occurred: failed calling webhook "protected.enforcer.changesafe.dev": failed to call webhook: Post "https://changesafe-enforcer.changesafe-system.svc:8443/validate?timeout=10s": dial tcp 10.96.153.92:8443: connect: connection refused
 $ kubectl -n changesafe-default-demo patch deployment web --type=merge -p {"spec":{"replicas":6}}
 deployment.apps/web patched
 changesafe-default-demo/web replicas: 6 (expected 6 — allowed, failurePolicy: Ignore)

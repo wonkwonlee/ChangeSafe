@@ -23,14 +23,17 @@ $ docker build -f /Users/Wonkwon/orca/workspaces/ChangeSafe/main/packages/kubern
 #0 building with "desktop-linux" instance using docker driver
 
 #1 [internal] load build definition from Dockerfile
-#1 transferring dockerfile: 1.64kB done
+#1 transferring dockerfile: 1.64kB 0.0s done
 #1 DONE 0.0s
 
-#2 [auth] library/node:pull token for registry-1.docker.io
-#2 DONE 0.0s
+#2 [internal] load metadata for docker.io/library/node:22-slim
+#2 ...
 
-#3 [internal] load metadata for docker.io/library/node:22-slim
-#3 DONE 0.5s
+#3 [auth] library/node:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:22-slim
+#2 DONE 0.6s
 
 #4 [internal] load .dockerignore
 #4 transferring context: 2B done
@@ -40,77 +43,110 @@ $ docker build -f /Users/Wonkwon/orca/workspaces/ChangeSafe/main/packages/kubern
 #5 DONE 0.0s
 
 #6 [internal] load build context
-#6 transferring context: 319.62kB 0.0s done
-#6 DONE 0.0s
+#6 transferring context: 444.47kB 0.1s done
+#6 DONE 0.1s
 
-#7 [build 16/20] COPY scripts scripts
+#7 [build  2/20] WORKDIR /repo
 #7 CACHED
 
-#8 [build  9/20] COPY packages/ai/package.json packages/ai/package.json
-#8 CACHED
+#8 [build  3/20] COPY package.json package-lock.json ./
+#8 DONE 0.0s
 
-#9 [build 10/20] COPY packages/ledger/package.json packages/ledger/package.json
-#9 CACHED
+#9 [build  4/20] COPY packages/core/package.json packages/core/package.json
+#9 DONE 0.0s
 
-#10 [build 12/20] COPY packages/cli/package.json packages/cli/package.json
-#10 CACHED
+#10 [build  5/20] COPY packages/domain-network/package.json packages/domain-network/package.json
+#10 DONE 0.0s
 
-#11 [build 14/20] RUN npm ci
-#11 CACHED
+#11 [build  6/20] COPY packages/domain-terraform/package.json packages/domain-terraform/package.json
+#11 DONE 0.0s
 
-#12 [build 17/20] COPY packages/core packages/core
-#12 CACHED
+#12 [build  7/20] COPY packages/domain-kubernetes/package.json packages/domain-kubernetes/package.json
+#12 DONE 0.0s
 
-#13 [build  6/20] COPY packages/domain-terraform/package.json packages/domain-terraform/package.json
-#13 CACHED
+#13 [build  8/20] COPY packages/kubernetes-enforcer/package.json packages/kubernetes-enforcer/package.json
+#13 DONE 0.0s
 
-#14 [build  7/20] COPY packages/domain-kubernetes/package.json packages/domain-kubernetes/package.json
-#14 CACHED
+#14 [build  9/20] COPY packages/ai/package.json packages/ai/package.json
+#14 DONE 0.0s
 
-#15 [build  4/20] COPY packages/core/package.json packages/core/package.json
-#15 CACHED
+#15 [build 10/20] COPY packages/ledger/package.json packages/ledger/package.json
+#15 DONE 0.0s
 
-#16 [build  3/20] COPY package.json package-lock.json ./
-#16 CACHED
+#16 [build 11/20] COPY packages/server/package.json packages/server/package.json
+#16 DONE 0.0s
 
-#17 [build  2/20] WORKDIR /repo
-#17 CACHED
+#17 [build 12/20] COPY packages/cli/package.json packages/cli/package.json
+#17 DONE 0.0s
 
-#18 [build 19/20] COPY packages/kubernetes-enforcer packages/kubernetes-enforcer
-#18 CACHED
+#18 [build 13/20] COPY packages/kubernetes-collector/package.json packages/kubernetes-collector/package.json
+#18 DONE 0.1s
 
-#19 [stage-1 3/4] COPY --from=build /repo /repo
-#19 CACHED
+#19 [build 14/20] RUN npm ci
+#19 15.24 
+#19 15.24 added 467 packages, and audited 478 packages in 14s
+#19 15.24 
+#19 15.24 163 packages are looking for funding
+#19 15.24   run `npm fund` for details
+#19 15.25 
+#19 15.25 2 high severity vulnerabilities
+#19 15.25 
+#19 15.25 To address all issues, run:
+#19 15.25   npm audit fix
+#19 15.25 
+#19 15.25 Run `npm audit` for details.
+#19 15.25 npm notice
+#19 15.25 npm notice New major version of npm available! 10.9.8 -> 12.0.2
+#19 15.25 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+#19 15.25 npm notice To update run: npm install -g npm@12.0.2
+#19 15.25 npm notice
+#19 DONE 16.0s
 
 #20 [build 15/20] COPY tsconfig.json ./
-#20 CACHED
+#20 DONE 0.0s
 
-#21 [build  5/20] COPY packages/domain-network/package.json packages/domain-network/package.json
-#21 CACHED
+#21 [build 16/20] COPY scripts scripts
+#21 DONE 0.0s
 
-#22 [build 20/20] RUN npm run build -w @changesafe/core -w @changesafe/domain-kubernetes -w @changesafe/kubernetes-enforcer
-#22 CACHED
+#22 [build 17/20] COPY packages/core packages/core
+#22 DONE 0.0s
 
 #23 [build 18/20] COPY packages/domain-kubernetes packages/domain-kubernetes
-#23 CACHED
+#23 DONE 0.0s
 
-#24 [build  8/20] COPY packages/kubernetes-enforcer/package.json packages/kubernetes-enforcer/package.json
-#24 CACHED
+#24 [build 19/20] COPY packages/kubernetes-enforcer packages/kubernetes-enforcer
+#24 DONE 0.0s
 
-#25 [build 11/20] COPY packages/server/package.json packages/server/package.json
-#25 CACHED
+#25 [build 20/20] RUN npm run build -w @changesafe/core -w @changesafe/domain-kubernetes -w @changesafe/kubernetes-enforcer
+#25 0.257 
+#25 0.257 > @changesafe/core@0.5.0 build
+#25 0.257 > tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist
+#25 0.257 
+#25 2.255 finished dist (32 file(s) rewritten)
+#25 2.260 
+#25 2.260 > @changesafe/domain-kubernetes@0.5.0 build
+#25 2.260 > tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist
+#25 2.260 
+#25 4.253 finished dist (31 file(s) rewritten)
+#25 4.256 
+#25 4.256 > @changesafe/kubernetes-enforcer@0.5.0 build
+#25 4.256 > tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist
+#25 4.256 
+#25 5.413 finished dist (6 file(s) rewritten)
+#25 DONE 5.4s
 
-#26 [build 13/20] COPY packages/kubernetes-collector/package.json packages/kubernetes-collector/package.json
-#26 CACHED
+#26 [stage-1 3/4] COPY --from=build /repo /repo
+#26 DONE 4.9s
 
 #27 [stage-1 4/4] WORKDIR /repo/packages/kubernetes-enforcer
-#27 CACHED
+#27 DONE 0.0s
 
 #28 exporting to image
-#28 exporting layers done
-#28 writing image sha256:db957daf1ecbb4581ef9e612737df053eb58c376a53a67777878e2e754528b35 done
+#28 exporting layers
+#28 exporting layers 2.7s done
+#28 writing image sha256:c2c25b64bb9a385c8799e167aa1baf3581aa41b7029b49e5487b8f9b58b780ec done
 #28 naming to docker.io/library/changesafe-kubernetes-enforcer:dev done
-#28 DONE 0.0s
+#28 DONE 2.7s
 
 --- Creating kind cluster ---
 $ kind create cluster --name changesafe-m2
@@ -132,51 +168,53 @@ You can now use your cluster with:
 
 kubectl cluster-info --context kind-changesafe-m2
 
-Have a nice day! 👋
+Not sure what to do next? 😅  Check out https://kind.sigs.k8s.io/docs/user/quick-start/
 $ kind load docker-image changesafe-kubernetes-enforcer:dev --name changesafe-m2
-Image: "changesafe-kubernetes-enforcer:dev" with ID "sha256:db957daf1ecbb4581ef9e612737df053eb58c376a53a67777878e2e754528b35" not yet present on node "changesafe-m2-control-plane", loading...
+Image: "changesafe-kubernetes-enforcer:dev" with ID "sha256:c2c25b64bb9a385c8799e167aa1baf3581aa41b7029b49e5487b8f9b58b780ec" not yet present on node "changesafe-m2-control-plane", loading...
 kubectl identity: kubernetes-admin
 
 --- Generating a local CA and TLS cert for the enforcer Service ---
-TLS cert/CA generated in /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5
+TLS cert/CA generated in /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ
 
 --- Generating a demo Ed25519 grant-signing key pair ---
-publicKeyId a3d7b7170d3a4b64560bed59d5800b1b
+publicKeyId 7df00983540dbc5f75c289ae7749e150
 
 --- Deploying the enforcer (Deployment + Service + Secrets) ---
 $ kubectl apply -f /Users/Wonkwon/orca/workspaces/ChangeSafe/main/examples/m2-kubernetes-enforcer/enforcer-deployment.yaml
 namespace/changesafe-system created
 deployment.apps/changesafe-enforcer created
 service/changesafe-enforcer created
-$ kubectl -n changesafe-system create secret tls changesafe-enforcer-tls --cert=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/tls-cert.pem --key=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/tls-key.pem
+$ kubectl -n changesafe-system create secret tls changesafe-enforcer-tls --cert=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/tls-cert.pem --key=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/tls-key.pem
 secret/changesafe-enforcer-tls created
-$ kubectl -n changesafe-system create secret generic changesafe-enforcer-signing-key --from-file=public-key.pem=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/grant-public.pem
+$ kubectl -n changesafe-system create secret generic changesafe-enforcer-signing-key --from-file=public-key.pem=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/grant-public.pem
 secret/changesafe-enforcer-signing-key created
 $ kubectl -n changesafe-system rollout status deploy/changesafe-enforcer --timeout=60s
 Waiting for deployment "changesafe-enforcer" rollout to finish: 0 of 1 updated replicas are available...
 deployment "changesafe-enforcer" successfully rolled out
 
---- Registering webhook-protected.yaml (failurePolicy: Fail) and webhook-default.yaml (failurePolicy: Ignore) ---
+--- Creating the two demo namespaces ---
 $ kubectl create namespace changesafe-protected-demo
 namespace/changesafe-protected-demo created
 $ kubectl label namespace changesafe-protected-demo changesafe.dev/tier=protected
 namespace/changesafe-protected-demo labeled
 $ kubectl create namespace changesafe-default-demo
 namespace/changesafe-default-demo created
-$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/webhook-protected.rendered.yaml -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/webhook-default.rendered.yaml
+
+--- Creating the demo Deployments (before the webhooks exist, so no grant is needed yet) ---
+$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/web-protected.yaml
+deployment.apps/web created
+$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/web-default.yaml
+deployment.apps/web created
+
+--- Registering webhook-protected.yaml (failurePolicy: Fail) and webhook-default.yaml (failurePolicy: Ignore) ---
+$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/webhook-protected.rendered.yaml -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/webhook-default.rendered.yaml
 validatingwebhookconfiguration.admissionregistration.k8s.io/changesafe-enforcer-protected created
 validatingwebhookconfiguration.admissionregistration.k8s.io/changesafe-enforcer-default created
 
---- Creating the demo Deployments (CREATE is not in the webhook rules) ---
-$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/web-protected.yaml
-deployment.apps/web created
-$ kubectl apply -f /var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/web-default.yaml
-deployment.apps/web created
-
 === Demo step 1: ALLOW (grant matches the exact object it authorizes) ===
 resourceId res-69828e4c8b7f18f6
-objectSha256 7bc6d921426cd11cd01596ef6b92ef95dce8e5ad9e83e210e55952d32ae92dbd
-$ kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.PzTsbpkFL5/step1-patch.json
+objectSha256 37ef2c00576371feb82e5c6c788f471c0aba81759f93f4dd7c0c73b2e07239a1
+$ kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file=/var/folders/3v/0zyy8jy511dc6y5syn58qyp80000gn/T/tmp.0VpYD2UNTJ/step1-patch.json
 deployment.apps/web patched
 web replicas after step 1: 4 (expected 4)
 
@@ -189,7 +227,7 @@ web replicas after step 2: 4 (expected still 4 — the denied patch did not appl
 $ kubectl -n changesafe-system scale deploy/changesafe-enforcer --replicas=0
 deployment.apps/changesafe-enforcer scaled
 $ kubectl -n changesafe-protected-demo patch deployment web --type=merge -p '{"spec":{"replicas":6}}'
-Error from server (InternalError): Internal error occurred: failed calling webhook "protected.enforcer.changesafe.dev": failed to call webhook: Post "https://changesafe-enforcer.changesafe-system.svc:8443/validate?timeout=10s": dial tcp 10.96.252.95:8443: connect: connection refused
+Error from server (InternalError): Internal error occurred: failed calling webhook "protected.enforcer.changesafe.dev": failed to call webhook: Post "https://changesafe-enforcer.changesafe-system.svc:8443/validate?timeout=10s": dial tcp 10.96.153.92:8443: connect: connection refused
 $ kubectl -n changesafe-default-demo patch deployment web --type=merge -p {"spec":{"replicas":6}}
 deployment.apps/web patched
 changesafe-default-demo/web replicas: 6 (expected 6 — allowed, failurePolicy: Ignore)
