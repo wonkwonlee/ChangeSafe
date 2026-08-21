@@ -1,4 +1,5 @@
 import {
+  AuthorizationGrantSchema,
   canonicalize,
   computePolicyCoverage,
   computePublicKeyId,
@@ -8,6 +9,7 @@ import {
   evaluatePolicies,
   hasBlockingFinding,
   initialState,
+  signGrant,
   signReceipt,
   transition,
   validateProposalEvidence,
@@ -16,14 +18,17 @@ import {
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
+  type GrantOperationSchema as GrantOperationSchemaType,
   type PolicyCoverage,
   type PolicyFinding,
   type RiskLevel,
   type SimulationResult,
+  type SignedGrant,
   type SignedReceipt,
   type WorkflowState,
 } from "@changesafe/core";
 import type { Ledger, LedgerEntry } from "@changesafe/ledger";
+import { z } from "zod";
 
 import { resolveServerDomain } from "./domains";
 
@@ -45,6 +50,32 @@ export interface DecisionOutcome {
 
 export interface SignedDecisionOutcome extends DecisionOutcome {
   record: SignedReceipt;
+}
+
+export interface IssueGrantOptions {
+  authorizedActor: string;
+  /** See AuthorizationGrantSchema's doc comment on authorizedActorUid. */
+  authorizedActorUid?: string;
+  operation: z.infer<typeof GrantOperationSchemaType>;
+  resource: string;
+  objectSha256: string;
+  /** See AuthorizationGrantSchema's doc comment on oldObjectSha256. */
+  oldObjectSha256?: string;
+  /** See AuthorizationGrantSchema's doc comment on resourceUid. */
+  resourceUid?: string;
+  expiresAtUtc: string;
+  /**
+   * The instant to record as the grant's `issuedAtUtc`. Callers that
+   * pre-validate `expiresAtUtc` against "now" before issuance (as the
+   * durable decision route does, since a rejected grant must fail before
+   * the decision is ledgered) MUST pass the exact same captured instant
+   * here — reading the clock a second time inside `issueGrant` opened a
+   * race where a grant valid at the pre-check could expire by the time
+   * `issueGrant` ran, throwing AFTER the receipt was already committed to
+   * the ledger. Defaults to `this.#options.now?.()` for callers with no
+   * such pre-check to stay atomic with.
+   */
+  issuedAtUtc?: string;
 }
 
 export interface DurableDecisionIssuance {
@@ -156,6 +187,41 @@ export class DecisionService {
       );
     }
     return { ...outcome, record: outcome.record };
+  }
+
+  /**
+   * Issue a signed AuthorizationGrant from an already-approved receipt.
+   *
+   * Requires a signing key for the same reason `decideSigned` does: an
+   * unsigned grant would be indistinguishable from one anyone could forge,
+   * and a grant that cannot prove who issued it authorizes nothing.
+   */
+  async issueGrant(receipt: ChangeReceipt, options: IssueGrantOptions): Promise<SignedGrant> {
+    this.#requireSigningCapability();
+    if (receipt.decision !== "approved") {
+      throw new DomainError(
+        "ILLEGAL_TRANSITION",
+        `Receipt ${receipt.receiptId} was not approved and cannot authorize a grant.`,
+      );
+    }
+
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: `grant-${globalThis.crypto.randomUUID()}`,
+      receiptId: receipt.receiptId,
+      authorizedActor: options.authorizedActor,
+      authorizedActorUid: options.authorizedActorUid,
+      operation: options.operation,
+      resource: options.resource,
+      objectSha256: options.objectSha256,
+      oldObjectSha256: options.oldObjectSha256,
+      resourceUid: options.resourceUid,
+      policyVersion: receipt.policyVersion,
+      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
+      expiresAtUtc: options.expiresAtUtc,
+    });
+
+    // Non-null: #requireSigningCapability already confirmed this above.
+    return signGrant(grant, this.#options.signingKeyPair!);
   }
 
   async decide(

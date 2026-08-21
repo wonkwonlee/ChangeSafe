@@ -12,7 +12,15 @@ import {
   terraformDomain,
   TerraformInputSchema,
 } from "@changesafe/domain-terraform";
+import {
+  deriveManifestProposal,
+  kubernetesDomain,
+  normalizeSnapshot,
+  parseManifestDocuments,
+  runKubernetesSimulation,
+} from "@changesafe/domain-kubernetes";
 import type { SimulationResult } from "@changesafe/core";
+import { z } from "zod";
 
 /**
  * Domains the decision server can decide in.
@@ -65,7 +73,35 @@ const terraform: ServerDomain = {
   },
 };
 
-const DOMAINS: Record<string, ServerDomain> = { network, terraform };
+const kubernetes: ServerDomain = {
+  id: "kubernetes",
+  adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
+  parseInput(raw) {
+    const snapshot = normalizeSnapshot(raw);
+    return { input: snapshot, inputId: snapshot.snapshotId };
+  },
+  resolveProposal(input, raw) {
+    // The caller submits proposed manifest YAML/JSON text; the domain
+    // derives the declarative diff against the snapshot itself, the same
+    // way Terraform derives a proposal from a plan rather than accepting
+    // a client-supplied one.
+    // Validated, not cast: `raw` is request-body input, and a non-string here
+    // must fail as a boundary rejection rather than reach the parser.
+    const manifestSet = parseManifestDocuments(z.string().parse(raw));
+    return deriveManifestProposal(
+      input as Parameters<typeof deriveManifestProposal>[0],
+      manifestSet,
+    ).proposal as ChangeProposal;
+  },
+  simulate(input, proposal) {
+    return runKubernetesSimulation(
+      input as Parameters<typeof runKubernetesSimulation>[0],
+      proposal,
+    );
+  },
+};
+
+const DOMAINS: Record<string, ServerDomain> = { network, terraform, kubernetes };
 
 export const SERVER_DOMAIN_IDS = Object.keys(DOMAINS);
 

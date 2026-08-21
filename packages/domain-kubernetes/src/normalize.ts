@@ -215,6 +215,89 @@ function normalizePodSpec(template: z.infer<typeof RawPodTemplateSchema> | undef
 }
 
 /**
+ * Canonicalize a raw Kubernetes API object for exact-object authorization
+ * binding (grant issuance and admission-time verification) — NOT for policy
+ * evaluation. Unlike `normalizeRawResource`, this keeps the entire `spec`
+ * verbatim rather than projecting it down to the fields today's policies
+ * happen to read: a grant must bind to the object actually admitted,
+ * including fields no policy currently inspects (container `command`,
+ * `args`, `env`, `resources`, `ports`; Service `ports`; volumes; ...).
+ * Reusing the policy projection for this purpose was CS-ADV-005 — it let an
+ * UPDATE change any field the projection discards while keeping the same
+ * hash, so a grant for one workload authorized a materially different one.
+ *
+ * `metadata` keeps every field EXCEPT the explicit server-owned/managed
+ * keys below (plus `name`/`namespace`, already carried in `identity`) —
+ * the same server-owned-field exclusion Decision 5 always intended, just
+ * applied without discarding real spec content alongside it. This is an
+ * exclude-list, not an include-list, deliberately: an include-list of
+ * "known" client fields (as the first version of this function had, and
+ * as `normalizeRawResource`'s `annotations`/`labels`-only projection still
+ * has) silently drops any client-settable field nobody thought to name —
+ * `finalizers` and `ownerReferences` are both real, client-controllable
+ * fields an UPDATE can carry, and both were missing from that first
+ * version. An unrecognized FUTURE metadata field defaults to being
+ * INCLUDED in the hash under this list, which can only cost an extra
+ * false DENY, never a false ALLOW — see the failure-direction note below.
+ *
+ * `spec`'s own K8s-server-side defaulting (e.g. an unset `strategy.type`
+ * becoming `"RollingUpdate"`) is deliberately NOT normalized away: a grant
+ * issued against a manifest that omits a field the API server later
+ * defaults can therefore mismatch and DENY at admission time. That is the
+ * safe failure direction for an authorization gate — a spurious DENY is a
+ * usability cost; a spurious ALLOW is a security bypass. Callers issuing
+ * grants should compute this hash against the object as the API server
+ * will actually see it (e.g. via a dry-run apply), not the raw authored
+ * manifest, to avoid the false-DENY case in practice.
+ *
+ * `deletionTimestamp`/`deletionGracePeriodSeconds` are deliberately NOT
+ * excluded, unlike the true server-bookkeeping fields below: they record
+ * whether a deletion has been requested, a lifecycle change that alters
+ * what an UPDATE grant means. A grant reviewed against a not-yet-deleting
+ * object (e.g. "remove this finalizer") must not silently also authorize
+ * removing that finalizer once the object has entered termination —
+ * finalizer removal on a terminating object triggers actual garbage
+ * collection, a materially different, unreviewed outcome (`CS-ADV-015`).
+ */
+const SERVER_OWNED_METADATA_KEYS = [
+  "name",
+  "namespace",
+  "uid",
+  "resourceVersion",
+  "generation",
+  "creationTimestamp",
+  "managedFields",
+  "selfLink",
+  "clusterName",
+] as const;
+
+export function canonicalizeAdmittedResource(
+  raw: unknown,
+  evidenceId: string,
+): { evidenceId: string; identity: KubernetesIdentity; metadata: Record<string, unknown>; spec: unknown } {
+  const envelope = parseOrThrow(
+    RawResourceEnvelopeSchema,
+    raw,
+    "A Kubernetes resource is malformed.",
+  );
+  const identity = identityOfRawResource(envelope);
+  const metadata: Record<string, unknown> = { ...envelope.metadata };
+  for (const key of SERVER_OWNED_METADATA_KEYS) delete metadata[key];
+  if (metadata.annotations !== undefined) {
+    metadata.annotations = sortRecord(metadata.annotations as Record<string, string>);
+  }
+  if (metadata.labels !== undefined) {
+    metadata.labels = sortRecord(metadata.labels as Record<string, string>);
+  }
+  return {
+    evidenceId,
+    identity,
+    metadata,
+    spec: envelope.spec ?? {},
+  };
+}
+
+/**
  * Project a raw Kubernetes API object into the strict policy-relevant model.
  * Server-owned metadata, status, and unselected spec fields are discarded.
  */

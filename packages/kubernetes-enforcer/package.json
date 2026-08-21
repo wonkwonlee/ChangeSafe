@@ -1,0 +1,21 @@
+{
+  "name": "@changesafe/kubernetes-enforcer",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Kubernetes admission-webhook verifier for ChangeSafe AuthorizationGrant.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/finish-package-build.mjs dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@changesafe/core": "^0.5.0",
+    "@changesafe/domain-kubernetes": "^0.5.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

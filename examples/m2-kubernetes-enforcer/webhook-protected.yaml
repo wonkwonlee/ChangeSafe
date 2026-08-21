@@ -1,0 +1,43 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: changesafe-enforcer-protected
+webhooks:
+  - name: protected.enforcer.changesafe.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    clientConfig:
+      service:
+        name: changesafe-enforcer
+        namespace: changesafe-system
+        path: /validate
+        port: 8443
+      caBundle: <base64-ca-bundle>
+    # Kubernetes' objectSelector matches labels, not annotations, so it
+    # cannot directly select "has annotation changesafe.dev/protected:
+    # true" (verified empirically in the kind reproduction — see
+    # README.md). Routing to the Fail-open-refusing webhook is instead
+    # scoped by namespace: this repository's convention is that resources
+    # the K8S_PROTECTED_RESOURCE policy tracks live in a namespace labeled
+    # changesafe.dev/tier: protected. Namespace labels ARE selectable, and
+    # this keeps the split enforceable by a cluster operator (label the
+    # namespace) rather than by trusting an unauthenticated field on the
+    # object being admitted.
+    namespaceSelector:
+      matchLabels:
+        changesafe.dev/tier: protected
+    rules:
+      - apiGroups: ["apps", ""]
+        apiVersions: ["v1"]
+        # CREATE and UPDATE only, not DELETE: a DELETE AdmissionReview
+        # carries the resource in `oldObject`, not `object`, which this
+        # verifier does not yet read. Registering DELETE would produce a
+        # verdict with no real object check behind it, so it is left
+        # unregistered rather than silently mishandled (future
+        # enhancement). CREATE carries the new object exactly like UPDATE
+        # does, and the verifier already supports it (GrantOperationSchema
+        # includes CREATE) — leaving it unregistered let a brand-new
+        # protected workload be created with no grant at all (CS-ADV-012).
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets", "services"]
+    failurePolicy: Fail

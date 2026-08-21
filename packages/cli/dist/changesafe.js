@@ -22390,6 +22390,156 @@ async function importVerifyingKey(publicKeyPem) {
   );
 }
 
+// ../core/src/grant.ts
+var GrantOperationSchema = external_exports.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]);
+var AuthorizationGrantSchema = external_exports.strictObject({
+  grantId: IdSchema,
+  /** The approved `ChangeReceipt` this grant was issued from. */
+  receiptId: IdSchema,
+  /**
+   * The identity that may exercise this grant, in the enforcement
+   * boundary's own vocabulary (e.g. Kubernetes' `userInfo.username`).
+   * Never a ChangeSafe-owned identity or claim.
+   */
+  authorizedActor: external_exports.string().min(1).max(255),
+  /**
+   * The same identity's stable Kubernetes `userInfo.uid`, when the caller
+   * has one to bind. `username` alone is not stable across a principal's
+   * lifetime: deleting and recreating a ServiceAccount preserves its
+   * username while Kubernetes assigns the new object a new `uid`, and a
+   * name-based RoleBinding can restore the same access to the replacement
+   * — letting it exercise a grant that was actually issued for the
+   * deleted one. Still the enforcement boundary's own vocabulary, not a
+   * new identity system: `userInfo.uid` is a field Kubernetes' own
+   * `AdmissionReview.request.userInfo` already carries. Optional because
+   * not every identity provider populates a stable uid; when either side
+   * lacks one, verification falls back to the username-only comparison.
+   */
+  authorizedActorUid: external_exports.string().min(1).max(255).optional(),
+  operation: GrantOperationSchema,
+  /** Opaque stable resource identifier from the domain's own scheme. */
+  resource: external_exports.string().min(1).max(128),
+  /** Hash of the domain-normalized object this grant was issued against. */
+  objectSha256: Sha256HexSchema,
+  /**
+   * Hash of the object's state *before* the reviewed change. Required for
+   * UPDATE (enforced below): without it, a grant approving a reviewed
+   * transition (e.g. image v1 -> v2) binds only the target state — if the
+   * object diverges after issuance (an unreviewed v1 -> v3), the same
+   * grant still matches on `objectSha256` alone and can be replayed to
+   * force the object back to v2 from v3, a transition nobody reviewed
+   * (`CS-ADV-014`). Unlike `authorizedActorUid` (optional because some
+   * identity providers genuinely never populate a uid), every UPDATE has
+   * a prior state by definition — there is no legitimate case for an
+   * UPDATE grant to omit this, so it is not optional for that operation.
+   * Absent (and inapplicable) for CREATE, which has no prior state to
+   * bind against at all. Still caller-asserted at issuance like
+   * `objectSha256` itself — deriving it server-side from the evaluated
+   * proposal remains deferred, see `CS-ADV-004`.
+   */
+  oldObjectSha256: Sha256HexSchema.optional(),
+  /**
+   * The enforcement boundary's own stable identifier for the resource
+   * *incarnation* this grant was issued against (Kubernetes'
+   * `metadata.uid`). `resource` names a resource by kind, namespace, and
+   * name, and `objectSha256`/`oldObjectSha256` bind its state — but a
+   * workload deleted and recreated under the same name is a different
+   * object that hashes identically whenever its other canonical state
+   * matches, since server-assigned identity is deliberately excluded from
+   * that hash. Without this field a still-valid UPDATE grant issued for
+   * the original incarnation would authorize the same transition on its
+   * replacement (`CS-ADV-016`). Required for UPDATE (enforced below) by
+   * the same reasoning as `oldObjectSha256`: an existing resource always
+   * has one. Absent for CREATE, where the incarnation does not exist yet
+   * and its uid is unknowable at issuance. Opaque to core, like
+   * `authorizedActorUid`.
+   */
+  resourceUid: external_exports.string().min(1).max(255).optional(),
+  /**
+   * The composed policy version of the receipt this grant came from, e.g.
+   * `core-v0.2.0+kubernetes-v0.1.0`. Bounded generously: real composed
+   * values are already ~30 characters, so a tighter bound would start
+   * rejecting legitimate receipts after a couple of version-digit growths.
+   */
+  policyVersion: external_exports.string().min(1).max(64),
+  issuedAtUtc: TimestampSchema,
+  expiresAtUtc: TimestampSchema
+}).superRefine((grant, ctx) => {
+  if (Date.parse(grant.expiresAtUtc) <= Date.parse(grant.issuedAtUtc)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expiresAtUtc"],
+      message: "expiresAtUtc must be strictly after issuedAtUtc"
+    });
+  }
+  if (grant.operation === "UPDATE" && grant.oldObjectSha256 === void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["oldObjectSha256"],
+      message: "oldObjectSha256 is required for an UPDATE grant \u2014 every UPDATE has a prior state to bind against, unlike CREATE"
+    });
+  }
+  if (grant.operation === "CREATE" && grant.oldObjectSha256 !== void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["oldObjectSha256"],
+      message: "oldObjectSha256 must be absent for a CREATE grant \u2014 CREATE has no prior state, and admitting one here would let a stale prior-state hash silently pass validation without ever being checked against anything"
+    });
+  }
+  if (grant.operation === "UPDATE" && grant.resourceUid === void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceUid"],
+      message: "resourceUid is required for an UPDATE grant \u2014 an existing resource always has a stable uid, and without it the grant binds a name, not the incarnation that was reviewed"
+    });
+  }
+  if (grant.operation === "CREATE" && grant.resourceUid !== void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceUid"],
+      message: "resourceUid must be absent for a CREATE grant \u2014 the resource does not exist yet, so its uid is unknowable at issuance"
+    });
+  }
+});
+
+// ../core/src/grant-signature.ts
+var WEB_CRYPTO_ALGORITHM2 = { name: "Ed25519" };
+var GrantSignatureSchema = external_exports.strictObject({
+  algorithm: external_exports.literal(SIGNATURE_ALGORITHM),
+  publicKeyId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  signature: external_exports.string().regex(/^[A-Za-z0-9+/]{86}==$/),
+  signedAtUtc: TimestampSchema
+});
+var SignedGrantSchema = external_exports.strictObject({
+  grant: AuthorizationGrantSchema,
+  signature: GrantSignatureSchema
+});
+function toBase642(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+}
+function signingPayload2(grant) {
+  const encoded = new TextEncoder().encode(canonicalize(grant));
+  const bytes = new Uint8Array(new ArrayBuffer(encoded.byteLength));
+  bytes.set(encoded);
+  return bytes;
+}
+async function signGrant(grant, keyPair, options = {}) {
+  const signature = await globalThis.crypto.subtle.sign(
+    WEB_CRYPTO_ALGORITHM2,
+    keyPair.privateKey,
+    signingPayload2(grant)
+  );
+  return SignedGrantSchema.parse({
+    grant,
+    signature: {
+      algorithm: SIGNATURE_ALGORITHM,
+      publicKeyId: await computePublicKeyId(keyPair.publicKey),
+      signature: toBase642(signature),
+      signedAtUtc: options.signedAtUtc ?? (/* @__PURE__ */ new Date()).toISOString()
+    }
+  });
+}
+
 // ../core/src/expectations.ts
 var FailureModeSchema = external_exports.enum([
   /** Instruction-like text planted in incident data. */
@@ -25237,6 +25387,123 @@ function metadataTexts(evidenceId, kind, values) {
   ]);
 }
 
+// ../domain-kubernetes/src/simulate.ts
+var BASELINE_CAPABILITIES2 = /* @__PURE__ */ new Set([
+  "AUDIT_WRITE",
+  "CHOWN",
+  "DAC_OVERRIDE",
+  "FOWNER",
+  "FSETID",
+  "KILL",
+  "MKNOD",
+  "NET_BIND_SERVICE",
+  "SETFCAP",
+  "SETGID",
+  "SETPCAP",
+  "SETUID",
+  "SYS_CHROOT"
+]);
+function runKubernetesSimulation(snapshot, proposal) {
+  const validatedSnapshot = KubernetesSnapshotSchema.parse(snapshot);
+  const validatedProposal = KubernetesChangeProposalSchema.parse(proposal);
+  const before = kubernetesDomain.stateOf(validatedSnapshot);
+  const { nextState, diff } = applyKubernetesOperations(before, validatedProposal.operations);
+  const changedResourceIds = [...new Set(validatedProposal.operations.map((operation) => {
+    const parsed = parseKubernetesPath(operation.path);
+    if (!parsed) throw new Error(`unparseable Kubernetes operation path ${operation.path}`);
+    return parsed.resourceId;
+  }))].sort();
+  const safetyProperties = [
+    zeroReplicaProperty(nextState, changedResourceIds),
+    serviceSelectorProperty(before, nextState),
+    privilegeProperty(before, nextState, changedResourceIds),
+    protectedResourceProperty(before, nextState)
+  ];
+  const satisfiedCount = safetyProperties.filter((property) => property.satisfied).length;
+  const summary2 = `${diff.length} Kubernetes resource operation${diff.length === 1 ? "" : "s"} applied to a sandboxed copy; ${satisfiedCount} of ${safetyProperties.length} modeled safety properties remain satisfied. No Kubernetes API was contacted and no manifest was applied.`;
+  return SimulationResultSchema.parse({
+    status: "completed",
+    changedResourceIds,
+    diff,
+    safetyProperties,
+    summary: summary2
+  });
+}
+function isWorkload2(resource) {
+  return resource.identity.kind !== "Service";
+}
+function isService2(resource) {
+  return resource.identity.kind === "Service";
+}
+function isScalable(resource) {
+  return resource.identity.kind === "Deployment" || resource.identity.kind === "StatefulSet";
+}
+function zeroReplicaProperty(state, changedResourceIds) {
+  const zero = changedResourceIds.map((id) => state.resources[id]).filter((resource) => Boolean(resource)).filter(isScalable).filter((resource) => "replicas" in resource.spec && (resource.spec.replicas ?? 1) === 0).map((resource) => `${resource.identity.namespace}/${resource.identity.name}`).sort();
+  return zero.length === 0 ? { propertyId: "k8s-no-zero-replica-workloads", satisfied: true, detail: "No affected Deployment or StatefulSet has zero replicas." } : { propertyId: "k8s-no-zero-replica-workloads", satisfied: false, detail: `Affected workload(s) have zero replicas: ${zero.join(", ")}.` };
+}
+function serviceSelectorProperty(before, after) {
+  const orphaned = /* @__PURE__ */ new Set();
+  for (const resource of Object.values(before.resources)) {
+    if (!isService2(resource) || resource.spec.type === "ExternalName" || !resource.spec.selector || Object.keys(resource.spec.selector).length === 0) continue;
+    const beforeMatches = matchingWorkloads2(before, resource.identity.namespace, resource.spec.selector);
+    const afterService = after.resources[resource.resourceId];
+    const afterSelector = afterService && isService2(afterService) ? afterService.spec.selector : null;
+    const afterMatches = afterSelector && Object.keys(afterSelector).length > 0 ? matchingWorkloads2(after, resource.identity.namespace, afterSelector) : [];
+    if (beforeMatches.length > 0 && afterMatches.length === 0) {
+      orphaned.add(`${resource.identity.namespace}/${resource.identity.name}`);
+    }
+  }
+  for (const resource of Object.values(after.resources)) {
+    if (before.resources[resource.resourceId] || !isService2(resource) || resource.spec.type === "ExternalName" || !resource.spec.selector || Object.keys(resource.spec.selector).length === 0) continue;
+    if (matchingWorkloads2(after, resource.identity.namespace, resource.spec.selector).length === 0) {
+      orphaned.add(`${resource.identity.namespace}/${resource.identity.name}`);
+    }
+  }
+  const names = [...orphaned].sort();
+  return names.length === 0 ? { propertyId: "k8s-service-selectors-resolve", satisfied: true, detail: "Every previously satisfied modeled Service selector and every new selector-bearing Service resolves to a supported workload." } : { propertyId: "k8s-service-selectors-resolve", satisfied: false, detail: `Service selector(s) do not resolve: ${names.join(", ")}.` };
+}
+function matchingWorkloads2(state, namespace, selector) {
+  return Object.values(state.resources).filter(isWorkload2).filter((resource) => resource.identity.namespace === namespace).filter((resource) => Object.entries(selector).every(([key, value]) => workloadLabels2(resource)[key] === value)).map((resource) => resource.resourceId).sort();
+}
+function workloadLabels2(resource) {
+  return "podLabels" in resource.spec ? resource.spec.podLabels ?? {} : {};
+}
+function privilegeProperty(before, after, changedResourceIds) {
+  const violations = changedResourceIds.flatMap((id) => {
+    const current = after.resources[id];
+    if (!current || !isWorkload2(current)) return [];
+    const previous = before.resources[id];
+    const oldSignals = previous && isWorkload2(previous) ? privilegeSignals2(previous) : /* @__PURE__ */ new Set();
+    const introduced = [...privilegeSignals2(current)].filter((signal) => !oldSignals.has(signal));
+    return introduced.length === 0 ? [] : [`${current.identity.namespace}/${current.identity.name}`];
+  }).sort();
+  return violations.length === 0 ? { propertyId: "k8s-no-new-privileged-workloads", satisfied: true, detail: "No affected workload newly enables a modeled privileged setting." } : { propertyId: "k8s-no-new-privileged-workloads", satisfied: false, detail: `Affected workload(s) newly enable privileged settings: ${violations.join(", ")}.` };
+}
+function privilegeSignals2(resource) {
+  const signals = /* @__PURE__ */ new Set();
+  if (!("containers" in resource.spec)) return signals;
+  for (const field of ["hostNetwork", "hostPID", "hostIPC", "hasHostPath"]) {
+    if (resource.spec[field]) signals.add(field);
+  }
+  for (const container of resource.spec.containers ?? []) {
+    const security = container.security;
+    if (!security) continue;
+    if (security.privileged) signals.add(`${container.name}:privileged`);
+    if (security.allowPrivilegeEscalation) signals.add(`${container.name}:allowPrivilegeEscalation`);
+    if (security.runAsUser === 0) signals.add(`${container.name}:runAsUser=0`);
+    for (const capability of security.addedCapabilities ?? []) if (!BASELINE_CAPABILITIES2.has(capability)) signals.add(`${container.name}:${capability}`);
+  }
+  return signals;
+}
+function protectedResourceProperty(before, after) {
+  const violations = Object.values(before.resources).filter((resource) => resource.metadata.annotations["changesafe.dev/protected"] === "true").filter((resource) => {
+    const current = after.resources[resource.resourceId];
+    return !current || current.metadata.annotations["changesafe.dev/protected"] !== "true" || canonicalize(current.spec) !== canonicalize(resource.spec);
+  }).map((resource) => `${resource.identity.namespace}/${resource.identity.name}`).sort();
+  return violations.length === 0 ? { propertyId: "k8s-protected-resources-unchanged", satisfied: true, detail: "Every protected resource retains its normalized spec and protection annotation." } : { propertyId: "k8s-protected-resources-unchanged", satisfied: false, detail: `Protected resource(s) changed: ${violations.join(", ")}.` };
+}
+
 // ../ai/src/prompts/kubernetes.ts
 var SYSTEM_INSTRUCTIONS2 = `You are the diagnostic analysis engine inside ChangeSafe, an infrastructure change airlock for a fully synthetic lab environment. You analyze one Kubernetes namespace snapshot and produce exactly one ChangeProposal as structured output.
 
@@ -27669,7 +27936,28 @@ var terraform2 = {
     return deriveProposal(input);
   }
 };
-var DOMAINS2 = { network: network2, terraform: terraform2 };
+var kubernetes2 = {
+  id: "kubernetes",
+  adapter: kubernetesDomain,
+  parseInput(raw) {
+    const snapshot = normalizeSnapshot(raw);
+    return { input: snapshot, inputId: snapshot.snapshotId };
+  },
+  resolveProposal(input, raw) {
+    const manifestSet = parseManifestDocuments(external_exports.string().parse(raw));
+    return deriveManifestProposal(
+      input,
+      manifestSet
+    ).proposal;
+  },
+  simulate(input, proposal) {
+    return runKubernetesSimulation(
+      input,
+      proposal
+    );
+  }
+};
+var DOMAINS2 = { network: network2, terraform: terraform2, kubernetes: kubernetes2 };
 var SERVER_DOMAIN_IDS = Object.keys(DOMAINS2);
 function resolveServerDomain(id) {
   const domain2 = DOMAINS2[id];
@@ -27711,6 +27999,37 @@ var DecisionService = class {
       );
     }
     return { ...outcome2, record: outcome2.record };
+  }
+  /**
+   * Issue a signed AuthorizationGrant from an already-approved receipt.
+   *
+   * Requires a signing key for the same reason `decideSigned` does: an
+   * unsigned grant would be indistinguishable from one anyone could forge,
+   * and a grant that cannot prove who issued it authorizes nothing.
+   */
+  async issueGrant(receipt, options) {
+    this.#requireSigningCapability();
+    if (receipt.decision !== "approved") {
+      throw new DomainError(
+        "ILLEGAL_TRANSITION",
+        `Receipt ${receipt.receiptId} was not approved and cannot authorize a grant.`
+      );
+    }
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: `grant-${globalThis.crypto.randomUUID()}`,
+      receiptId: receipt.receiptId,
+      authorizedActor: options.authorizedActor,
+      authorizedActorUid: options.authorizedActorUid,
+      operation: options.operation,
+      resource: options.resource,
+      objectSha256: options.objectSha256,
+      oldObjectSha256: options.oldObjectSha256,
+      resourceUid: options.resourceUid,
+      policyVersion: receipt.policyVersion,
+      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString(),
+      expiresAtUtc: options.expiresAtUtc
+    });
+    return signGrant(grant, this.#options.signingKeyPair);
   }
   async decide(request, approver, issuance) {
     const prepared = this.#prepare(request, issuance?.expectedPolicyVersion);
@@ -29247,6 +29566,7 @@ async function buildReceiptProof(resolution, ledger, options) {
 
 // ../server/src/http.ts
 var MAX_BODY_BYTES = 2 * 1024 * 1024;
+var MIN_GRANT_LIFETIME_MS = 5e3;
 var PayloadTooLargeError = class extends DomainError {
   constructor() {
     super(
@@ -29273,8 +29593,30 @@ var ReviewIntakeBodySchema = external_exports.strictObject({
   reviewId: IdSchema,
   intake: DurableReviewIntakeSchema
 });
+var GrantRequestSchema = external_exports.strictObject({
+  authorizedActor: external_exports.string().min(1).max(255),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on authorizedActorUid. */
+  authorizedActorUid: external_exports.string().min(1).max(255).optional(),
+  operation: external_exports.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
+  resource: external_exports.string().min(1).max(128),
+  objectSha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on oldObjectSha256. */
+  oldObjectSha256: external_exports.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on resourceUid. */
+  resourceUid: external_exports.string().min(1).max(255).optional(),
+  expiresAtUtc: TimestampSchema
+});
 var ReviewDecisionBodySchema = external_exports.strictObject({
-  decision: external_exports.enum(["approve", "reject"])
+  decision: external_exports.enum(["approve", "reject"]),
+  grant: GrantRequestSchema.optional()
+}).superRefine((body, ctx) => {
+  if (body.decision === "reject" && body.grant) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["grant"],
+      message: "a rejected decision cannot carry grant parameters"
+    });
+  }
 });
 function pendingReviewSession(intake) {
   const network3 = intake.domainId === "network";
@@ -29482,6 +29824,37 @@ async function handle(request, response, options) {
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
+    const grantIssuedAtUtc = serverNow(options);
+    if (body.grant && Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        `A grant's expiresAtUtc must be at least ${MIN_GRANT_LIFETIME_MS}ms after issuance time, so it cannot expire before the decision finishes committing and the response reaches the caller.`
+      );
+    }
+    if (body.grant && body.grant.operation === "UPDATE" && body.grant.oldObjectSha256 === void 0) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "An UPDATE grant's oldObjectSha256 is required (AuthorizationGrantSchema enforces this) \u2014 missing it here would only be discovered after the decision is committed."
+      );
+    }
+    if (body.grant && body.grant.operation === "CREATE" && body.grant.oldObjectSha256 !== void 0) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "A CREATE grant must not carry oldObjectSha256 (AuthorizationGrantSchema enforces this) \u2014 CREATE has no prior state, and this would only be discovered after the decision is committed."
+      );
+    }
+    if (body.grant && body.grant.operation === "UPDATE" && body.grant.resourceUid === void 0) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "An UPDATE grant's resourceUid is required (AuthorizationGrantSchema enforces this) \u2014 missing it here would only be discovered after the decision is committed."
+      );
+    }
+    if (body.grant && body.grant.operation === "CREATE" && body.grant.resourceUid !== void 0) {
+      throw new DomainError(
+        "REQUEST_INVALID",
+        "A CREATE grant must not carry resourceUid (AuthorizationGrantSchema enforces this) \u2014 the resource does not exist yet, and this would only be discovered after the decision is committed."
+      );
+    }
     const durableDecisionRequest = (pending) => ({
       ...pendingReviewRequest(pending),
       decision: body.decision
@@ -29535,6 +29908,10 @@ async function handle(request, response, options) {
         };
       }
     );
+    const grant = body.decision === "approve" && body.grant ? await options.decisions.issueGrant(decided.outcome.receipt, {
+      ...body.grant,
+      issuedAtUtc: grantIssuedAtUtc
+    }) : void 0;
     send(response, 201, {
       receiptId: decided.outcome.receipt.receiptId,
       decision: decided.outcome.receipt.decision,
@@ -29543,7 +29920,8 @@ async function handle(request, response, options) {
       ledgerSeq: decided.outcome.ledgerSeq,
       chainSha256: decided.outcome.chainSha256,
       record: decided.outcome.record,
-      resolution: decided.resolution
+      resolution: decided.resolution,
+      ...grant ? { grant } : {}
     });
     return;
   }

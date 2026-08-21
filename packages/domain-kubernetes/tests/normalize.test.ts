@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 
 import { canonicalize } from "@changesafe/core";
 import {
+  canonicalizeAdmittedResource,
   deriveManifestProposal,
+  normalizeRawResource,
   normalizeSnapshot,
   parseManifestDocuments,
   resourceIdOf,
@@ -167,6 +169,136 @@ describe("normalizeSnapshot", () => {
     };
 
     expect(() => normalizeSnapshot(snapshotWithCollision)).toThrow(/duplicate/i);
+  });
+});
+
+describe("canonicalizeAdmittedResource", () => {
+  const workload = {
+    apiVersion: "apps/v1",
+    kind: "Deployment",
+    metadata: { name: "web", namespace: "demo" },
+    spec: {
+      replicas: 3,
+      template: {
+        spec: {
+          containers: [
+            {
+              name: "app",
+              image: "example.com/app:1.0",
+              command: ["serve"],
+              env: [{ name: "FEATURE_FLAG", value: "off" }],
+              resources: { limits: { memory: "256Mi" } },
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  it("preserves spec fields the policy projection discards (CS-ADV-005)", () => {
+    // normalizeRawResource's container projection keeps only name/image/a
+    // security subset — command/env/resources never survive it, which is
+    // exactly the gap CS-ADV-005 exploited when this hash was reused for
+    // grant authorization binding.
+    const container = normalizeRawResource(workload, "ev-test").spec as {
+      containers?: Array<Record<string, unknown>>;
+    };
+    expect(container.containers?.[0]).not.toHaveProperty("command");
+    expect(container.containers?.[0]).not.toHaveProperty("env");
+    expect(container.containers?.[0]).not.toHaveProperty("resources");
+
+    const canonical = canonicalizeAdmittedResource(workload, "ev-test");
+    const canonicalContainer = (
+      canonical.spec as { template: { spec: { containers: Array<Record<string, unknown>> } } }
+    ).template.spec.containers[0];
+    expect(canonicalContainer).toBeDefined();
+    expect(canonicalContainer?.command).toEqual(["serve"]);
+    expect(canonicalContainer?.env).toEqual([{ name: "FEATURE_FLAG", value: "off" }]);
+    expect(canonicalContainer?.resources).toEqual({ limits: { memory: "256Mi" } });
+  });
+
+  it("excludes only server-owned metadata, not real spec content", () => {
+    const withServerFields = {
+      ...workload,
+      metadata: {
+        ...workload.metadata,
+        uid: "11111111-1111-1111-1111-111111111111",
+        resourceVersion: "12345",
+        generation: 7,
+        creationTimestamp: "2026-08-20T00:00:00Z",
+      },
+    };
+    const canonical = canonicalizeAdmittedResource(withServerFields, "ev-test");
+    expect(canonical.metadata).not.toHaveProperty("uid");
+    expect(canonical.metadata).not.toHaveProperty("resourceVersion");
+    expect(canonical.metadata).not.toHaveProperty("generation");
+    expect(canonical.metadata).not.toHaveProperty("creationTimestamp");
+
+    // Server-owned fields never leak into the hash.
+    expect(canonicalize(canonicalizeAdmittedResource(workload, "ev-test"))).toBe(
+      canonicalize(canonical),
+    );
+  });
+
+  it("includes client-owned metadata the first version discarded (finalizers, ownerReferences)", () => {
+    // The first version of canonicalizeAdmittedResource only kept
+    // annotations/labels, so client-controllable fields it didn't name —
+    // finalizers, ownerReferences — never entered the hash. An
+    // include-list of "known" fields silently drops the next one nobody
+    // thought to name; this proves the exclude-list approach keeps them.
+    const withClientMetadata = {
+      ...workload,
+      metadata: {
+        ...workload.metadata,
+        finalizers: ["kubernetes.io/pvc-protection"],
+        ownerReferences: [{ apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-rs", uid: "owner-1" }],
+      },
+    };
+    const canonical = canonicalizeAdmittedResource(withClientMetadata, "ev-test");
+    expect(canonical.metadata.finalizers).toEqual(["kubernetes.io/pvc-protection"]);
+    expect(canonical.metadata.ownerReferences).toEqual([
+      { apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-rs", uid: "owner-1" },
+    ]);
+
+    // Changing either one must change the hash.
+    const tamperedFinalizers = {
+      ...withClientMetadata,
+      metadata: { ...withClientMetadata.metadata, finalizers: [] },
+    };
+    expect(canonicalize(canonicalizeAdmittedResource(withClientMetadata, "ev-test"))).not.toBe(
+      canonicalize(canonicalizeAdmittedResource(tamperedFinalizers, "ev-test")),
+    );
+  });
+
+  it("changes canonical output when spec content actually changes", () => {
+    const tampered = {
+      ...workload,
+      spec: {
+        ...workload.spec,
+        template: { spec: { containers: [{ ...workload.spec.template.spec.containers[0], command: ["serve", "--unsafe"] }] } },
+      },
+    };
+    expect(canonicalize(canonicalizeAdmittedResource(workload, "ev-test"))).not.toBe(
+      canonicalize(canonicalizeAdmittedResource(tampered, "ev-test")),
+    );
+  });
+
+  it("changes canonical output when deletion lifecycle state changes (CS-ADV-015)", () => {
+    // A grant reviewed against a not-yet-deleting object (e.g. "remove
+    // this finalizer") must not silently also authorize the same edit on
+    // a now-terminating object — finalizer removal on a terminating
+    // object triggers actual garbage collection, an unreviewed outcome.
+    const terminating = {
+      ...workload,
+      metadata: {
+        ...workload.metadata,
+        deletionTimestamp: "2026-07-28T00:05:00.000Z",
+        deletionGracePeriodSeconds: 30,
+      },
+    };
+    expect(canonicalize(canonicalizeAdmittedResource(workload, "ev-test"))).not.toBe(
+      canonicalize(canonicalizeAdmittedResource(terminating, "ev-test")),
+    );
   });
 });
 

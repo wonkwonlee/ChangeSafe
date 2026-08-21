@@ -106,6 +106,25 @@ export type {
   SigningKeyPairPem,
 } from "./signature";
 
+// Authorization grants — bind one approved decision to one actor,
+// operation, resource, and object state at an enforcement boundary.
+export { AuthorizationGrantSchema, GrantOperationSchema } from "./grant";
+export type { AuthorizationGrant } from "./grant";
+
+// Grant signing
+export {
+  GrantSignatureSchema,
+  SignedGrantSchema,
+  signGrant,
+  verifyGrantSignature,
+} from "./grant-signature";
+export type {
+  GrantSignature,
+  GrantSignatureVerdict,
+  SignedGrant,
+  SignGrantOptions,
+} from "./grant-signature";
+
 // Scenario expectations
 export { FailureModeSchema, ScenarioExpectationsSchema } from "./expectations";
 export type { FailureMode, ScenarioExpectations } from "./expectations";

@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: changesafe-system
+---
+# The changesafe-enforcer-tls and changesafe-enforcer-signing-key Secrets
+# are deliberately not defined here as YAML with placeholder data — see
+# kind-repro.sh, which creates both imperatively (`kubectl create secret
+# tls` / `kubectl create secret generic`) from locally generated files, so
+# nothing checked into this repository ever contains real or fake-looking
+# key material.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: changesafe-enforcer
+  namespace: changesafe-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: changesafe-enforcer
+  template:
+    metadata:
+      labels:
+        app: changesafe-enforcer
+    spec:
+      containers:
+        - name: enforcer
+          image: changesafe-kubernetes-enforcer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8443
+          env:
+            - name: PORT
+              value: "8443"
+            - name: TLS_CERT_PATH
+              value: /certs/tls.crt
+            - name: TLS_KEY_PATH
+              value: /certs/tls.key
+            # EXPECTED_POLICY_VERSION is intentionally absent: the enforcer
+            # then holds grants to the POLICY_VERSION bundled in its own
+            # image (@changesafe/domain-kubernetes), which is the active
+            # policy set by construction. It is an OVERRIDE, not an opt-in —
+            # the drift check always runs (CS-ADV-017). Set it only to pin
+            # the enforcer to a specific composed version on purpose.
+            - name: TRUSTED_PUBLIC_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: changesafe-enforcer-signing-key
+                  key: public-key.pem
+          volumeMounts:
+            - name: tls
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: changesafe-enforcer-tls
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: changesafe-enforcer
+  namespace: changesafe-system
+spec:
+  selector:
+    app: changesafe-enforcer
+  ports:
+    - port: 8443
+      targetPort: 8443

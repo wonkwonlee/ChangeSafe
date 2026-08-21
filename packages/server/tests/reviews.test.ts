@@ -758,4 +758,289 @@ describe("durable review decision HTTP API", () => {
     expect(context.ledger.count()).toBe(1);
     expect(context.reviews.getResolution("review-concurrent-decision", aliceOwner())).not.toBeNull();
   });
+
+  const grantRequest = {
+    authorizedActor: "system:serviceaccount:default:deployer",
+    operation: "UPDATE" as const,
+    resource: "deployments/default/checkout",
+    objectSha256: "a".repeat(64),
+    oldObjectSha256: "b".repeat(64),
+    resourceUid: "11111111-2222-3333-4444-555555555555",
+    expiresAtUtc: "2099-01-01T00:00:00.000Z",
+  };
+
+  it("issues a signed AuthorizationGrant from an approved decision when requested", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-approve"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-approve",
+      { decision: "approve", grant: grantRequest },
+      token,
+    );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      receiptId: string;
+      grant?: { grant: { receiptId: string }; signature: unknown };
+    };
+    expect(body.grant).toBeDefined();
+    expect(body.grant?.grant.receiptId).toBe(body.receiptId);
+  });
+
+  it("omits the grant field from the response when none was requested", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-omitted"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview("review-grant-omitted", { decision: "approve" }, token);
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("grant");
+  });
+
+  it("rejects a reject decision that also carries grant parameters", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-on-reject"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-on-reject",
+      { decision: "reject", grant: grantRequest },
+      token,
+    );
+
+    expect(response.status).toBe(422);
+  });
+
+  // CS-ADV-004: the binding fields are caller-asserted, not derived.
+  //
+  // This locks the *current* behavior, gap included, so the gap is visible
+  // in the suite rather than only in prose. The review here is a network
+  // incident; the grant it mints names a Kubernetes resource and an
+  // objectSha256 belonging to nothing at all, and the server issues it. Only
+  // receiptId and policyVersion are server-derived. If a future milestone
+  // adds server-side derivation, this test must fail and be rewritten — that
+  // is the point of keeping it.
+  it("issues a grant whose resource and object hash the caller chose, unchecked", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-unbound"), token)).status,
+    ).toBe(201);
+
+    const response = await decideReview(
+      "review-grant-unbound",
+      {
+        decision: "approve",
+        grant: {
+          ...grantRequest,
+          // A Kubernetes-shaped resource id on a network review's receipt.
+          resource: "deployments/prod/unrelated-workload",
+          objectSha256: "b".repeat(64),
+        },
+      },
+      token,
+    );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      receiptId: string;
+      grant?: { grant: { resource: string; objectSha256: string; receiptId: string } };
+    };
+    expect(body.grant?.grant.resource).toBe("deployments/prod/unrelated-workload");
+    expect(body.grant?.grant.objectSha256).toBe("b".repeat(64));
+    // The receipt link is the one binding that is actually authoritative.
+    expect(body.grant?.grant.receiptId).toBe(body.receiptId);
+  });
+
+  it("refuses a grant whose window is too short to survive issuance and delivery", async () => {
+    // The pre-ledger check only guaranteed expiresAtUtc was strictly after
+    // the captured issuedAtUtc — not that the gap between them was large
+    // enough to survive resolvePending's ledger work and the response
+    // reaching the caller. Needs a FIXED (non-advancing) clock, not the
+    // shared context's incrementing one, so the 2-second window below is
+    // deterministically inside MIN_GRANT_LIFETIME_MS rather than depending
+    // on how many now() calls happen to land between two requests.
+    const idp = await FakeIdp.create();
+    const ledger = Ledger.open(":memory:");
+    const reviews = DurableReviewStore.open(":memory:");
+    const pem = await generateSigningKeyPair();
+    const FIXED_NOW = "2026-07-30T05:00:00.000Z";
+    const server = createDecisionServer({
+      ledger,
+      reviews,
+      verifier: new OidcVerifier(
+        { issuer: idp.issuer, audience: "changesafe", jwksUri: `${idp.issuer}/jwks` },
+        { fetch: idp.fetch() },
+      ),
+      decisions: new DecisionService({
+        ledger,
+        appVersion: "changesafe-server-test",
+        signingKeyPair: await importSigningKeyPair(pem.privateKeyPem),
+      }),
+      now: () => FIXED_NOW,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const token = await idp.token();
+      const postResponse = await fetch(`${baseUrl}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(await pendingNetworkReview("review-grant-too-short")),
+      });
+      expect(postResponse.status).toBe(201);
+
+      const response = await fetch(`${baseUrl}/reviews/review-grant-too-short/decisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          decision: "approve",
+          // 2 seconds after a FIXED now — strictly after it (would have
+          // passed the pre-fix check) but well under MIN_GRANT_LIFETIME_MS.
+          grant: { ...grantRequest, expiresAtUtc: "2026-07-30T05:00:02.000Z" },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(ledger.count()).toBe(0);
+      expect(
+        reviews.getResolution("review-grant-too-short", {
+          tenantId: idp.issuer,
+          issuer: idp.issuer,
+          subject: "user-alice",
+          scope: "self-hosted-review",
+        }),
+      ).toBeNull();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      reviews.close();
+      ledger.close();
+    }
+  });
+
+  it("refuses an already-expired grant before anything reaches the ledger", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-expired"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    // A well-formed timestamp the grant schema still rejects (expiry at or
+    // before issuance). Grant issuance runs after the receipt is appended,
+    // so without the pre-ledger check this would commit a decision and then
+    // answer the caller with an error.
+    const response = await decideReview(
+      "review-grant-expired",
+      {
+        decision: "approve",
+        grant: { ...grantRequest, expiresAtUtc: "2000-01-01T00:00:00.000Z" },
+      },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-expired", aliceOwner())).toBeNull();
+  });
+
+  it("refuses an UPDATE grant with no oldObjectSha256 before anything reaches the ledger", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-update-no-old-hash"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    // AuthorizationGrantSchema.superRefine already rejects an UPDATE grant
+    // missing oldObjectSha256, but that check only runs inside issueGrant,
+    // which is called AFTER resolvePending. Without a pre-ledger check for
+    // this specific precondition, this request would commit the decision
+    // and only then discover the grant is unissuable (CS-ADV-014 follow-up).
+    const { oldObjectSha256: _omit, ...updateGrantWithoutOldHash } = grantRequest;
+    void _omit;
+    const response = await decideReview(
+      "review-grant-update-no-old-hash",
+      { decision: "approve", grant: updateGrantWithoutOldHash },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(
+      context.reviews.getResolution("review-grant-update-no-old-hash", aliceOwner()),
+    ).toBeNull();
+  });
+
+  it("refuses a CREATE grant carrying oldObjectSha256 before anything reaches the ledger", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-create-with-old-hash"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    // The inverse of the UPDATE case above: AuthorizationGrantSchema now
+    // rejects a CREATE grant that carries oldObjectSha256 (CREATE has no
+    // prior state), but that rejection only runs inside issueGrant, which
+    // is called AFTER resolvePending. Without a pre-ledger check for this
+    // precondition too, this request would commit the decision and only
+    // then discover the grant is unissuable.
+    const response = await decideReview(
+      "review-grant-create-with-old-hash",
+      { decision: "approve", grant: { ...grantRequest, operation: "CREATE" } },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(
+      context.reviews.getResolution("review-grant-create-with-old-hash", aliceOwner()),
+    ).toBeNull();
+  });
+
+  it("refuses an UPDATE grant with no resourceUid before anything reaches the ledger (CS-ADV-016)", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-update-no-uid"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    const { resourceUid: _omit, ...updateGrantWithoutUid } = grantRequest;
+    void _omit;
+    const response = await decideReview(
+      "review-grant-update-no-uid",
+      { decision: "approve", grant: updateGrantWithoutUid },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-update-no-uid", aliceOwner())).toBeNull();
+  });
+
+  it("refuses a CREATE grant carrying a resourceUid before anything reaches the ledger (CS-ADV-016)", async () => {
+    const token = await context.idp.token();
+    expect(
+      (await postReview(await pendingNetworkReview("review-grant-create-with-uid"), token)).status,
+    ).toBe(201);
+    const ledgeredBefore = context.ledger.count();
+
+    const { oldObjectSha256: _omit, ...createGrantWithUid } = { ...grantRequest, operation: "CREATE" as const };
+    void _omit;
+    const response = await decideReview(
+      "review-grant-create-with-uid",
+      { decision: "approve", grant: createGrantWithUid },
+      token,
+    );
+
+    expect(response.status).toBe(400);
+    expect(context.ledger.count()).toBe(ledgeredBefore);
+    expect(context.reviews.getResolution("review-grant-create-with-uid", aliceOwner())).toBeNull();
+  });
 });
