@@ -22412,8 +22412,8 @@ var AuthorizationGrantSchema = external_exports.strictObject({
    * deleted one. Still the enforcement boundary's own vocabulary, not a
    * new identity system: `userInfo.uid` is a field Kubernetes' own
    * `AdmissionReview.request.userInfo` already carries. Optional because
-   * not every identity provider populates a stable uid; when either side
-   * lacks one, verification falls back to the username-only comparison.
+   * not every identity provider populates a stable uid; a grant carrying a uid requires an identical request uid. Only a grant
+   * without uid uses username-only matching.
    */
   authorizedActorUid: external_exports.string().min(1).max(255).optional(),
   operation: GrantOperationSchema,
@@ -22517,6 +22517,12 @@ var SignedGrantSchema = external_exports.strictObject({
 function toBase642(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
+function fromBase642(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 function signingPayload2(grant) {
   const encoded = new TextEncoder().encode(canonicalize(grant));
   const bytes = new Uint8Array(new ArrayBuffer(encoded.byteLength));
@@ -22538,6 +22544,18 @@ async function signGrant(grant, keyPair, options = {}) {
       signedAtUtc: options.signedAtUtc ?? (/* @__PURE__ */ new Date()).toISOString()
     }
   });
+}
+async function verifyGrantSignature(signed, trustedPublicKey) {
+  if (await computePublicKeyId(trustedPublicKey) !== signed.signature.publicKeyId) {
+    return "key_mismatch";
+  }
+  const ok = await globalThis.crypto.subtle.verify(
+    WEB_CRYPTO_ALGORITHM2,
+    trustedPublicKey,
+    fromBase642(signed.signature.signature),
+    signingPayload2(signed.grant)
+  );
+  return ok ? "valid" : "invalid";
 }
 
 // ../core/src/expectations.ts
@@ -24696,6 +24714,39 @@ function normalizePodSpec(template) {
     hasHostPath: podSpec?.volumes?.some((volume) => volume.hostPath !== void 0) ?? false
   };
 }
+var SERVER_OWNED_METADATA_KEYS = [
+  "name",
+  "namespace",
+  "uid",
+  "resourceVersion",
+  "generation",
+  "creationTimestamp",
+  "managedFields",
+  "selfLink",
+  "clusterName"
+];
+function canonicalizeAdmittedResource(raw, evidenceId) {
+  const envelope = parseOrThrow(
+    RawResourceEnvelopeSchema,
+    raw,
+    "A Kubernetes resource is malformed."
+  );
+  const identity = identityOfRawResource(envelope);
+  const metadata = { ...envelope.metadata };
+  for (const key of SERVER_OWNED_METADATA_KEYS) delete metadata[key];
+  if (metadata.annotations !== void 0) {
+    metadata.annotations = sortRecord(metadata.annotations);
+  }
+  if (metadata.labels !== void 0) {
+    metadata.labels = sortRecord(metadata.labels);
+  }
+  return {
+    evidenceId,
+    identity,
+    metadata,
+    spec: envelope.spec ?? {}
+  };
+}
 function normalizeRawResource(raw, evidenceId) {
   const envelope = parseOrThrow(
     RawResourceEnvelopeSchema,
@@ -25502,6 +25553,19 @@ function protectedResourceProperty(before, after) {
     return !current || current.metadata.annotations["changesafe.dev/protected"] !== "true" || canonicalize(current.spec) !== canonicalize(resource.spec);
   }).map((resource) => `${resource.identity.namespace}/${resource.identity.name}`).sort();
   return violations.length === 0 ? { propertyId: "k8s-protected-resources-unchanged", satisfied: true, detail: "Every protected resource retains its normalized spec and protection annotation." } : { propertyId: "k8s-protected-resources-unchanged", satisfied: false, detail: `Protected resource(s) changed: ${violations.join(", ")}.` };
+}
+
+// ../domain-kubernetes/src/admission-binding.ts
+var GRANT_ANNOTATION = "changesafe.dev/grant";
+async function kubernetesObjectSha256(raw) {
+  const object2 = canonicalizeAdmittedResource(raw, "ev-admission-review");
+  const annotations = { ...object2.metadata.annotations };
+  delete annotations[GRANT_ANNOTATION];
+  return sha256Hex(canonicalize({
+    identity: object2.identity,
+    metadata: { ...object2.metadata, annotations },
+    spec: object2.spec
+  }));
 }
 
 // ../ai/src/prompts/kubernetes.ts
@@ -27909,6 +27973,47 @@ function expectationsTemplate(scenarioId) {
   };
 }
 
+// ../server/src/grant-binding.ts
+var GrantPreferencesSchema = external_exports.strictObject({
+  authorizedActor: external_exports.string().min(1).max(255),
+  authorizedActorUid: external_exports.string().min(1).max(255).optional(),
+  expiresAtUtc: external_exports.iso.datetime({ precision: 3 })
+});
+function kubernetesReviewArtifacts(request) {
+  return external_exports.strictObject({ snapshot: external_exports.unknown(), manifestText: external_exports.string().min(1) }).parse(request.input);
+}
+async function deriveReviewedGrantBinding(request) {
+  if (request.domain !== "kubernetes") {
+    throw new DomainError("REQUEST_INVALID", "Only Kubernetes has a reviewed grant issuance contract.");
+  }
+  const artifacts = kubernetesReviewArtifacts(request);
+  const raw = external_exports.object({ resources: external_exports.array(external_exports.unknown()) }).parse(artifacts.snapshot);
+  const snapshot = normalizeSnapshot(artifacts.snapshot);
+  const manifests = parseManifestDocuments(artifacts.manifestText);
+  if (manifests.documents.length !== 1) {
+    throw new DomainError("REQUEST_INVALID", "One grant requires exactly one reviewed manifest.");
+  }
+  const { proposal } = deriveManifestProposal(snapshot, manifests);
+  if (proposal.operations.length !== 1) {
+    throw new DomainError("REQUEST_INVALID", "One grant requires exactly one reviewed resource operation.");
+  }
+  const target = manifests.documents[0];
+  const identity = canonicalizeAdmittedResource(target, "ev-grant").identity;
+  const resource = resourceIdOf(identity);
+  const prior = raw.resources.find((entry) => resourceIdOf(canonicalizeAdmittedResource(entry, "ev-grant").identity) === resource);
+  if (prior === void 0) {
+    return { operation: "CREATE", resource, objectSha256: await kubernetesObjectSha256(target) };
+  }
+  const resourceUid = external_exports.object({ metadata: external_exports.object({ uid: external_exports.string().min(1).max(255) }) }).parse(prior).metadata.uid;
+  return {
+    operation: "UPDATE",
+    resource,
+    resourceUid,
+    objectSha256: await kubernetesObjectSha256(target),
+    oldObjectSha256: await kubernetesObjectSha256(prior)
+  };
+}
+
 // ../server/src/domains.ts
 var network2 = {
   id: "network",
@@ -27940,8 +28045,14 @@ var kubernetes2 = {
   id: "kubernetes",
   adapter: kubernetesDomain,
   parseInput(raw) {
-    const snapshot = normalizeSnapshot(raw);
-    return { input: snapshot, inputId: snapshot.snapshotId };
+    const bundle = external_exports.object({ snapshot: external_exports.unknown(), manifestText: external_exports.string() }).safeParse(raw);
+    const snapshot = normalizeSnapshot(bundle.success ? bundle.data.snapshot : raw);
+    return {
+      input: snapshot,
+      inputId: snapshot.snapshotId,
+      auditInput: raw,
+      ...bundle.success ? { proposal: bundle.data.manifestText } : {}
+    };
   },
   resolveProposal(input, raw) {
     const manifestSet = parseManifestDocuments(external_exports.string().parse(raw));
@@ -28007,7 +28118,7 @@ var DecisionService = class {
    * unsigned grant would be indistinguishable from one anyone could forge,
    * and a grant that cannot prove who issued it authorizes nothing.
    */
-  async issueGrant(receipt, options) {
+  async issueGrant(receipt, options, request) {
     this.#requireSigningCapability();
     if (receipt.decision !== "approved") {
       throw new DomainError(
@@ -28015,21 +28126,36 @@ var DecisionService = class {
         `Receipt ${receipt.receiptId} was not approved and cannot authorize a grant.`
       );
     }
-    const grant = AuthorizationGrantSchema.parse({
-      grantId: `grant-${globalThis.crypto.randomUUID()}`,
-      receiptId: receipt.receiptId,
+    if (!request || request.decision !== "approve") {
+      throw new DomainError("REQUEST_INVALID", "Grant issuance requires the immutable reviewed request.");
+    }
+    const entry = this.#options.ledger.get(receipt.receiptId);
+    const ledgerReceipt = entry && ("receipt" in entry.record ? entry.record.receipt : entry.record);
+    if (!ledgerReceipt || canonicalize(ledgerReceipt) !== canonicalize(receipt)) {
+      throw new DomainError("REQUEST_INVALID", "Grant source is not the ledgered receipt.");
+    }
+    await this.readSignedOutcome(receipt.receiptId);
+    const prepared = this.#prepare(request, receipt.policyVersion);
+    if (request.sourceId !== receipt.sourceId || await hashCanonical(prepared.input) !== receipt.inputSha256 || await hashCanonical(prepared.proposal) !== receipt.proposalSha256) {
+      throw new DomainError("REQUEST_INVALID", "Grant artifacts do not match the approved receipt.");
+    }
+    const preferences = GrantPreferencesSchema.parse({
       authorizedActor: options.authorizedActor,
       authorizedActorUid: options.authorizedActorUid,
-      operation: options.operation,
-      resource: options.resource,
-      objectSha256: options.objectSha256,
-      oldObjectSha256: options.oldObjectSha256,
-      resourceUid: options.resourceUid,
-      policyVersion: receipt.policyVersion,
-      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString(),
       expiresAtUtc: options.expiresAtUtc
     });
-    return signGrant(grant, this.#options.signingKeyPair);
+    const binding = await deriveReviewedGrantBinding(request);
+    const grant = AuthorizationGrantSchema.parse({
+      // A receipt may already use all 64 identifier characters. Hash the
+      // namespaced source rather than prefixing it beyond the schema limit.
+      grantId: `g${(await hashCanonical({ kind: "authorization-grant", receiptId: receipt.receiptId })).slice(0, 63)}`,
+      receiptId: receipt.receiptId,
+      policyVersion: receipt.policyVersion,
+      ...binding,
+      ...preferences,
+      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString()
+    });
+    return signGrant(grant, this.#options.signingKeyPair, { signedAtUtc: grant.issuedAtUtc });
   }
   async decide(request, approver, issuance) {
     const prepared = this.#prepare(request, issuance?.expectedPolicyVersion);
@@ -28087,6 +28213,25 @@ var DecisionService = class {
       chainSha256: entry.chainSha256
     };
   }
+  async readSignedOutcome(receiptId) {
+    const entry = this.#options.ledger.get(receiptId);
+    if (!entry) throw new DomainError("INTERNAL", "Resolved receipt is missing from the ledger.");
+    const record2 = SignedReceiptSchema.parse(entry.record);
+    const key = await this.#trustedRecoveryKey(record2.signature.publicKeyId);
+    if (!key || !await verifyReceiptHash(record2.receipt) || await verifyReceiptSignature(record2, key) !== "valid") {
+      throw new DomainError("INTERNAL", "Resolved receipt failed trusted verification.");
+    }
+    return { record: record2, receipt: record2.receipt, ledgerSeq: entry.seq, chainSha256: entry.chainSha256 };
+  }
+  async validateStoredGrant(signed, receipt, request, preferences) {
+    const binding = await deriveReviewedGrantBinding(request);
+    const grant = signed.grant;
+    const active = this.#options.signingKeyPair?.publicKey;
+    const key = this.#options.trustedReceiptPublicKeys?.get(signed.signature.publicKeyId) ?? (active && await computePublicKeyId(active) === signed.signature.publicKeyId ? active : void 0);
+    if (!key || await verifyGrantSignature(signed, key) !== "valid" || grant.receiptId !== receipt.receiptId || grant.policyVersion !== receipt.policyVersion || receipt.decision !== "approved" || Object.entries({ ...binding, ...preferences }).some(([name, value]) => canonicalize(value) !== canonicalize(grant[name]))) {
+      throw new DomainError("INTERNAL", "Stored grant does not match its reviewed source or trusted signer.");
+    }
+  }
   #requireSigningCapability() {
     if (!this.#options.signingKeyPair) {
       throw new DomainError(
@@ -28122,12 +28267,14 @@ var DecisionService = class {
         `The pending review policy version ${expectedPolicyVersion} is stale; active policy version is ${domain2.adapter.policyVersion}.`
       );
     }
-    const { input, inputId } = domain2.parseInput(request.input);
-    const proposal = domain2.resolveProposal(input, request.proposal);
+    const parsed = domain2.parseInput(request.input);
+    const { input, inputId } = parsed;
+    const proposal = domain2.resolveProposal(input, parsed.proposal ?? request.proposal);
     validateProposalEvidence(domain2.adapter, input, proposal);
     const { findings, riskLevel } = evaluatePolicies(domain2.adapter, input, proposal);
     return {
       domain: domain2,
+      auditInput: parsed.auditInput ?? input,
       input,
       inputId,
       proposal,
@@ -28137,7 +28284,7 @@ var DecisionService = class {
     };
   }
   #prepare(request, expectedPolicyVersion) {
-    const { domain: domain2, input, inputId, proposal, policyVersion, findings, riskLevel } = this.#evaluate(request, expectedPolicyVersion);
+    const { domain: domain2, input, auditInput, inputId, proposal, policyVersion, findings, riskLevel } = this.#evaluate(request, expectedPolicyVersion);
     let state = initialState(request.sourceId, input);
     state = transition(state, { type: "START_ANALYSIS", mode: "offline" });
     state = transition(state, {
@@ -28173,7 +28320,7 @@ var DecisionService = class {
     }
     return {
       request,
-      input,
+      input: auditInput,
       inputId,
       proposal,
       policyVersion,
@@ -28979,8 +29126,16 @@ var ReviewImpactViewModelSchema = external_exports.discriminatedUnion("kind", [
 ]);
 
 // ../../features/reviews/durable-review-contract.ts
-var DurableReviewDomainIdSchema = external_exports.enum(["network", "terraform"]);
+var DurableReviewDomainIdSchema = external_exports.enum(["network", "terraform", "kubernetes"]);
+var MAX_KUBERNETES_REVIEW_CONTENT_BYTES = 7 * 1024 * 1024;
 var DurableReviewSourceSchema = external_exports.discriminatedUnion("domainId", [
+  external_exports.strictObject({
+    domainId: external_exports.literal("kubernetes"),
+    sourceId: IdSchema,
+    sourceKind: external_exports.literal("kubernetes-snapshot"),
+    origin: external_exports.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    untrustedArtifactObservedAtUtc: TimestampSchema
+  }),
   external_exports.strictObject({
     domainId: external_exports.literal("network"),
     sourceId: IdSchema,
@@ -29032,6 +29187,14 @@ var DurableReviewIntakeSchema = external_exports.strictObject({
   input: DurableReviewInputEnvelopeSchema,
   proposal: DurableReviewProposalEnvelopeSchema.optional()
 }).superRefine((intake, context) => {
+  if (intake.domainId === "kubernetes" && new TextEncoder().encode(JSON.stringify(intake.input.content)).byteLength > MAX_KUBERNETES_REVIEW_CONTENT_BYTES) {
+    context.addIssue({
+      code: "custom",
+      path: ["input", "content"],
+      message: "Kubernetes review artifacts exceed the 7 MiB UTF-8 JSON limit; narrow the collected snapshot"
+    });
+    return;
+  }
   if (intake.domainId !== intake.source.domainId) {
     context.addIssue({
       code: "custom",
@@ -29039,7 +29202,15 @@ var DurableReviewIntakeSchema = external_exports.strictObject({
       message: "durable intake source domain must match the intake domain"
     });
   }
-  const domainSchema = intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+  const domainSchema = intake.domainId === "kubernetes" ? external_exports.strictObject({ snapshot: JsonValueSchema, manifestText: external_exports.string().min(1) }).transform((raw, ctx) => {
+    try {
+      deriveManifestProposal(normalizeSnapshot(raw.snapshot), parseManifestDocuments(raw.manifestText));
+      return raw;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "invalid Kubernetes review artifacts" });
+      return external_exports.NEVER;
+    }
+  }) : intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
   const content = domainSchema.safeParse(intake.input.content);
   if (!content.success) {
     context.addIssue({
@@ -29069,7 +29240,7 @@ var DurableReviewIntakeSchema = external_exports.strictObject({
     context.addIssue({
       code: "custom",
       path: ["proposal"],
-      message: "Terraform proposals are derived from the immutable plan and cannot be submitted"
+      message: "Terraform and Kubernetes proposals are derived from immutable input and cannot be submitted"
     });
   }
 });
@@ -29566,12 +29737,13 @@ async function buildReceiptProof(resolution, ledger, options) {
 
 // ../server/src/http.ts
 var MAX_BODY_BYTES = 2 * 1024 * 1024;
+var MAX_REVIEW_BODY_BYTES = 8 * 1024 * 1024;
 var MIN_GRANT_LIFETIME_MS = 5e3;
 var PayloadTooLargeError = class extends DomainError {
-  constructor() {
+  constructor(limit) {
     super(
       "REQUEST_INVALID",
-      `The request body exceeds the ${Math.round(MAX_BODY_BYTES / 1024)} KiB limit.`
+      `The request body exceeds the ${Math.round(limit / 1024)} KiB limit.`
     );
     this.name = "PayloadTooLargeError";
   }
@@ -29593,19 +29765,7 @@ var ReviewIntakeBodySchema = external_exports.strictObject({
   reviewId: IdSchema,
   intake: DurableReviewIntakeSchema
 });
-var GrantRequestSchema = external_exports.strictObject({
-  authorizedActor: external_exports.string().min(1).max(255),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on authorizedActorUid. */
-  authorizedActorUid: external_exports.string().min(1).max(255).optional(),
-  operation: external_exports.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
-  resource: external_exports.string().min(1).max(128),
-  objectSha256: external_exports.string().regex(/^[a-f0-9]{64}$/),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on oldObjectSha256. */
-  oldObjectSha256: external_exports.string().regex(/^[a-f0-9]{64}$/).optional(),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on resourceUid. */
-  resourceUid: external_exports.string().min(1).max(255).optional(),
-  expiresAtUtc: TimestampSchema
-});
+var GrantRequestSchema = GrantPreferencesSchema;
 var ReviewDecisionBodySchema = external_exports.strictObject({
   decision: external_exports.enum(["approve", "reject"]),
   grant: GrantRequestSchema.optional()
@@ -29619,14 +29779,14 @@ var ReviewDecisionBodySchema = external_exports.strictObject({
   }
 });
 function pendingReviewSession(intake) {
-  const network3 = intake.domainId === "network";
+  const simulated = intake.domainId !== "terraform";
   return {
     domainId: intake.domainId,
     contractVersion: REVIEW_CONTRACT_VERSION,
     policyVersion: resolveServerDomain(intake.domainId).adapter.policyVersion,
-    domainShape: network3 ? "simulated-state" : "external-diff",
+    domainShape: simulated ? "simulated-state" : "external-diff",
     capabilities: {
-      sandboxSimulation: network3,
+      sandboxSimulation: simulated,
       resourceGraph: true,
       structuredDiff: true,
       untrustedContext: true,
@@ -29735,13 +29895,13 @@ function sendError(response, error51) {
     error: { code: "INTERNAL", message: "The request failed unexpectedly." }
   });
 }
-async function readBody(request) {
+async function readBody(request, limit = MAX_BODY_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = chunk;
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new PayloadTooLargeError();
+    if (size > limit) throw new PayloadTooLargeError(limit);
     chunks.push(buffer);
   }
   if (size === 0) return void 0;
@@ -29792,7 +29952,7 @@ async function handle(request, response, options) {
       });
       return;
     }
-    const body = ReviewIntakeBodySchema.parse(await readBody(request));
+    const body = ReviewIntakeBodySchema.parse(await readBody(request, MAX_REVIEW_BODY_BYTES));
     const intake = normalizeUploadedIntake(body.intake);
     assertIntakeInputIdentity(intake);
     const review = await options.reviews.appendPending({
@@ -29817,49 +29977,48 @@ async function handle(request, response, options) {
     }
     const reviewId = IdSchema.parse(reviewDecisionMatch[1]);
     const owner = durableReviewOwner(identity);
-    if (!options.reviews.get(reviewId, owner)) {
+    const pendingEntry2 = options.reviews.get(reviewId, owner);
+    if (!pendingEntry2) {
       send(response, 404, {
         error: { code: "REQUEST_INVALID", message: "The requested review was not found." }
       });
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
-    const grantIssuedAtUtc = serverNow(options);
-    if (body.grant && Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        `A grant's expiresAtUtc must be at least ${MIN_GRANT_LIFETIME_MS}ms after issuance time, so it cannot expire before the decision finishes committing and the response reaches the caller.`
-      );
+    const scope = canonicalize({ owner, reviewId });
+    const existingIntent = options.reviews.grants.intent(scope);
+    const grantIssuedAtUtc = existingIntent?.issuedAtUtc ?? serverNow(options);
+    const requestForDecision = { ...pendingReviewRequest(pendingEntry2.record), decision: body.decision };
+    const existingResolution = options.reviews.getResolution(reviewId, owner);
+    if (!existingResolution) {
+      options.decisions.preflightSigned(requestForDecision, pendingEntry2.record.session.policyVersion);
+      if (body.grant) {
+        if (Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS) {
+          throw new DomainError("REQUEST_INVALID", "Grant lifetime must leave at least 5000ms for issuance.");
+        }
+        const binding = await deriveReviewedGrantBinding(requestForDecision);
+        AuthorizationGrantSchema.parse({
+          ...binding,
+          ...body.grant,
+          grantId: "grant-preflight",
+          receiptId: "receipt-preflight",
+          policyVersion: pendingEntry2.record.session.policyVersion,
+          issuedAtUtc: grantIssuedAtUtc
+        });
+      }
+    } else if (!existingIntent || !body.grant) {
+      throw new DomainError("ILLEGAL_TRANSITION", "Review already has an immutable resolution.");
     }
-    if (body.grant && body.grant.operation === "UPDATE" && body.grant.oldObjectSha256 === void 0) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "An UPDATE grant's oldObjectSha256 is required (AuthorizationGrantSchema enforces this) \u2014 missing it here would only be discovered after the decision is committed."
-      );
-    }
-    if (body.grant && body.grant.operation === "CREATE" && body.grant.oldObjectSha256 !== void 0) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "A CREATE grant must not carry oldObjectSha256 (AuthorizationGrantSchema enforces this) \u2014 CREATE has no prior state, and this would only be discovered after the decision is committed."
-      );
-    }
-    if (body.grant && body.grant.operation === "UPDATE" && body.grant.resourceUid === void 0) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "An UPDATE grant's resourceUid is required (AuthorizationGrantSchema enforces this) \u2014 missing it here would only be discovered after the decision is committed."
-      );
-    }
-    if (body.grant && body.grant.operation === "CREATE" && body.grant.resourceUid !== void 0) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "A CREATE grant must not carry resourceUid (AuthorizationGrantSchema enforces this) \u2014 the resource does not exist yet, and this would only be discovered after the decision is committed."
-      );
-    }
+    const intent = options.reviews.grants.claim(scope, {
+      decision: body.decision,
+      grant: body.grant ?? null,
+      issuedAtUtc: grantIssuedAtUtc
+    });
     const durableDecisionRequest = (pending) => ({
       ...pendingReviewRequest(pending),
       decision: body.decision
     });
-    const decided = await options.reviews.resolvePending(
+    const decided = existingResolution ? { outcome: await options.decisions.readSignedOutcome(existingResolution.resolution.receipt.receiptId), resolution: existingResolution } : await options.reviews.resolvePending(
       reviewId,
       owner,
       {
@@ -29893,7 +30052,7 @@ async function handle(request, response, options) {
           resolution: {
             resolutionVersion: "1",
             reviewId,
-            resolvedAtUtc: serverNow(options),
+            resolvedAtUtc: claim.claimedAtUtc,
             receipt: {
               receiptId: outcome2.receipt.receiptId,
               sourceId: outcome2.receipt.sourceId,
@@ -29908,10 +30067,20 @@ async function handle(request, response, options) {
         };
       }
     );
-    const grant = body.decision === "approve" && body.grant ? await options.decisions.issueGrant(decided.outcome.receipt, {
-      ...body.grant,
-      issuedAtUtc: grantIssuedAtUtc
-    }) : void 0;
+    let grant = options.reviews.grants.grant(scope);
+    if (intent.grant) {
+      if (!grant) {
+        grant = options.reviews.grants.record(
+          scope,
+          await options.decisions.issueGrant(
+            decided.outcome.receipt,
+            { ...intent.grant, issuedAtUtc: intent.issuedAtUtc },
+            requestForDecision
+          )
+        );
+      }
+      await options.decisions.validateStoredGrant(grant, decided.outcome.receipt, requestForDecision, intent.grant);
+    }
     send(response, 201, {
       receiptId: decided.outcome.receipt.receiptId,
       decision: decided.outcome.receipt.decision,
@@ -29959,7 +30128,7 @@ async function handle(request, response, options) {
     const requestedDomainId = url2.searchParams.get("domainId");
     const reviews = options.reviews.list({
       limit,
-      ...requestedDomainId === null ? {} : { domainId: external_exports.enum(["network", "terraform"]).parse(requestedDomainId) },
+      ...requestedDomainId === null ? {} : { domainId: external_exports.enum(["network", "terraform", "kubernetes"]).parse(requestedDomainId) },
       sourceId: url2.searchParams.get("sourceId") ?? void 0
     }, durableReviewOwner(identity));
     send(response, 200, { reviews: reviews.map(reviewSummary) });
@@ -30030,14 +30199,84 @@ async function handle(request, response, options) {
   });
 }
 
+// ../server/src/grant-journal.ts
+import { createHash } from "node:crypto";
+var IntentSchema = external_exports.strictObject({
+  decision: external_exports.enum(["approve", "reject"]),
+  grant: GrantPreferencesSchema.nullable(),
+  issuedAtUtc: TimestampSchema
+});
+var RowSchema2 = external_exports.object({ payload: external_exports.string(), digest: external_exports.string() });
+var digestOf = (payload) => createHash("sha256").update(payload).digest("hex");
+var GrantJournal = class {
+  constructor(db) {
+    this.db = db;
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS grant_intents (scope TEXT PRIMARY KEY, payload TEXT NOT NULL, digest TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS issued_grants (scope TEXT PRIMARY KEY, payload TEXT NOT NULL, digest TEXT NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS grant_intents_no_replace BEFORE INSERT ON grant_intents
+        WHEN EXISTS (SELECT 1 FROM grant_intents WHERE scope = NEW.scope)
+        BEGIN SELECT RAISE(IGNORE); END;
+      CREATE TRIGGER IF NOT EXISTS issued_grants_no_replace BEFORE INSERT ON issued_grants
+        WHEN EXISTS (SELECT 1 FROM issued_grants WHERE scope = NEW.scope)
+        BEGIN SELECT RAISE(IGNORE); END;
+      CREATE TRIGGER IF NOT EXISTS grant_intents_no_update BEFORE UPDATE ON grant_intents BEGIN SELECT RAISE(ABORT, 'immutable grant intent'); END;
+      CREATE TRIGGER IF NOT EXISTS grant_intents_no_delete BEFORE DELETE ON grant_intents BEGIN SELECT RAISE(ABORT, 'immutable grant intent'); END;
+      CREATE TRIGGER IF NOT EXISTS issued_grants_no_update BEFORE UPDATE ON issued_grants BEGIN SELECT RAISE(ABORT, 'immutable issued grant'); END;
+      CREATE TRIGGER IF NOT EXISTS issued_grants_no_delete BEFORE DELETE ON issued_grants BEGIN SELECT RAISE(ABORT, 'immutable issued grant'); END;
+    `);
+  }
+  intent(scope) {
+    const raw = this.read("grant_intents", scope);
+    return raw === null ? null : IntentSchema.parse(raw);
+  }
+  claim(scope, raw) {
+    const intent = IntentSchema.parse(raw);
+    this.insert("grant_intents", scope, intent);
+    const stored = this.intent(scope);
+    if (canonicalize({ ...stored, issuedAtUtc: "" }) !== canonicalize({ ...intent, issuedAtUtc: "" })) {
+      throw new DomainError("ILLEGAL_TRANSITION", "Review already has different immutable grant intent.");
+    }
+    return stored;
+  }
+  grant(scope) {
+    const raw = this.read("issued_grants", scope);
+    return raw === null ? null : SignedGrantSchema.parse(raw);
+  }
+  record(scope, raw) {
+    const signed = SignedGrantSchema.parse(raw);
+    const intent = this.intent(scope);
+    if (!intent?.grant || intent.decision !== "approve") {
+      throw new DomainError("ILLEGAL_TRANSITION", "No approved grant intent exists.");
+    }
+    this.insert("issued_grants", scope, signed);
+    const stored = this.grant(scope);
+    if (canonicalize(stored.grant) !== canonicalize(signed.grant)) {
+      throw new DomainError("ILLEGAL_TRANSITION", "Review already has a different issued grant.");
+    }
+    return stored;
+  }
+  read(table, scope) {
+    const raw = this.db.prepare(`SELECT payload, digest FROM ${table} WHERE scope = ?`).get(scope);
+    if (!raw) return null;
+    const row = RowSchema2.parse(raw);
+    if (digestOf(row.payload) !== row.digest) throw new DomainError("INTERNAL", "Grant journal integrity mismatch.");
+    return JSON.parse(row.payload);
+  }
+  insert(table, scope, value) {
+    const payload = canonicalize(value);
+    this.db.prepare(`INSERT INTO ${table} (scope, payload, digest) VALUES (?, ?, ?) ON CONFLICT(scope) DO NOTHING`).run(scope, payload, digestOf(payload));
+  }
+};
+
 // ../server/src/durable-review-store.ts
-import { createHash, randomUUID } from "node:crypto";
+import { createHash as createHash2, randomUUID } from "node:crypto";
 import { createRequire as createRequire2 } from "node:module";
 var PendingRowSchema = external_exports.strictObject({
   seq: external_exports.number().int().positive(),
   review_id: IdSchema,
   created_at_utc: external_exports.string(),
-  domain_id: external_exports.enum(["network", "terraform"]),
+  domain_id: external_exports.enum(["network", "terraform", "kubernetes"]),
   source_id: IdSchema,
   input_id: IdSchema,
   owner_tenant_id: external_exports.string(),
@@ -30085,7 +30324,7 @@ var LegacyRowSchema = external_exports.strictObject({
   seq: external_exports.number().int().positive(),
   review_id: IdSchema,
   created_at_utc: external_exports.string(),
-  domain_id: external_exports.enum(["network", "terraform"]),
+  domain_id: external_exports.enum(["network", "terraform", "kubernetes"]),
   source_id: IdSchema,
   input_id: IdSchema,
   receipt_id: IdSchema,
@@ -30132,7 +30371,7 @@ var QuarantineRowSchema = external_exports.strictObject({
   source_schema_fingerprint: external_exports.string().regex(/^[a-f0-9]{64}$/),
   row_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/)
 });
-var ListOptionsSchema = external_exports.strictObject({ limit: external_exports.number().finite().optional(), domainId: external_exports.enum(["network", "terraform"]).optional(), sourceId: IdSchema.optional() });
+var ListOptionsSchema = external_exports.strictObject({ limit: external_exports.number().finite().optional(), domainId: external_exports.enum(["network", "terraform", "kubernetes"]).optional(), sourceId: IdSchema.optional() });
 var DEFAULT_LIST_LIMIT2 = 50;
 var MAX_LIST_LIMIT2 = 1e3;
 var LEGACY_SCHEMA = `
@@ -30576,7 +30815,7 @@ function schemaMetadata(db, tableNames) {
   });
 }
 function schemaFingerprint(db, tableNames) {
-  return createHash("sha256").update(canonicalize(schemaMetadata(db, tableNames))).digest("hex");
+  return createHash2("sha256").update(canonicalize(schemaMetadata(db, tableNames))).digest("hex");
 }
 function expectedFingerprint(schema, tableNames, triggerInstaller) {
   const expected = openDatabase2(":memory:");
@@ -30734,10 +30973,10 @@ function dropKnownLegacyPreclaimProvenance(db) {
   db.exec("DROP TABLE IF EXISTS durable_review_legacy_preclaim_provenance");
 }
 function quarantineEnvelopeSha256(envelope) {
-  return createHash("sha256").update(canonicalize(envelope)).digest("hex");
+  return createHash2("sha256").update(canonicalize(envelope)).digest("hex");
 }
 function resolutionRowSha256(row) {
-  return createHash("sha256").update(canonicalize(row)).digest("hex");
+  return createHash2("sha256").update(canonicalize(row)).digest("hex");
 }
 function installLegacyPreclaimProvenance(db, sourceSchemaFingerprint) {
   db.exec(LEGACY_PRECLAIM_PROVENANCE_SCHEMA);
@@ -31190,8 +31429,10 @@ function samePendingRequest(left, right) {
 var DurableReviewStore = class _DurableReviewStore {
   #db;
   #writes = Promise.resolve();
+  grants;
   constructor(db) {
     this.#db = db;
+    this.grants = new GrantJournal(db);
   }
   static open(path9, options = {}) {
     const db = openDatabase2(path9);
@@ -31219,8 +31460,10 @@ var DurableReviewStore = class _DurableReviewStore {
     return external_exports.strictObject({ count: external_exports.number().int().nonnegative() }).parse(this.#db.prepare("SELECT count(*) AS count FROM durable_review_records").get()).count;
   }
   async appendPending(raw) {
-    const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
-    return this.#queue(() => this.#appendPending(accepted));
+    return this.#queue(async () => {
+      const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
+      return this.#appendPending(accepted);
+    });
   }
   #appendPending(record2) {
     const existing = this.get(record2.reviewId, record2.owner);
@@ -31820,7 +32063,7 @@ import { open, rename, rm } from "node:fs/promises";
 import path8 from "node:path";
 
 // ../kubernetes-collector/src/collect.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var LISTERS = [
   "listDeployments",
   "listStatefulSets",
@@ -31828,7 +32071,7 @@ var LISTERS = [
   "listServices"
 ];
 function digest(value) {
-  return createHash2("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash3("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function collectKubernetesSnapshot(options, client) {
   const namespaces = [...new Set(options.namespaces)].sort();
@@ -31866,7 +32109,7 @@ async function collectKubernetesSnapshot(options, client) {
 }
 
 // ../kubernetes-collector/src/client.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { createRequire as createRequire3 } from "node:module";
 var runtimeRequire = createRequire3(import.meta.url);
 function loadKubernetesClient() {
@@ -31923,7 +32166,7 @@ function loadConfiguration(kubeconfigPath, context) {
   return {
     k8s,
     config: config2,
-    fingerprint: createHash3("sha256").update(`${new URL(cluster.server).origin}\0${selected}`).digest("hex")
+    fingerprint: createHash4("sha256").update(`${new URL(cluster.server).origin}\0${selected}`).digest("hex")
   };
 }
 

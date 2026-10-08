@@ -201,27 +201,23 @@ async function handle(
     { expectedPolicyVersion: options.expectedPolicyVersion },
   );
 
-  // Use-state is checked LAST, and only on an otherwise-valid grant, so a
-  // denied attempt never consumes anything: a mistyped patch must not burn
-  // the human decision it was trying to exercise. On ALLOW the grant is
-  // consumed in the same synchronous step that decides the answer, so two
-  // concurrent attempts cannot both see it unused (Node's event loop makes
-  // consume() atomic within this process — the registry's documented
-  // scope). `grantUses` is always set by createEnforcerRequestListener;
-  // the fallback only exists for direct callers of handle() in tests.
-  const result =
-    !outcome.allowed
-      ? { allowed: false as const, message: outcome.reason }
-      : (options.grantUses ?? createInMemoryGrantUseRegistry()).consume(
-            signedGrant.grant.grantId,
-            Date.parse(signedGrant.grant.expiresAtUtc),
-            options.now().getTime(),
-          )
-        ? { allowed: true as const }
-        : {
-            allowed: false as const,
-            message: "grant has already been exercised; a grant authorizes exactly one admission",
-          };
+  // Only a valid, non-dry-run admission consumes authority. SQLite's unique
+  // insert is atomic across connections; storage failure is an explicit DENY.
+  let result: { allowed: true } | { allowed: false; message: string };
+  if (!outcome.allowed) {
+    result = { allowed: false, message: outcome.reason };
+  } else if (review.request.dryRun) {
+    result = { allowed: true };
+  } else {
+    try {
+      const consumed = (options.grantUses ?? createInMemoryGrantUseRegistry()).consume(
+        signedGrant.grant.grantId, Date.parse(signedGrant.grant.expiresAtUtc), options.now().getTime());
+      result = consumed ? { allowed: true } : { allowed: false, message: "grant has already been exercised; a grant authorizes exactly one admission" };
+    } catch {
+      // A reachable verifier with broken storage must answer DENY even on Ignore.
+      result = { allowed: false, message: "grant consumption could not be recorded" };
+    }
+  }
 
   send(response, 200, buildAdmissionReviewResponse(review.request.uid, result));
 }

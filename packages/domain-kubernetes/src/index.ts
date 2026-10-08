@@ -55,3 +55,5 @@ export { evaluateServiceSelector } from "./policies/service-selector";
 export { evaluateProtectedResource } from "./policies/protected-resource";
 export { evaluateMutableImage } from "./policies/mutable-image";
 export { runKubernetesSimulation } from "./simulate";
+
+export { GRANT_ANNOTATION, kubernetesObjectSha256 } from "./admission-binding";

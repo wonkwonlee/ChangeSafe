@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # examples/m2-kubernetes-enforcer/kind-repro.sh
 #
-# Manual/local reproduction script — not run in CI. Requires kind, kubectl,
+# Local and CI reproduction script. Requires kind, kubectl,
 # docker, node, and openssl. Builds the enforcer from this checkout, spins
 # up a kind cluster, deploys the enforcer behind TLS, registers the two-tier
 # ValidatingWebhookConfigurations, and runs the three demo steps from
@@ -107,11 +107,9 @@ run kubectl create namespace changesafe-default-demo
 # --- 8. Bootstrap the target Deployments BEFORE the webhooks are registered -
 # Both webhook configs now intercept CREATE as well as UPDATE (CS-ADV-012),
 # so creating these after registration would need a grant for the very
-# first apply too — a real operator protects an ALREADY-RUNNING resource
-# (matching K8S_PROTECTED_RESOURCE's own model: the changesafe.dev/protected
-# annotation marks something already there), not one that never existed
-# without a grant. Bootstrapping before the webhooks even exist is the
-# realistic sequence, not a workaround.
+# first apply too. Namespace tier selects fail-closed routing; the separate
+# changesafe.dev/protected annotation would prohibit every spec change under
+# K8S_PROTECTED_RESOURCE, including this demo's otherwise benign scale-up.
 log ""
 log "--- Creating the demo Deployments (before the webhooks exist, so no grant is needed yet) ---"
 cat > "${WORK_DIR}/web-protected.yaml" <<'EOF'
@@ -120,8 +118,6 @@ kind: Deployment
 metadata:
   name: web
   namespace: changesafe-protected-demo
-  annotations:
-    changesafe.dev/protected: "true"
 spec:
   replicas: 3
   selector:
@@ -165,66 +161,36 @@ sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-protected.yaml" > 
 sed "s#<base64-ca-bundle>#${CA_B64}#" "${EXAMPLE_DIR}/webhook-default.yaml" > "${WORK_DIR}/webhook-default.rendered.yaml"
 run kubectl apply -f "${WORK_DIR}/webhook-protected.rendered.yaml" -f "${WORK_DIR}/webhook-default.rendered.yaml"
 
+# Routing controls are independent of the webhook and fail closed.
+run kubectl apply -f "${REPO_ROOT}/examples/m2-kubernetes-enforcer/routing-guards.yaml"
+# Wait for asynchronous policy binding propagation by testing the actual denial.
+for ATTEMPT in {1..30}; do
+  if ! kubectl label namespace changesafe-protected-demo changesafe.dev/tier=default --overwrite --dry-run=server >"${WORK_DIR}/tier-check.txt" 2>&1; then
+    if grep -q "cannot be downgraded" "${WORK_DIR}/tier-check.txt"; then break; fi
+  fi
+  sleep 1
+done
+grep -q "cannot be downgraded" "${WORK_DIR}/tier-check.txt"
+log "protected namespace downgrade: DENY"
+if kubectl -n changesafe-protected-demo scale deployment web --replicas=99 >"${WORK_DIR}/scale-check.txt" 2>&1; then
+  log "ERROR: protected Scale bypass admitted"; exit 1
+fi
+grep -q "requires a reviewed parent-resource UPDATE" "${WORK_DIR}/scale-check.txt"
+log "protected scale subresource: DENY"
+
 # --- 10. Demo step 1 — ALLOW: issue a grant for a benign replica change,
 #        attach it via the changesafe.dev/grant annotation, apply it -------
 log ""
 log "=== Demo step 1: ALLOW (grant matches the exact object it authorizes) ==="
 kubectl -n changesafe-protected-demo get deploy web -o json > "${WORK_DIR}/web-current.json"
-node --input-type=module -e "
-import { importSigningKeyPair, signGrant, AuthorizationGrantSchema } from '${REPO_ROOT}/packages/core/dist/index.js';
-import { normalizeRawResource, POLICY_VERSION } from '${REPO_ROOT}/packages/domain-kubernetes/dist/index.js';
-// The enforcer's own hash function, imported rather than reimplemented: the
-// two sides of a grant must hash identically, and a local copy of that
-// computation here is exactly the drift CS-ADV-003 recorded.
-import { kubernetesObjectSha256 } from '${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js';
-import { readFileSync, writeFileSync } from 'node:fs';
-
-const current = JSON.parse(readFileSync('${WORK_DIR}/web-current.json', 'utf8'));
-const candidate = JSON.parse(JSON.stringify(current));
-candidate.spec.replicas = 4;
-
-const normalized = normalizeRawResource(candidate, 'ev-demo-step1');
-const objectSha256 = await kubernetesObjectSha256(candidate);
-// AuthorizationGrantSchema requires this for UPDATE (CS-ADV-014): the
-// object's state BEFORE the reviewed change, hashed the same way as the
-// target state, so the enforcer can tell an unreviewed prior-state drift
-// (a since-mutated object replayed against a stale grant) from a
-// legitimately reviewed transition.
-const oldObjectSha256 = await kubernetesObjectSha256(current);
-
-const keyPair = await importSigningKeyPair(readFileSync('${WORK_DIR}/grant-private.pem', 'utf8'));
-const grant = AuthorizationGrantSchema.parse({
-  grantId: 'grant-step1-0001',
-  receiptId: 'rcpt-step1-0001',
-  authorizedActor: '${WHOAMI_USER}',
-  operation: 'UPDATE',
-  resource: normalized.resourceId,
-  objectSha256,
-  oldObjectSha256,
-  // The live object's own uid (CS-ADV-016): binds the grant to THIS
-  // incarnation of web, not to any future Deployment that happens to be
-  // recreated under the same name with the same spec.
-  resourceUid: current.metadata.uid,
-  // The value the real system composes and records in receipts, not a
-  // hand-written stand-in — and the value the enforcer compares against:
-  // with EXPECTED_POLICY_VERSION unset in enforcer-deployment.yaml the
-  // enforcer defaults to its own bundled POLICY_VERSION (CS-ADV-017), so
-  // the drift check is live in this run and this grant passes it because
-  // both sides were built from the same checkout.
-  policyVersion: POLICY_VERSION,
-  issuedAtUtc: new Date(Date.now() - 60000).toISOString(),
-  expiresAtUtc: new Date(Date.now() + 3600000).toISOString(),
-});
-const signed = await signGrant(grant, keyPair);
-writeFileSync('${WORK_DIR}/step1-grant.json', JSON.stringify(signed));
-console.log('resourceId', normalized.resourceId);
-console.log('objectSha256', objectSha256);
-" | tee -a "${TRANSCRIPT}"
+CHANGESAFE_KIND_WORK_DIR="${WORK_DIR}" CHANGESAFE_KIND_ACTOR="${WHOAMI_USER}" \
+  npm exec -- vitest run tests/integration/m2-kind-authorize.test.ts | tee -a "${TRANSCRIPT}"
 
 GRANT_B64=$(base64 < "${WORK_DIR}/step1-grant.json" | tr -d '\n')
 cat > "${WORK_DIR}/step1-patch.json" <<EOF
 {"metadata":{"annotations":{"changesafe.dev/grant":"${GRANT_B64}"}},"spec":{"replicas":4}}
 EOF
+run kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/step1-patch.json" --dry-run=server
 run kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/step1-patch.json"
 
 ACTUAL_REPLICAS=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')

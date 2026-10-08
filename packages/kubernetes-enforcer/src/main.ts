@@ -28,6 +28,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { importVerifyingKey } from "@changesafe/core";
 
 import { createEnforcerRequestListener, resolveExpectedPolicyVersion } from "./server";
+import { SqliteGrantUseRegistry } from "./sqlite-use-state";
 import { GRANT_ANNOTATION } from "./verify";
 
 function requireEnv(name: string): string {
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   const expectedPolicyVersion = resolveExpectedPolicyVersion(process.env);
 
   const listener = createEnforcerRequestListener({
+    grantUses: SqliteGrantUseRegistry.open(requireEnv("GRANT_USES_DB")),
     trustedPublicKey,
     now: () => new Date(),
     expectedPolicyVersion,

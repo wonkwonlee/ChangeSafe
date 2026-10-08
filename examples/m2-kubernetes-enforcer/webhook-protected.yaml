@@ -5,7 +5,7 @@ metadata:
 webhooks:
   - name: protected.enforcer.changesafe.dev
     admissionReviewVersions: ["v1"]
-    sideEffects: None
+    sideEffects: NoneOnDryRun
     clientConfig:
       service:
         name: changesafe-enforcer

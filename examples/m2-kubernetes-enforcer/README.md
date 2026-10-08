@@ -1,3 +1,8 @@
+> The current driver obtains grants through authenticated HTTP and installs
+> routing guards and persistent use-state. See
+> [current scope](../../docs/M2_BOUNDARY_COMPLETION.md). The checked-in transcript
+> below is historical; new CI runs upload their own transcript artifact.
+
 # M2 Kubernetes Enforcer — kind reproduction
 
 Two ValidatingWebhookConfigurations implement Spec Decision 4's two-tier
@@ -17,6 +22,9 @@ failurePolicy:
   in an *unlabeled* namespace is therefore **not** fail-closed — it routes
   to the default webhook and is admitted if the enforcer is down. Operators
   must label the namespaces that hold protected resources.
+  The benign scale-up demo uses this namespace tier without the separate
+  `changesafe.dev/protected: "true"` annotation: that policy annotation
+  prohibits spec changes, so even a scale-up cannot be approved on it.
 - `webhook-default.yaml` (`failurePolicy: Ignore`) — everything else.
 
 **Status: run and verified against a real kind cluster** (`kind v0.32.0`,

@@ -202,6 +202,17 @@ Storage is `node:sqlite` and identity is verified with Web Crypto. See
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
 
+## Admission enforcement in unreleased source
+
+M2 on `main` adds Kubernetes signed grants and an admission enforcer; these
+are **not included in published v0.5.0**. The durable Kubernetes review path
+stores a raw snapshot plus manifest, derives grant bindings server-side,
+and persists issued grants for retry recovery. Deployment requires persistent
+single-use storage and native admission routing guards. Protected Scale/HPA
+writes are denied; approved replica changes use parent-resource UPDATEs.
+See [the current scope and migration](docs/M2_BOUNDARY_COMPLETION.md) for
+installation boundaries, supported operations and remaining limits.
+
 ## Live model analysis (CLI only)
 
 Three providers are supported and none is privileged:
@@ -470,8 +481,9 @@ These do not change:
   see [docs/SCENARIOS.md](docs/SCENARIOS.md) for the current count and
   failure-mode coverage) and should be treated as a coverage instrument, not
   a statistical safety score. The AI benchmark (`changesafe eval`) measures
-  only the network domain, where model analysis exists — nine synthetic
-  scenarios, six adversarial.
+  Network and Kubernetes with separate domain-labelled reports. Network
+  has nine synthetic scenarios, six adversarial; Terraform is mechanically
+  derived and has no model-proposal benchmark.
 - ChangeSafe never executes an infrastructure change.
 
 ## Related work

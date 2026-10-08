@@ -17,11 +17,10 @@ import {
   importSigningKeyPair,
   importVerifyingKey,
 } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
+import { normalizeRawResource, POLICY_VERSION } from "@changesafe/domain-kubernetes";
 import { Ledger } from "@changesafe/ledger";
 import { DecisionService } from "@changesafe/server";
 import {
-  kubernetesObjectSha256,
   verifyGrantAgainstAdmission,
 } from "@changesafe/kubernetes-enforcer";
 import type { AdmissionRequest } from "@changesafe/kubernetes-enforcer";
@@ -70,7 +69,7 @@ const ADMITTED_OBJECT = {
   spec: { replicas: 3 },
 };
 
-async function issueRealGrant() {
+async function issueRealGrant(receiptId?: string) {
   const pem = await generateSigningKeyPair();
   const decisions = new DecisionService({
     ledger: Ledger.open(":memory:"),
@@ -83,32 +82,25 @@ async function issueRealGrant() {
     {
       domain: "kubernetes",
       sourceId: "m2-grant-chain",
-      input: SNAPSHOT,
-      proposal: MANIFEST_TEXT,
+      input: { snapshot: SNAPSHOT, manifestText: MANIFEST_TEXT },
       decision: "approve",
     },
     { subject: "approver-1", issuer: "https://issuer.example", email: null },
+    receiptId ? { receiptId, expectedPolicyVersion: POLICY_VERSION,
+      receiptCreatedAtUtc: ISSUED_AT, receiptSignedAtUtc: ISSUED_AT } : undefined,
   );
   expect(outcome.receipt.decision).toBe("approved");
 
   const normalized = normalizeRawResource(ADMITTED_OBJECT, "ev-m2-admission");
   const signed = await decisions.issueGrant(outcome.receipt, {
     authorizedActor: ACTOR,
-    operation: "UPDATE",
-    resource: normalized.resourceId,
-    objectSha256: await kubernetesObjectSha256(ADMITTED_OBJECT),
-    // The snapshot's own resource IS the reviewed starting state — the
-    // decision approved a change from exactly this to ADMITTED_OBJECT.
-    // oldObjectSha256 is now required on every UPDATE grant (CS-ADV-014
-    // follow-up).
-    oldObjectSha256: await kubernetesObjectSha256(SNAPSHOT.resources[0]),
-    resourceUid: "11111111-2222-3333-4444-555555555555",
     expiresAtUtc: EXPIRES_AT,
-  });
+  }, { domain: "kubernetes", sourceId: "m2-grant-chain", input: { snapshot: SNAPSHOT, manifestText: MANIFEST_TEXT }, decision: "approve" });
 
   return {
     signed,
     verifying: await importVerifyingKey(pem.publicKeyPem),
+    decisions, receipt: outcome.receipt,
     resource: normalized.resourceId,
     policyVersion: outcome.receipt.policyVersion,
   };
@@ -125,6 +117,30 @@ function admissionRequest(object: unknown, oldObject: unknown = SNAPSHOT.resourc
 }
 
 describe("M2: a server-issued grant enforced at the admission boundary", () => {
+  it("issues a stable bounded grant identifier for a maximum-length receipt ID", async () => {
+    const { signed, decisions, receipt } = await issueRealGrant("r".repeat(64));
+    expect(signed.grant.receiptId).toHaveLength(64);
+    expect(signed.grant.grantId).toMatch(/^g[a-f0-9]{63}$/);
+    const retry = await decisions.issueGrant(receipt, { authorizedActor: ACTOR, expiresAtUtc: EXPIRES_AT }, {
+      domain: "kubernetes", sourceId: "m2-grant-chain",
+      input: { snapshot: SNAPSHOT, manifestText: MANIFEST_TEXT }, decision: "approve",
+    });
+    expect(retry).toEqual(signed);
+    expect((await issueRealGrant("s".repeat(64))).signed.grant.grantId).not.toBe(signed.grant.grantId);
+  });
+  it("rejects post-approval changes in fields the policy projection does not inspect", async () => {
+    const { decisions, receipt } = await issueRealGrant();
+    const substituted = { ...ADMITTED_OBJECT, metadata: { ...ADMITTED_OBJECT.metadata,
+      finalizers: ["unreviewed.example/finalizer"] } };
+    await expect(decisions.issueGrant(receipt, { authorizedActor: ACTOR, expiresAtUtc: EXPIRES_AT }, {
+      domain: "kubernetes", sourceId: "m2-grant-chain", decision: "approve",
+      input: { snapshot: SNAPSHOT, manifestText: JSON.stringify(substituted) },
+    })).rejects.toMatchObject({ code: "REQUEST_INVALID" });
+    await expect(decisions.issueGrant(receipt, { authorizedActor: ACTOR, expiresAtUtc: EXPIRES_AT }, {
+      domain: "kubernetes", sourceId: "m2-grant-chain", decision: "approve", input: SNAPSHOT, proposal: MANIFEST_TEXT,
+    })).rejects.toMatchObject({ code: "REQUEST_INVALID" });
+  });
+
   it("allows the exact object the approved decision authorized", async () => {
     const { signed, verifying, policyVersion } = await issueRealGrant();
 
