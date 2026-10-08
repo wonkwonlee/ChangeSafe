@@ -31448,8 +31448,10 @@ var DurableReviewStore = class _DurableReviewStore {
     return external_exports.strictObject({ count: external_exports.number().int().nonnegative() }).parse(this.#db.prepare("SELECT count(*) AS count FROM durable_review_records").get()).count;
   }
   async appendPending(raw) {
-    const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
-    return this.#queue(() => this.#appendPending(accepted));
+    return this.#queue(async () => {
+      const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
+      return this.#appendPending(accepted);
+    });
   }
   #appendPending(record2) {
     const existing = this.get(record2.reviewId, record2.owner);
