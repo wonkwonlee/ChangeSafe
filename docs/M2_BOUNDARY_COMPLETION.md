@@ -17,6 +17,12 @@ is accepted: the server derives it mechanically. The receipt input hash
 binds the complete immutable bundle; the proposal hash binds the derived
 policy proposal. Other domains' hash contracts remain unchanged.
 
+The serialized UTF-8 JSON artifact bundle is limited to 7 MiB; HTTP intake
+allows an 8 MiB request envelope. Narrow the namespace/resource collection
+when a snapshot exceeds this budget. Decision endpoints retain their 2 MiB
+body cap. Webhooks declare `NoneOnDryRun`: actual admission persists grant
+consumption, while server dry-run validates without consuming authority.
+
 `POST /reviews/:id/decisions` accepts grant preferences only:
 `{ authorizedActor, authorizedActorUid?, expiresAtUtc }`. Operation,
 resource, before/after hashes and resource UID come from the stored review,

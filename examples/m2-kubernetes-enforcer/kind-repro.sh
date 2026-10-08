@@ -190,6 +190,7 @@ GRANT_B64=$(base64 < "${WORK_DIR}/step1-grant.json" | tr -d '\n')
 cat > "${WORK_DIR}/step1-patch.json" <<EOF
 {"metadata":{"annotations":{"changesafe.dev/grant":"${GRANT_B64}"}},"spec":{"replicas":4}}
 EOF
+run kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/step1-patch.json" --dry-run=server
 run kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/step1-patch.json"
 
 ACTUAL_REPLICAS=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')

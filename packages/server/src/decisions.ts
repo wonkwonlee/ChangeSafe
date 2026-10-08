@@ -222,7 +222,9 @@ export class DecisionService {
     });
     const binding = await deriveReviewedGrantBinding(request);
     const grant = AuthorizationGrantSchema.parse({
-      grantId: `grant-${receipt.receiptId}`,
+      // A receipt may already use all 64 identifier characters. Hash the
+      // namespaced source rather than prefixing it beyond the schema limit.
+      grantId: `g${(await hashCanonical({ kind: "authorization-grant", receiptId: receipt.receiptId })).slice(0, 63)}`,
       receiptId: receipt.receiptId,
       policyVersion: receipt.policyVersion,
       ...binding,

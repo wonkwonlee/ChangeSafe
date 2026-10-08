@@ -17,7 +17,7 @@ import {
   importSigningKeyPair,
   importVerifyingKey,
 } from "@changesafe/core";
-import { normalizeRawResource } from "@changesafe/domain-kubernetes";
+import { normalizeRawResource, POLICY_VERSION } from "@changesafe/domain-kubernetes";
 import { Ledger } from "@changesafe/ledger";
 import { DecisionService } from "@changesafe/server";
 import {
@@ -69,7 +69,7 @@ const ADMITTED_OBJECT = {
   spec: { replicas: 3 },
 };
 
-async function issueRealGrant() {
+async function issueRealGrant(receiptId?: string) {
   const pem = await generateSigningKeyPair();
   const decisions = new DecisionService({
     ledger: Ledger.open(":memory:"),
@@ -86,6 +86,8 @@ async function issueRealGrant() {
       decision: "approve",
     },
     { subject: "approver-1", issuer: "https://issuer.example", email: null },
+    receiptId ? { receiptId, expectedPolicyVersion: POLICY_VERSION,
+      receiptCreatedAtUtc: ISSUED_AT, receiptSignedAtUtc: ISSUED_AT } : undefined,
   );
   expect(outcome.receipt.decision).toBe("approved");
 
@@ -115,6 +117,17 @@ function admissionRequest(object: unknown, oldObject: unknown = SNAPSHOT.resourc
 }
 
 describe("M2: a server-issued grant enforced at the admission boundary", () => {
+  it("issues a stable bounded grant identifier for a maximum-length receipt ID", async () => {
+    const { signed, decisions, receipt } = await issueRealGrant("r".repeat(64));
+    expect(signed.grant.receiptId).toHaveLength(64);
+    expect(signed.grant.grantId).toMatch(/^g[a-f0-9]{63}$/);
+    const retry = await decisions.issueGrant(receipt, { authorizedActor: ACTOR, expiresAtUtc: EXPIRES_AT }, {
+      domain: "kubernetes", sourceId: "m2-grant-chain",
+      input: { snapshot: SNAPSHOT, manifestText: MANIFEST_TEXT }, decision: "approve",
+    });
+    expect(retry).toEqual(signed);
+    expect((await issueRealGrant("s".repeat(64))).signed.grant.grantId).not.toBe(signed.grant.grantId);
+  });
   it("rejects post-approval changes in fields the policy projection does not inspect", async () => {
     const { decisions, receipt } = await issueRealGrant();
     const substituted = { ...ADMITTED_OBJECT, metadata: { ...ADMITTED_OBJECT.metadata,

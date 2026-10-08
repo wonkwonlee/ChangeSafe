@@ -21,6 +21,8 @@ import { buildReceiptProof } from "./receipt-proof";
 
 /** Plans and bundles are large; anything past this is not our client. */
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+// Intake includes both raw collected state and the candidate manifest.
+const MAX_REVIEW_BODY_BYTES = 8 * 1024 * 1024;
 
 /**
  * The pre-ledger expiresAtUtc check only guarantees a grant's window is
@@ -41,10 +43,10 @@ const MIN_GRANT_LIFETIME_MS = 5000;
  * looked at.
  */
 class PayloadTooLargeError extends DomainError {
-  constructor() {
+  constructor(limit: number) {
     super(
       "REQUEST_INVALID",
-      `The request body exceeds the ${Math.round(MAX_BODY_BYTES / 1024)} KiB limit.`,
+      `The request body exceeds the ${Math.round(limit / 1024)} KiB limit.`,
     );
     this.name = "PayloadTooLargeError";
   }
@@ -268,13 +270,13 @@ function sendError(response: ServerResponse, error: unknown): void {
   });
 }
 
-async function readBody(request: IncomingMessage): Promise<unknown> {
+async function readBody(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new PayloadTooLargeError();
+    if (size > limit) throw new PayloadTooLargeError(limit);
     chunks.push(buffer);
   }
   if (size === 0) return undefined;
@@ -345,7 +347,7 @@ async function handle(
       });
       return;
     }
-    const body = ReviewIntakeBodySchema.parse(await readBody(request));
+    const body = ReviewIntakeBodySchema.parse(await readBody(request, MAX_REVIEW_BODY_BYTES));
     const intake = normalizeUploadedIntake(body.intake);
     assertIntakeInputIdentity(intake);
     // `appendPending` recomputes the canonical content hash and revalidates

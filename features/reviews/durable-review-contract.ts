@@ -22,6 +22,8 @@ import {
 
 /** Domains the authenticated self-hosted review service accepts today. */
 export const DurableReviewDomainIdSchema = z.enum(["network", "terraform", "kubernetes"]);
+/** UTF-8 JSON artifact budget, leaving room for the 8 MiB HTTP intake envelope. */
+export const MAX_KUBERNETES_REVIEW_CONTENT_BYTES = 7 * 1024 * 1024;
 
 const DurableReviewSourceSchema = z.discriminatedUnion("domainId", [
   z.strictObject({
@@ -97,6 +99,12 @@ export const DurableReviewIntakeSchema = z
     proposal: DurableReviewProposalEnvelopeSchema.optional(),
   })
   .superRefine((intake, context) => {
+    if (intake.domainId === "kubernetes" &&
+        new TextEncoder().encode(JSON.stringify(intake.input.content)).byteLength > MAX_KUBERNETES_REVIEW_CONTENT_BYTES) {
+      context.addIssue({ code: "custom", path: ["input", "content"],
+        message: "Kubernetes review artifacts exceed the 7 MiB UTF-8 JSON limit; narrow the collected snapshot" });
+      return;
+    }
     if (intake.domainId !== intake.source.domainId) {
       context.addIssue({
         code: "custom",

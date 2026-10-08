@@ -28146,7 +28146,9 @@ var DecisionService = class {
     });
     const binding = await deriveReviewedGrantBinding(request);
     const grant = AuthorizationGrantSchema.parse({
-      grantId: `grant-${receipt.receiptId}`,
+      // A receipt may already use all 64 identifier characters. Hash the
+      // namespaced source rather than prefixing it beyond the schema limit.
+      grantId: `g${(await hashCanonical({ kind: "authorization-grant", receiptId: receipt.receiptId })).slice(0, 63)}`,
       receiptId: receipt.receiptId,
       policyVersion: receipt.policyVersion,
       ...binding,
@@ -29125,6 +29127,7 @@ var ReviewImpactViewModelSchema = external_exports.discriminatedUnion("kind", [
 
 // ../../features/reviews/durable-review-contract.ts
 var DurableReviewDomainIdSchema = external_exports.enum(["network", "terraform", "kubernetes"]);
+var MAX_KUBERNETES_REVIEW_CONTENT_BYTES = 7 * 1024 * 1024;
 var DurableReviewSourceSchema = external_exports.discriminatedUnion("domainId", [
   external_exports.strictObject({
     domainId: external_exports.literal("kubernetes"),
@@ -29184,6 +29187,14 @@ var DurableReviewIntakeSchema = external_exports.strictObject({
   input: DurableReviewInputEnvelopeSchema,
   proposal: DurableReviewProposalEnvelopeSchema.optional()
 }).superRefine((intake, context) => {
+  if (intake.domainId === "kubernetes" && new TextEncoder().encode(JSON.stringify(intake.input.content)).byteLength > MAX_KUBERNETES_REVIEW_CONTENT_BYTES) {
+    context.addIssue({
+      code: "custom",
+      path: ["input", "content"],
+      message: "Kubernetes review artifacts exceed the 7 MiB UTF-8 JSON limit; narrow the collected snapshot"
+    });
+    return;
+  }
   if (intake.domainId !== intake.source.domainId) {
     context.addIssue({
       code: "custom",
@@ -29726,12 +29737,13 @@ async function buildReceiptProof(resolution, ledger, options) {
 
 // ../server/src/http.ts
 var MAX_BODY_BYTES = 2 * 1024 * 1024;
+var MAX_REVIEW_BODY_BYTES = 8 * 1024 * 1024;
 var MIN_GRANT_LIFETIME_MS = 5e3;
 var PayloadTooLargeError = class extends DomainError {
-  constructor() {
+  constructor(limit) {
     super(
       "REQUEST_INVALID",
-      `The request body exceeds the ${Math.round(MAX_BODY_BYTES / 1024)} KiB limit.`
+      `The request body exceeds the ${Math.round(limit / 1024)} KiB limit.`
     );
     this.name = "PayloadTooLargeError";
   }
@@ -29883,13 +29895,13 @@ function sendError(response, error51) {
     error: { code: "INTERNAL", message: "The request failed unexpectedly." }
   });
 }
-async function readBody(request) {
+async function readBody(request, limit = MAX_BODY_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = chunk;
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new PayloadTooLargeError();
+    if (size > limit) throw new PayloadTooLargeError(limit);
     chunks.push(buffer);
   }
   if (size === 0) return void 0;
@@ -29940,7 +29952,7 @@ async function handle(request, response, options) {
       });
       return;
     }
-    const body = ReviewIntakeBodySchema.parse(await readBody(request));
+    const body = ReviewIntakeBodySchema.parse(await readBody(request, MAX_REVIEW_BODY_BYTES));
     const intake = normalizeUploadedIntake(body.intake);
     assertIntakeInputIdentity(intake);
     const review = await options.reviews.appendPending({

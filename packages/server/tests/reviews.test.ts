@@ -788,6 +788,19 @@ describe("durable review decision HTTP API", () => {
     }, input: { inputId: "snap-http-test", inputSha256: await hashCanonical(content), content } } };
   }
 
+  it("accepts Kubernetes intake above the former 2 MiB HTTP cap and enforces the artifact budget", async () => {
+    const token = await context.idp.token();
+    const largePrior = (bytes: number) => ({ ...prior, status: { padding: "x".repeat(bytes) } });
+    expect((await postReview(await kubernetesReview("review-large-k8", [largePrior(3 * 1024 * 1024)]), token)).status).toBe(201);
+    expect((await postReview(await kubernetesReview("review-over-budget-k8", [largePrior(7 * 1024 * 1024)]), token)).status).toBe(422);
+    const overHttp = await fetch(`${context.baseUrl}/reviews`, { method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(8 * 1024 * 1024) }) });
+    expect(overHttp.status).toBe(413);
+    expect(context.reviews.count()).toBe(1);
+    expect(context.ledger.count()).toBe(0);
+  });
+
   it("accepts Kubernetes through HTTP, derives all bindings, and verifies the admitted transition", async () => {
     const token = await context.idp.token();
     expect((await postReview(await kubernetesReview("review-k8-http"), token)).status).toBe(201);
@@ -832,7 +845,7 @@ describe("durable review decision HTTP API", () => {
     const recovered = await decideReview("review-grant-crash", { decision: "approve", grant: grantRequest }, token);
     expect(recovered.status).toBe(201);
     const body = await recovered.json();
-    expect(body.grant.grant.grantId).toBe(`grant-${body.receiptId}`);
+    expect(body.grant.grant.grantId).toBe(`g${(await hashCanonical({ kind: "authorization-grant", receiptId: body.receiptId })).slice(0, 63)}`);
     expect(context.ledger.count()).toBe(1);
   });
 

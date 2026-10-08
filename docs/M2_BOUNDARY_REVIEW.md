@@ -37,6 +37,16 @@ independent human or external reviewer approval is claimed.
 
 ## Validation
 
+Pre-merge automated review findings addressed:
+- Maximum-length receipt IDs now derive a stable 64-character grant ID via
+  a namespaced SHA-256 hash; issuance/retry tests cover 64-character inputs.
+- Kubernetes artifact JSON is bounded at 7 MiB, and POST /reviews permits
+  an 8 MiB envelope. HTTP regressions cover acceptance above the old 2 MiB
+  cap, artifact-budget rejection and transport-cap rejection.
+- Both webhook registrations declare NoneOnDryRun for persistent grant
+  consumption. The live reproduction dry-runs the approved patch before
+  actually applying it, proving dry-run does not consume its authority.
+
 Local: Node 22/npm 10.9.8; full Vitest suite, typecheck, ESLint, CLI/package
 builds, production Next.js build, all 27 scenarios and generated gallery,
 public client budgets/security scan, shell syntax and git diff checks.
