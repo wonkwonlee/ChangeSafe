@@ -1,3 +1,4 @@
+import { GrantJournal } from "./grant-journal";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
@@ -30,7 +31,7 @@ import {
 
 const PendingRowSchema = z.strictObject({
   seq: z.number().int().positive(), review_id: IdSchema, created_at_utc: z.string(),
-  domain_id: z.enum(["network", "terraform"]), source_id: IdSchema, input_id: IdSchema,
+  domain_id: z.enum(["network", "terraform", "kubernetes"]), source_id: IdSchema, input_id: IdSchema,
   owner_tenant_id: z.string(), owner_issuer: z.string(), owner_subject: z.string(),
   owner_scope: z.literal("self-hosted-review"),
   record_json: z.string(),
@@ -66,7 +67,7 @@ const LegacyPreclaimProvenanceRowSchema = z.strictObject({
 });
 const LegacyRowSchema = z.strictObject({
   seq: z.number().int().positive(), review_id: IdSchema, created_at_utc: z.string(),
-  domain_id: z.enum(["network", "terraform"]), source_id: IdSchema, input_id: IdSchema,
+  domain_id: z.enum(["network", "terraform", "kubernetes"]), source_id: IdSchema, input_id: IdSchema,
   receipt_id: IdSchema, receipt_sha256: z.string().regex(/^[a-f0-9]{64}$/), record_json: z.string(),
 });
 type PendingRow = z.infer<typeof PendingRowSchema>;
@@ -118,7 +119,7 @@ const QuarantineRowSchema = z.strictObject({
 });
 
 export interface DurableReviewStoreEntry {
-  seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform";
+  seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform" | "kubernetes";
   sourceId: string; inputId: string; record: PendingDurableReviewRecord;
 }
 export interface DurableReviewResolutionEntry {
@@ -136,10 +137,10 @@ export interface DurableReviewDecisionClaimEntry {
 }
 /** Read-only compatibility surface for resolved v1 rows. They are not queue items. */
 export interface LegacyDurableReviewStoreEntry {
-  seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform";
+  seq: number; reviewId: string; createdAtUtc: string; domainId: "network" | "terraform" | "kubernetes";
   sourceId: string; inputId: string; receiptId: string; receiptSha256: string; record: DurableReviewRecord;
 }
-export interface DurableReviewStoreListOptions { limit?: number; domainId?: "network" | "terraform"; sourceId?: string; }
+export interface DurableReviewStoreListOptions { limit?: number; domainId?: "network" | "terraform" | "kubernetes"; sourceId?: string; }
 export interface DurableReviewQuarantineEntry {
   quarantineId: number;
   rowKind: "pending" | "resolution";
@@ -161,7 +162,7 @@ export interface DurableReviewStoreOpenOptions {
   /** Deterministic test seam proving schema changes roll back atomically. */
   migrationFaultInjection?: "after-trigger-installation";
 }
-const ListOptionsSchema = z.strictObject({ limit: z.number().finite().optional(), domainId: z.enum(["network", "terraform"]).optional(), sourceId: IdSchema.optional() });
+const ListOptionsSchema = z.strictObject({ limit: z.number().finite().optional(), domainId: z.enum(["network", "terraform", "kubernetes"]).optional(), sourceId: IdSchema.optional() });
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 1000;
 
@@ -1431,7 +1432,8 @@ function samePendingRequest(left: PendingDurableReviewRecord, right: PendingDura
 export class DurableReviewStore {
   readonly #db: DatabaseSync;
   #writes: Promise<void> = Promise.resolve();
-  private constructor(db: DatabaseSync) { this.#db = db; }
+  readonly grants: GrantJournal;
+  private constructor(db: DatabaseSync) { this.#db = db; this.grants = new GrantJournal(db); }
   static open(path: string, options: DurableReviewStoreOpenOptions = {}): DurableReviewStore {
     const db = openDatabase(path);
     try {

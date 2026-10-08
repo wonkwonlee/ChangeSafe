@@ -367,3 +367,32 @@ describe("createEnforcerServer", () => {
     expect(body.response.allowed).toBe(false);
   });
 });
+
+
+it("storage failure denies explicitly and dry-run does not burn a grant", async () => {
+  const pem = await generateSigningKeyPair();
+  const signed = await signGrant(AuthorizationGrantSchema.parse({
+    grantId: "grant-storage-test", receiptId: "receipt-storage-test", authorizedActor: "actor-storage-test",
+    operation: "UPDATE", resource: RESOURCE_ID, objectSha256: await objectHashOf(RESOURCE),
+    oldObjectSha256: await objectHashOf(RESOURCE_PRIOR), resourceUid: RESOURCE_UID,
+    policyVersion: POLICY_VERSION, issuedAtUtc: "2026-08-19T12:00:00.000Z", expiresAtUtc: "2026-08-19T13:00:00.000Z",
+  }), await importSigningKeyPair(pem.privateKeyPem));
+  let calls = 0;
+  server = createEnforcerServer({ trustedPublicKey: await importVerifyingKey(pem.publicKeyPem),
+    now: () => new Date("2026-08-19T12:30:00.000Z"), readGrant: () => signed,
+    grantUses: { consume() { calls++; throw new Error("storage failure"); } },
+  });
+  const base = await listen(server);
+  const request = { apiVersion: "admission.k8s.io/v1", kind: "AdmissionReview", request: {
+    uid: "request-storage-test", operation: "UPDATE", userInfo: { username: "actor-storage-test" },
+    object: RESOURCE, oldObject: RESOURCE_PRIOR } };
+  const dryRun = await fetch(`${base}/validate`, { method: "POST", body: JSON.stringify({
+    ...request, request: { ...request.request, dryRun: true } }) });
+  expect((await dryRun.json()).response.allowed).toBe(true);
+  expect(calls).toBe(0);
+  const admitted = await fetch(`${base}/validate`, { method: "POST", body: JSON.stringify(request) });
+  expect(admitted.status).toBe(200);
+  expect((await admitted.json()).response).toMatchObject({ uid: request.request.uid, allowed: false,
+    status: { message: "grant consumption could not be recorded" } });
+  expect(calls).toBe(1);
+});

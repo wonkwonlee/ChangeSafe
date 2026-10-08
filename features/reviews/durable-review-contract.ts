@@ -12,6 +12,7 @@ import {
   IncidentBundleSchema,
   NetworkChangeProposalSchema,
 } from "@changesafe/domain-network";
+import { normalizeSnapshot, parseManifestDocuments, deriveManifestProposal } from "@changesafe/domain-kubernetes";
 import { TerraformInputSchema } from "@changesafe/domain-terraform";
 
 import {
@@ -20,9 +21,15 @@ import {
 } from "@/features/domains/review-contract";
 
 /** Domains the authenticated self-hosted review service accepts today. */
-export const DurableReviewDomainIdSchema = z.enum(["network", "terraform"]);
+export const DurableReviewDomainIdSchema = z.enum(["network", "terraform", "kubernetes"]);
 
 const DurableReviewSourceSchema = z.discriminatedUnion("domainId", [
+  z.strictObject({
+    domainId: z.literal("kubernetes"), sourceId: IdSchema,
+    sourceKind: z.literal("kubernetes-snapshot"),
+    origin: z.enum(["uploaded-offline-artifact", "read-only-collector"]),
+    untrustedArtifactObservedAtUtc: TimestampSchema,
+  }),
   z.strictObject({
     domainId: z.literal("network"),
     sourceId: IdSchema,
@@ -100,8 +107,12 @@ export const DurableReviewIntakeSchema = z
     // This is a *structural* intake schema.  The async verification helper
     // below also recomputes the canonical content hash before an intake can
     // be accepted by a self-hosted service.
-    const domainSchema =
-      intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
+    const domainSchema = intake.domainId === "kubernetes"
+      ? z.strictObject({ snapshot: JsonValueSchema, manifestText: z.string().min(1) }).transform((raw, ctx) => {
+          try { deriveManifestProposal(normalizeSnapshot(raw.snapshot), parseManifestDocuments(raw.manifestText)); return raw; }
+          catch { ctx.addIssue({ code: "custom", message: "invalid Kubernetes review artifacts" }); return z.NEVER; }
+        })
+      : intake.domainId === "network" ? IncidentBundleSchema : TerraformInputSchema;
     const content = domainSchema.safeParse(intake.input.content);
     if (!content.success) {
       context.addIssue({
@@ -135,7 +146,7 @@ export const DurableReviewIntakeSchema = z
       context.addIssue({
         code: "custom",
         path: ["proposal"],
-        message: "Terraform proposals are derived from the immutable plan and cannot be submitted",
+        message: "Terraform and Kubernetes proposals are derived from immutable input and cannot be submitted",
       });
     }
   });

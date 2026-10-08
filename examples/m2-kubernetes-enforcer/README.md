@@ -1,3 +1,8 @@
+> The current driver obtains grants through authenticated HTTP and installs
+> routing guards and persistent use-state. See
+> [current scope](../../docs/M2_BOUNDARY_COMPLETION.md). The checked-in transcript
+> below is historical; new CI runs upload their own transcript artifact.
+
 # M2 Kubernetes Enforcer — kind reproduction
 
 Two ValidatingWebhookConfigurations implement Spec Decision 4's two-tier

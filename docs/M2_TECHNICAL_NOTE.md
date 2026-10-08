@@ -1,5 +1,8 @@
 # M2 Technical Note
 
+> Historical implementation note. The unreleased [boundary completion](M2_BOUNDARY_COMPLETION.md)
+> supersedes the issuance, HTTP intake, routing and grant-durability gaps below.
+
 M2 tests whether a ChangeSafe authorization can be bound to enforcement: can
 an `AuthorizationGrant` be exercised only by the authorized actor, for the
 exact operation, resource, and canonical object it was issued for? It does
@@ -33,7 +36,7 @@ shape, or a ChangeSafe-owned identity system — all explicitly deferred per
   means admit). The unreachable-verifier case — the only one
   `failurePolicy` is meant for — stays with Kubernetes.
 
-  The verifier registers `UPDATE` only. A `DELETE` `AdmissionReview` carries
+  The verifier registers `CREATE` and `UPDATE` only. A `DELETE` `AdmissionReview` carries
   the resource in `oldObject` rather than `object`, which it does not yet
   read, so `DELETE` is left unregistered instead of producing verdicts with
   no object check behind them.

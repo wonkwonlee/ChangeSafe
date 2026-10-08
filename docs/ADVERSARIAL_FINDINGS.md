@@ -2040,3 +2040,19 @@ to "when." The other edge is deliberate: an ALLOW the API server then
 fails to persist has still consumed the grant, so the caller needs a
 fresh decision — a false DENY, consistent with ALLOW not being a
 persistence attestation (`docs/M2_TECHNICAL_NOTE.md`).
+
+
+## M2 boundary completion — owner-authorized follow-up
+
+The 2026-10-07 follow-up addresses the technically verified counterexamples
+CS-ADV-004 and CS-ADV-013 through immutable raw review bundles, authenticated
+HTTP intake and server-derived issuance. CS-ADV-006 is closed for protected
+namespaces by explicitly denying Scale (including HPA), with authorized
+replica changes remaining on parent UPDATEs; no Scale grant support is claimed.
+CS-ADV-009 is addressed by namespace tier/deletion admission policy independent
+of the webhook selector. CS-ADV-007 is addressed by durable intent/issued-grant
+records and same-intent HTTP recovery. CS-ADV-018 is addressed across process
+restarts and connections sharing one reliable SQLite file; cross-node replicas
+with separate files are still unsupported. See [design, tests and remaining
+uncertainty](M2_BOUNDARY_COMPLETION.md). Existing finding entries retain their
+original observations and regression history; this does not close M2.

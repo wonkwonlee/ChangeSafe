@@ -1,0 +1,59 @@
+# Install before granting workload access. Cluster administrators controlling
+# admission policy/RBAC remain trusted. These controls do not depend on the
+# webhook's namespaceSelector or its availability.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: changesafe-protection-tier
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE", "DELETE"]
+        resources: ["namespaces"]
+  validations:
+    - expression: >-
+        !has(oldObject.metadata.labels) ||
+        !("changesafe.dev/tier" in oldObject.metadata.labels) ||
+        oldObject.metadata.labels["changesafe.dev/tier"] != "protected" ||
+        (request.operation != "DELETE" && has(object.metadata.labels) && "changesafe.dev/tier" in object.metadata.labels &&
+         object.metadata.labels["changesafe.dev/tier"] == "protected")
+      message: "ChangeSafe protected namespace tier cannot be downgraded or deleted"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: changesafe-protection-tier
+spec:
+  policyName: changesafe-protection-tier
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: changesafe-protected-scale
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["deployments/scale", "statefulsets/scale"]
+  validations:
+    - expression: >-
+        namespaceObject != null &&
+        (!has(namespaceObject.metadata.labels) ||
+         !("changesafe.dev/tier" in namespaceObject.metadata.labels) ||
+         namespaceObject.metadata.labels["changesafe.dev/tier"] != "protected")
+      message: "ChangeSafe protected scaling requires a reviewed parent-resource UPDATE; Scale and HPA writes are denied"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: changesafe-protected-scale
+spec:
+  policyName: changesafe-protected-scale
+  validationActions: [Deny]

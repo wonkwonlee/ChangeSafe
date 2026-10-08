@@ -33,7 +33,13 @@ import { z } from "zod";
 export interface ServerDomain {
   readonly id: string;
   readonly adapter: DomainAdapter<never, never>;
-  parseInput(raw: unknown): { input: unknown; inputId: string };
+  parseInput(raw: unknown): {
+    input: unknown; inputId: string;
+    /** Raw reviewed artifact hash boundary, when the policy input is a projection. */
+    auditInput?: unknown;
+    /** Domain-derived proposal artifact carried inside the immutable input bundle. */
+    proposal?: unknown;
+  };
   /** Parse a supplied proposal, or derive one when the domain does that. */
   resolveProposal(input: unknown, raw: unknown): ChangeProposal;
   /** Only simulated-state domains can simulate; external-diff ones cannot. */
@@ -77,8 +83,10 @@ const kubernetes: ServerDomain = {
   id: "kubernetes",
   adapter: kubernetesDomain as unknown as DomainAdapter<never, never>,
   parseInput(raw) {
-    const snapshot = normalizeSnapshot(raw);
-    return { input: snapshot, inputId: snapshot.snapshotId };
+    const bundle = z.object({ snapshot: z.unknown(), manifestText: z.string() }).safeParse(raw);
+    const snapshot = normalizeSnapshot(bundle.success ? bundle.data.snapshot : raw);
+    return { input: snapshot, inputId: snapshot.snapshotId, auditInput: raw,
+      ...(bundle.success ? { proposal: bundle.data.manifestText } : {}) };
   },
   resolveProposal(input, raw) {
     // The caller submits proposed manifest YAML/JSON text; the domain

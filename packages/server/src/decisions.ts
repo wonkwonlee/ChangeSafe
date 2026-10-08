@@ -8,6 +8,7 @@ import {
   createReceipt,
   evaluatePolicies,
   hasBlockingFinding,
+  hashCanonical,
   initialState,
   signGrant,
   signReceipt,
@@ -15,10 +16,10 @@ import {
   validateProposalEvidence,
   verifyReceiptHash,
   verifyReceiptSignature,
+  verifyGrantSignature,
   type Approver,
   type ChangeProposal,
   type ChangeReceipt,
-  type GrantOperationSchema as GrantOperationSchemaType,
   type PolicyCoverage,
   type PolicyFinding,
   type RiskLevel,
@@ -28,8 +29,8 @@ import {
   type WorkflowState,
 } from "@changesafe/core";
 import type { Ledger, LedgerEntry } from "@changesafe/ledger";
-import { z } from "zod";
 
+import { deriveReviewedGrantBinding, GrantPreferencesSchema } from "./grant-binding";
 import { resolveServerDomain } from "./domains";
 
 export interface DecisionRequest {
@@ -56,13 +57,6 @@ export interface IssueGrantOptions {
   authorizedActor: string;
   /** See AuthorizationGrantSchema's doc comment on authorizedActorUid. */
   authorizedActorUid?: string;
-  operation: z.infer<typeof GrantOperationSchemaType>;
-  resource: string;
-  objectSha256: string;
-  /** See AuthorizationGrantSchema's doc comment on oldObjectSha256. */
-  oldObjectSha256?: string;
-  /** See AuthorizationGrantSchema's doc comment on resourceUid. */
-  resourceUid?: string;
   expiresAtUtc: string;
   /**
    * The instant to record as the grant's `issuedAtUtc`. Callers that
@@ -101,6 +95,7 @@ export interface DecisionServiceOptions {
 }
 
 interface EvaluatedRequest {
+  auditInput: unknown;
   domain: ReturnType<typeof resolveServerDomain>;
   input: unknown;
   inputId: string;
@@ -196,7 +191,7 @@ export class DecisionService {
    * unsigned grant would be indistinguishable from one anyone could forge,
    * and a grant that cannot prove who issued it authorizes nothing.
    */
-  async issueGrant(receipt: ChangeReceipt, options: IssueGrantOptions): Promise<SignedGrant> {
+  async issueGrant(receipt: ChangeReceipt, options: IssueGrantOptions, request?: DecisionRequest): Promise<SignedGrant> {
     this.#requireSigningCapability();
     if (receipt.decision !== "approved") {
       throw new DomainError(
@@ -205,23 +200,36 @@ export class DecisionService {
       );
     }
 
-    const grant = AuthorizationGrantSchema.parse({
-      grantId: `grant-${globalThis.crypto.randomUUID()}`,
-      receiptId: receipt.receiptId,
+    if (!request || request.decision !== "approve") {
+      throw new DomainError("REQUEST_INVALID", "Grant issuance requires the immutable reviewed request.");
+    }
+    const entry = this.#options.ledger.get(receipt.receiptId);
+    const ledgerReceipt = entry && ("receipt" in entry.record ? entry.record.receipt : entry.record);
+    if (!ledgerReceipt || canonicalize(ledgerReceipt) !== canonicalize(receipt)) {
+      throw new DomainError("REQUEST_INVALID", "Grant source is not the ledgered receipt.");
+    }
+    await this.readSignedOutcome(receipt.receiptId);
+    const prepared = this.#prepare(request, receipt.policyVersion);
+    if (request.sourceId !== receipt.sourceId ||
+        await hashCanonical(prepared.input) !== receipt.inputSha256 ||
+        await hashCanonical(prepared.proposal) !== receipt.proposalSha256) {
+      throw new DomainError("REQUEST_INVALID", "Grant artifacts do not match the approved receipt.");
+    }
+    const preferences = GrantPreferencesSchema.parse({
       authorizedActor: options.authorizedActor,
       authorizedActorUid: options.authorizedActorUid,
-      operation: options.operation,
-      resource: options.resource,
-      objectSha256: options.objectSha256,
-      oldObjectSha256: options.oldObjectSha256,
-      resourceUid: options.resourceUid,
-      policyVersion: receipt.policyVersion,
-      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
       expiresAtUtc: options.expiresAtUtc,
     });
-
-    // Non-null: #requireSigningCapability already confirmed this above.
-    return signGrant(grant, this.#options.signingKeyPair!);
+    const binding = await deriveReviewedGrantBinding(request);
+    const grant = AuthorizationGrantSchema.parse({
+      grantId: `grant-${receipt.receiptId}`,
+      receiptId: receipt.receiptId,
+      policyVersion: receipt.policyVersion,
+      ...binding,
+      ...preferences,
+      issuedAtUtc: options.issuedAtUtc ?? this.#options.now?.() ?? new Date().toISOString(),
+    });
+    return signGrant(grant, this.#options.signingKeyPair!, { signedAtUtc: grant.issuedAtUtc });
   }
 
   async decide(
@@ -295,6 +303,33 @@ export class DecisionService {
     };
   }
 
+  async readSignedOutcome(receiptId: string): Promise<SignedDecisionOutcome> {
+    const entry = this.#options.ledger.get(receiptId);
+    if (!entry) throw new DomainError("INTERNAL", "Resolved receipt is missing from the ledger.");
+    const record = SignedReceiptSchema.parse(entry.record);
+    const key = await this.#trustedRecoveryKey(record.signature.publicKeyId);
+    if (!key || !await verifyReceiptHash(record.receipt) || await verifyReceiptSignature(record, key) !== "valid") {
+      throw new DomainError("INTERNAL", "Resolved receipt failed trusted verification.");
+    }
+    return { record, receipt: record.receipt, ledgerSeq: entry.seq, chainSha256: entry.chainSha256 };
+  }
+
+  async validateStoredGrant(signed: SignedGrant, receipt: ChangeReceipt,
+    request: DecisionRequest, preferences: Omit<IssueGrantOptions, "issuedAtUtc">): Promise<void> {
+    const binding = await deriveReviewedGrantBinding(request);
+    const grant = signed.grant;
+    const active = this.#options.signingKeyPair?.publicKey;
+    const key = this.#options.trustedReceiptPublicKeys?.get(signed.signature.publicKeyId) ??
+      (active && await computePublicKeyId(active) === signed.signature.publicKeyId ? active : undefined);
+    if (!key || await verifyGrantSignature(signed, key) !== "valid" ||
+        grant.receiptId !== receipt.receiptId || grant.policyVersion !== receipt.policyVersion ||
+        receipt.decision !== "approved" ||
+        Object.entries({ ...binding, ...preferences }).some(([name, value]) =>
+          canonicalize(value) !== canonicalize(grant[name as keyof typeof grant]))) {
+      throw new DomainError("INTERNAL", "Stored grant does not match its reviewed source or trusted signer.");
+    }
+  }
+
   #requireSigningCapability(): void {
     if (!this.#options.signingKeyPair) {
       throw new DomainError(
@@ -341,8 +376,9 @@ export class DecisionService {
         `The pending review policy version ${expectedPolicyVersion} is stale; active policy version is ${domain.adapter.policyVersion}.`,
       );
     }
-    const { input, inputId } = domain.parseInput(request.input);
-    const proposal = domain.resolveProposal(input, request.proposal);
+    const parsed = domain.parseInput(request.input);
+    const { input, inputId } = parsed;
+    const proposal = domain.resolveProposal(input, parsed.proposal ?? request.proposal);
 
     // Invented evidence is a validation failure, not a verdict.
     validateProposalEvidence(domain.adapter, input as never, proposal);
@@ -352,6 +388,7 @@ export class DecisionService {
 
     return {
       domain,
+      auditInput: parsed.auditInput ?? input,
       input,
       inputId,
       proposal: proposal as ChangeProposal,
@@ -365,7 +402,7 @@ export class DecisionService {
     request: DecisionRequest,
     expectedPolicyVersion?: string,
   ): PreparedDecision {
-    const { domain, input, inputId, proposal, policyVersion, findings, riskLevel } =
+    const { domain, input, auditInput, inputId, proposal, policyVersion, findings, riskLevel } =
       this.#evaluate(request, expectedPolicyVersion);
 
     let state: WorkflowState<unknown> = initialState(request.sourceId, input);
@@ -415,7 +452,7 @@ export class DecisionService {
 
     return {
       request,
-      input,
+      input: auditInput,
       inputId,
       proposal,
       policyVersion,

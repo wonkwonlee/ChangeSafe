@@ -19,6 +19,7 @@ export const AdmissionRequestSchema = z.looseObject({
   operation: AdmissionOperationSchema,
   userInfo: AdmissionUserInfoSchema,
   object: z.unknown(),
+  dryRun: z.boolean().optional(),
   /**
    * The object's state before this request, present on UPDATE (and DELETE,
    * which this verifier doesn't handle yet — see webhook YAML comments).

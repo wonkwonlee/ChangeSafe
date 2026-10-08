@@ -39,8 +39,8 @@ export const AuthorizationGrantSchema = z
      * deleted one. Still the enforcement boundary's own vocabulary, not a
      * new identity system: `userInfo.uid` is a field Kubernetes' own
      * `AdmissionReview.request.userInfo` already carries. Optional because
-     * not every identity provider populates a stable uid; when either side
-     * lacks one, verification falls back to the username-only comparison.
+     * not every identity provider populates a stable uid; a grant carrying a uid requires an identical request uid. Only a grant
+     * without uid uses username-only matching.
      */
     authorizedActorUid: z.string().min(1).max(255).optional(),
     operation: GrantOperationSchema,

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { DomainError, IdSchema, TimestampSchema, isDomainError } from "@changesafe/core";
+import { AuthorizationGrantSchema, DomainError, IdSchema, TimestampSchema, canonicalize, isDomainError } from "@changesafe/core";
 import { NetworkChangeProposalSchema } from "@changesafe/domain-network";
 import { TerraformInputSchema } from "@changesafe/domain-terraform";
 import type { Ledger } from "@changesafe/ledger";
@@ -12,6 +12,7 @@ import {
   type DurableReviewIntake,
 } from "../../../features/reviews/durable-review-contract";
 import { REVIEW_CONTRACT_VERSION } from "../../../features/domains/review-contract";
+import { deriveReviewedGrantBinding, GrantPreferencesSchema } from "./grant-binding";
 import { DecisionService, type DecisionRequest } from "./decisions";
 import { DurableReviewStore, type DurableReviewStoreEntry } from "./durable-review-store";
 import { SERVER_DOMAIN_IDS, resolveServerDomain } from "./domains";
@@ -80,19 +81,7 @@ const ReviewIntakeBodySchema = z.strictObject({
  * submits only the final approve/reject intent; Kubernetes or any caller
  * finding/risk/receipt field is therefore rejected by this strict envelope.
  */
-const GrantRequestSchema = z.strictObject({
-  authorizedActor: z.string().min(1).max(255),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on authorizedActorUid. */
-  authorizedActorUid: z.string().min(1).max(255).optional(),
-  operation: z.enum(["CREATE", "UPDATE", "DELETE", "CONNECT"]),
-  resource: z.string().min(1).max(128),
-  objectSha256: z.string().regex(/^[a-f0-9]{64}$/),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on oldObjectSha256. */
-  oldObjectSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-  /** See AuthorizationGrantSchema's doc comment (@changesafe/core) on resourceUid. */
-  resourceUid: z.string().min(1).max(255).optional(),
-  expiresAtUtc: TimestampSchema,
-});
+const GrantRequestSchema = GrantPreferencesSchema;
 
 const ReviewDecisionBodySchema = z
   .strictObject({
@@ -122,14 +111,14 @@ export interface DecisionServerOptions {
 }
 
 function pendingReviewSession(intake: DurableReviewIntake) {
-  const network = intake.domainId === "network";
+  const simulated = intake.domainId !== "terraform";
   return {
     domainId: intake.domainId,
     contractVersion: REVIEW_CONTRACT_VERSION,
     policyVersion: resolveServerDomain(intake.domainId).adapter.policyVersion,
-    domainShape: network ? "simulated-state" : "external-diff",
+    domainShape: simulated ? "simulated-state" : "external-diff",
     capabilities: {
-      sandboxSimulation: network,
+      sandboxSimulation: simulated,
       resourceGraph: true,
       structuredDiff: true,
       untrustedContext: true,
@@ -392,95 +381,44 @@ async function handle(
     // Owner filtering deliberately precedes body parsing and returns the same
     // response as an absent id, so another principal cannot use validation
     // differences to probe the queue.
-    if (!options.reviews.get(reviewId, owner)) {
+    const pendingEntry = options.reviews.get(reviewId, owner);
+    if (!pendingEntry) {
       send(response, 404, {
         error: { code: "REQUEST_INVALID", message: "The requested review was not found." },
       });
       return;
     }
     const body = ReviewDecisionBodySchema.parse(await readBody(request));
-    // Captured once and reused as the grant's own issuedAtUtc below, rather
-    // than re-reading the clock inside issueGrant: two separate reads left
-    // a race where a grant valid at this pre-check could expire by the time
-    // issueGrant ran (after the ledger write), throwing for a decision that
-    // had already committed — and since the pre-check compares against a
-    // clock that only advances, a caller's retry could never pass it
-    // either, permanently stranding an approved decision with no grant.
-    // Checked here, before anything is ledgered, because grant issuance
-    // happens after the ledger append below: a grant request that
-    // AuthorizationGrantSchema would reject must fail while the decision can
-    // still be abandoned, not after it is committed and the caller is told
-    // the request failed. `expiresAtUtc` is the one per-request grant
-    // precondition the body schema cannot see — it is only invalid relative
-    // to the server clock the grant is issued against.
-    const grantIssuedAtUtc = serverNow(options);
-    if (
-      body.grant &&
-      Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS
-    ) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        `A grant's expiresAtUtc must be at least ${MIN_GRANT_LIFETIME_MS}ms after issuance time, ` +
-          "so it cannot expire before the decision finishes committing and the response reaches the caller.",
-      );
+    const scope = canonicalize({ owner, reviewId });
+    const existingIntent = options.reviews.grants.intent(scope);
+    const grantIssuedAtUtc = existingIntent?.issuedAtUtc ?? serverNow(options);
+    const requestForDecision = { ...pendingReviewRequest(pendingEntry.record), decision: body.decision };
+    const existingResolution = options.reviews.getResolution(reviewId, owner);
+    if (!existingResolution) {
+      options.decisions.preflightSigned(requestForDecision, pendingEntry.record.session.policyVersion);
+      if (body.grant) {
+        if (Date.parse(body.grant.expiresAtUtc) - Date.parse(grantIssuedAtUtc) < MIN_GRANT_LIFETIME_MS) {
+          throw new DomainError("REQUEST_INVALID", "Grant lifetime must leave at least 5000ms for issuance.");
+        }
+        const binding = await deriveReviewedGrantBinding(requestForDecision);
+        AuthorizationGrantSchema.parse({
+          ...binding, ...body.grant, grantId: "grant-preflight", receiptId: "receipt-preflight",
+          policyVersion: pendingEntry.record.session.policyVersion, issuedAtUtc: grantIssuedAtUtc,
+        });
+      }
+    } else if (!existingIntent || !body.grant) {
+      throw new DomainError("ILLEGAL_TRANSITION", "Review already has an immutable resolution.");
     }
-    // The same reasoning as the expiresAtUtc check above, for a second
-    // per-request precondition GrantRequestSchema can't see:
-    // AuthorizationGrantSchema requires oldObjectSha256 for UPDATE, but
-    // that requirement lives in @changesafe/core and GrantRequestSchema
-    // (the HTTP body's own schema) doesn't duplicate it — an UPDATE grant
-    // missing it would otherwise pass this route's own validation, commit
-    // the decision via resolvePending below, and only then be rejected by
-    // issueGrant's internal AuthorizationGrantSchema.parse, after the
-    // decision is already irreversibly resolved.
-    if (
-      body.grant &&
-      body.grant.operation === "UPDATE" &&
-      body.grant.oldObjectSha256 === undefined
-    ) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "An UPDATE grant's oldObjectSha256 is required (AuthorizationGrantSchema enforces this) — " +
-          "missing it here would only be discovered after the decision is committed.",
-      );
-    }
-    // The inverse of the check above, for the same reason: CREATE has no
-    // prior state, and AuthorizationGrantSchema now rejects a CREATE grant
-    // that carries oldObjectSha256 — but that rejection also only happens
-    // inside issueGrant, after resolvePending has already committed.
-    if (
-      body.grant &&
-      body.grant.operation === "CREATE" &&
-      body.grant.oldObjectSha256 !== undefined
-    ) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "A CREATE grant must not carry oldObjectSha256 (AuthorizationGrantSchema enforces this) — " +
-          "CREATE has no prior state, and this would only be discovered after the decision is committed.",
-      );
-    }
-    // Same pair of operation-dependent preconditions for resourceUid
-    // (CS-ADV-016), for the same reason: AuthorizationGrantSchema enforces
-    // both, but only inside issueGrant, after the decision has committed.
-    if (body.grant && body.grant.operation === "UPDATE" && body.grant.resourceUid === undefined) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "An UPDATE grant's resourceUid is required (AuthorizationGrantSchema enforces this) — " +
-          "missing it here would only be discovered after the decision is committed.",
-      );
-    }
-    if (body.grant && body.grant.operation === "CREATE" && body.grant.resourceUid !== undefined) {
-      throw new DomainError(
-        "REQUEST_INVALID",
-        "A CREATE grant must not carry resourceUid (AuthorizationGrantSchema enforces this) — " +
-          "the resource does not exist yet, and this would only be discovered after the decision is committed.",
-      );
-    }
+    const intent = options.reviews.grants.claim(scope, {
+      decision: body.decision, grant: body.grant ?? null, issuedAtUtc: grantIssuedAtUtc,
+    });
     const durableDecisionRequest = (pending: DurableReviewStoreEntry["record"]): DecisionRequest => ({
       ...pendingReviewRequest(pending),
       decision: body.decision,
     });
-    const decided = await options.reviews.resolvePending(
+    const decided = existingResolution
+      ? { outcome: await options.decisions.readSignedOutcome(existingResolution.resolution.receipt.receiptId), resolution: existingResolution }
+      : await options.reviews.resolvePending(
       reviewId,
       owner,
       {
@@ -517,7 +455,7 @@ async function handle(
           resolution: {
             resolutionVersion: "1",
             reviewId,
-            resolvedAtUtc: serverNow(options),
+            resolvedAtUtc: claim.claimedAtUtc,
             receipt: {
               receiptId: outcome.receipt.receiptId,
               sourceId: outcome.receipt.sourceId,
@@ -532,40 +470,17 @@ async function handle(
         };
       },
     );
-    // Issued after the receipt is signed and appended, because a grant that
-    // named a receipt the ledger never accepted would authorize against a
-    // decision with no durable record. The cost of that ordering is that a
-    // throw here surfaces as an error response for a decision that did
-    // commit. Every per-request way `issueGrant` can throw is therefore
-    // ruled out before the ledger write: the approve/reject and
-    // blocking-finding checks in `#prepare`, the strict `GrantRequestSchema`
-    // envelope, and the `expiresAtUtc` check above — made atomic with this
-    // call by passing the exact same `grantIssuedAtUtc` instant as
-    // `issuedAtUtc` rather than letting `issueGrant` read the clock again,
-    // which previously left a race where the two reads could disagree.
-    // What remains is `#requireSigningCapability`, which `decideSigned`
-    // already demanded of this same service — a service-level
-    // misconfiguration that cannot newly appear mid-request, so this
-    // should not throw in practice. If it somehow does, or if the response
-    // carrying the grant is simply lost in transit, a retry does NOT
-    // recover it: by this point `resolvePending` has already appended the
-    // resolution, so `#claimDecision`'s resolution-exists guard rejects
-    // the retry with `ILLEGAL_TRANSITION` before `issueGrant` is ever
-    // called again — `#recoverSignedOutcome` (decisions.ts) only covers
-    // the earlier claimed-but-not-yet-resolved crash window, not this one.
-    // The receipt itself stays recoverable via `GET /reviews/:id/receipt-
-    // proof`; the grant does not. Recorded as `CS-ADV-007`
-    // (`docs/ADVERSARIAL_FINDINGS.md`, distinct from `CS-ADV-004`'s
-    // issuance-binding gap) — an issued grant with no durable record and
-    // no recovery path, exactly the counterexample the M2 design spec's
-    // "grants in the ledger" deferral said would justify building it.
-    const grant =
-      body.decision === "approve" && body.grant
-        ? await options.decisions.issueGrant(decided.outcome.receipt, {
-            ...body.grant,
-            issuedAtUtc: grantIssuedAtUtc,
-          })
-        : undefined;
+    // The immutable intent survives every crash window. Issuance is idempotent
+    // by receipt identity; persist the signed result before exposing it.
+    let grant = options.reviews.grants.grant(scope);
+    if (intent.grant) {
+      if (!grant) {
+        grant = options.reviews.grants.record(scope,
+          await options.decisions.issueGrant(decided.outcome.receipt,
+            { ...intent.grant, issuedAtUtc: intent.issuedAtUtc }, requestForDecision));
+      }
+      await options.decisions.validateStoredGrant(grant, decided.outcome.receipt, requestForDecision, intent.grant);
+    }
 
     send(response, 201, {
       receiptId: decided.outcome.receipt.receiptId,
@@ -627,7 +542,7 @@ async function handle(
       limit,
       ...(requestedDomainId === null
         ? {}
-        : { domainId: z.enum(["network", "terraform"]).parse(requestedDomainId) }),
+        : { domainId: z.enum(["network", "terraform", "kubernetes"]).parse(requestedDomainId) }),
       sourceId: url.searchParams.get("sourceId") ?? undefined,
     }, durableReviewOwner(identity));
     send(response, 200, { reviews: reviews.map(reviewSummary) });

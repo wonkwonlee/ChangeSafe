@@ -1,10 +1,8 @@
 import {
-  canonicalize,
-  sha256Hex,
   verifyGrantSignature,
   type SignedGrant,
 } from "@changesafe/core";
-import { canonicalizeAdmittedResource, resourceIdOf } from "@changesafe/domain-kubernetes";
+import { canonicalizeAdmittedResource, resourceIdOf, kubernetesObjectSha256 } from "@changesafe/domain-kubernetes";
 
 import type { AdmissionRequest } from "./admission-review";
 
@@ -15,39 +13,7 @@ export interface VerifyOptions {
 
 export type VerifyOutcome = { allowed: true } | { allowed: false; reason: string };
 
-/**
- * The annotation the grant itself travels in (see src/main.ts's readGrant).
- * A grant is issued against the object's hash *before* the grant is
- * attached to it, so that same annotation must be excluded here too — a
- * grant embedded in the object it authorizes would otherwise invalidate its
- * own object hash the instant it was attached, since the annotation it
- * arrives in wasn't part of what was hashed when the grant was issued.
- */
-export const GRANT_ANNOTATION = "changesafe.dev/grant";
-
-/**
- * The one canonical object hash for a Kubernetes resource, over
- * `canonicalizeAdmittedResource` — NOT `normalizeRawResource`, which is a
- * lossy policy projection that discards spec fields no policy currently
- * reads (see CS-ADV-005). Exported because both sides of the grant
- * (issuance and admission-time verification) must compute it identically —
- * a second hand-rolled copy of these lines is exactly the drift that
- * produced CS-ADV-003, so callers use this rather than reimplementing it.
- */
-export function kubernetesObjectSha256(raw: unknown): Promise<string> {
-  const canonicalized = canonicalizeAdmittedResource(raw, "ev-admission-review");
-  const annotations = {
-    ...(canonicalized.metadata.annotations as Record<string, string> | undefined),
-  };
-  delete annotations[GRANT_ANNOTATION];
-  return sha256Hex(
-    canonicalize({
-      identity: canonicalized.identity,
-      metadata: { ...canonicalized.metadata, annotations },
-      spec: canonicalized.spec,
-    }),
-  );
-}
+export { GRANT_ANNOTATION, kubernetesObjectSha256 } from "@changesafe/domain-kubernetes";
 
 /**
  * Read `metadata.uid` off an untyped admitted object without trusting its
@@ -159,8 +125,7 @@ export async function verifyGrantAgainstAdmission(
   // transition nobody reviewed. Asymmetric like the uid check above:
   // whether this applies is the ISSUER's choice (did they bind a prior
   // state when they built the grant?), not the request's. A grant issued
-  // with no oldObjectSha256 (CREATE, or an UPDATE grant that didn't supply
-  // one) is unaffected.
+  // with no oldObjectSha256 (CREATE only; UPDATE requires it) is unaffected.
   if (grant.oldObjectSha256 !== undefined) {
     let oldObjectSha256: string;
     try {
