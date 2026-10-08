@@ -1451,8 +1451,12 @@ export class DurableReviewStore {
   legacyCount(): number { return z.strictObject({ count: z.number().int().nonnegative() }).parse(this.#db.prepare("SELECT count(*) AS count FROM durable_review_records").get()).count; }
 
   async appendPending(raw: unknown): Promise<DurableReviewStoreEntry> {
-    const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
-    return this.#queue(() => this.#appendPending(accepted));
+    // Queue before asynchronous validation so concurrent retries cannot reorder
+    // the first intake's acceptance time as their hashes finish computing.
+    return this.#queue(async () => {
+      const accepted = await acceptPendingDurableReviewRecordForPersistence(raw);
+      return this.#appendPending(accepted);
+    });
   }
   #appendPending(record: PendingDurableReviewRecord): DurableReviewStoreEntry {
     const existing = this.get(record.reviewId, record.owner);

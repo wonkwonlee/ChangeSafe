@@ -22,6 +22,9 @@ failurePolicy:
   in an *unlabeled* namespace is therefore **not** fail-closed — it routes
   to the default webhook and is admitted if the enforcer is down. Operators
   must label the namespaces that hold protected resources.
+  The benign scale-up demo uses this namespace tier without the separate
+  `changesafe.dev/protected: "true"` annotation: that policy annotation
+  prohibits spec changes, so even a scale-up cannot be approved on it.
 - `webhook-default.yaml` (`failurePolicy: Ignore`) — everything else.
 
 **Status: run and verified against a real kind cluster** (`kind v0.32.0`,

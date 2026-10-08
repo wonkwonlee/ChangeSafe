@@ -107,11 +107,9 @@ run kubectl create namespace changesafe-default-demo
 # --- 8. Bootstrap the target Deployments BEFORE the webhooks are registered -
 # Both webhook configs now intercept CREATE as well as UPDATE (CS-ADV-012),
 # so creating these after registration would need a grant for the very
-# first apply too — a real operator protects an ALREADY-RUNNING resource
-# (matching K8S_PROTECTED_RESOURCE's own model: the changesafe.dev/protected
-# annotation marks something already there), not one that never existed
-# without a grant. Bootstrapping before the webhooks even exist is the
-# realistic sequence, not a workaround.
+# first apply too. Namespace tier selects fail-closed routing; the separate
+# changesafe.dev/protected annotation would prohibit every spec change under
+# K8S_PROTECTED_RESOURCE, including this demo's otherwise benign scale-up.
 log ""
 log "--- Creating the demo Deployments (before the webhooks exist, so no grant is needed yet) ---"
 cat > "${WORK_DIR}/web-protected.yaml" <<'EOF'
@@ -120,8 +118,6 @@ kind: Deployment
 metadata:
   name: web
   namespace: changesafe-protected-demo
-  annotations:
-    changesafe.dev/protected: "true"
 spec:
   replicas: 3
   selector:

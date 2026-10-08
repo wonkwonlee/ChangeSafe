@@ -27,6 +27,13 @@ independent human or external reviewer approval is claimed.
 - Namespace tier downgrade/delete is guarded independently of the selector.
   Protected Scale/HPA writes are denied, not treated as authorized parent
   updates. Real-cluster policy validation is a dedicated CI gate.
+- CI exposed asynchronous intake validation reordering concurrent retries.
+  Validation now runs inside the write queue, preserving the first call's
+  acceptance timestamp without relaxing the existing regression assertion.
+- Live CI confirmed namespace/Scale denials, then correctly refused the
+  demo's spec change on an annotated immutable resource. The demo now uses
+  namespace fail-closed routing without the separate spec-freeze annotation;
+  policy verdicts are unchanged.
 
 ## Validation
 
