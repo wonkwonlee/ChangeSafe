@@ -31,9 +31,14 @@ independent human review is claimed.
   technical note/findings, replaced the current example guide and server
   intake description, and retained the actual PR #76 CI transcript with
   provenance/digests. No old transcript is represented as a new local run.
-- The private M0 table was not retrievable. Formal M2/M3 closure remains
-  explicitly pending that evidence input. M4 selection is conditional;
-  preparation does not silently mark a milestone closed or publish npm.
+- The private M0 table was not retrievable. The owner subsequently delegated
+  official M2/M3 completion. The retrospective review uses new IDs and retains
+  original-intake completeness as a separate uncertainty; it does not invent
+  historical reviewer feedback. The eight exit categories are now explicitly
+  recorded for both milestones. M4 opens with no observer implementation.
+- Closure cold-read: source links resolve, unresolved questions have next
+  actions, model checks are bounded and separate from implementation evidence,
+  and official milestone status is distinct from merge/publication status.
 
 ## Validation
 
@@ -50,6 +55,10 @@ preflight found all five candidate versions available at check time; that
 does not reserve the versions or replace the publish workflow's later check.
 
 Local Chromium download repeatedly returned truncated archives. Docker/kind
-are absent. The new PR CI must exercise Playwright and live admission on
-this candidate; the preserved earlier kind run attests PR #76 only.
+are absent. PR #77 CI run 37878264318 passed all seven jobs, including 42 Playwright tests
+and live admission. It passed 1,353 tests (three skipped), exact model snapshots,
+and production builds; the preserved earlier kind run still attests PR #76 only.
+The documentation-only closure reran 243 targeted tests and all eight TLC cases.
+Repository-triggered code review completed without reported findings on `4a84799`;
+this does not claim independent human review.
 No code-path behavior in the gate/enforcer changed in this preparation.

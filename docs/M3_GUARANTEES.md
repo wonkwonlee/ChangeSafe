@@ -1,8 +1,12 @@
 # What can authorization guarantee across failures?
 
 Owner authorization: 2026-10-08. M3 was implemented within its one-week
-cap. This is a checked model and evidence package, not formal closure of
-the preceding milestone: see [M2's remaining process gate](M2_CLOSEOUT.md).
+cap. **M3 formal verification is complete and the milestone is closed** for
+this bounded protocol model. The owner explicitly delegated official M2/M3
+completion on 2026-10-08. [M2 close-out](M2_CLOSEOUT.md) and the
+[inherited-question review](M0_RETROSPECTIVE_REVIEW.md) record the preceding gate.
+“Formal verification” here means exhaustive safety-invariant checking of the
+finite TLA+ model, not a refinement proof of the TypeScript implementation.
 
 Decision filter: A yes (state the exact authorization boundary); B yes
 (invariants, bounded model checking and counterexample interpretation);
@@ -79,14 +83,30 @@ the API server's tier configuration.
 - The model records actual **enforcer ALLOWs** and default-tier bypasses.
   Neither is an E2 persistence record or an E3 observed effect.
 
-## Adversarial gate and remaining process work
+## Adversarial exit matrix and closure
 
-Happy and malicious protocol paths, altered/missing artifact abstractions,
-storage/verifier/issuer failure and the default upstream outage outcome are
-checked by the normal/negative configurations. Actual parser, OIDC,
-signature and HTTP boundary checks remain in the M2 implementation gate.
-The private ten-hypothesis M0 intake still needs an owner-held disposition;
-it is not reproduced or invented here. Consequently the model work is
-complete and checked, but formal milestone closure remains pending that
-specific evidence dependency. Next-question selection is documented in
-[M4 decision](M4_DECISION.md).
+| Required gate | Exercised evidence | Result |
+| --- | --- | --- |
+| Happy path | Normal protected/default configurations; M2 issuance/admission tests | Scoped protocol invariants hold |
+| Malicious path | Broken object/retry/restart transitions and request substitutions | Expected invariant violations; normal variants deny substitutions |
+| Malformed input | M2 parser/HTTP/OIDC suites | Actual malformed contracts rejected; parsing is abstracted in the model |
+| Receipt/grant tampering | M2 signature/journal tests; model authenticity substitution | Concrete tampering refused; authenticity modeled as an assumption |
+| Missing artifact | No receipt/grant/delivery states in Init/Next; M2 missing-grant tests | No protected authorized ALLOW without delivered authority |
+| Component failure | Issuer/verifier crashes, storage toggle, broken storage/restart cases | Durable consumption/order required; six negative checks produce named failures |
+| Unexpected upstream output | Default-tier outage bypass, M2 raw-schema tests | Global default-tier claim fails as expected; unsupported raw input denies |
+| Open M0 hypotheses | [R-01–R-11 retrospective disposition](M0_RETROSPECTIVE_REVIEW.md) | Reviewed; scope exclusions and original-intake uncertainty retained |
+
+The implementation and CI model check completed within one day of the
+2026-10-08 authorization, inside the one-week hard cap. The pinned checker,
+model/config digests, state counts, exit codes and complete counterexample
+traces are committed in the linked results package. CI run 37878264318 checks
+the exact snapshot and publishes artifact `11592914416`. Closure verification
+reran both normal configurations and all six negative cases successfully.
+
+No counterexample found under attack model bounded immutable UPDATE review,
+one-field request substitutions, interleaved outages, expiry, policy drift,
+dry-run, retry delivery and atomic durable consumption. The limits above are
+part of the completed result, including no CREATE model, no unbounded/multi-review
+or liveness proof, no TypeScript refinement proof, and no E2/E3 attestation.
+Those limits are not removed by milestone closure. The next question is
+[M4 observation](M4_DECISION.md); its implementation remains future work.

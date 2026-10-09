@@ -11,12 +11,20 @@ The owner authorized M2 close-out verification, M3 modeling, release
 preparation and an evidence-led M4 direction in this session. Execution
 records are [M2 close-out](M2_CLOSEOUT.md), [M3 results](M3_GUARANTEES.md),
 [v0.6.0 candidate](RELEASE_NOTES_v0.6.0.md) and [M4 decision](M4_DECISION.md).
-M2's engineering evidence is assembled. Formal milestone closure remains
-pending the private M0 hypothesis disposition: the original ten hypotheses
-are not in this checkout or the retrieved records. Public findings were
-reviewed, but do not substitute for that original intake. M3 implementation
-is authorized and can be checked without asserting M2 is closed.
+M2 and M3 are officially closed for their documented scopes following the
+owner's explicit delegation of close-out and formal verification completion.
+The [retrospective M0 review](M0_RETROSPECTIVE_REVIEW.md) records every identified
+inherited question and deferral. The unavailable original private intake remains
+a provenance uncertainty: the new review does not claim recovery of its ten rows
+or renew M0's independent-review certification. This delegated review is the
+closure baseline; later in-scope contradictory evidence reopens the affected
+claim. All eight adversarial gate categories are recorded for both milestones.
 
+M3's completed result is bounded TLA+ safety-invariant checking with reproducible
+negative transitions, not a full-system or TypeScript refinement proof. Current
+milestone: **M4**, the scoped E1→E2 observation experiment. Its direction is
+selected; implementation remains future work. Neither npm publication nor PR
+merge is represented as completed.
 ---
 
 ## What this project is

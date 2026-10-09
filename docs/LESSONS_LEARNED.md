@@ -107,3 +107,16 @@ ChangeSafe's own code — they were assumptions about the platform that only
 a live cluster could falsify. The lesson repeats M1's: a reproduction that
 never leaves unit tests and hand-written fixtures cannot find the platform
 facts that only running against the real thing reveals.
+
+## Milestone closure needs a recoverable review record
+
+A private intake creates a process dependency that later agents cannot verify
+when its source is unavailable. The M2 close-out therefore uses an explicitly
+owner-delegated [retrospective review](M0_RETROSPECTIVE_REVIEW.md) of published
+hypotheses and current boundaries. Its IDs and provenance are separate from the
+historical ten M0 hypotheses, and completeness uncertainty remains open.
+Unresolved questions are dispositions, not silent omissions. Future review
+rounds should retain a durable owner-held intake and a public sanitized index
+where disclosure is permitted; later recovered counterevidence can reopen a
+scoped milestone. Formal model completion likewise needs a stated bound and
+assumptions, not a blanket claim of implementation correctness.

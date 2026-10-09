@@ -7,7 +7,8 @@ experiment design; it does not claim an implemented E2/E3 observer.
 ## Decision
 
 Choose **effect verification, starting with the E1 → E2 gap** as the next
-research direction, conditional on formal M2/M3 closure. The M3 storage and
+research direction after [M2](M2_CLOSEOUT.md) and [M3](M3_GUARANTEES.md) closure.
+This opens M4 planning; the observer remains unimplemented. The M3 storage and
 dry-run counterexamples explain why consumption has to precede ALLOW, but
 that safe ordering burns a grant even if Kubernetes later rejects
 persistence. A correct enforcer cannot resolve that ambiguity by itself.

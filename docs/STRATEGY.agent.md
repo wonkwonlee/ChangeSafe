@@ -10,9 +10,11 @@ precedence: >
   On conflict, docs/ARCHITECTURE.md design commitments win over this file.
   This file wins over docs/OSS_ROADMAP.md sequencing.
   This file does not override AGENTS.md or CLAUDE.md operational rules.
-current_milestone: M2
-implementation_track: M3_checked_pending_M2_closeout
-closure_evidence: docs/M2_CLOSEOUT.md
+current_milestone: M4
+implementation_track: M4_scoped_observation_not_implemented
+closed_milestones: [M2, M3]
+closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
+inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
 ```
 
 Read this before proposing, planning, or implementing any change in this

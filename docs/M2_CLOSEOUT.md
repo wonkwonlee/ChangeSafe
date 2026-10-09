@@ -6,13 +6,13 @@ Decision filter: A yes (verify the claimed boundary); B yes (distinguish
 admission, storage and observed effect); C yes (reproducible failure story);
 D yes (the E1/E2 gap survives correct single-use authority).
 
-**Engineering evidence assembled; formal closure pending one private
-process input.** The mandatory `review_of_open_M0_hypotheses` gate needs
-the original ten-hypothesis disposition in the owner's local record.
-It is absent from this checkout, targeted file lookup did not find it,
-and prior-conversation retrieval did not return it. Public verified findings
-were reviewed below. They are not asserted to be the complete private intake.
-`current_milestone` remains M2; approved M3 model work can proceed independently.
+**Official close-out: complete for the documented M2 scope**, under the
+owner's 2026-10-08 explicit delegation of closure and verification. The
+[retrospective inherited-question review](M0_RETROSPECTIVE_REVIEW.md) exercises
+the final process gate and retains all known unresolved questions. Its new
+review IDs are not the original private M0 IDs; historical completeness remains
+an explicit nonblocking provenance uncertainty. This closure does not certify
+that the unavailable original ten-row intake was recovered.
 
 ## Adversarial exit matrix
 
@@ -25,7 +25,7 @@ were reviewed below. They are not asserted to be the complete private intake.
 | Missing artifact | enforcer missing-grant case, HTTP raw-bundle and missing snapshot UID checks | no authority inferred from an absent grant or unsupported review bundle |
 | Component failure | review recovery/storage injection, SQLite multi-process/restart, live verifier outage | same-intent recovery; consumption errors explicit DENY; protected Fail / default Ignore demonstrated |
 | Unexpected upstream output | raw unsupported objects, OIDC malformed/JWKS tests, collector normalization suites | unexpected external schemas fail validation; no model or client verdict becomes authority |
-| Open M0 hypotheses | public findings disposition below | **Private original table still required; not marked complete** |
+| Open M0 hypotheses | [delegated retrospective review](M0_RETROSPECTIVE_REVIEW.md), R-01–R-11 | Reviewed and recorded; scope limits and original-intake uncertainty explicitly carried forward |
 
 No counterexample found under attack model authenticated immutable review
 intake, supported CREATE/UPDATE bindings, shared local SQLite consumption,
@@ -74,12 +74,29 @@ CLI/package build, production build and 1,352 tests passed; four opt-in
 tests skipped. The earlier PR's count includes a different build/opt-in
 context. The separate CI live kind test is not counted as a local pass.
 
-## Close-out action
+## Close-out decision and fresh verification
 
-The remaining input is the original private M0 table, or an owner-authored
-per-hypothesis disposition referring to it. Review each item against this
-matrix; retain unresolved items with explicit scope/reasons. Only after that
-gate is recorded can the milestone be closed and `current_milestone`
-advanced. No private reviewer content is required to be published.
-The demo script and failure-mode scope are in the example README and
-`M2_BOUNDARY_COMPLETION.md`; the E1/E2/E3 gap is the next-question input.
+M2 is closed for authenticated immutable intake, supported CREATE/UPDATE
+binding, installed routing guards and reliable shared local SQLite consumption.
+The eight adversarial gates have been exercised and recorded; closing does not
+resolve every deferred question or strengthen the stated attack model.
+The final inherited-question review is [R-01–R-11](M0_RETROSPECTIVE_REVIEW.md).
+
+[PR #77 CI run 37878264318](https://github.com/wonkwonlee/ChangeSafe/actions/runs/37878264318)
+passed all seven jobs on commit `4a84799161a32938d15e06fb24f08c3c431e41db`:
+1,353 tests passed (three opt-in skips), 42 Playwright tests passed, and fresh
+live kind admission/outage reproduction succeeded. Fresh admission artifact:
+`11593616040`; authorization-model artifact: `11592914416`. The retained older
+transcript above remains historical and is not relabeled as this run.
+
+The documentation-only close-out also reran 243 targeted tests across core,
+server, enforcer, workflow/transport boundaries and M1/M2 integration paths,
+and both normal plus all six negative TLC cases with exact snapshot comparison.
+No runtime or model behavior changed. The repository-triggered code review on
+`4a84799` completed with no reported findings; closure documentation is
+implementing-agent reviewed and subject to the updated PR's automated review.
+
+M3 closes with its own [scoped formal verification record](M3_GUARANTEES.md).
+The current milestone advances to M4, whose [observation experiment](M4_DECISION.md)
+remains designed but unimplemented. Release publication and PR merge are
+separate actions and are not prerequisites for these engineering milestones.
