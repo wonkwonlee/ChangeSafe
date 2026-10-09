@@ -134,11 +134,18 @@ They are owner-scoped by verified issuer and subject. Receipt proof reports
 content integrity, signature presence, out-of-band public-key verification,
 and ledger inclusion independently.
 
+Kubernetes reviews bind the immutable raw snapshot/manifest bundle and
+derive grant operation, resource, prior/target hashes and incarnation on
+the server. Grant preferences contain actor, optional actor UID and expiry,
+not caller-selected target bindings. Intent and issued authority persist
+separately from receipt evidence. See [current contracts](M2_BOUNDARY_COMPLETION.md)
+and [the checked authorization protocol](M3_GUARANTEES.md).
+
 `changesafe serve` constructs `DurableReviewStore` when `--reviews-db` is
 passed; without that flag the vNext queue remains disabled. The queue is
 therefore available as a turnkey server-side surface, but the browser still
 requires an operator gateway/BFF.
-The browser additionally requires an operator gateway/BFF: the public
+The public
 `CHANGESAFE_PUBLIC_SELF_HOSTED_GATEWAY_URL` contains no bearer token, and the
 browser uses an HttpOnly session cookie while the gateway supplies OIDC to the
 server.

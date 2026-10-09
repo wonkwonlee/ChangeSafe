@@ -19,6 +19,7 @@ import {
   verifyReceiptHash,
 } from "@changesafe/core";
 import { POLICY_VERSION as TERRAFORM_LIVE_POLICY_VERSION } from "@changesafe/domain-terraform";
+import { CLI_APP_VERSION } from "changesafe/version";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const EXAMPLE_ROOT = path.join(REPO_ROOT, "examples/m1-tier1-terraform-gate");
@@ -247,7 +248,9 @@ describe("M1 Tier 1 Terraform captured-plan template", () => {
         // is that the bundled CLI still reaches the same verdict for these
         // fixed inputs — not that main is byte-identical to that release.
         expect(parsedReceipt.policyVersion).toBe(TERRAFORM_LIVE_POLICY_VERSION);
-        expect(parsedReceipt.appVersion).toBe(manifest.release.appVersion);
+        // Build identity names this binary; the historical manifest remains
+        // pinned to the published M1 reproduction package.
+        expect(parsedReceipt.appVersion).toBe(CLI_APP_VERSION);
         expect(parsedReceipt.mode).toBe("offline");
         expect(parsedReceipt.simulation).toBeNull();
         expect(await verifyReceiptHash(parsedReceipt)).toBe(true);

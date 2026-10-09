@@ -5,6 +5,18 @@ Adopted: 2026-08-08
 Supersedes: the sequencing in `docs/OSS_ROADMAP.md` (phase gates there remain
 valid as technical detail; milestone ordering is governed by this document)
 
+## Current execution record — 2026-10-08
+
+The owner authorized M2 close-out verification, M3 modeling, release
+preparation and an evidence-led M4 direction in this session. Execution
+records are [M2 close-out](M2_CLOSEOUT.md), [M3 results](M3_GUARANTEES.md),
+[v0.6.0 candidate](RELEASE_NOTES_v0.6.0.md) and [M4 decision](M4_DECISION.md).
+M2's engineering evidence is assembled. Formal milestone closure remains
+pending the private M0 hypothesis disposition: the original ten hypotheses
+are not in this checkout or the retrieved records. Public findings were
+reviewed, but do not substitute for that original intake. M3 implementation
+is authorized and can be checked without asserting M2 is closed.
+
 ---
 
 ## What this project is
@@ -127,7 +139,7 @@ The E1 → E2 → E3 gap is a documented open research question, not a scope ite
 
 ### Authority vocabulary
 
-Three roles that are currently collapsed and must be separated at M2:
+Three roles separated by the M2 implementation:
 
 | Role | Question |
 |---|---|
@@ -142,7 +154,7 @@ And two objects that must not be conflated:
   approval; overloading this type with authority semantics would corrupt that
   invariant.
 - **`AuthorizationGrant`** — a statement of *what may now be exercised, by whom,
-  under what bounds*. Does not exist yet. Introduced at M2, not before.
+  under what bounds*. Introduced in M2 source; separate from receipt evidence.
 
 ---
 
