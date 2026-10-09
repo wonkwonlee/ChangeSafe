@@ -39,6 +39,10 @@ independent human review is claimed.
 - Closure cold-read: source links resolve, unresolved questions have next
   actions, model checks are bounded and separate from implementation evidence,
   and official milestone status is distinct from merge/publication status.
+- Automated review of closure commit `00141bf` found stale milestone status in
+  the candidate release notes (P2). Updated that summary to link the scoped
+  M2/M3 completion records and preserve publication/proof/provenance limits.
+  No runtime or model change was required.
 
 ## Validation
 

@@ -1,8 +1,13 @@
 # v0.6.0 — unreleased candidate
 
 Status: prepared source, not published. Published v0.5.0 remains the last
-release described by the README's pinned installation examples. This
-candidate does not mark M2/M3 formally closed; see `M2_CLOSEOUT.md`.
+release described by the README's pinned installation examples. M2 and M3
+are officially closed for their documented scopes; see [M2 close-out](M2_CLOSEOUT.md),
+[M3 bounded formal verification](M3_GUARANTEES.md), and the
+[retrospective inherited-question review](M0_RETROSPECTIVE_REVIEW.md).
+Milestone completion is separate from publication. Original private M0 intake
+completeness remains an explicit uncertainty, and M3 is not a TypeScript
+refinement proof. M4 observation is selected but unimplemented.
 
 ## Resulting behavior
 
