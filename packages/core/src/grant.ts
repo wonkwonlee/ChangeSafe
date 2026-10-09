@@ -60,9 +60,9 @@ export const AuthorizationGrantSchema = z
      * a prior state by definition — there is no legitimate case for an
      * UPDATE grant to omit this, so it is not optional for that operation.
      * Absent (and inapplicable) for CREATE, which has no prior state to
-     * bind against at all. Still caller-asserted at issuance like
-     * `objectSha256` itself — deriving it server-side from the evaluated
-     * proposal remains deferred, see `CS-ADV-004`.
+     * bind against at all. The authenticated issuance path derives this
+     * from the immutable raw reviewed snapshot (CS-ADV-004 follow-up),
+     * together with the target hash and resource incarnation.
      */
     oldObjectSha256: Sha256HexSchema.optional(),
     /**

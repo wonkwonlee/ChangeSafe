@@ -26,8 +26,8 @@ import { TERRAFORM_POLICY_VERSION } from "@changesafe/domain-terraform";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
-const TARGET_VERSION = "0.5.0";
-const TARGET_INTERNAL_RANGE = "^0.5.0";
+const TARGET_VERSION = "0.6.0";
+const TARGET_INTERNAL_RANGE = "^0.6.0";
 
 const ManifestSchema = z.object({
   name: z.string().min(1),
@@ -48,6 +48,7 @@ const MANIFEST_PATHS = [
   "packages/ledger",
   "packages/server",
   "packages/kubernetes-collector",
+  "packages/kubernetes-enforcer",
 ] as const;
 
 const PUBLISHABLE_PACKAGE_PATHS = [
@@ -62,6 +63,8 @@ const DEFERRED_PRIVATE_PACKAGE_PATHS = [
   "packages/ai",
   "packages/ledger",
   "packages/server",
+  "packages/kubernetes-collector",
+  "packages/kubernetes-enforcer",
 ] as const;
 
 function readManifest(relative: string) {
@@ -77,7 +80,7 @@ function internalRanges(manifest: z.infer<typeof ManifestSchema>) {
   }).filter(([name]) => name.startsWith("@changesafe/"));
 }
 
-describe("v0.5.0 workspace release identity", () => {
+describe("v0.6.0 candidate workspace release identity", () => {
   it("moves every root and workspace manifest together", () => {
     for (const relative of MANIFEST_PATHS) {
       expect(readManifest(relative).version, `${relative}/package.json version`).toBe(
@@ -86,7 +89,7 @@ describe("v0.5.0 workspace release identity", () => {
     }
   });
 
-  it("uses the adopted compatible 0.3.x range on every internal edge", () => {
+  it("uses the adopted compatible candidate range on every internal edge", () => {
     for (const relative of MANIFEST_PATHS) {
       for (const [dependency, range] of internalRanges(readManifest(relative))) {
         expect(range, `${relative} -> ${dependency}`).toBe(TARGET_INTERNAL_RANGE);
@@ -94,7 +97,7 @@ describe("v0.5.0 workspace release identity", () => {
     }
   });
 
-  it("publishes only the CLI, core, and two selected domains", () => {
+  it("publishes only the CLI, core, and three selected domains", () => {
     expect(readManifest(".").private).toBe(true);
     for (const relative of PUBLISHABLE_PACKAGE_PATHS) {
       expect(readManifest(relative).private, relative).not.toBe(true);

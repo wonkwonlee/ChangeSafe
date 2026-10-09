@@ -1,0 +1,68 @@
+# Authorization model and candidate release self-review
+
+Review scope: M2 evidence/claim currency, bounded M3 protocol model and
+v0.6.0 package preparation. This is implementing-agent self-review; no
+independent human review is claimed.
+
+## Findings and corrections
+
+- A disjunction on a TLA+ next-state assignment needed parentheses; the
+  initial broken-object run failed with an incompletely specified successor,
+  not the intended invariant counterexample. Corrected the action. The
+  runner rejects semantic errors and requires exit 12 plus the named
+  invariant and a trace for each negative case.
+- The model deliberately abstracts durable first-write, receipt trust and
+  canonical/hash authenticity. Documentation now separates those assumptions
+  from tested TypeScript behavior; no refinement or cryptographic proof is
+  claimed. Default-tier outage admission is represented explicitly.
+- The first packed-grant smoke used generated PEM strings as CryptoKeys.
+  Corrected the test to import the generated private PEM with the public
+  package API before signing. The isolated packed package verifies a valid
+  signature and refuses a modified actor.
+- Release identity checks were pinned to 0.5.0 and omitted the enforcer.
+  Updated the intentional candidate assertion and added the private enforcer
+  to version/private-package checks. Historical M1 manifests remain pinned;
+  the test of the current CLI now checks current binary identity, preserving
+  the historical template's hashes/version and all verdict assertions.
+- The private server imported the Kubernetes domain without declaring that
+  internal dependency. Declared it as part of synchronized 0.6.0 workspace
+  metadata. No public package set was expanded.
+- Original M2 docs contain historical observations. Kept the historical
+  technical note/findings, replaced the current example guide and server
+  intake description, and retained the actual PR #76 CI transcript with
+  provenance/digests. No old transcript is represented as a new local run.
+- The private M0 table was not retrievable. The owner subsequently delegated
+  official M2/M3 completion. The retrospective review uses new IDs and retains
+  original-intake completeness as a separate uncertainty; it does not invent
+  historical reviewer feedback. The eight exit categories are now explicitly
+  recorded for both milestones. M4 opens with no observer implementation.
+- Closure cold-read: source links resolve, unresolved questions have next
+  actions, model checks are bounded and separate from implementation evidence,
+  and official milestone status is distinct from merge/publication status.
+- Automated review of closure commit `00141bf` found stale milestone status in
+  the candidate release notes (P2). Updated that summary to link the scoped
+  M2/M3 completion records and preserve publication/proof/provenance limits.
+  No runtime or model change was required.
+
+## Validation
+
+Node 22.23.3/npm 10.9.8: lint, strict typecheck, CLI/package build,
+production build, public client budgets/security scan, all 27 scenario
+expectations and gallery currency. Full suite and packed consumer checks
+are recorded in the PR's final validation summary. TLC checks both normal
+configurations and all six required counterexamples; CI additionally
+rejects drift in the checked-in result snapshot.
+
+The isolated npm consumer installs all five local 0.6.0 tarballs outside
+the workspace and runs a real destructive-plan gate. Publication collision
+preflight found all five candidate versions available at check time; that
+does not reserve the versions or replace the publish workflow's later check.
+
+Local Chromium download repeatedly returned truncated archives. Docker/kind
+are absent. PR #77 CI run 37878264318 passed all seven jobs, including 42 Playwright tests
+and live admission. It passed 1,353 tests (three skipped), exact model snapshots,
+and production builds; the preserved earlier kind run still attests PR #76 only.
+The documentation-only closure reran 243 targeted tests and all eight TLC cases.
+Repository-triggered code review completed without reported findings on `4a84799`;
+this does not claim independent human review.
+No code-path behavior in the gate/enforcer changed in this preparation.

@@ -51,6 +51,22 @@ jobs:
       # out would quietly stop testing what an installer actually receives.
       - run: npm run build:packages
       - run: npm test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Check authorization invariants and required counterexamples
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/changesafe-tla2tools.jar
+        run: |
+          curl -fsSL https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          npm run verify:authorization -- --check-snapshot
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authorization-model
+          path: artifacts/authorization/
+          retention-days: 14
       - run: npm run build
 
   e2e:

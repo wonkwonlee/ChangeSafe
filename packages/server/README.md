@@ -101,7 +101,7 @@ list still cannot approve a BLOCK.
 | `POST /decisions` | bearer | Decide; recomputes findings, signs, appends |
 | `GET /decisions` | bearer | List recorded decisions |
 | `GET /ledger/verify` | bearer | Recompute the hash chain (409 if broken) |
-| `POST /reviews` | bearer | Queue a validated owner-scoped Network/Terraform intake |
+| `POST /reviews` | bearer | Queue a validated owner-scoped Network/Terraform/Kubernetes intake |
 | `GET /reviews` | bearer | List the authenticated owner's pending reviews |
 | `GET /reviews/:id` | bearer | Read one owner-scoped pending review, plus findings/risk recomputed at response time |
 | `POST /reviews/:id/decisions` | bearer | Recompute and resolve a pending review |
@@ -112,8 +112,12 @@ The `/reviews` family exists only when `createDecisionServer` receives a
 one when invoked with `--reviews-db <file>`, which is what makes it a turnkey
 backend for the vNext review queue; without the flag, the durable store stays
 unconstructed and `/reviews` behaves as if it never existed. Durable intake
-currently supports Network and Terraform; Kubernetes is rejected rather than
-silently downgraded.
+supports Network, Terraform, and Kubernetes in the v0.6.0 candidate source.
+Published v0.5.0 does not include this Kubernetes HTTP contract. Kubernetes
+intake requires the immutable raw `{ snapshot, manifestText }` bundle, not a
+separately supplied proposal. Server-derived bindings, grant preferences,
+recovery, size limits and migration are documented in
+[M2 boundary completion](../../docs/M2_BOUNDARY_COMPLETION.md).
 
 The decision is appended to the ledger **before** the response is returned: a
 decision the caller was told about but the ledger never saw is exactly the gap
