@@ -14,7 +14,7 @@ current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
 method: research_loop            # adopted 2026-10-11, see §9
 loop_ledger: docs/RESEARCH_LOOP.md
-experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md]
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -313,6 +313,9 @@ M4:
     - id: 05
       note: docs/M4_EXPERIMENT_05.md
       result: H5a-H5e not refuted on one live kind run (protected tier); an independent watch contradicts flipped, fabricated and hidden-write claims on the recorded evidence; the read before a write is not the admission's prior version
+    - id: 06
+      note: docs/M4_EXPERIMENT_06.md
+      result: a replay from the dry-run's response version (a stand-in for the admission's recorded oldObject version, which was not recorded) reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```

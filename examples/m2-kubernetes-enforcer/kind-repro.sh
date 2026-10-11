@@ -381,6 +381,48 @@ node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR
   "${EXAMPLE_DIR}/m4-watch-evidence.json" "${WATCH_RV}" "${WATCH_END_RV}" "${WATCH_ALIVE}" "${WORK_DIR}/watch.err" \
   | tee -a "${TRANSCRIPT}"
 
+# --- M4 experiment 06 — what can an observer recover after the fact? ------
+# Four short, bounded requests against the same API server, from the
+# version read just before step 1 (what a recorded oldObject version would
+# be), a version far too old, version 0, and a NotOlderThan list. Each
+# captures stdout and stderr: whether "too old" arrives as a 410 response
+# or as an ERROR event is part of what is being observed.
+M4_REPLAY_BASE="/apis/apps/v1/namespaces/changesafe-protected-demo/deployments?fieldSelector=metadata.name%3Dweb"
+m4_object_rv() { kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || true; }
+m4_replay() {
+  # The object's version just before and just after each request is its
+  # completeness marker: when the two are equal nothing moved while the
+  # request ran, and a replay's last event should carry that version.
+  m4_object_rv > "${WORK_DIR}/replay-$1.before"
+  kubectl get --raw "${M4_REPLAY_BASE}&watch=1&timeoutSeconds=4&resourceVersion=$2" \
+    >"${WORK_DIR}/replay-$1.jsonl" 2>&1 || true
+  m4_object_rv > "${WORK_DIR}/replay-$1.after"
+}
+m4_replay replay "${WATCH_RV}"
+# Experiment 05 showed the read before step 1 is not what the real admission
+# saw (status-only updates landed in between). The dry-run's response
+# carries the version it read, which stands in here for a recorded
+# oldObject version (proposal P3); replay from it as well.
+M4_STEP1_GRANT_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).grant.grantId' "${WORK_DIR}/step1-grant.json")
+M4_PRIOR_RV=$(node "${EXAMPLE_DIR}/m4-prior-version.mjs" "${WORK_DIR}/audit.log" "${M4_STEP1_GRANT_ID}" || true)
+# Replaying from the admission's version is the experiment's central case: a
+# lookup that finds none (the dry-run's response missing, or its shape
+# changed) is an invalid setup, not an experiment with a gap.
+if [ -z "${M4_PRIOR_RV}" ]; then
+  log "FAIL: no prior resourceVersion could be recovered for grant ${M4_STEP1_GRANT_ID} from the audit log; the replay-from-admission case cannot be exercised"
+  exit 1
+fi
+m4_replay replay-prior "${M4_PRIOR_RV}"
+m4_replay ancient 1
+m4_replay any 0
+kubectl get --raw "${M4_REPLAY_BASE}&resourceVersion=${WATCH_RV}&resourceVersionMatch=NotOlderThan" \
+  >"${WORK_DIR}/replay-list.jsonl" 2>&1 || true
+log ""
+log "--- M4 experiment 06 evidence (replay from resourceVersion ${WATCH_RV}) ---"
+node "${EXAMPLE_DIR}/m4-replay-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/step1-grant.json" "${WORK_DIR}/m4-grant.json" \
+  "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" "${WATCH_RV}" \
+  "${EXAMPLE_DIR}/m4-replay-evidence.json" "${M4_PRIOR_RV}" | tee -a "${TRANSCRIPT}"
+
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
 log "=== Demo step 3: fail-closed (protected) vs fail-open (default) when the enforcer is unreachable ==="
