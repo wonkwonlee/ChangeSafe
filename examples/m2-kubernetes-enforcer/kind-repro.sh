@@ -51,7 +51,44 @@ run docker build -f "${REPO_ROOT}/packages/kubernetes-enforcer/Dockerfile" \
 # --- 3. Create the cluster ---------------------------------------------------
 log ""
 log "--- Creating kind cluster ---"
-run kind create cluster --name "${CLUSTER_NAME}"
+# Audit logging is on for M4 experiment 03 (docs/M4_EXPERIMENT_03.md). kind
+# generates kubeadm v1beta3 or v1beta4 depending on the node image, and the
+# two spell apiServer.extraArgs differently (map vs name/value list); each
+# patch names its apiVersion, so only the one matching the generated config
+# applies.
+cp "${EXAMPLE_DIR}/m4-audit-policy.yaml" "${WORK_DIR}/audit-policy.yaml"
+cat > "${WORK_DIR}/kind-config.yaml" <<KINDCONFIG
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ${WORK_DIR}/audit-policy.yaml
+        containerPath: /etc/kubernetes/policies/audit-policy.yaml
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        apiVersion: kubeadm.k8s.io/v1beta3
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            audit-log-path: /var/log/kubernetes/kube-apiserver-audit.log
+            audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
+          extraVolumes:
+            - { name: audit-policies, hostPath: /etc/kubernetes/policies, mountPath: /etc/kubernetes/policies, readOnly: true, pathType: DirectoryOrCreate }
+            - { name: audit-logs, hostPath: /var/log/kubernetes, mountPath: /var/log/kubernetes, readOnly: false, pathType: DirectoryOrCreate }
+      - |
+        apiVersion: kubeadm.k8s.io/v1beta4
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            - { name: audit-log-path, value: /var/log/kubernetes/kube-apiserver-audit.log }
+            - { name: audit-policy-file, value: /etc/kubernetes/policies/audit-policy.yaml }
+          extraVolumes:
+            - { name: audit-policies, hostPath: /etc/kubernetes/policies, mountPath: /etc/kubernetes/policies, readOnly: true, pathType: DirectoryOrCreate }
+            - { name: audit-logs, hostPath: /var/log/kubernetes, mountPath: /var/log/kubernetes, readOnly: false, pathType: DirectoryOrCreate }
+KINDCONFIG
+run kind create cluster --name "${CLUSTER_NAME}" --config "${WORK_DIR}/kind-config.yaml"
 run kind load docker-image changesafe-kubernetes-enforcer:dev --name "${CLUSTER_NAME}"
 
 WHOAMI_USER=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}' 2>/dev/null || echo kubernetes-admin)
@@ -227,6 +264,54 @@ if [ "${ACTUAL_REPLICAS}" != "4" ]; then
   log "FAIL: step 2's denied patch appears to have partially applied"
   exit 1
 fi
+
+# --- M4 experiment 03 — what does the API server's own audit record show? -
+# Observation only: these steps fail the run solely when the reproduction
+# itself breaks (a grant cannot be issued, the setup does not reject),
+# never because an M4 hypothesis did not hold. Results are read from the
+# summary below and recorded in docs/M4_EXPERIMENT_03.md.
+log ""
+log "=== M4 experiment 03: downstream rejection after ALLOW, then retry of the burned grant ==="
+run kubectl apply -f "${EXAMPLE_DIR}/m4-downstream-reject.yaml"
+kubectl -n changesafe-protected-demo get deploy web -o json > "${WORK_DIR}/web-current-m4.json"
+CHANGESAFE_KIND_WORK_DIR="${WORK_DIR}" CHANGESAFE_KIND_ACTOR="${WHOAMI_USER}" \
+  npm exec -- vitest run tests/integration/m4-kind-downstream-grant.test.ts | tee -a "${TRANSCRIPT}"
+M4_GRANT_B64=$(base64 < "${WORK_DIR}/m4-grant.json" | tr -d '\n')
+cat > "${WORK_DIR}/m4-patch.json" <<M4PATCH
+{"metadata":{"labels":{"m4.changesafe.dev/downstream":"reject"},"annotations":{"changesafe.dev/grant":"${M4_GRANT_B64}"}},"spec":{"replicas":5}}
+M4PATCH
+set +e
+M4_REJECTED_OUTPUT=$(kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/m4-patch.json" 2>&1)
+M4_REJECTED_STATUS=$?
+set -e
+log "\$ kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file=m4-patch.json   # downstream webhook registered"
+log "${M4_REJECTED_OUTPUT}"
+if [ "${M4_REJECTED_STATUS}" -eq 0 ]; then
+  log "FAIL: the downstream-rejecting webhook did not reject the write; the experiment's setup is invalid"
+  exit 1
+fi
+log "web replicas after downstream rejection: $(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}') (4 means not persisted)"
+
+run kubectl delete validatingwebhookconfiguration changesafe-m4-downstream-reject
+set +e
+M4_RETRY_OUTPUT=$(kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file="${WORK_DIR}/m4-patch.json" 2>&1)
+M4_RETRY_STATUS=$?
+set -e
+log "\$ kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file=m4-patch.json   # downstream webhook removed, same grant"
+log "${M4_RETRY_OUTPUT}"
+log "M4 retry exit status: ${M4_RETRY_STATUS}; web replicas: $(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')"
+
+sleep 2
+docker exec "${CLUSTER_NAME}-control-plane" cat /var/log/kubernetes/kube-apiserver-audit.log > "${WORK_DIR}/audit.log"
+kubectl -n changesafe-system exec deploy/changesafe-enforcer -- node -e '
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(process.env.GRANT_USES_DB, { readOnly: true });
+  process.stdout.write(JSON.stringify(db.prepare("SELECT grant_id, admission_uid FROM consumed_grants ORDER BY rowid").all()));
+' > "${WORK_DIR}/use-state.json" 2>/dev/null
+log ""
+log "--- M4 experiment 03 evidence ---"
+node "${EXAMPLE_DIR}/m4-audit-summary.mjs" "${WORK_DIR}/audit.log" "${WORK_DIR}/use-state.json" \
+  "${EXAMPLE_DIR}/m4-audit-evidence.jsonl" | tee -a "${TRANSCRIPT}"
 
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
