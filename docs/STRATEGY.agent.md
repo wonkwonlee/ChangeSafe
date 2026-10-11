@@ -12,6 +12,9 @@ precedence: >
   This file does not override AGENTS.md or CLAUDE.md operational rules.
 current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
+method: research_loop            # adopted 2026-10-11, see §9
+loop_ledger: docs/RESEARCH_LOOP.md
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -289,12 +292,54 @@ M3:
     deliberately broken transition so the checker produces a counterexample.
 
 M4:
-  status: undefined_by_design
-  decided_by: M2 and M3 results
-  candidates: [effect_verification, generalization_beyond_infrastructure,
-               deeper_kubernetes_authorization_semantics]
-  rule: do not pre-commit
+  status: in_progress
+  question: What evidence can connect an admitted request to stored state?
+  selected_by: docs/M4_DECISION.md (from M2 and M3 results)
+  deferred_candidates: [generalization_beyond_infrastructure,
+                        deeper_kubernetes_authorization_semantics]
+  experiments:
+    - id: 01
+      note: docs/M4_EXPERIMENT_01.md
+      result: H1 hash-only correlation refuted offline
+    - id: 02
+      note: docs/M4_EXPERIMENT_02.md
+      result: H2 executor-asserted version refuted; server-side audit binding proposed, unverified
+  adopted_into_core: none
 ```
+
+---
+
+## 9. Research loop
+
+```yaml
+status: adopted_method            # owner decision 2026-10-11
+human_companion: docs/STRATEGY.md#the-research-loop-method
+ledger: docs/RESEARCH_LOOP.md     # append-only, one row per iteration
+iteration:
+  select:      from previous next_question or open milestone question; run §3 filter
+  hypothesize: one falsifiable sentence, numbered H<n>
+  experiment:  offline first; production functions under test; test-local contract
+  record:      docs/M<k>_EXPERIMENT_<nn>.md with result in {refuted, not_refuted_under:<model>, unknown}
+  gate:        owner decides adoption
+```
+
+**MUST NOT:**
+
+- R12. Adopt a contract, schema, policy, or version bump discovered by an
+  experiment in the same change that records the experiment. Propose in the
+  note; adoption is a separate, human-decided change.
+- R13. Write "self-improving", "recursive self-improvement", "autonomous
+  research", or equivalents as a property of this project. The ledger may
+  show it; prose may not claim it.
+- R14. Select a next question that names a technology, or run an iteration
+  that cannot produce a counterexample or an `unknown`.
+- R15. Let the loop touch execution, approval, merge, release, publish, or
+  this file's §2–§7 rules. The loop proposes; the gate is unchanged.
+
+**MUST:**
+
+- R16. Append one ledger row per iteration before the iteration's branch is
+  offered for merge, including overclaims the agent caught in its own draft.
 
 ---
 

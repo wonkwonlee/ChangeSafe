@@ -220,6 +220,11 @@ outage counterexample. See [guarantees and model limits](docs/M3_GUARANTEES.md),
 [candidate release notes](docs/RELEASE_NOTES_v0.6.0.md). These are source and
 bounded-model claims; neither a model check nor admission ALLOW attests E2/E3.
 
+M4 asks what evidence can connect an admitted request to stored state. It
+proceeds as numbered offline experiments ([01](docs/M4_EXPERIMENT_01.md),
+[02](docs/M4_EXPERIMENT_02.md)) recorded in the
+[research loop ledger](docs/RESEARCH_LOOP.md); nothing from them is adopted yet.
+
 ## Live model analysis (CLI only)
 
 Three providers are supported and none is privileged:

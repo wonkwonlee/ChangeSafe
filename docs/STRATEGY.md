@@ -25,6 +25,14 @@ negative transitions, not a full-system or TypeScript refinement proof. Current
 milestone: **M4**, the scoped E1→E2 observation experiment. Its direction is
 selected; implementation remains future work. Neither npm publication nor PR
 merge is represented as completed.
+
+**2026-10-11 update.** PR #77 is merged. The owner adopted the
+[research loop](#the-research-loop-method) as the project's working method;
+questions remain the milestones. M4 is in progress through numbered,
+offline-first experiments: [01](M4_EXPERIMENT_01.md) refuted hash-only
+E1→E2 correlation; [02](M4_EXPERIMENT_02.md) examined executor-asserted
+write evidence. Both propose; neither is adopted into core. The loop's
+measurements live in [the research ledger](RESEARCH_LOOP.md).
 ---
 
 ## What this project is
@@ -82,6 +90,50 @@ process:
 >
 > **8. Execution is not verified effect.** Observing or authorizing a requested
 > operation does not prove the intended system state was realized.
+
+---
+
+## The research loop (method)
+
+Adopted 2026-10-11 by owner decision. This section describes *how* work
+proceeds; it changes no milestone, invariant, or claim rule.
+
+The project is advanced by an agent acting as a researcher, one bounded
+iteration at a time, with the owner as the gate. One iteration is:
+
+1. **Select** the question. It comes from the previous result's recorded
+   "next question", or from an open milestone question — never from a
+   technology. Run the decision filter and record it.
+2. **Hypothesize** in one falsifiable sentence (`H<n>`).
+3. **Experiment** offline first: fixtures, the production functions under
+   test, a test-local contract. A live environment is used only when the
+   offline result names an assumption it cannot check.
+4. **Record** in a numbered note (`docs/M<k>_EXPERIMENT_<nn>.md`): result as
+   *refuted*, *not refuted under attack model X*, or *unknown*; what the
+   result says about the architecture; assumptions needing live
+   verification; what remains unsupported; the next question.
+5. **Gate.** The owner decides what, if anything, is adopted. The agent
+   proposes contracts and changes; it does not adopt them.
+
+The loop is itself subject to the project's trust model. The agent may run
+experiments, write tests and notes, and open branches. Adopting a schema
+into `@changesafe/core`, changing a policy, merging, releasing, publishing,
+and editing this document are human decisions — the loop never gains power
+over the gate, and never executes against infrastructure.
+
+The loop is measured, not asserted. `docs/RESEARCH_LOOP.md` is an
+append-only ledger with one row per iteration: question, hypothesis,
+result, counterexamples produced, overclaims caught before merge, human
+decisions required, and what was adopted. Until that ledger shows the loop
+producing results the author would not have reached alone, phrases such as
+"self-improving", "recursive self-improvement", or "autonomous research"
+are claims the project cannot make and must not write.
+
+Loop-specific anti-patterns, in addition to the ones below: an iteration
+that produces no counterexample and no "unknown" is suspect (it probably
+tested what it already believed); an iteration whose next question is a
+technology has drifted; an iteration that proposes a core change in the
+same note that discovered the need has skipped the gate.
 
 ---
 

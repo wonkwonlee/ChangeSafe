@@ -1,0 +1,40 @@
+# Research loop ledger
+
+Append-only. One row per iteration of the
+[research loop](STRATEGY.md#the-research-loop-method). Rows are never
+edited after the iteration's branch is offered for merge. A correction is
+a new row that names the row it corrects.
+
+Column meanings:
+
+- **Result** is one of *refuted*, *not refuted under* &lt;attack model&gt;,
+  or *unknown*.
+- **Counterexamples** counts distinct cases where the hypothesis gave a
+  wrong or falsely certain answer.
+- **Overclaims caught** counts claims the agent drafted, caught, and
+  removed or corrected before the work was offered. These include claims
+  made to the owner in conversation, not just in files.
+- **Human decisions** lists what the iteration cannot settle by itself.
+- **Adopted** is what the owner later took into the codebase. It is filled
+  by a later row, never by the iteration itself.
+
+| # | Date | Question | Hypothesis | Result | Counterexamples | Overclaims caught | Human decisions | Adopted |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [M4-01](M4_EXPERIMENT_01.md) | 2026-10-11 | Can a read of stored state be attributed to the request that was admitted? | H1: hash equality after ALLOW means the admitted write persisted | refuted (offline) | 5: recreated incarnation, convergent re-apply, CREATE without incarnation, copied annotation, rejected-vs-overwritten indistinguishable | 0 | adopt the observation contract into core? | — |
+| [M4-02](M4_EXPERIMENT_02.md) | 2026-10-11 | Can the executor's write response be bound to the grant it exercised, without trusting the executor? | H2: a read at the executor-claimed uid and resourceVersion confirms persistence | refuted (offline); server-record shape proposed, unverified | 2: claim unfalsifiable after any later write; liar claims another writer's version | 1: the agent told the owner the 01 contract "initially had a `persisted` verdict" that was removed; it never did, and this was retracted before the ledger was written | P1 audit annotations, P2 admission uid in use-state, whether to run the live kind audit check | — |
+
+## Loop observations
+
+Kept to what the rows show. These are not claims about the method.
+
+- Two iterations, both offline, both refuted the hypothesis under test. Both
+  hypotheses were chosen *expecting* refutation. The loop has not yet tested
+  a hypothesis it expected to survive, so it has not yet shown it can
+  produce a surprising positive result.
+- Iteration 02's server-record cases test a model of Kubernetes. Their
+  passing is close to true by construction. The next iteration is the first
+  that needs a live environment, which makes it the first real test of the
+  02 proposal.
+- The first overclaim the loop caught was in the agent's conversation with
+  the owner, not in a file. Overclaims in conversation are counted here for
+  that reason.
