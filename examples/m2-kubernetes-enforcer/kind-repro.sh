@@ -362,6 +362,28 @@ node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR
   "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" \
   "${EXAMPLE_DIR}/m4-watch-evidence.json" | tee -a "${TRANSCRIPT}"
 
+# --- M4 experiment 06 — what can an observer recover after the fact? ------
+# Four short, bounded requests against the same API server, from the
+# version read just before step 1 (what a recorded oldObject version would
+# be), a version far too old, version 0, and a NotOlderThan list. Each
+# captures stdout and stderr: whether "too old" arrives as a 410 response
+# or as an ERROR event is part of what is being observed.
+M4_REPLAY_BASE="/apis/apps/v1/namespaces/changesafe-protected-demo/deployments?fieldSelector=metadata.name%3Dweb"
+m4_replay() {
+  kubectl get --raw "${M4_REPLAY_BASE}&watch=1&timeoutSeconds=4&resourceVersion=$2" \
+    >"${WORK_DIR}/replay-$1.jsonl" 2>&1 || true
+}
+m4_replay replay "${WATCH_RV}"
+m4_replay ancient 1
+m4_replay any 0
+kubectl get --raw "${M4_REPLAY_BASE}&resourceVersion=${WATCH_RV}&resourceVersionMatch=NotOlderThan" \
+  >"${WORK_DIR}/replay-list.jsonl" 2>&1 || true
+log ""
+log "--- M4 experiment 06 evidence (replay from resourceVersion ${WATCH_RV}) ---"
+node "${EXAMPLE_DIR}/m4-replay-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/step1-grant.json" "${WORK_DIR}/m4-grant.json" \
+  "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" "${WATCH_RV}" \
+  "${EXAMPLE_DIR}/m4-replay-evidence.json" | tee -a "${TRANSCRIPT}"
+
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
 log "=== Demo step 3: fail-closed (protected) vs fail-open (default) when the enforcer is unreachable ==="
