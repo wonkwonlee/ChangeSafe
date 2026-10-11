@@ -76,14 +76,19 @@ async function attribute(evidence: AdmissionEvidence, observation: Observation):
   if (observation.kind === "unavailable") return "unknown_unobserved";
   if (observation.kind === "absent") return "unknown_absent";
   const { raw } = observation;
+  const observed = raw.metadata.resourceVersion;
+  const prior = evidence.priorResourceVersion;
+  // Exact equality holds for any version string, opaque ones included;
+  // ordering only for decimal versions of one kube-apiserver resource type.
+  const sinceAdmission =
+    prior === undefined || observed === undefined
+      ? undefined
+      : observed === prior ? 0 : compareResourceVersions(observed, prior);
+  // A read older than what the enforcer saw says nothing about what came
+  // after — not even which incarnation exists now — so it is checked first.
+  if (sinceAdmission === -1) return "unknown_stale_read";
   if (evidence.incarnationUid === undefined) return "unknown_incarnation";
   if (raw.metadata.uid !== evidence.incarnationUid) return "not_this_incarnation";
-  const sinceAdmission =
-    evidence.priorResourceVersion === undefined || raw.metadata.resourceVersion === undefined
-      ? undefined
-      : compareResourceVersions(raw.metadata.resourceVersion, evidence.priorResourceVersion);
-  // A read older than what the enforcer saw says nothing about what came after.
-  if (sinceAdmission === -1) return "unknown_stale_read";
   const isTarget = (await kubernetesObjectSha256(raw)) === evidence.targetObjectSha256;
   // Same incarnation, same version as at admission, and not the target
   // state: nothing has been stored since, so the admitted (state-changing)
@@ -227,6 +232,25 @@ describe("M4-01: counterexamples to hash-only correlation (H1)", () => {
     const evidence = await updateEvidence();
     const stale: Observation = { kind: "present", raw: deployment({ uid: INCARNATION_A, resourceVersion: "99", replicas: 3 }) };
     expect(await attribute(evidence, stale)).toBe("unknown_stale_read");
+  });
+
+  it("a stale read from an earlier incarnation is stale, not evidence the admitted object is gone", async () => {
+    const evidence = await updateEvidence();
+    const staleOtherIncarnation: Observation = {
+      kind: "present",
+      raw: deployment({ uid: INCARNATION_B, resourceVersion: "99", replicas: 3 }),
+    };
+    expect(await attribute(evidence, staleOtherIncarnation)).toBe("unknown_stale_read");
+  });
+
+  it("an opaque version equal to the prior one still decides 'nothing stored since'", async () => {
+    // An aggregated API server may emit non-decimal versions: no ordering,
+    // but exact equality is still meaningful.
+    const evidence = { ...(await updateEvidence()), priorResourceVersion: "opaque-v7" };
+    const unchanged: Observation = { kind: "present", raw: deployment({ uid: INCARNATION_A, resourceVersion: "opaque-v7", replicas: 3 }) };
+    const changed: Observation = { kind: "present", raw: deployment({ uid: INCARNATION_A, resourceVersion: "opaque-v9", replicas: 3 }) };
+    expect(await attribute(evidence, unchanged)).toBe("no_write_since_admission");
+    expect(await attribute(evidence, changed)).toBe("unknown_divergent");
   });
 
   it("compares resource versions as Kubernetes documents, and refuses non-decimal ones", () => {
