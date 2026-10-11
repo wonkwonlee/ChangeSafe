@@ -5,11 +5,13 @@
 // in the experiment note, not decided by this script.
 //
 // usage: node m4-watch-summary.mjs <watch.jsonl> <audit.log> <use-state.json> \
-//          <step1-grant.json> <m4-grant.json> <enforcer-dist-index.js> <out.json>
-import { readFileSync, writeFileSync } from "node:fs";
+//          <step1-grant.json> <m4-grant.json> <enforcer-dist-index.js> <out.json> \
+//          <watchStartRv> <closedAtRv> <aliveAtClose 0|1> <watch.err>
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const [watchPath, auditPath, usesPath, grant1Path, grant2Path, hashModule, outPath] = process.argv.slice(2);
+const [watchPath, auditPath, usesPath, grant1Path, grant2Path, hashModule, outPath,
+  watchStartRv, closedAtRv, aliveAtClose, watchErrPath] = process.argv.slice(2);
 const { kubernetesObjectSha256 } = await import(pathToFileURL(hashModule).href);
 
 const lines = (path) => readFileSync(path, "utf8").split("\n").filter(Boolean);
@@ -52,7 +54,9 @@ for (const line of lines(watchPath)) {
     observedGeneration: object.status?.observedGeneration,
     carrierGrantId: carried?.grantId,
     objectHash: hash,
-    hashChangedFromPrevious: previousHash === undefined ? true : previousHash !== hash,
+    // null for the first event: its predecessor was not seen, so whether it
+    // changed the spec is unknown, not "changed".
+    hashChangedFromPrevious: previousHash === undefined ? null : previousHash !== hash,
     matchesGrant: grants.filter((grant) => grant.objectSha256 === hash).map((grant) => grant.grantId),
   });
   previousHash = hash;
@@ -71,17 +75,31 @@ const audit = lines(auditPath).map(tryParse).filter((event) => event && annotati
     storedResourceVersion: event.responseObject?.kind === "Deployment" ? event.responseObject.metadata?.resourceVersion : undefined,
   }));
 
-const evidence = { grants, useState: uses, audit, watchEvents };
+const watchErr = watchErrPath && existsSync(watchErrPath) ? readFileSync(watchErrPath, "utf8").slice(0, 400) : "";
+const lastEvent = [...watchEvents].reverse().find((event) => event.uid !== undefined);
+const evidence = {
+  watchStartResourceVersion: watchStartRv ?? null,
+  // The object's version when the watch was closed. A complete stream's last
+  // Deployment event carries exactly this version.
+  closedAtResourceVersion: closedAtRv ?? null,
+  watchAliveAtClose: aliveAtClose === undefined ? null : aliveAtClose === "1",
+  watchStderr: watchErr,
+  lastEventMatchesClose: lastEvent !== undefined && closedAtRv !== undefined && lastEvent.resourceVersion === closedAtRv,
+  grants, useState: uses, audit, watchEvents,
+};
 writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
 
 const real = watchEvents.filter((event) => event.uid !== undefined);
+console.log(`stream: started at ${watchStartRv ?? "?"}, object version at close ${closedAtRv ?? "?"}, ` +
+  `last event ${lastEvent?.resourceVersion ?? "-"}, alive at close ${aliveAtClose ?? "?"}, ` +
+  `last event matches close: ${evidence.lastEventMatchesClose}${watchErr ? `, stderr: ${watchErr.slice(0, 120)}` : ""}`);
 console.log(`watch events: ${watchEvents.length} received (${real.length} Deployment, ${watchEvents.length - real.length} bookmark/other)`);
 console.log("type | rv | replicas | observedGen | carrier grant | hash changed | matches grant");
 for (const event of real) {
   console.log([
     event.type, event.resourceVersion, event.replicas, event.observedGeneration ?? "-",
     event.carrierGrantId === undefined ? "-" : event.carrierGrantId.slice(0, 10),
-    event.hashChangedFromPrevious ? "yes" : "no",
+    event.hashChangedFromPrevious === null ? "(first)" : event.hashChangedFromPrevious ? "yes" : "no",
     event.matchesGrant.length === 0 ? "-" : event.matchesGrant.map((id) => id.slice(0, 10)).join(","),
   ].join(" | "));
 }
@@ -89,7 +107,10 @@ for (const grant of grants) {
   const named = real.filter((event) => event.carrierGrantId === grant.grantId);
   const hashed = real.filter((event) => event.matchesGrant.includes(grant.grantId));
   const consumed = uses.find((row) => row.grant_id === grant.grantId);
-  const auditConsumed = audit.find((event) => event.grantId === grant.grantId && event.outcome === "allow-consumed");
+  // Selected by the admission the enforcer recorded as the consumer (P2),
+  // not by the first event that names the grant.
+  const auditConsumed = consumed === undefined ? undefined
+    : audit.find((event) => event.admissionUid === consumed.admission_uid);
   console.log(`grant ${grant.grantId.slice(0, 10)}: consumed by ${consumed?.admission_uid ?? "(none)"}; ` +
     `audit consuming event code ${auditConsumed?.code ?? "-"} stored rv ${auditConsumed?.storedResourceVersion ?? "-"}; ` +
     `watch events naming it: ${named.length}; watch events matching its target hash: ${hashed.length}` +

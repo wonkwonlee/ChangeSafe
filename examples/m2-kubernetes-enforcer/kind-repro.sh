@@ -352,15 +352,30 @@ node "${EXAMPLE_DIR}/m4-audit-summary.mjs" "${WORK_DIR}/audit.log" "${WORK_DIR}/
 # --- M4 experiment 05 — what did the independent watch see? ---------------
 # The watch is closed first so its output file is complete and the summary
 # reads a fixed stream. Observation only, like the 03 summary above.
+# Record how the stream ended before touching it: a watch that died early
+# (timeout, 410, a dropped connection) must not look like a quiet object.
+# The object's current version marks where a complete stream must end: its
+# last event carries the version of the object's last modification.
+WATCH_ALIVE=1
+kill -0 "${WATCH_PID}" 2>/dev/null || WATCH_ALIVE=0
+WATCH_END_RV=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.metadata.resourceVersion}')
+for _ in $(seq 1 20); do
+  if grep -q "\"resourceVersion\":\"${WATCH_END_RV}\"" "${WORK_DIR}/watch.jsonl" 2>/dev/null; then break; fi
+  sleep 0.5
+done
 kill "${WATCH_PID}" >/dev/null 2>&1 || true
 wait "${WATCH_PID}" 2>/dev/null || true
 WATCH_PID=""
+if [ "${WATCH_ALIVE}" = "0" ] || [ -s "${WORK_DIR}/watch.err" ]; then
+  log "WATCH INCOMPLETE: alive at close=${WATCH_ALIVE}; stderr: $(head -c 300 "${WORK_DIR}/watch.err" 2>/dev/null | tr '\n' ' ')"
+fi
 log ""
 log "--- M4 experiment 05 evidence (watch from resourceVersion ${WATCH_RV}) ---"
 node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR}/audit.log" \
   "${WORK_DIR}/use-state.json" "${WORK_DIR}/step1-grant.json" "${WORK_DIR}/m4-grant.json" \
   "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" \
-  "${EXAMPLE_DIR}/m4-watch-evidence.json" | tee -a "${TRANSCRIPT}"
+  "${EXAMPLE_DIR}/m4-watch-evidence.json" "${WATCH_RV}" "${WATCH_END_RV}" "${WATCH_ALIVE}" "${WORK_DIR}/watch.err" \
+  | tee -a "${TRANSCRIPT}"
 
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
