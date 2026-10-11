@@ -527,7 +527,7 @@ for _ in $(seq 1 40); do
   sleep 3
 done
 echo "reacted=${M4_REACTED}" > "${WORK_DIR}/controller-reacted.txt"
-echo "recovered=${M4_RECOVERED}" >> "${WORK_DIR}/controller-reacted.txt"
+echo "recovered=${M4_RECOVERED}" > "${WORK_DIR}/controller-recovered.txt"
 if [ "${M4_REACTED}" != "yes" ]; then
   log "FAIL: the Deployment's version never moved after ${M4_POD} was deleted; the controller's status write was not observed"
   exit 1

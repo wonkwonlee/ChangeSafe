@@ -93,7 +93,7 @@ Two live runs, the same results.
   SHA-256 of the committed file and, as `originalSha256`, of the artifact
   as the run produced it, which is no longer committed. It is replayed by
   `tests/integration/m4-status-guard.test.ts` (artifact checked by hash
-  before use; 15 tests). Its `httpStatus` fields are null: the `-v=6`
+  before use; 16 tests). Its `httpStatus` fields are null: the `-v=6`
   output did not match the parser, which now reads kubectl's structured
   form too.
 

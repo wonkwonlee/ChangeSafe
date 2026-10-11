@@ -38,6 +38,8 @@ const Probe = z.object({
 const Evidence = z.object({
   guardApplied: z.string(),
   controllerReacted: z.string().optional(),
+  // Written by harnesses after review; the committed artifact predates it.
+  controllerRecovered: z.string().optional(),
   beforeGuard: State,
   statusAnnotation: Probe,
   statusHarmless: Probe,
@@ -214,6 +216,12 @@ describe("M4-10 the summary script", () => {
     }).parse(evidence);
     expect(parsed.statusAnnotation.exitStatus).toBe(1);
     expect(parsed.statusHarmless.exitStatus).toBeNull();
+  });
+
+  it("keeps the controller's reaction and its recovery as separate fields", () => {
+    const evidence = run({ "controller-reacted.txt": "reacted=yes\n", "controller-recovered.txt": "recovered=yes\n" });
+    const parsed = z.object({ controllerReacted: z.string(), controllerRecovered: z.string() }).parse(evidence);
+    expect(parsed).toEqual({ controllerReacted: "reacted=yes", controllerRecovered: "recovered=yes" });
   });
 
   it("records every annotation of each controller event, so a change to any of them is visible", () => {

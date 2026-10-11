@@ -71,6 +71,7 @@ for (const line of (read("controller-replay.jsonl") ?? "").split("\n").filter(Bo
 const evidence = {
   guardApplied: (read("guard-applied.txt") ?? "").trim(),
   controllerReacted: (read("controller-reacted.txt") ?? "").trim(),
+  controllerRecovered: (read("controller-recovered.txt") ?? "").trim(),
   controllerPod: (read("controller-pod.txt") ?? "").trim(),
   beforeGuard: object("guard-before.json"),
   statusAnnotation: probe("status-annotation"),
