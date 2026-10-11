@@ -68,7 +68,7 @@ again by an audit-plus-read contract. Both contracts are test-local.
 
 ## Results
 
-Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (10 tests).
+Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (19 tests after review; 10 when first written).
 Baseline: 03's real events, plus the real stored object, trimmed into
 `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-stored-object.json`
 with its provenance. Unaltered, both contracts agree with what the cluster
@@ -152,15 +152,16 @@ this note's claims:
    rejection** when another writer can reproduce the target state and
    copy the carrier (experiment 01 showed the annotation is
    client-writable). Whether the protected tier makes the carrier
-   unforgeable is exactly what [experiment 05](M4_EXPERIMENT_05.md)
+   unforgeable is the question experiment 05 (the next PR in this stack)
    tests live.
 2. **Status updates move the version.** A controller's status write bumps
    `resourceVersion` without changing spec, so the "nothing stored since"
    equality check abstains more often than the table implied: a flipped
    500 stands once any status update lands. This is a missed catch, never
-   a wrong one; the harness records it as a test. The live watch in
-   experiment 05 measured it: three status-only events arrived between
-   the version read before the write and the write itself.
+   a wrong one; the harness records it as a test. A live run recorded it
+   too (CI run 38166778773, artifact `m4-watch-evidence.json`, written up
+   in experiment 05): three status-only events arrived between the
+   version read before the write and the write itself.
 3. **The prior version's provenance.** `priorResourceVersion: 695` came
    from the dry-run's response, not from the consuming admission's
    `oldObject`. They would differ if a write landed between the two
@@ -170,17 +171,37 @@ this note's claims:
    (events collapse by content), while the same audit id with different
    content is a conflict; only 2xx on a write verb maps to "stored",
    4xx and 5xx to "rejected", and anything else to
-   `unknown_unrecognized_event`; dry-run detection is
-   spelling-insensitive; the stored object is tied to its audit event by
-   audit id, not by a hard-coded prefix; the vocabulary test now checks
-   verdicts the contracts actually returned, and every verdict in the
-   vocabulary is exercised by some test.
+   `unknown_unrecognized_event`; the stored object is tied to its audit
+   event by audit id, not by a hard-coded prefix; the vocabulary test runs
+   a fixed table of inputs, one per verdict, so it neither passes by
+   restating its own list nor depends on test order.
+5. **Second internal review round (nine more findings).** Dry-run URI
+   inspection was removed: a dry-run never consumes, so the use-state never
+   names its admission as the consumer and the join excludes it; an
+   adversary who edits the URI can edit the outcome too, so the check gave
+   no defense. Redelivery is collapsed by `canonicalize`, not by key order.
+   The carrier annotation is typed, not cast, and the helper says its
+   signature is not verified. The "wrong where the carrier is writable"
+   test is reframed: the wrong verdict follows from the flag the caller
+   chooses, so it shows what the precondition costs, not a flaw found in
+   the contract, and the ledger's count of one counterexample for it is
+   withdrawn by a second correction row.
+6. **Qualification of the catches.** Every `contradicted_by_read` result
+   for H4c and H4d takes `priorResourceVersion` as the consuming
+   admission's `oldObject` version. The fixture's value is the dry-run
+   response's version; if a write landed between the dry-run and the real
+   admission, the two differ. In the live run above the dry-run response
+   showed version 684 and the stored write's event followed it, but that
+   run did not record the consuming admission's `oldObject`, so the
+   equivalence is observed there, not verified.
 
 ## What remains unsupported
 
-- No ChangeSafe evidence attests E2 against this adversary. With P3, a read
-  can catch false "stored" claims in the "nothing stored since" case;
-  nothing catches a hidden write.
+- No ChangeSafe evidence attests E2 against this adversary. With P3, a
+  version-based read can catch false "stored" claims in the "nothing
+  stored since" case, and does not catch a hidden write. A carrier-aware
+  read catches the hidden write only where the carrier is unforgeable,
+  which this note assumes and does not establish.
 - H4d, H4e and the reverse attack's truths are modeled histories over real
   objects. Grant 2's read after the run (rv 710) is modeled too: the run
   did not read the resource back after the rejection.
