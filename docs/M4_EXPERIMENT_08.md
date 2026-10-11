@@ -65,4 +65,79 @@ Terraform grant path exists that no document or test covers.
 
 ## Results
 
-Pending.
+Checks: `tests/integration/m4-terraform-structure.test.ts` (9 tests). No
+Terraform was executed and no cloud contacted.
+
+**The documented formats** (HashiCorp's JSON output format page, read
+2026-10-11). The *state representation's* only top-level properties are
+`values` and `terraform_version`, and the page says state "does not have any
+significant metadata not included in the common" values representation. The
+*plan representation's* are `format_version`, `prior_state`, `applyable`,
+`complete`, `errored`, `configuration`, `planned_values`,
+`proposed_unknown`, `variables`, `resource_changes`, `resource_drift`,
+`relevant_attributes`, `output_changes` and `checks`. Neither mentions
+`serial` or `lineage`. The page also tells consumers to ignore properties
+they do not recognize, so absence from the documented set is the stable
+contract, not an omission in a version.
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H8a | holds (high) | **holds.** None of the seven committed inputs has a key named `serial`, `lineage` or `prior_state`, at any depth; their top-level keys are `format_version`, `terraform_version`, `resource_changes` and ChangeSafe's own `context`; none has a per-object version-like key. The normalized model the policies read keeps only address, type, module, action, before, after, tags and ids |
+| H8b | holds (high) | **holds.** Tags appear in the same `before` and `after` values as every other attribute, and the normalized model has no field named for a grant, receipt, carrier or authorization. Nothing in the artifact is set by an authorizing boundary |
+| H8c | holds (medium) | **holds.** With the model's carrier flag off, neither repair returns a single `stored` verdict, both are sound over all 2,880 default-tier scope evaluations, and their definite verdicts are exactly `rejected` and `not_consumed`. Every history in which the write was stored comes back `unknown` |
+| H8d | holds (high) | **holds, and wider than asked.** `deriveReviewedGrantBinding` throws "Only Kubernetes has a reviewed grant issuance contract" for Terraform, and the same for the network domain. One of the three shipped domains can be issued a grant |
+
+## What the result says
+
+1. **The contract's structure did not reappear on its own.** The three
+   things it rests on are properties of a Kubernetes API server: an
+   incarnation identity and a monotonic version on every object, and a
+   boundary that sees the request before it persists and can set a field
+   the executor cannot. Terraform has the first two in its raw state
+   (`lineage`, `serial`) and its documented JSON output drops them; it has
+   no counterpart of the third. This is a negative result for the
+   strategy's "Physical OS" hypothesis in the form its own rule allows
+   (does the abstraction reappear unprompted?): it needed an enforcement
+   boundary, and Terraform's gate ends before one.
+2. **For Terraform the sound observation is one-sided.** With no carrier,
+   the model says what can be known: that a grant was consumed and that no
+   state version after it holds the target (`rejected`), never that the
+   apply is the grant's. That asymmetry is a consequence of the missing
+   boundary, not of the contract's wording.
+3. **Where a Terraform carrier would have to come from is outside what
+   ChangeSafe ingests.** The nearest real mechanism is the cloud's own
+   identity and audit trail: an apply role assumable only with a session
+   name derived from the grant, and API events attributed to that
+   session. That would be set by the cloud's IAM, not by a tag, but a
+   session name is chosen by whoever assumes the role within the pattern a
+   trust policy allows and is not single-use. Whether it can carry the
+   carrier's guarantee is untested.
+4. **The grant primitive is domain-agnostic in its schema and
+   Kubernetes-only in its use.** `AuthorizationGrant`'s fields are opaque
+   strings, but its issuance, its enforcer and now its observation
+   contract exist for one domain. The README and strategy notes say the
+   primitive is general; the code supports one domain.
+
+## What remains unsupported
+
+- The committed inputs are authored and minimal; a real plan carries
+  more. The documented format is the stronger source, and it is read, not
+  run against a real Terraform.
+- H8c rests on the model's default tier standing for Terraform, which is
+  an interpretation: the model has a stream of object versions and
+  Terraform's analog is a versioned backend's state history, with each
+  serial retained. Whether a given backend retains them is operator
+  configuration and not checked.
+- Nothing here tests the cloud audit-trail idea; it is named, not run.
+
+## Next question
+
+> **Can an identity boundary the cloud already enforces (a role assumable
+> only through a session whose name carries the grant, with the provider's
+> API audit attributing every call to that session) supply the carrier a
+> Terraform apply lacks, and what does it fail to give?**
+
+It is the one place the missing boundary could come from without ChangeSafe
+executing anything. It cannot be tested here without a cloud and is
+therefore not scheduled; what the loop does next is state the observation
+contract once, for core, with these preconditions written on it.

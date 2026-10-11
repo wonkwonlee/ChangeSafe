@@ -14,7 +14,7 @@ current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
 method: research_loop            # adopted 2026-10-11, see §9
 loop_ledger: docs/RESEARCH_LOOP.md
-experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md]
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md, docs/M4_EXPERIMENT_08.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -319,6 +319,9 @@ M4:
     - id: 07
       note: docs/M4_EXPERIMENT_07.md
       result: bounded exhaustive check; v1 (01-06 composed) unsound in 112 of 1728 protected-tier evaluations by one rule; a carrier-keyed contract is sound and definite there under a complete watch and exact prior; unsound by 192 if the carrier is assumed unforgeable in the default tier
+    - id: 08
+      note: docs/M4_EXPERIMENT_08.md
+      result: the contract's structure (incarnation, version, boundary-set carrier) does not reappear in the Terraform artifact; no stored verdict is reachable there without a carrier; grants are issuable for one of three domains
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```
