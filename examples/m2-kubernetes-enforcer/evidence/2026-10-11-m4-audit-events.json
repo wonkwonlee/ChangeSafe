@@ -1,0 +1,111 @@
+{
+  "source": {
+    "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38161664015",
+    "artifact": "admission-reproduction/m4-audit-evidence.jsonl",
+    "artifactSha256": "d218ff1d6c853dac31ffe34389141804a333f0db1473305f0326e242dc205546",
+    "commit": "c331918",
+    "note": "Every audit event the enforcer annotated in that run, trimmed to the fields M4 experiment 03 reads. Objects are the fictional kind demo Deployment; identifiers are from a disposable cluster."
+  },
+  "useState": [
+    {
+      "grantId": "g163e2656cd02492b9c8610e7c4fb493d5f8fdf4549f59a19a6030cc2a4de0aa",
+      "admissionUid": "79340adf-b3f9-4f4c-85f3-7467729a4759"
+    },
+    {
+      "grantId": "gc4510120a1e145731ee33be8d2c7b1c36e807e7102cce77328a7c01e4262a38",
+      "admissionUid": "16a5f82b-0ed9-4ec7-b044-39a85d4fd92e"
+    }
+  ],
+  "events": [
+    {
+      "auditID": "4456cc6d-a74a-4ef7-ae4c-ccc38e3c3571",
+      "stage": "ResponseComplete",
+      "verb": "patch",
+      "requestURI": "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments/web?dryRun=All&fieldManager=kubectl-patch",
+      "user": "kubernetes-admin",
+      "code": 200,
+      "annotationKeys": [
+        "protected.enforcer.changesafe.dev/admission-uid",
+        "protected.enforcer.changesafe.dev/grant-id",
+        "protected.enforcer.changesafe.dev/outcome"
+      ],
+      "grantId": "g163e2656cd02492b9c8610e7c4fb493d5f8fdf4549f59a19a6030cc2a4de0aa",
+      "admissionUid": "a68180d5-fb73-400c-9f0a-2f6d887a2898",
+      "outcome": "allow-dry-run",
+      "stored": {
+        "uid": "7c9a90cc-666f-40d8-87d0-3e06aa2f0f21",
+        "resourceVersion": "695",
+        "replicas": 4
+      }
+    },
+    {
+      "auditID": "05ff2e2a-e5e5-4f1d-b0cf-6ba9c7643ca0",
+      "stage": "ResponseComplete",
+      "verb": "patch",
+      "requestURI": "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments/web?fieldManager=kubectl-patch",
+      "user": "kubernetes-admin",
+      "code": 200,
+      "annotationKeys": [
+        "protected.enforcer.changesafe.dev/admission-uid",
+        "protected.enforcer.changesafe.dev/grant-id",
+        "protected.enforcer.changesafe.dev/outcome"
+      ],
+      "grantId": "g163e2656cd02492b9c8610e7c4fb493d5f8fdf4549f59a19a6030cc2a4de0aa",
+      "admissionUid": "79340adf-b3f9-4f4c-85f3-7467729a4759",
+      "outcome": "allow-consumed",
+      "stored": {
+        "uid": "7c9a90cc-666f-40d8-87d0-3e06aa2f0f21",
+        "resourceVersion": "710",
+        "replicas": 4
+      }
+    },
+    {
+      "auditID": "82641dfe-75e0-4d9b-8273-33e617dc0b94",
+      "stage": "ResponseComplete",
+      "verb": "patch",
+      "requestURI": "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments/web?fieldManager=kubectl-patch",
+      "user": "kubernetes-admin",
+      "code": 400,
+      "annotationKeys": [
+        "protected.enforcer.changesafe.dev/admission-uid",
+        "protected.enforcer.changesafe.dev/grant-id",
+        "protected.enforcer.changesafe.dev/outcome"
+      ],
+      "grantId": "g163e2656cd02492b9c8610e7c4fb493d5f8fdf4549f59a19a6030cc2a4de0aa",
+      "admissionUid": "f820fab7-a381-4abf-8975-faa6dec42229",
+      "outcome": "deny"
+    },
+    {
+      "auditID": "aea20438-470e-45b2-8ccf-fa45a0a8a082",
+      "stage": "ResponseComplete",
+      "verb": "patch",
+      "requestURI": "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments/web?fieldManager=kubectl-patch",
+      "user": "kubernetes-admin",
+      "code": 500,
+      "annotationKeys": [
+        "protected.enforcer.changesafe.dev/admission-uid",
+        "protected.enforcer.changesafe.dev/grant-id",
+        "protected.enforcer.changesafe.dev/outcome"
+      ],
+      "grantId": "gc4510120a1e145731ee33be8d2c7b1c36e807e7102cce77328a7c01e4262a38",
+      "admissionUid": "16a5f82b-0ed9-4ec7-b044-39a85d4fd92e",
+      "outcome": "allow-consumed"
+    },
+    {
+      "auditID": "58fd2260-001b-44d6-902b-420200f8cd62",
+      "stage": "ResponseComplete",
+      "verb": "patch",
+      "requestURI": "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments/web?fieldManager=kubectl-patch",
+      "user": "kubernetes-admin",
+      "code": 400,
+      "annotationKeys": [
+        "protected.enforcer.changesafe.dev/admission-uid",
+        "protected.enforcer.changesafe.dev/grant-id",
+        "protected.enforcer.changesafe.dev/outcome"
+      ],
+      "grantId": "gc4510120a1e145731ee33be8d2c7b1c36e807e7102cce77328a7c01e4262a38",
+      "admissionUid": "e2543b5d-d117-41ef-bf26-641dd62eabb8",
+      "outcome": "deny"
+    }
+  ]
+}

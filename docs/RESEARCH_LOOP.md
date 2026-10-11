@@ -22,6 +22,7 @@ Column meanings:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [M4-01](M4_EXPERIMENT_01.md) | 2026-10-11 | Can a read of stored state be attributed to the request that was admitted? | H1: hash equality after ALLOW means the admitted write persisted | refuted (offline) | 5: recreated incarnation, convergent re-apply, CREATE without incarnation, copied annotation, rejected-vs-overwritten indistinguishable | 0 | adopt the observation contract into core? | — |
 | [M4-02](M4_EXPERIMENT_02.md) | 2026-10-11 | Can the executor's write response be bound to the grant it exercised, without trusting the executor? | H2: a read at the executor-claimed uid and resourceVersion confirms persistence | refuted (offline); server-record shape proposed, unverified | 2: claim unfalsifiable after any later write; liar claims another writer's version | 1: the agent told the owner the 01 contract "initially had a `persisted` verdict" that was removed; it never did, and this was retracted before the ledger was written | P1 audit annotations, P2 admission uid in use-state, whether to run the live kind audit check | — |
+| [M4-03](M4_EXPERIMENT_03.md) | 2026-10-11 | Does the Kubernetes audit record carry an admission webhook's annotation through to the response outcome for both persisted and rejected writes? | H3a–H3e, pre-registered before the live run; H3b (annotation survives a later rejection) the least certain | not refuted under one live kind run (H3a–H3e as predicted); refutes M4-02's first-event audit rule | 1: the first audit event for a grant is a dry-run whose 200 response shows a state never stored, so M4-02's rule reports a false contradiction against an honest executor | 0 | next question (audit-pipeline adversary); whether an observation contract is proposed for core | from M4-02: P1, P2 (owner, 2026-10-11, PR #79) |
 
 ## Loop observations
 
@@ -38,3 +39,9 @@ Kept to what the rows show. These are not claims about the method.
 - The first overclaim the loop caught was in the agent's conversation with
   the owner, not in a file. Overclaims in conversation are counted here for
   that reason.
+- After 03 (supersedes the first bullet above): the loop has now tested
+  hypotheses it expected to survive, on a live API server, and they did.
+  The finding it did not predict came from the evidence, not from the
+  hypotheses: a counterexample to the loop's own earlier proposal (M4-02's
+  audit rule). Predictions were committed before the run, so the result
+  could not reshape them.

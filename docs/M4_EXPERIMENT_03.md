@@ -68,4 +68,88 @@ later rejected" from "the enforcer was never asked", and P1 does not close
 
 ## Results
 
-Pending the CI run.
+Run: [CI 38161664015](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38161664015),
+commit `c331918`, all seven jobs passed. Trimmed evidence:
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-audit-events.json`
+(raw artifact SHA-256 `d218ff1d…205546`). It is replayed offline by
+`tests/integration/m4-audit-evidence.test.ts`, so the result stays
+checkable after the artifact expires. The audit log held 21 events; the
+enforcer annotated 5.
+
+| Event | Request | API server code | `outcome` | Stored object |
+| --- | --- | --- | --- | --- |
+| grant 1, dry-run | `?dryRun=All` | 200 | `allow-dry-run` | rv 695, replicas 4 |
+| grant 1, actual write | | 200 | `allow-consumed` | rv 710, replicas 4 |
+| grant 1, reuse for another object | | 400 | `deny` | — |
+| grant 2, downstream webhook rejects | | 500 | `allow-consumed` | — |
+| grant 2, retry after removing it | | 400 | `deny` ("already exercised") | — |
+
+The enforcer's use-state named exactly two consumers. Each joined, by
+admission uid, to one `allow-consumed` event: grant 1 to the 200, grant 2
+to the 500.
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H3a | holds | **holds.** Keys are `protected.enforcer.changesafe.dev/{grant-id,admission-uid,outcome}`, the webhook's name as prefix |
+| H3b | holds (low to medium confidence) | **holds.** The rejected-after-ALLOW event keeps `outcome=allow-consumed` and records 500, with no stored object |
+| H3c | holds | **holds, and it refutes experiment 02's rule.** See below |
+| H3d | holds | **holds.** Retry denied as already exercised; replicas stayed 4; the recorded consumer is the rejected admission. A grant spent on a write that never persisted, on a live API server |
+| H3e | holds | **not refuted.** All five audit ids differ from the admission uid they carry |
+
+**The counterexample.** Experiment 02's `bindAudit` took the first audit
+event naming a grant. For grant 1 that is the dry-run. Its 200 response
+carries an object at rv 695 with replicas 4. A dry-run returns the version
+it read, and that version held replicas 3, so this pair was never stored.
+Against the honest executor's real version (710), 02's rule reports
+`audit_contradicts_claim`: a false contradiction drawn from a state that
+never existed. The grant id cannot single out the write. The admission uid,
+recorded by P2 and carried by P1, does. That is the reason
+`admission-uid` was added to P1 before the run, and the run confirms it
+was needed. 02's harness is left as it was recorded; this note and ledger
+row 03 carry the correction.
+
+All five predictions held. The surprises were details, not verdicts: a
+dry-run response that looks like stored state, and enforcer denials
+recorded as 400, which the response code alone cannot tell apart from any
+other bad request. The `outcome` annotation can.
+
+## What the result says about the architecture
+
+1. **The API server can record E1 → E2 evidence that no party to the
+   change writes.** For a consumed grant, the audit event joined by
+   admission uid says whether the API server answered with a stored object
+   (200, rv 710) or failed the request (500). That separates two paths
+   [experiment 01](M4_EXPERIMENT_01.md) showed were byte-identical to a
+   read. It holds under this run's setup, not in general.
+2. **The join key has to be per admission, not per grant.** Single-use
+   authority does not make the grant id unique in the audit log: dry-runs
+   and refused reuses carry it too.
+3. **This evidence belongs to the operator, not to ChangeSafe.** Audit
+   policy, sinks, retention and integrity are cluster-operator controls.
+   An absent event is `unknown`, and a party who controls the audit
+   pipeline could drop or alter events. ChangeSafe signs grants, but
+   nothing it signs covers an audit event.
+
+## What remains unsupported
+
+- No E2 attestation exists in ChangeSafe. The evidence above is an audit
+  record ChangeSafe neither writes nor signs, read by a test.
+- One run, one Kubernetes version (kind v0.32.0's default node image), one
+  rejection mechanism (a failing webhook). A rejection after the
+  validating phase, such as a storage conflict or an etcd error, was not
+  produced. Whether such a request still carries the annotations is
+  untested.
+- E3 is out of scope, as before.
+- Still open from [experiment 01](M4_EXPERIMENT_01.md): whether a
+  validating webhook sees `metadata.uid` on CREATE.
+
+## Next question
+
+> **What can a party who controls the audit pipeline make an E2
+> observation say, and what must the observation carry so that dropping or
+> altering an event degrades to `unknown` rather than to a wrong verdict?**
+
+This is the adversarial version of today's positive result, the attack
+model a CS-ADV entry would need before any observation contract is
+proposed for core. Like 01 and 02, it can start offline from the recorded
+evidence.

@@ -31,8 +31,11 @@ merge is represented as completed.
 questions remain the milestones. M4 is in progress through numbered,
 offline-first experiments: [01](M4_EXPERIMENT_01.md) refuted hash-only
 E1→E2 correlation; [02](M4_EXPERIMENT_02.md) examined executor-asserted
-write evidence. Both propose; neither is adopted into core. The loop's
-measurements live in [the research ledger](RESEARCH_LOOP.md).
+write evidence; [03](M4_EXPERIMENT_03.md) ran live and found the API
+server's audit record separates persisted from rejected writes when joined
+by admission uid. The owner adopted 02's enforcer proposals (P1, P2);
+nothing is adopted into core. The loop's measurements live in
+[the research ledger](RESEARCH_LOOP.md).
 ---
 
 ## What this project is
