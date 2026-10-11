@@ -1,6 +1,6 @@
 # What can a party who controls the audit pipeline make an E2 observation say?
 
-Status: **pre-registered 2026-10-11, before the harness was written.** The
+Status: **pre-registered 2026-10-11, before the harness was written; results recorded the same day.** The
 hypotheses, attack model and predictions below were committed first. The
 Results section is added afterward, and the predictions are not edited.
 
@@ -68,4 +68,90 @@ again by an audit-plus-read contract. Both contracts are test-local.
 
 ## Results
 
-Pending.
+Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (10 tests).
+Baseline: 03's real events, plus the real stored object, trimmed into
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-stored-object.json`
+with its provenance. Unaltered, both contracts agree with what the cluster
+did: grant 1 `audit_reports_stored`, grant 2 `audit_reports_rejected`.
+
+| Attack | Audit alone | Audit + read | Truth |
+| --- | --- | --- | --- |
+| H4a: drop the consuming event | `unknown_no_event` | same | stored / rejected |
+| H4b: inject a second event for the consumed admission | `unknown_conflicting_events` | same | rejected |
+| Alter the stored object (replicas 9) | `audit_inconsistent_with_grant` | same | stored |
+| H4c: flip grant 2's 500 to 200 | `audit_reports_stored` ✗ | `contradicted_by_read` | rejected |
+| H4c, enforcer has no recorded prior version | `audit_reports_stored` ✗ | `audit_reports_stored` ✗ | rejected |
+| H4d: fabricate a 200 with the grant's exact target object, nothing stored since | `audit_reports_stored` ✗ | `contradicted_by_read` | rejected (modeled) |
+| H4e: same, a later write landed (read rv 900), forged rv 760 | `audit_reports_stored` ✗ | `audit_reports_stored` ✗ | rejected (modeled) |
+| H4e: same, forged rv 950 | `audit_reports_stored` ✗ | `contradicted_by_read` | rejected (modeled) |
+| Reverse: rewrite grant 1's real 200 as 500 | `audit_reports_rejected` ✗ | `audit_reports_rejected` ✗ | stored |
+
+✗ marks a wrong verdict. "Modeled" means the truth comes from a supposed
+history built on real objects, not from the run itself. The H4d forgery
+uses the real stored object, which hashes to the real grant: that is the
+object any forger can rebuild from the grant-bearing request.
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H4a | holds | **holds** |
+| H4b | holds | **holds** (a design choice: the contract refuses to choose) |
+| H4c | holds as an attack | **holds.** The read catches it **only if the enforcer recorded the prior version, which it does not today** |
+| H4d | holds as an attack | **holds.** Hash and uid checks against the grant pass, because the forger copies the grant's own target |
+| H4e | holds | **holds.** After any later write, only a "stored" version newer than the current read is caught |
+
+**Unpredicted: the reverse attack is never caught.** Rewriting a stored
+write's 200 as a 500 turns it into "rejected" under both contracts. A read
+newer than admission is what a rejected write followed by any other write
+would also produce. In this model, hiding a write is the forger's easiest
+wrong verdict, and the read gives no defense against it.
+
+## What the result says about the architecture
+
+1. **Audit evidence is the pipeline operator's statement.** Checking the
+   stored object against the signed grant proves the event names the
+   authorized object, not that the API server stored it. This is the same
+   line invariant 11 draws for receipts: integrity is not authorship. A
+   contract that uses audit evidence should say so in its verdict
+   (`audit_reports_*`), never `stored` or `rejected` alone.
+2. **A read helps in one direction only.** It can contradict a false
+   "stored" when nothing has been written since admission, or when the
+   claimed version is newer than the current one. It can never contradict
+   a false "rejected" once anything has been written.
+3. **The prior version is the cheapest missing evidence.** Without
+   `oldObject.metadata.resourceVersion` recorded at admission, even the
+   simplest flip (H4c) cannot be caught. The enforcer sees that version and
+   does not keep it.
+
+## Proposals (not adopted; owner decision per R12)
+
+- **P3.** The use-state records `oldObject.metadata.resourceVersion`
+  beside the consuming admission uid. It is a read-only addition that the
+  enforcer already receives, and it is what makes H4c and H4d detectable.
+- **P4.** Any observation contract proposed for core names its evidence
+  source in every verdict. Audit-derived verdicts are reports by the
+  pipeline operator, and only a read can contradict them.
+
+## What remains unsupported
+
+- No ChangeSafe evidence attests E2 against this adversary. With P3, a read
+  can catch false "stored" claims in the "nothing stored since" case;
+  nothing catches a hidden write.
+- H4d, H4e and the reverse attack's truths are modeled histories over real
+  objects. Grant 2's read after the run (rv 710) is modeled too: the run
+  did not read the resource back after the rejection.
+- Out-of-scope adversaries (a compromised API server, a compromised
+  enforcer, collusion with the executor) are untested.
+
+## Next question
+
+> **In a protected namespace, where every update needs a fresh single-use
+> grant, does a watch from an independent observer settle stored vs
+> rejected for the consuming admission, including the hidden-write case,
+> and what is left when the watch is interrupted?**
+
+The reason to expect it might work: in the protected tier, a stored version
+carrying grant G's annotation can only come from G's consuming admission,
+because any reuse is denied and any other write must carry its own grant.
+That claim is untested. Experiment 01 showed annotations can be copied, and
+whether the tier really forces the carrier to change on every write is
+exactly what the next iteration would have to attack.
