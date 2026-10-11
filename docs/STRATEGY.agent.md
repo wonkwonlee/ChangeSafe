@@ -309,22 +309,22 @@ M4:
       result: H3a-H3e not refuted on one live kind run; refutes 02's first-event audit rule
     - id: 04
       note: docs/M4_EXPERIMENT_04.md
-      result: audit-pipeline adversary can flip, fabricate and hide; a read contradicts false "stored" only with a recorded prior version; P3, P4 proposed
+      result: audit-pipeline adversary can flip, fabricate and hide; a version-based read contradicts a false "stored" in two cases (nothing stored since the admission, which needs the recorded prior version P3; or the claimed version is newer than the read, which needs neither) and does not contradict a hidden write; P3, P4 proposed
     - id: 05
       note: docs/M4_EXPERIMENT_05.md
       result: H5a-H5e not refuted on one live kind run (protected tier); an independent watch contradicts flipped, fabricated and hidden-write claims on the recorded evidence; the read before a write is not the admission's prior version
     - id: 06
       note: docs/M4_EXPERIMENT_06.md
-      result: replay from the admission's version reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
+      result: a replay from the dry-run's response version (a stand-in for the admission's recorded oldObject version, which was not recorded) reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
     - id: 07
       note: docs/M4_EXPERIMENT_07.md
-      result: bounded exhaustive check; experiment 05's pre-correction rule is unsound in 112 of 1728 protected-tier evaluations, and the corrected composition (v1c) is sound there and unsound only where the audit event decides; a carrier-keyed contract (post hoc) and the registered repair are both sound over the protected grid; assuming the carrier unforgeable in the default tier is unsound (192 for the carrier-keyed contract, 96 for the registered repair)
+      result: bounded exhaustive check; experiment 05's pre-correction rule is unsound in 96 of 1728 protected-tier evaluations, and the corrected composition (v1c) is sound there and unsound only where the audit event decides; a carrier-keyed contract (post hoc) and the registered repair are both sound over the protected grid; assuming the carrier unforgeable in the default tier is unsound (192 for the carrier-keyed contract, 96 for the registered repair)
     - id: 08
       note: docs/M4_EXPERIMENT_08.md
       result: under an interpreted mapping, the contract's structure (incarnation, version, boundary-set carrier) is not in the Terraform artifact and no stored verdict follows without a carrier; grants are issuable for one of three domains; not a refutation of the Physical OS hypothesis
     - id: 09
       note: docs/M4_EXPERIMENT_09.md
-      result: the grant carrier is writable outside the enforcer in the protected tier as deployed, via the status subresource (H9a holds on one live run); experiment 07's carrier-keyed contract is unsound there; a post hoc repair requiring the state transition in the same event is sound on the grid; the mitigation is a routing-guard change for the owner (R12)
+      result: the grant carrier is writable outside the enforcer in the protected tier as deployed, via the status subresource (H9a holds on two live runs, D1 and D2); experiment 07's carrier-keyed contract is unsound there; a post hoc repair requiring the state transition in the same event is sound on the grid; the mitigation is a routing-guard change for the owner (R12)
     - id: 10
       note: docs/M4_EXPERIMENT_10.md
       result: a candidate status-subresource guard (not adopted) refused the observed forging patch and admitted the controllers' own status writes in one live run (Deployment only, on an object already forged); a tested candidate control exists for the protected-tier precondition, which is not thereby established; adoption and a re-run are the owner's (R12)

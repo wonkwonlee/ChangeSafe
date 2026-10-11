@@ -118,10 +118,10 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
     // annotation overwrite with no state to overwrite), duplicating "none".
     const all = [...histories(options)];
     expect(all).toHaveLength(1024);
-    expect(distinctWorlds(all)).toBe(396);
+    expect(distinctWorlds(all)).toBe(528);
     const protectedHistories = all.filter(history => history.tier === "protected");
     expect(protectedHistories).toHaveLength(416);
-    expect(distinctWorlds(protectedHistories)).toBe(264);
+    expect(distinctWorlds(protectedHistories)).toBe(352);
     // Every status-path history changes the world relative to the same
     // history with the status write removed.
     for (const history of all.filter(h => h.later === "via_other_grant_then_status_overwrite" || h.later === "status_erases_carrier")) {
@@ -159,9 +159,9 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
     const gridA = summarize(evaluate(v2a, protectedOnly, assume, options));
     expect(gridB.unsound).toHaveLength(1536);
     expect(gridA.unsound).toHaveLength(768);
-    expect(gridB.definite).toBe(21924);
+    expect(gridB.definite).toBe(21912);
     expect(gridA.definite).toBe(16308);
-    expect(summarize(evaluate(v2c, protectedOnly, assume, options)).definite).toBe(16356);
+    expect(summarize(evaluate(v2c, protectedOnly, assume, options)).definite).toBe(16344);
   });
 
   it("v2c, which needs the carrier and the state transition in one event, has no unsound verdict on the grid", () => {
@@ -208,7 +208,7 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
     }
   });
 
-  it("v2c does not carry a state across a deletion", () => {
+  it("v2c does not carry a state, or a carrier, across a deletion", () => {
     // A re-created object's first event has no predecessor in its own
     // lifetime, so a carrier on it is not read as a transition.
     const base = { uid: "U1" as const, type: "MODIFIED" as const };
@@ -222,8 +222,11 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
         { ...base, rv: 104, state: "T" as const, carrier: "G" as const, uid: "U2" as const },
       ],
     };
-    expect(v2c(obs)).toBe("unknown");
-    expect(v2b(obs)).toBe("stored");
+    // The carrier appears only on the recreated object's events, which are
+    // another incarnation than the one the grant was issued for (the window
+    // counts the grant's own uid only), so neither contract reads a write.
+    expect(v2c(obs)).toBe("rejected");
+    expect(v2b(obs)).toBe("rejected");
   });
 
   it("v2c pays for it: no-op targets and carrier-only events are unknown for presence", () => {
@@ -293,6 +296,8 @@ describe("M4-09 the probe summary script", () => {
     const audit = [
       auditLine({ verb: "patch", requestObject: { metadata: { annotations: { "changesafe.dev/grant": "m4-forged-status" } } } }),
       auditLine({ user: { username: "system:serviceaccount:kube-system:deployment-controller" } }),
+      auditLine({ user: { username: "system:kube-controller-manager" } }),
+      auditLine({ user: { username: "system:node:kind-control-plane" } }),
       auditLine({ objectRef: { resource: "deployments", name: "web", namespace: "changesafe-default-demo", subresource: "status" } }),
       auditLine({ verb: "patch", requestReceivedTimestamp: "2026-10-11T11:59:00.000000Z" }),
       auditLine({ verb: "patch", requestReceivedTimestamp: "2026-10-11T12:30:00.000000Z" }),

@@ -125,9 +125,10 @@ Offline scoring against 04's attacks, with the watch as observer:
 | grant 2 rejected (truthful) | no target state | `agrees_rejected` |
 | grant 1 "rejected" (04's reverse attack) | holds target, carrier | `claim_contradicted_by_watch` |
 | grant 2 "stored" (04's flip or fabrication) | no target state | `claim_contradicted_by_watch` |
-| any claim, stream began after admission | not covered | `claim_unchecked_watch_unknown` |
+| absence claim (grant 2 "stored"), stream began after admission | not covered | `claim_unchecked_watch_unknown` |
+| presence claim (grant 1 "rejected"), stream began after admission | target and carrier still in later events | `claim_contradicted_by_watch` |
 | any claim, stream out of order | discontinuous | `claim_unchecked_watch_unknown` |
-| grant 1 "stored", target without carrier | target, no carrier | `claim_stored_state_unattributed` |
+| any claim, target state without this grant's carrier | target, no carrier | `target_state_unattributed` |
 
 ## Findings the predictions did not cover
 
@@ -140,7 +141,7 @@ Offline scoring against 04's attacks, with the watch as observer:
    (618 for both). Experiment 06 as pre-registered replays from "the
    version read before step 1" and described it as what P3 would record.
    This evidence shows that is not reliable; the amendment is recorded in
-   [experiment 06](M4_EXPERIMENT_06.md).
+   experiment 06 (registered in a later PR of this stack, #82).
 2. **Events naming a grant are not writes.** Five events carry grant 1's
    carrier; one is the write. The status-only events keep the annotation.
    The observer must use the first event that changes the hash to the
@@ -193,7 +194,7 @@ Offline scoring against 04's attacks, with the watch as observer:
    admission.** "No event for grant 2" means rejected only if the stream
    began at or before the admission's version and was continuous. A
    late or gapped stream makes every claim unchecked, which is
-   [experiment 06](M4_EXPERIMENT_06.md)'s question.
+   experiment 06's question (a later PR of this stack, #82).
 3. **The observer needs the enforcer's recorded prior version
    (P3).** Without it the observer chooses a start version by a read
    that, as finding 1 shows, can be older than the admission, which is

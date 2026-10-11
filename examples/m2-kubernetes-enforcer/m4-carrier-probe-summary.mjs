@@ -43,7 +43,7 @@ const probes = names.map((name) => {
 const [windowStart, windowEnd] = (read("probe-window.txt") ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
 
 // Audit: requests on the demo Deployment in the protected namespace, inside
-// the probes' time window and not made by a system component (the Deployment
+// the probes' time window and not made by a system: identity (the Deployment
 // controller also writes status, constantly). "enforcerGrantAnnotated" says
 // the enforcer returned its grant annotations; it does NOT say whether the
 // webhook was called: a request with no readable grant is answered with no
@@ -61,7 +61,10 @@ if (auditPath && existsSync(auditPath)) {
     if (ref.resource !== "deployments" || ref.name !== "web" || ref.namespace !== NAMESPACE) continue;
     if (!["patch", "update"].includes(event.verb)) continue;
     const username = event.user?.username ?? "";
-    if (username.startsWith("system:serviceaccount:") || username.startsWith("system:node")) continue;
+    // Every system: identity is a cluster component, not the probe actor: the
+    // controller manager (system:kube-controller-manager) writes the
+    // Deployment's status as a user, not as a service account.
+    if (username.startsWith("system:")) continue;
     const at = event.requestReceivedTimestamp ?? event.stageTimestamp ?? "";
     if (windowStart !== undefined && windowEnd !== undefined && (at < windowStart || at > windowEnd)) continue;
     const touchesCarrier = JSON.stringify(event.requestObject ?? {}).includes("m4-forged");

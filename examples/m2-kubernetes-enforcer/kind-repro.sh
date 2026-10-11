@@ -405,7 +405,14 @@ m4_replay replay "${WATCH_RV}"
 # oldObject version (proposal P3); replay from it as well.
 M4_STEP1_GRANT_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).grant.grantId' "${WORK_DIR}/step1-grant.json")
 M4_PRIOR_RV=$(node "${EXAMPLE_DIR}/m4-prior-version.mjs" "${WORK_DIR}/audit.log" "${M4_STEP1_GRANT_ID}" || true)
-if [ -n "${M4_PRIOR_RV}" ]; then m4_replay replay-prior "${M4_PRIOR_RV}"; fi
+# Replaying from the admission's version is the experiment's central case: a
+# lookup that finds none (the dry-run's response missing, or its shape
+# changed) is an invalid setup, not an experiment with a gap.
+if [ -z "${M4_PRIOR_RV}" ]; then
+  log "FAIL: no prior resourceVersion could be recovered for grant ${M4_STEP1_GRANT_ID} from the audit log; the replay-from-admission case cannot be exercised"
+  exit 1
+fi
+m4_replay replay-prior "${M4_PRIOR_RV}"
 m4_replay ancient 1
 m4_replay any 0
 kubectl get --raw "${M4_REPLAY_BASE}&resourceVersion=${WATCH_RV}&resourceVersionMatch=NotOlderThan" \
