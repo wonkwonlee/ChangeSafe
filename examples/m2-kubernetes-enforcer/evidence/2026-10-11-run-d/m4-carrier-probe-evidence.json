@@ -1,7 +1,7 @@
 {
   "before": {
-    "resourceVersion": "722",
-    "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZzdmMDVlNDhjZmZmZDYxMGNiMTMwN2NkN2E2ODMxYTM4Yjk5YjIyMDNlNjdlOGVmMjlhMTk0ZDBhNTE3YjE4ZSIsInJlY2VpcHRJZCI6InJjcHQtZTljY2MwZjYtODE1NS00ZWRjLWFjODgtNGU4NmRiY2ZlODAxIiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiNDZhYmQ3ZTMtMDQ2Yi00M2I5LThkNmItYjFkNTkyMmM3ODExIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjUwOjU3LjA5OFoiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjUwOjU3LjA4N1oifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6ImQ2ZGIyODRkYTE0NDA4Y2Y3NmI1YWY1OWNhMTk3MTJhIiwic2lnbmF0dXJlIjoibG5jWG5nRERlMHNCQjZ3NzA0cy92UHcxRDlLNnJlWldnamx6VDVINjBjREEvcUhoM2E1ZzZ5TTdza1UxNytEc2hJMkxmWHArWkhKekpJanFJZnR2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1MDo1Ny4wOThaIn19",
+    "resourceVersion": "681",
+    "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZ2NjYTY2ZGY4MmE0MmQ5ZDAwODg3NGMwZmU1NzJhNzk4ODk1ZTEyOGU0NDFjMzA3ODdmYjhmMDVlM2VhODJmYSIsInJlY2VpcHRJZCI6InJjcHQtMTk4MWMyZDgtYjI0Mi00NzdjLWJlZTctMzdhNGUzNjBkZDg3IiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiOTZmNTMxN2EtMGQzZC00ZWVmLWJiM2EtNDMwMDc4NTdlYWUwIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjU3OjE4Ljc3N1oiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjU3OjE4Ljc2OFoifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6IjcyY2M2YjQ0ZTIxOTE1MDY2MTFhMmI2ODMxNjQ4N2I0Iiwic2lnbmF0dXJlIjoiYWZ0bm9LSkxCQjdSVzROeVh6Mzg0TStuZm80dTJEYUhFSTRIUzUwdzJMVm9XVmRKOVBtTUxqUlFNSUR5MjZZN3ZxRFpacEovVEl2Q2RGK1FNV2t2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1NzoxOC43NzdaIn19",
     "replicas": 4,
     "probeLabel": null
   },
@@ -11,8 +11,8 @@
       "exitStatus": 1,
       "output": "Error from server: admission webhook \"protected.enforcer.changesafe.dev\" denied the request: no AuthorizationGrant was attached to this request",
       "after": {
-        "resourceVersion": "722",
-        "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZzdmMDVlNDhjZmZmZDYxMGNiMTMwN2NkN2E2ODMxYTM4Yjk5YjIyMDNlNjdlOGVmMjlhMTk0ZDBhNTE3YjE4ZSIsInJlY2VpcHRJZCI6InJjcHQtZTljY2MwZjYtODE1NS00ZWRjLWFjODgtNGU4NmRiY2ZlODAxIiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiNDZhYmQ3ZTMtMDQ2Yi00M2I5LThkNmItYjFkNTkyMmM3ODExIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjUwOjU3LjA5OFoiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjUwOjU3LjA4N1oifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6ImQ2ZGIyODRkYTE0NDA4Y2Y3NmI1YWY1OWNhMTk3MTJhIiwic2lnbmF0dXJlIjoibG5jWG5nRERlMHNCQjZ3NzA0cy92UHcxRDlLNnJlWldnamx6VDVINjBjREEvcUhoM2E1ZzZ5TTdza1UxNytEc2hJMkxmWHArWkhKekpJanFJZnR2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1MDo1Ny4wOThaIn19",
+        "resourceVersion": "681",
+        "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZ2NjYTY2ZGY4MmE0MmQ5ZDAwODg3NGMwZmU1NzJhNzk4ODk1ZTEyOGU0NDFjMzA3ODdmYjhmMDVlM2VhODJmYSIsInJlY2VpcHRJZCI6InJjcHQtMTk4MWMyZDgtYjI0Mi00NzdjLWJlZTctMzdhNGUzNjBkZDg3IiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiOTZmNTMxN2EtMGQzZC00ZWVmLWJiM2EtNDMwMDc4NTdlYWUwIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjU3OjE4Ljc3N1oiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjU3OjE4Ljc2OFoifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6IjcyY2M2YjQ0ZTIxOTE1MDY2MTFhMmI2ODMxNjQ4N2I0Iiwic2lnbmF0dXJlIjoiYWZ0bm9LSkxCQjdSVzROeVh6Mzg0TStuZm80dTJEYUhFSTRIUzUwdzJMVm9XVmRKOVBtTUxqUlFNSUR5MjZZN3ZxRFpacEovVEl2Q2RGK1FNV2t2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1NzoxOC43NzdaIn19",
         "replicas": 4,
         "probeLabel": null
       }
@@ -22,7 +22,7 @@
       "exitStatus": 0,
       "output": "deployment.apps/web patched",
       "after": {
-        "resourceVersion": "772",
+        "resourceVersion": "730",
         "carrier": "m4-forged-status",
         "replicas": 4,
         "probeLabel": null
@@ -33,7 +33,7 @@
       "exitStatus": 0,
       "output": "deployment.apps/web patched (no change)",
       "after": {
-        "resourceVersion": "772",
+        "resourceVersion": "730",
         "carrier": "m4-forged-status",
         "replicas": 4,
         "probeLabel": null
@@ -42,13 +42,193 @@
   ],
   "audit": [
     {
-      "auditID": "c4bab919-6e31-4047-9c91-474085e0ef4e",
+      "auditID": "bfd4b477-8b1b-44b4-8310-70395ea4e32e",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "cd1e8608-19b7-4462-914f-f2cf52c5a2f2",
+      "verb": "update",
+      "subresource": "status",
+      "code": 409,
+      "message": "Operation cannot be fulfilled on deployments.apps \"web\": the object has been modified; please apply your changes to the latest version and try again",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "418b16e7-2b28-4aab-ae9f-a8608ceb11a2",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "2ef46609-5ffa-4d75-9911-caffc65c2a07",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "a3cd0f33-7c42-4198-8827-689a0ed39d14",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "544c3f87-4ce6-4cef-938a-b510324f819b",
+      "verb": "update",
+      "subresource": "status",
+      "code": 409,
+      "message": "Operation cannot be fulfilled on deployments.apps \"web\": the object has been modified; please apply your changes to the latest version and try again",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "979b0f72-cc7a-49df-bd19-fa0b45a0aee8",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "f14b1fe3-de87-41ad-914a-2f85515ab36a",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "7d5db992-59cc-49a3-841e-653b1e0eefed",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "dbe3002b-3bb4-430d-bd35-e49b2404da8e",
+      "verb": "update",
+      "subresource": "status",
+      "code": 409,
+      "message": "Operation cannot be fulfilled on deployments.apps \"web\": the object has been modified; please apply your changes to the latest version and try again",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "3efb9263-e1f8-4ef5-9992-c163e65e4ba6",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "c8985a4c-718a-40e5-9c2f-e4532b90fff1",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "eeb85813-de9b-4bee-824f-a7d039c61dd2",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "c72ef2c7-fafc-46e2-a90d-955315fa208e",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "7063b32d-bb41-4a69-b757-d306422015f9",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "6974082c-4f6c-4fb4-b7e3-5c9512119802",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "f01edcd9-5cf7-406d-887d-c0d7e9b53425",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "b91c8a8a-9720-4fda-9120-b09e29782254",
+      "verb": "update",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
+    },
+    {
+      "auditID": "75125dc7-c35f-4867-8709-b71e3be6d32c",
       "verb": "patch",
       "subresource": null,
       "code": 400,
       "message": "admission webhook \"protected.enforcer.changesafe.dev\" denied the request: no AuthorizationGrant was attached to this request",
       "enforcerAnnotated": false,
       "touchesForgedCarrier": true
+    },
+    {
+      "auditID": "503ae642-c9c1-4619-877c-4ee83c712cae",
+      "verb": "patch",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": true
+    },
+    {
+      "auditID": "bde02c23-2580-4b3f-b575-2c431d4ef921",
+      "verb": "patch",
+      "subresource": "status",
+      "code": 200,
+      "message": "",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": false
     }
   ]
 }
