@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { canonicalize } from "@changesafe/core";
 import { kubernetesObjectSha256 } from "@changesafe/kubernetes-enforcer";
 import { compareResourceVersions } from "./resource-version";
 
@@ -18,7 +19,11 @@ const evidenceDir = path.resolve("examples/m2-kubernetes-enforcer/evidence");
 const KubernetesObjectSchema = z.object({
   apiVersion: z.string(),
   kind: z.string(),
-  metadata: z.object({ uid: z.string(), resourceVersion: z.string() }).passthrough(),
+  metadata: z.object({
+    uid: z.string(),
+    resourceVersion: z.string(),
+    annotations: z.record(z.string(), z.string()).optional(),
+  }).passthrough(),
   spec: z.record(z.string(), z.unknown()),
 }).passthrough();
 type KubernetesObject = z.infer<typeof KubernetesObjectSchema>;
@@ -52,7 +57,6 @@ interface AuditEvent {
   outcome: string;
   code: number;
   verb: string;
-  requestURI: string;
   stored?: KubernetesObject;
 }
 
@@ -71,20 +75,7 @@ type AuditVerdict = (typeof AUDIT_VERDICTS)[number];
 const READ_VERDICTS = ["contradicted_by_read"] as const;
 type CheckedVerdict = AuditVerdict | (typeof READ_VERDICTS)[number];
 
-/** Every verdict either contract actually returned, so the vocabulary test reads real outputs. */
-const returned = new Set<CheckedVerdict>();
-function done<V extends CheckedVerdict>(verdict: V): V {
-  returned.add(verdict);
-  return verdict;
-}
-
 const WRITE_VERBS = new Set(["create", "update", "patch"]);
-
-/** True when the request URI carries a dryRun parameter, under any spelling case. */
-function isDryRun(requestURI: string): boolean {
-  const query = requestURI.includes("?") ? requestURI.slice(requestURI.indexOf("?") + 1) : "";
-  return [...new URLSearchParams(query).keys()].some(key => key.toLowerCase() === "dryrun");
-}
 
 /**
  * The event for the consuming admission, or why there is not exactly one.
@@ -94,39 +85,48 @@ function isDryRun(requestURI: string): boolean {
  */
 function consumingEvent(held: Held, events: AuditEvent[]): AuditEvent | "none" | "conflict" {
   const matches = events.filter(event => event.admissionUid === held.consumerAdmissionUid);
+  // Canonical form, so redelivery that reorders keys still collapses. A
+  // different audit id makes a different event, so one admission uid under
+  // two audit ids is a conflict by the same rule.
   const distinct = new Map<string, AuditEvent>();
-  for (const event of matches) distinct.set(JSON.stringify(event), event);
+  for (const event of matches) distinct.set(canonicalize(event), event);
   if (distinct.size === 0) return "none";
-  const ids = new Set([...distinct.values()].map(event => event.auditID));
-  if (distinct.size > 1 || ids.size > 1) return "conflict";
+  if (distinct.size > 1) return "conflict";
   return [...distinct.values()][0] ?? "none";
 }
 
 /** 03's join, made strict: one event for the consuming admission, consistent with the grant. */
 async function auditOnly(held: Held, events: AuditEvent[]): Promise<AuditVerdict> {
-  if (held.consumerAdmissionUid === undefined) return done("unknown_not_consumed");
+  if (held.consumerAdmissionUid === undefined) return "unknown_not_consumed";
   const event = consumingEvent(held, events);
-  if (event === "none") return done("unknown_no_event");
-  if (event === "conflict") return done("unknown_conflicting_events");
-  if (event.grantId !== held.grant.grantId || event.outcome !== "allow-consumed" || isDryRun(event.requestURI)) {
-    return done("audit_inconsistent_with_grant");
+  if (event === "none") return "unknown_no_event";
+  if (event === "conflict") return "unknown_conflicting_events";
+  // A dry-run never consumes, so the enforcer's use-state never names its
+  // admission as the consumer: the join above already excludes it, and the
+  // outcome annotation says the same. No URI inspection is needed.
+  if (event.grantId !== held.grant.grantId || event.outcome !== "allow-consumed") {
+    return "audit_inconsistent_with_grant";
   }
-  if (!WRITE_VERBS.has(event.verb)) return done("unknown_unrecognized_event");
-  if (event.code >= 400 && event.code < 600) return done("audit_reports_rejected");
-  if (event.code < 200 || event.code >= 300) return done("unknown_unrecognized_event");
+  if (!WRITE_VERBS.has(event.verb)) return "unknown_unrecognized_event";
+  if (event.code >= 400 && event.code < 600) return "audit_reports_rejected";
+  if (event.code < 200 || event.code >= 300) return "unknown_unrecognized_event";
   if (event.stored !== undefined) {
     const matchesGrant =
       event.stored.metadata.uid === held.grant.resourceUid &&
       held.grant.objectSha256 !== undefined &&
       (await kubernetesObjectSha256(event.stored)) === held.grant.objectSha256;
-    if (!matchesGrant) return done("audit_inconsistent_with_grant");
+    if (!matchesGrant) return "audit_inconsistent_with_grant";
   }
-  return done("audit_reports_stored");
+  return "audit_reports_stored";
 }
 
-/** The grant id a stored object's carrier annotation names, if it parses. */
+/**
+ * The grant id a stored object's carrier annotation names, if it parses.
+ * The carrier's signature is NOT verified here (the demo key is ephemeral
+ * and not in any fixture), so this only says what a writer put there.
+ */
 function carrierGrantId(object: KubernetesObject): string | undefined {
-  const raw = (object.metadata as { annotations?: Record<string, string> }).annotations?.["changesafe.dev/grant"];
+  const raw = object.metadata.annotations?.["changesafe.dev/grant"];
   if (typeof raw !== "string") return undefined;
   try {
     const text = raw.trim().startsWith("{") ? raw : Buffer.from(raw, "base64").toString("utf8");
@@ -168,7 +168,7 @@ async function auditPlusRead(
       held.grant.objectSha256 !== undefined &&
       (await kubernetesObjectSha256(read.object)) === held.grant.objectSha256;
     if (holdsTarget && carrierGrantId(read.object) === held.grant.grantId && !options.carrierWritableOutsideEnforcer) {
-      return done("contradicted_by_read");
+      return "contradicted_by_read";
     }
     return verdict;
   }
@@ -176,12 +176,12 @@ async function auditPlusRead(
 
   // Same incarnation still at the version the enforcer saw: nothing was stored since.
   if (held.priorResourceVersion !== undefined && compareResourceVersions(current, held.priorResourceVersion) === 0) {
-    return done("contradicted_by_read");
+    return "contradicted_by_read";
   }
   // A "stored" version newer than what is stored now cannot be a past write.
   const event = consumingEvent(held, events);
   const claimed = event === "none" || event === "conflict" ? undefined : event.stored?.metadata.resourceVersion;
-  if (claimed !== undefined && compareResourceVersions(claimed, current) === 1) return done("contradicted_by_read");
+  if (claimed !== undefined && compareResourceVersions(claimed, current) === 1) return "contradicted_by_read";
   return verdict;
 }
 
@@ -199,7 +199,6 @@ const realEvents: AuditEvent[] = live03.events.map(event => ({
   outcome: event.outcome,
   code: event.code,
   verb: event.verb,
-  requestURI: event.requestURI,
   // Only the persisted write's stored object is in the fixture, tied to its
   // audit event by the audit id the fixture records; the dry-run's own
   // response is irrelevant to the consuming-event join and is left out.
@@ -281,9 +280,18 @@ describe("M4-04 attacks the contract absorbs", () => {
     expect(await auditOnly(grant1, replace(realEvents, consumingEventOf(grant1), read))).toBe("unknown_unrecognized_event");
   });
 
-  it("a dry-run is recognized under any query spelling", async () => {
-    const dryRun = { ...consumingEventOf(grant1), requestURI: "/apis/apps/v1/namespaces/x/deployments/web?DRYRUN=All" };
-    expect(await auditOnly(grant1, replace(realEvents, consumingEventOf(grant1), dryRun))).toBe("audit_inconsistent_with_grant");
+  it("a dry-run's event is not the consumer's, so it cannot be mistaken for the write", async () => {
+    // The use-state names the consuming admission; the dry-run has another.
+    const dryRun = must(realEvents.find(event => event.outcome === "allow-dry-run"), "the dry-run event");
+    expect(dryRun.admissionUid).not.toBe(grant1.consumerAdmissionUid);
+    const impostor = { ...dryRun, admissionUid: must(grant1.consumerAdmissionUid, "the consumer uid") };
+    expect(await auditOnly(grant1, replace(realEvents, consumingEventOf(grant1), impostor))).toBe("audit_inconsistent_with_grant");
+  });
+
+  it("redelivery that reorders keys still collapses to one event", async () => {
+    const real = consumingEventOf(grant1);
+    const reordered = JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(real).reverse()))) as AuditEvent;
+    expect(await auditOnly(grant1, [...realEvents, reordered])).toBe("audit_reports_stored");
   });
 
   it("fails closed at its edges: no consumer record, and no read", async () => {
@@ -353,7 +361,7 @@ describe("M4-04 the reverse attack, and what a carrier-aware read changes", () =
     const real = consumingEventOf(grant1);
     return {
       auditID: real.auditID, admissionUid: real.admissionUid, grantId: real.grantId,
-      outcome: real.outcome, verb: real.verb, requestURI: real.requestURI, code: 500,
+      outcome: real.outcome, verb: real.verb, code: 500,
     };
   };
 
@@ -372,13 +380,16 @@ describe("M4-04 the reverse attack, and what a carrier-aware read changes", () =
     expect(await auditPlusRead(grant1, events, readAfterRun, { carrierWritableOutsideEnforcer: false })).toBe("contradicted_by_read");
   });
 
-  it("the same rule is wrong where another writer can set the carrier: it contradicts a true rejection", async () => {
-    // Grant 2's rejection was real. A writer outside the enforcer's
-    // webhook (a tier that fails open) reproduces the target state and
-    // copies the carrier it read off the object. The read then holds the
-    // target and names the grant, and the contract wrongly contradicts the
-    // truthful audit event. The grant 1 target stands in for grant 2's,
-    // which is not in any fixture.
+  it("the rule's precondition is load-bearing: stated wrongly, it contradicts a true rejection", async () => {
+    // This shows what the precondition costs, not a flaw found in the
+    // contract: the wrong verdict follows from the flag the caller
+    // chooses. Grant 2's rejection was real. If a writer outside the
+    // enforcer's webhook (a tier that fails open) reproduced the target
+    // state and copied the carrier, a caller that nevertheless asserted
+    // "unforgeable" would contradict a truthful audit event. The default
+    // (writable) does not. Whether the protected tier really makes the
+    // carrier unforgeable is experiment 05's live question. The grant 1
+    // target stands in for grant 2's, which is not in any fixture.
     const grant2WithTarget: Held = {
       ...grant2,
       grant: { ...grant2.grant, grantId: carrierGrantId(stored03.stored) ?? "", objectSha256: stored03.grant.objectSha256 },
@@ -392,11 +403,27 @@ describe("M4-04 the reverse attack, and what a carrier-aware read changes", () =
 });
 
 describe("M4-04 vocabulary", () => {
-  it("every verdict the contracts returned names its source; none reads as an attestation", () => {
-    const seen = [...returned];
-    // Every verdict in the contract's vocabulary was exercised by a test above.
-    for (const verdict of [...AUDIT_VERDICTS, ...READ_VERDICTS]) expect(seen).toContain(verdict);
-    for (const verdict of seen) {
+  it("every verdict in the vocabulary is reachable, names its source, and none reads as an attestation", async () => {
+    // A fixed table of inputs, one per verdict, so this does not depend on
+    // which other tests ran or in what order.
+    const flipped = { ...consumingEventOf(grant2), code: 200 };
+    const odd = { ...consumingEventOf(grant1), code: 304, stored: undefined };
+    const altered = { ...consumingEventOf(grant1), stored: withVersion(stored03.stored, "710", 9) };
+    const conflicting = { ...consumingEventOf(grant2), auditID: "forged-0001", code: 200 };
+    const table: Array<[CheckedVerdict, () => Promise<CheckedVerdict>]> = [
+      ["unknown_not_consumed", () => auditOnly({ grant: grant1.grant }, realEvents)],
+      ["unknown_no_event", () => auditOnly(grant1, [])],
+      ["unknown_conflicting_events", () => auditOnly(grant2, [...realEvents, conflicting])],
+      ["unknown_unrecognized_event", () => auditOnly(grant1, replace(realEvents, consumingEventOf(grant1), odd))],
+      ["audit_inconsistent_with_grant", () => auditOnly(grant1, replace(realEvents, consumingEventOf(grant1), altered))],
+      ["audit_reports_rejected", () => auditOnly(grant2, realEvents)],
+      ["audit_reports_stored", () => auditOnly(grant1, realEvents)],
+      ["contradicted_by_read", () => auditPlusRead(grant2, replace(realEvents, consumingEventOf(grant2), flipped), readAfterRun)],
+    ];
+    expect(table.map(([verdict]) => verdict).sort()).toEqual([...AUDIT_VERDICTS, ...READ_VERDICTS].sort());
+    for (const [expected, run] of table) {
+      const verdict = await run();
+      expect(verdict).toBe(expected);
       expect(verdict).toMatch(/^(unknown_|audit_|contradicted_)/);
       expect(verdict).not.toMatch(/persist|verified|proven|success|realized/);
     }
