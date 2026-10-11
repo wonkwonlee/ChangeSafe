@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   completeExact, coverages, edits, evaluate, histories, isDefinite, isUnsound, observe, priors, protectedOnly,
-  summarize, v1, v1c, v1Traced, v2a, v2b, distinctWorlds,
+  simulate, summarize, v1, v1c, v1Traced, v2a, v2b, distinctWorlds,
   type AuditEdit, type Coverage, type History, type PriorKnowledge, type Verdict,
 } from "./m4-evidence-model";
 
@@ -62,7 +62,10 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
   it("v1c, the composition with experiment 05's corrected rule, is sound in scope A", () => {
     // The rule that makes v1 unsound was removed from 05 by its review. v1 is
     // the pre-correction composition; v1c is what the project would have run.
-    expect(summarize(evaluate(v1c, scopeA, assumeUnforgeable)).unsound).toEqual([]);
+    const result = summarize(evaluate(v1c, scopeA, assumeUnforgeable));
+    expect(result.unsound).toEqual([]);
+    expect(result.definite).toBe(1392);
+    expect(result.total - result.definite).toBe(336);
   });
 
   it("H7c: a prior known only as a lower bound adds unsound histories, from events that precede the admission", () => {
@@ -83,7 +86,7 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
     const filter = (h: History, _e: AuditEdit, _c: Coverage, p: PriorKnowledge) => protectedOnly(h) && p === "exact";
     const v1Rows = summarize(evaluate(v1, filter, assumeUnforgeable));
     expect(v1Rows.total).toBe(8640);
-    expect(v1Rows.unsound).toHaveLength(984);
+    expect(v1Rows.unsound).toHaveLength(968);
     const byRule: Record<string, number> = {};
     for (const row of v1Rows.unsound) {
       const rule = v1Traced(observe(row.history, row.edit, row.coverage, row.prior, true)).rule;
@@ -91,10 +94,10 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
     }
     expect(byRule).toEqual({
       "audit-rejected-fallback": 232,
-      "audit-stored-fallback": 376,
+      "audit-stored-fallback": 360,
       "target-without-carrier-contradicts-rejected": 376,
     });
-    expect(summarize(evaluate(v1c, filter, assumeUnforgeable)).unsound).toHaveLength(608);
+    expect(summarize(evaluate(v1c, filter, assumeUnforgeable)).unsound).toHaveLength(592);
   });
 });
 
@@ -113,14 +116,20 @@ describe("M4-07 the repaired contracts", () => {
     expect(b.definite).toBe(b.total);
     expect(a.definite).toBe(1056);
     expect(a.total - a.definite).toBe(672);
-    // The unknowns are exactly the no-op targets (and what 2a refuses to attribute without a carrier).
-    expect(evaluate(v2a, scopeA, assumeUnforgeable)
-      .filter(row => !isDefinite(row.verdict) && !row.history.noOp).every(row => row.truth !== "not_consumed")).toBe(true);
+    // The unknowns are the no-op targets (576 evaluations) and 96 more, and
+    // those 96 are all one thing: a truthful rejection followed by another
+    // grant storing the target, where v2a will not call a carrier-less
+    // target state "absent".
+    const unknown = evaluate(v2a, scopeA, assumeUnforgeable).filter(row => !isDefinite(row.verdict));
+    expect(unknown.filter(row => row.history.noOp)).toHaveLength(576);
+    const rest = unknown.filter(row => !row.history.noOp);
+    expect(rest).toHaveLength(96);
+    expect(rest.every(row => row.truth === "rejected" && row.history.later === "via_other_grant")).toBe(true);
   });
 
-  it("over every protected evaluation v2b is definite on 13,824 of 25,920, and v2a on 10,944", () => {
-    expect(summarize(evaluate(v2b, protectedOnly, assumeUnforgeable)).definite).toBe(13824);
-    expect(summarize(evaluate(v2a, protectedOnly, assumeUnforgeable)).definite).toBe(10944);
+  it("over every protected evaluation v2b is definite on 14,628 of 25,920, and v2a on 11,220", () => {
+    expect(summarize(evaluate(v2b, protectedOnly, assumeUnforgeable)).definite).toBe(14628);
+    expect(summarize(evaluate(v2a, protectedOnly, assumeUnforgeable)).definite).toBe(11220);
   });
 
   it("neither repair reads the audit event: the verdict does not change across audit edits", () => {
@@ -138,18 +147,53 @@ describe("M4-07 the repaired contracts", () => {
 
   it("every missing piece of coverage moves 'rejected' to 'unknown', never to a wrong verdict", () => {
     const rows = evaluate(v2b, (h, _e, c, p) => protectedOnly(h) && (c !== "complete" || p !== "exact"), assumeUnforgeable);
-    // A "rejected" verdict needs a complete stream and an exact or lower-bound prior.
-    expect(rows.filter(row => row.verdict === "rejected").every(row => row.coverage === "complete" && row.prior !== "none")).toBe(true);
-    // A stream cut after the write, the failure experiment 05's review found.
-    const cut = rows.filter(row => row.coverage === "cut_after_write" && row.truth === "rejected");
+    // No prior at all: absence cannot be placed, so a rejection is never claimed.
+    expect(rows.filter(row => row.prior === "none" && row.truth === "rejected").every(row => row.verdict === "unknown")).toBe(true);
+    // A stream that ended abnormally is always unknown for absence.
+    const abnormal = rows.filter(row => row.coverage === "ended_abnormally" && row.truth === "rejected");
+    expect(abnormal.length).toBeGreaterThan(0);
+    expect(abnormal.every(row => row.verdict === "unknown")).toBe(true);
+    // A stream that began after the admission is unknown unless nothing came
+    // after the admission at all, where it is a complete stream in effect.
+    const late = rows.filter(row => row.coverage === "late" && row.truth === "rejected" && row.prior === "exact");
+    expect(late.length).toBeGreaterThan(0);
+    for (const row of late) {
+      const world = simulate(row.history);
+      const nothingAfter = world.events.every(event => event.rv <= world.priorRv);
+      expect(row.verdict === "unknown" || nothingAfter).toBe(true);
+    }
+    // A stream cut before or after the write: "reaches the close" is derived
+    // from the stream's last event, so a cut that happens to end on the
+    // object's final version is a complete stream in effect, and a
+    // "rejected" there is correct. Where it does not, the verdict is unknown.
+    const cut = rows.filter(row => (row.coverage === "cut" || row.coverage === "cut_after_write") && row.truth === "rejected" && row.prior === "exact");
     expect(cut.length).toBeGreaterThan(0);
-    expect(cut.every(row => row.verdict === "unknown")).toBe(true);
-    expect(rows.filter(row => row.coverage === "ended_abnormally" && row.truth === "rejected").every(row => row.verdict === "unknown")).toBe(true);
+    expect(cut.some(row => row.verdict === "unknown")).toBe(true);
+    expect(cut.every(row => row.verdict === "unknown" || row.verdict === "rejected")).toBe(true);
+    expect(summarize(rows).unsound).toEqual([]);
+  });
+
+  it("LIMIT: the use-state is trusted; if it is edited, 'not_consumed' and 'rejected' are wrong by construction", () => {
+    // Outside the attack model: SQLite triggers and the ledger hash chain
+    // protect it. The contract has no second source for "was this consumed".
+    const stored = [...histories()].filter(h => h.tier === "protected" && h.attempt === "stored" && !h.noOp && h.later === "none");
+    for (const history of stored) {
+      expect(v2b(observe(history, "none", "complete", "exact", true))).toBe("stored");
+      expect(v2b(observe(history, "none", "complete", "exact", true, { useStateEdit: "hide_consumption" }))).toBe("not_consumed");
+    }
+    const unattempted = [...histories()].filter(h => h.tier === "protected" && h.attempt === "not_attempted" && !h.noOp);
+    expect(unattempted.length).toBeGreaterThan(0);
+    for (const history of unattempted) {
+      expect(v2b(observe(history, "none", "complete", "exact", true, { useStateEdit: "forge_consumption" }))).toBe("rejected");
+    }
   });
 
   it("LIMIT: an adversary on the observer's own path who removes the grant's events is detected only when they were last", () => {
     // Stated, not solved: outside the attack model, the same as for a read.
-    // Removing every event that carries the grant from the stream:
+    // Status-only updates keep the grant's annotation (observed in
+    // experiment 05, where every later event still named grant 1), which is
+    // why the dropped events can include the stream's last one. Removing
+    // every event that carries the grant from the stream:
     //  - when one of them was the stream's last, the close marker no longer
     //    matches and the verdict is unknown;
     //  - when a later writer's event follows, the marker still matches, and
