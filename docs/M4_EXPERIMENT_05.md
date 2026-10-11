@@ -125,9 +125,10 @@ Offline scoring against 04's attacks, with the watch as observer:
 | grant 2 rejected (truthful) | no target state | `agrees_rejected` |
 | grant 1 "rejected" (04's reverse attack) | holds target, carrier | `claim_contradicted_by_watch` |
 | grant 2 "stored" (04's flip or fabrication) | no target state | `claim_contradicted_by_watch` |
-| any claim, stream began after admission | not covered | `claim_unchecked_watch_unknown` |
+| absence claim (grant 2 "stored"), stream began after admission | not covered | `claim_unchecked_watch_unknown` |
+| presence claim (grant 1 "rejected"), stream began after admission | target and carrier still in later events | `claim_contradicted_by_watch` |
 | any claim, stream out of order | discontinuous | `claim_unchecked_watch_unknown` |
-| grant 1 "stored", target without carrier | target, no carrier | `claim_stored_state_unattributed` |
+| any claim, target state without this grant's carrier | target, no carrier | `target_state_unattributed` |
 
 ## Findings the predictions did not cover
 
