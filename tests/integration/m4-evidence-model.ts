@@ -61,7 +61,11 @@ export function simulate(history: History): World {
     events.push({ rv, type, uid, state, carrier });
   };
 
-  if (history.otherGrantBefore && !history.noOp) {
+  if (history.otherGrantBefore) {
+    // Another grant stores the target, then another restores the prior. For a
+    // no-op target T equals P, so neither write changes the spec; each still
+    // sets its carrier annotation, which is a change to the object and so an
+    // event (the same reason G's own no-op write below is one).
     state = "T"; carrier = "G2"; emit();
     state = "P"; carrier = "G4"; emit();
   }
@@ -197,7 +201,10 @@ export function windowOf(obs: Observation): WindowFacts {
   // Target-hash events are those in state T; in a no-op grant every state hashes to the target.
   const hashesToTarget = (event: Ev) => event.state === "T" || obs.grantIsNoOp;
   const priorRv = obs.priorRv;
-  const inWindow = priorRv === undefined ? [] : obs.events.filter(event => event.rv > priorRv && event.type !== "DELETED");
+  // Only the grant's own incarnation counts: the real observer requires
+  // event.uid to equal the grant's resourceUid (m4-watch-observer.test.ts),
+  // so an object recreated under a new uid is evidence about nothing.
+  const inWindow = priorRv === undefined ? [] : obs.events.filter(event => event.rv > priorRv && event.type !== "DELETED" && event.uid === "U1");
   const covers = priorRv !== undefined && obs.streamStart <= priorRv;
   const last = obs.events[obs.events.length - 1];
   // Derived from the stream, not from its label: the last event carries the

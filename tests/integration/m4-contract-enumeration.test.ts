@@ -24,24 +24,26 @@ describe("M4-07 the enumeration itself", () => {
   });
 
   it("states how many of those histories are distinct worlds, since some parameters do nothing in some combinations", () => {
-    // Review finding: a parameter tuple is not a world. otherGrantBefore is
-    // inert for a no-op target, restores_prior is inert unless the state
-    // moved, and so on. The counts quoted in the note are of tuples; the
-    // distinct worlds are fewer, and soundness is a claim over those.
+    // Review finding: a parameter tuple is not a world. restores_prior is
+    // inert unless the state moved, a status update after a rejected write
+    // repeats the object, and so on. (otherGrantBefore is NOT inert for a
+    // no-op target: each such write sets its carrier annotation, which is an
+    // event; an earlier draft got that wrong.) The counts quoted in the note
+    // are of tuples; the distinct worlds are fewer.
     const all = [...histories()];
     expect(all).toHaveLength(768);
-    expect(distinctWorlds(all)).toBe(300);
+    expect(distinctWorlds(all)).toBe(400);
     const protectedHistories = all.filter(history => history.tier === "protected");
     expect(protectedHistories).toHaveLength(288);
-    expect(distinctWorlds(protectedHistories)).toBe(168);
+    expect(distinctWorlds(protectedHistories)).toBe(224);
   });
 });
 
 describe("M4-07 version 1, composed from experiments 01 to 06", () => {
   it("H7a (refuted as stated) and H7b: the pre-correction rule is unsound in scope A, and by one rule", () => {
     const { unsound, definite } = summarize(evaluate(v1, scopeA, assumeUnforgeable));
-    expect(definite).toBe(1504);
-    expect(unsound).toHaveLength(112);
+    expect(definite).toBe(1536);
+    expect(unsound).toHaveLength(96);
     // Every wrong verdict is produced by the rule that reads a target state
     // without this grant's carrier as a contradiction of a "rejected" claim.
     for (const row of unsound) {
@@ -49,12 +51,12 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
       expect(row.truth).toBe("rejected");
       expect(row.verdict).toBe("stored");
     }
-    // H7a registered "except where T equals P". 80 rows are that; the other
+    // H7a registered "except where T equals P". 64 rows are that; the other
     // 32 are outside the registered exception and need another grant to have
     // stored the target after this admission (H7b's mechanism).
     const noOp = unsound.filter(row => row.history.noOp);
     const other = unsound.filter(row => !row.history.noOp);
-    expect(noOp).toHaveLength(80);
+    expect(noOp).toHaveLength(64);
     expect(other).toHaveLength(32);
     expect(other.every(row => row.history.later === "via_other_grant")).toBe(true);
   });
@@ -64,8 +66,8 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
     // the pre-correction composition; v1c is what the project would have run.
     const result = summarize(evaluate(v1c, scopeA, assumeUnforgeable));
     expect(result.unsound).toEqual([]);
-    expect(result.definite).toBe(1392);
-    expect(result.total - result.definite).toBe(336);
+    expect(result.definite).toBe(1440);
+    expect(result.total - result.definite).toBe(288);
   });
 
   it("H7c: a prior known only as a lower bound adds unsound histories, from events that precede the admission", () => {
@@ -74,7 +76,7 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
     expect(lower).toHaveLength(152);
     const exactKeys = new Set(exact.map(row => JSON.stringify([row.history, row.edit])));
     const added = lower.filter(row => !exactKeys.has(JSON.stringify([row.history, row.edit])));
-    expect(added).toHaveLength(40);
+    expect(added).toHaveLength(56);
     // A wider window admits events from before the admission: another
     // grant's earlier write, or, for a no-op target (where every state
     // hashes to it), the status-only events that preceded the admission.
@@ -86,18 +88,18 @@ describe("M4-07 version 1, composed from experiments 01 to 06", () => {
     const filter = (h: History, _e: AuditEdit, _c: Coverage, p: PriorKnowledge) => protectedOnly(h) && p === "exact";
     const v1Rows = summarize(evaluate(v1, filter, assumeUnforgeable));
     expect(v1Rows.total).toBe(8640);
-    expect(v1Rows.unsound).toHaveLength(968);
+    expect(v1Rows.unsound).toHaveLength(960);
     const byRule: Record<string, number> = {};
     for (const row of v1Rows.unsound) {
       const rule = v1Traced(observe(row.history, row.edit, row.coverage, row.prior, true)).rule;
       byRule[rule] = (byRule[rule] ?? 0) + 1;
     }
     expect(byRule).toEqual({
-      "audit-rejected-fallback": 232,
-      "audit-stored-fallback": 360,
-      "target-without-carrier-contradicts-rejected": 376,
+      "audit-rejected-fallback": 240,
+      "audit-stored-fallback": 416,
+      "target-without-carrier-contradicts-rejected": 304,
     });
-    expect(summarize(evaluate(v1c, filter, assumeUnforgeable)).unsound).toHaveLength(592);
+    expect(summarize(evaluate(v1c, filter, assumeUnforgeable)).unsound).toHaveLength(656);
   });
 });
 
@@ -127,8 +129,8 @@ describe("M4-07 the repaired contracts", () => {
     expect(rest.every(row => row.truth === "rejected" && row.history.later === "via_other_grant")).toBe(true);
   });
 
-  it("over every protected evaluation v2b is definite on 14,628 of 25,920, and v2a on 11,220", () => {
-    expect(summarize(evaluate(v2b, protectedOnly, assumeUnforgeable)).definite).toBe(14628);
+  it("over every protected evaluation v2b is definite on 14,616 of 25,920, and v2a on 11,220", () => {
+    expect(summarize(evaluate(v2b, protectedOnly, assumeUnforgeable)).definite).toBe(14616);
     expect(summarize(evaluate(v2a, protectedOnly, assumeUnforgeable)).definite).toBe(11220);
   });
 
@@ -228,7 +230,7 @@ describe("M4-07 the carrier precondition", () => {
   });
 
   it("not assuming it, the repairs are sound in the default tier and say unknown where a carrier is all there is", () => {
-    for (const [contract, definite] of [[v2a, 1152], [v2b, 1200]] as const) {
+    for (const [contract, definite] of [[v2a, 1152], [v2b, 1248]] as const) {
       const result = summarize(evaluate(contract, scopeDefault, () => false));
       expect(result.unsound).toEqual([]);
       expect(result.definite).toBe(definite);

@@ -68,7 +68,7 @@ again by an audit-plus-read contract. Both contracts are test-local.
 
 ## Results
 
-Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (19 tests after review; 10 when first written).
+Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (20 tests after review; 10 when first written).
 Baseline: 03's real events, plus the real stored object, trimmed into
 `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-stored-object.json`
 with its provenance. Unaltered, both contracts agree with what the cluster
@@ -196,6 +196,20 @@ this note's claims:
    showed version 684 and the stored write's event followed it, but that
    run did not record the consuming admission's `oldObject`, so the
    equivalence is observed there, not verified.
+
+## Fixture provenance
+
+The stored-object fixture is captured from experiment 03's live run with
+one change: the container image reference, which named a third-party
+image, is replaced (`registry.example/web:1.0`) because bundled data
+carries no third-party branding. The fixture's `objectSha256` is the
+enforcer object hash of the neutralized object; the signed grant's
+original hash is kept as `signedObjectSha256`, and the `provenance` block
+says what was changed. The test checks the neutralized object against the
+neutralized hash, so it shows the enforcer's hash function is consistent
+with the fixture, not that the original captured bytes matched the signed
+grant (they are not committed). A review of the first run (CI
+38161664015) had that match as `true`.
 
 ## What remains unsupported
 

@@ -91,7 +91,7 @@ artifacts, byte for byte, in
 SHA-256 values in `manifest.json` (replay `de4a6f5a…58ad7`, watch
 `963424c7…af97`); the tests check each file against its hash before
 using it. Replayed offline by
-`tests/integration/m4-replay-observer.test.ts` (16 tests).
+`tests/integration/m4-replay-observer.test.ts` (19 tests).
 
 In this run the read before step 1 (618) **equalled** the dry-run's
 version (618). In experiment 05's run they differed (616 against 684). So
