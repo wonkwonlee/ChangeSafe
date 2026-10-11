@@ -68,7 +68,7 @@ again by an audit-plus-read contract. Both contracts are test-local.
 
 ## Results
 
-Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (10 tests).
+Harness: `tests/integration/m4-audit-pipeline-adversary.test.ts` (19 tests after review; 10 when first written).
 Baseline: 03's real events, plus the real stored object, trimmed into
 `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-stored-object.json`
 with its provenance. Unaltered, both contracts agree with what the cluster
@@ -84,7 +84,7 @@ did: grant 1 `audit_reports_stored`, grant 2 `audit_reports_rejected`.
 | H4d: fabricate a 200 with the grant's exact target object, nothing stored since | `audit_reports_stored` ✗ | `contradicted_by_read` | rejected (modeled) |
 | H4e: same, a later write landed (read rv 900), forged rv 760 | `audit_reports_stored` ✗ | `audit_reports_stored` ✗ | rejected (modeled) |
 | H4e: same, forged rv 950 | `audit_reports_stored` ✗ | `contradicted_by_read` | rejected (modeled) |
-| Reverse: rewrite grant 1's real 200 as 500 | `audit_reports_rejected` ✗ | `audit_reports_rejected` ✗ | stored |
+| Reverse: rewrite grant 1's real 200 as 500 | `audit_reports_rejected` ✗ | `audit_reports_rejected` ✗ with a version-based read; `contradicted_by_read` with a carrier-aware read (see correction) | stored |
 
 ✗ marks a wrong verdict. "Modeled" means the truth comes from a supposed
 history built on real objects, not from the run itself. The H4d forgery
@@ -99,11 +99,12 @@ object any forger can rebuild from the grant-bearing request.
 | H4d | holds as an attack | **holds.** Hash and uid checks against the grant pass, because the forger copies the grant's own target |
 | H4e | holds | **holds.** After any later write, only a "stored" version newer than the current read is caught |
 
-**Unpredicted: the reverse attack is never caught.** Rewriting a stored
-write's 200 as a 500 turns it into "rejected" under both contracts. A read
-newer than admission is what a rejected write followed by any other write
-would also produce. In this model, hiding a write is the forger's easiest
-wrong verdict, and the read gives no defense against it.
+**Unpredicted: the reverse attack is not caught by a version-based read.**
+Rewriting a stored write's 200 as a 500 turns it into "rejected" under both
+contracts. A read newer than admission is what a rejected write followed by
+any other write would also produce. *(Corrected after review: this holds
+for a version-based read only; see "Correction after review" below. The
+first draft said "never caught", which overgeneralized.)*
 
 ## What the result says about the architecture
 
@@ -113,10 +114,12 @@ wrong verdict, and the read gives no defense against it.
    line invariant 11 draws for receipts: integrity is not authorship. A
    contract that uses audit evidence should say so in its verdict
    (`audit_reports_*`), never `stored` or `rejected` alone.
-2. **A read helps in one direction only.** It can contradict a false
-   "stored" when nothing has been written since admission, or when the
-   claimed version is newer than the current one. It can never contradict
-   a false "rejected" once anything has been written.
+2. **A version-based read helps in one direction only.** It can
+   contradict a false "stored" when nothing has been written since
+   admission, or when the claimed version is newer than the current one.
+   It does not contradict a false "rejected". A read that holds the
+   grant's exact target state and carries the grant's id can, but only
+   where the tier makes that carrier unforgeable; see the correction.
 3. **The prior version is the cheapest missing evidence.** Without
    `oldObject.metadata.resourceVersion` recorded at admission, even the
    simplest flip (H4c) cannot be caught. The enforcer sees that version and
@@ -131,11 +134,74 @@ wrong verdict, and the read gives no defense against it.
   source in every verdict. Audit-derived verdicts are reports by the
   pipeline operator, and only a read can contradict them.
 
+## Correction after review (2026-10-11)
+
+An internal code review of PR #80 found ten issues. The ones that change
+this note's claims:
+
+1. **"Never caught" overgeneralized.** The harness's `auditPlusRead` only
+   cross-checked "stored" verdicts, so the reverse attack going uncaught
+   was a property of that contract, not of reads. The harness now has a
+   carrier-aware rule: a read whose enforcer hash equals the grant's
+   target, whose uid matches, and whose carrier annotation names the grant
+   contradicts "rejected" (`contradicted_by_read`). The rule is sound only
+   where nothing outside the enforcer's webhook can set the carrier. The
+   harness takes that as an explicit option
+   (`carrierWritableOutsideEnforcer`) and shows both outcomes: caught when
+   the carrier is unforgeable, and a **false contradiction of a true
+   rejection** when another writer can reproduce the target state and
+   copy the carrier (experiment 01 showed the annotation is
+   client-writable). Whether the protected tier makes the carrier
+   unforgeable is the question experiment 05 (the next PR in this stack)
+   tests live.
+2. **Status updates move the version.** A controller's status write bumps
+   `resourceVersion` without changing spec, so the "nothing stored since"
+   equality check abstains more often than the table implied: a flipped
+   500 stands once any status update lands. This is a missed catch, never
+   a wrong one; the harness records it as a test. A live run recorded it
+   too (CI run 38166778773, artifact `m4-watch-evidence.json`, written up
+   in experiment 05): three status-only events arrived between the
+   version read before the write and the write itself.
+3. **The prior version's provenance.** `priorResourceVersion: 695` came
+   from the dry-run's response, not from the consuming admission's
+   `oldObject`. They would differ if a write landed between the two
+   requests. The fixture states its source; the equivalence is unverified.
+4. **Harness fixes that do not change a verdict in the table:** redelivery
+   of an identical event no longer degrades a true verdict to unknown
+   (events collapse by content), while the same audit id with different
+   content is a conflict; only 2xx on a write verb maps to "stored",
+   4xx and 5xx to "rejected", and anything else to
+   `unknown_unrecognized_event`; the stored object is tied to its audit
+   event by audit id, not by a hard-coded prefix; the vocabulary test runs
+   a fixed table of inputs, one per verdict, so it neither passes by
+   restating its own list nor depends on test order.
+5. **Second internal review round (nine more findings).** Dry-run URI
+   inspection was removed: a dry-run never consumes, so the use-state never
+   names its admission as the consumer and the join excludes it; an
+   adversary who edits the URI can edit the outcome too, so the check gave
+   no defense. Redelivery is collapsed by `canonicalize`, not by key order.
+   The carrier annotation is typed, not cast, and the helper says its
+   signature is not verified. The "wrong where the carrier is writable"
+   test is reframed: the wrong verdict follows from the flag the caller
+   chooses, so it shows what the precondition costs, not a flaw found in
+   the contract, and the ledger's count of one counterexample for it is
+   withdrawn by a second correction row.
+6. **Qualification of the catches.** Every `contradicted_by_read` result
+   for H4c and H4d takes `priorResourceVersion` as the consuming
+   admission's `oldObject` version. The fixture's value is the dry-run
+   response's version; if a write landed between the dry-run and the real
+   admission, the two differ. In the live run above the dry-run response
+   showed version 684 and the stored write's event followed it, but that
+   run did not record the consuming admission's `oldObject`, so the
+   equivalence is observed there, not verified.
+
 ## What remains unsupported
 
-- No ChangeSafe evidence attests E2 against this adversary. With P3, a read
-  can catch false "stored" claims in the "nothing stored since" case;
-  nothing catches a hidden write.
+- No ChangeSafe evidence attests E2 against this adversary. With P3, a
+  version-based read can catch false "stored" claims in the "nothing
+  stored since" case, and does not catch a hidden write. A carrier-aware
+  read catches the hidden write only where the carrier is unforgeable,
+  which this note assumes and does not establish.
 - H4d, H4e and the reverse attack's truths are modeled histories over real
   objects. Grant 2's read after the run (rv 710) is modeled too: the run
   did not read the resource back after the rejection.

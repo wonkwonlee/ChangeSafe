@@ -24,9 +24,19 @@ export class SqliteGrantUseRegistry implements GrantUseRegistry {
       // its existing rows read back as null ("not recorded"), never as a
       // guessed uid. Adding a column is not an UPDATE, so the immutability
       // triggers neither fire nor need relaxing.
-      const columns = db.prepare("PRAGMA table_info(consumed_grants)").all() as Array<{ name: string }>;
-      if (!columns.some(column => column.name === "admission_uid")) {
-        db.exec("ALTER TABLE consumed_grants ADD COLUMN admission_uid TEXT");
+      // Inspect and migrate under one write lock: two enforcers opening the
+      // same pre-P2 file during a rolling upgrade must not both see the
+      // column missing and both ALTER (the second would fail to start).
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const columns = db.prepare("PRAGMA table_info(consumed_grants)").all() as Array<{ name: string }>;
+        if (!columns.some(column => column.name === "admission_uid")) {
+          db.exec("ALTER TABLE consumed_grants ADD COLUMN admission_uid TEXT");
+        }
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
       }
       return new SqliteGrantUseRegistry(db);
     } catch (error) { db.close(); throw error; }
