@@ -14,7 +14,7 @@ current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
 method: research_loop            # adopted 2026-10-11, see §9
 loop_ledger: docs/RESEARCH_LOOP.md
-experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md, docs/M4_EXPERIMENT_08.md, docs/M4_EXPERIMENT_09.md]
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md, docs/M4_EXPERIMENT_08.md, docs/M4_EXPERIMENT_09.md, docs/M4_EXPERIMENT_10.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -325,6 +325,9 @@ M4:
     - id: 09
       note: docs/M4_EXPERIMENT_09.md
       result: the grant carrier is writable outside the enforcer in the protected tier as deployed, via the status subresource (H9a holds on two live runs, D1 and D2); experiment 07's carrier-keyed contract is unsound there; a post hoc repair requiring the state transition in the same event is sound on the grid; the mitigation is a routing-guard change for the owner (R12)
+    - id: 10
+      note: docs/M4_EXPERIMENT_10.md
+      result: a candidate status-subresource guard (not adopted) refused the observed forging patch and admitted the controllers' own status writes in one live run (Deployment only, on an object already forged); a tested candidate control exists for the protected-tier precondition, which is not thereby established; adoption and a re-run are the owner's (R12)
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```

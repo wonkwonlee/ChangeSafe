@@ -9,10 +9,14 @@ rules:
   - level: RequestResponse
     resources:
       - group: apps
-        # The subresource is named separately: a policy that lists only
+        # Subresources are separate resource names: a policy that lists only
         # "deployments" does not record writes to deployments/status. The
-        # first live run of experiment 09 had that gap and its status
-        # writes were absent from the audit evidence.
-        resources: ["deployments", "deployments/status"]
+        # first live run of experiment 09 had that gap. Every kind the
+        # webhook and the candidate status guard name is listed with its
+        # status subresource, so the three lists can be checked against
+        # each other (tests/integration/m4-status-guard.test.ts).
+        resources: ["deployments", "deployments/status", "statefulsets", "statefulsets/status", "daemonsets", "daemonsets/status"]
+      - group: ""
+        resources: ["services", "services/status"]
     namespaces: ["changesafe-protected-demo", "changesafe-default-demo"]
   - level: None
