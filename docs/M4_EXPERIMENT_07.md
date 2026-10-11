@@ -96,4 +96,102 @@ sound observation contract exists for this tier is in doubt.
 
 ## Results
 
-Pending.
+Harness: `tests/integration/m4-contract-enumeration.test.ts` (10 tests).
+The enumeration is 288 protected-tier histories (and 192 more that need the
+default tier) under 6 audit edits, 4 stream coverages and 3 prior
+knowledges, scored for three contracts. Counts below are exact, from the
+committed test.
+
+**Scope A: protected tier, complete watch, exact prior, 1,728 evaluations.**
+
+| Contract | Definite | Unsound | Unknown |
+| --- | --- | --- | --- |
+| v1 (01 to 06 composed) | 1,504 | **112** | 224 |
+| v2a (the pre-registered repair) | 1,392 | **0** | 336 |
+| v2b (carrier-keyed) | 1,728 | **0** | 0 |
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H7a | holds (medium): v1 unsound where T equals P | **holds.** 80 of the 112 unsound rows are no-op targets. Mechanism: every state hashes to the target, so "a target state without this grant's carrier" is always present and a truthful `rejected` is read as stored |
+| H7b | holds (medium-high): a truthful `rejected` contradicted when another grant produced the same target | **holds, with the timing corrected.** The other 32 rows need another grant to have stored the target *after* this admission. With an exact prior, an *earlier* grant's write is outside the window and is harmless |
+| H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 152 unsound against 112, 40 added. They come from events before the admission: another grant's earlier write, or, for a no-op target, the status-only events that preceded it |
+| H7d | holds (medium): after the repair, no unsound definite verdict | **holds, more strongly than registered.** v2a and v2b are sound in the protected tier for every prior, every coverage and every audit edit (the full 288 x 6 x 4 x 3 grid, 20,736 evaluations each) |
+| H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier, assuming the carrier unforgeable gives 192 unsound rows, every one a copied carrier on a truthful `rejected`. Not assuming it, v2a and v2b have no unsound row and are definite on 1,200 of 2,880 |
+
+**Every one of v1's 112 unsound verdicts in Scope A is produced by one
+rule**, the one that reads a target state without this grant's carrier as
+contradicting a `rejected` claim. It is the rule written into the
+experiment 05 contract before review corrected it (the corrected 05
+observer returns `target_state_unattributed`). The other wrong verdicts of
+v1 appear only once the audit event is the answer: the audit-fallback
+rules produce 528 more unsound rows across all coverages (exact prior),
+which is experiment 04's result at scale.
+
+## Findings the predictions did not cover
+
+1. **The carrier-keyed contract is the stronger repair.** v2b returns a
+   definite and correct verdict on every Scope A history. Its rule is one
+   sentence: in a complete window that covers the admission, `stored` iff
+   an event carries this grant's id. The pre-registered v2a, which treats
+   any carrier-less target state as unknown, is sound but gives up a
+   fifth of the cases for nothing. The cost of v2b is entirely the
+   unforgeable-carrier precondition, which v2a also needs for `stored`.
+2. **The contract never needs the audit event.** v2a and v2b give the same
+   verdict under every audit edit, because neither reads it. Its only role
+   in the whole design is as a hint for where to look. That the audit
+   pipeline can lie therefore costs the contract nothing, but it also
+   means a deployment without a watch or replay has no sound definite
+   verdict at all (every coverage but a complete one is `unknown` for
+   absence).
+3. **Presence survives every coverage; absence needs all three of:** a
+   stream that began at or before the prior version, one that ended
+   cleanly at the object's version at close, and a prior that is exact or
+   a lower bound. The enumeration shows each missing piece moves
+   `rejected` to `unknown`, never to a wrong verdict.
+4. **A no-op grant is the case an approver would not expect.** The grant
+   carries both hashes, so T equal to P is known to the observer. v2b
+   handles it without a special case because the carrier annotation
+   changes the object even when the spec does not. v1's hash-only
+   reasoning has nothing to say about it.
+
+## What the result says about the architecture
+
+1. **The observation contract can be stated in two lines** and it never
+   looks at who wrote what except through one field the enforcer controls.
+   That is the case for P3 (the exact prior), for P4 (verdicts name their
+   source, here only `watch`), and for the carrier annotation as the one
+   attribution mechanism, with its precondition written next to it.
+2. **The precondition is the whole guarantee.** In the protected tier it
+   follows from the webhook's coverage and a fail-closed policy
+   ([M2](M2_CLOSEOUT.md)); outside it nothing here is sound. A contract
+   that accepts the carrier without the tier is unsound by 192 rows in
+   this model.
+3. **Absence of a verdict is a first-class output.** With the audit event
+   out of the contract, the unknown fraction is driven by observation
+   coverage, which an operator controls, and not by an adversary.
+
+## What remains unsupported
+
+- This is a model of the evidence, built from what experiments 03 to 06
+  saw. A history it omits is invisible to it, and one it includes might not
+  be producible by a real API server.
+- Hash equality and the grant's signature are abstract. The carrier's
+  unforgeability is a *precondition*, assumed in the protected tier and
+  never established here; experiment 05 observed only that no write in its
+  runs carried a consumed grant.
+- The model has one object and two grants. Several objects in one
+  admission, namespace deletion, finalizers and garbage collection are not
+  modeled.
+- "No unsound verdict found" is not a proof. The enumeration is bounded by
+  the dimensions listed.
+
+## Next question
+
+> **Does the structure the contract rests on (an incarnation identity, a
+> monotonic version, and a field only the authorizing boundary can set)
+> exist in a domain that is not Kubernetes, and does the artifact
+> ChangeSafe ingests there carry them?**
+
+Terraform is the nearest test: a state file has a lineage and a serial,
+and ChangeSafe's input there is `terraform show -json`, which is a
+different artifact.
