@@ -293,6 +293,8 @@ describe("M4-09 the probe summary script", () => {
     const audit = [
       auditLine({ verb: "patch", requestObject: { metadata: { annotations: { "changesafe.dev/grant": "m4-forged-status" } } } }),
       auditLine({ user: { username: "system:serviceaccount:kube-system:deployment-controller" } }),
+      auditLine({ user: { username: "system:kube-controller-manager" } }),
+      auditLine({ user: { username: "system:node:kind-control-plane" } }),
       auditLine({ objectRef: { resource: "deployments", name: "web", namespace: "changesafe-default-demo", subresource: "status" } }),
       auditLine({ verb: "patch", requestReceivedTimestamp: "2026-10-11T11:59:00.000000Z" }),
       auditLine({ verb: "patch", requestReceivedTimestamp: "2026-10-11T12:30:00.000000Z" }),
