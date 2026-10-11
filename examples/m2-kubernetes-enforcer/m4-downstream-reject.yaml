@@ -1,0 +1,32 @@
+# M4 experiment 03: an independent validating webhook that always fails, so
+# the API server rejects any write it selects AFTER the ChangeSafe enforcer
+# has answered (validating webhooks are called in parallel). It selects only
+# objects labeled m4.changesafe.dev/downstream=reject, so no other step of
+# the reproduction is affected. Its Service deliberately does not exist:
+# failurePolicy Fail turns the failed call into a rejection. This stands in
+# for any later admission stage; it is a test fixture, not a deployment
+# recommendation.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: changesafe-m4-downstream-reject
+webhooks:
+  - name: downstream-reject.m4.changesafe.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    clientConfig:
+      service:
+        name: m4-downstream-does-not-exist
+        namespace: changesafe-system
+        path: /validate
+        port: 443
+    objectSelector:
+      matchLabels:
+        m4.changesafe.dev/downstream: reject
+    rules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["deployments"]
+    failurePolicy: Fail
+    timeoutSeconds: 5

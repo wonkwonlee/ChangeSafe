@@ -248,5 +248,7 @@ jobs:
         if: always()
         with:
           name: admission-reproduction
-          path: examples/m2-kubernetes-enforcer/demo-transcript.txt
+          path: |
+            examples/m2-kubernetes-enforcer/demo-transcript.txt
+            examples/m2-kubernetes-enforcer/m4-audit-evidence.jsonl
           retention-days: 14

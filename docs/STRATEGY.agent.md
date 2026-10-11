@@ -14,7 +14,7 @@ current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
 method: research_loop            # adopted 2026-10-11, see §9
 loop_ledger: docs/RESEARCH_LOOP.md
-experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md]
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -304,7 +304,11 @@ M4:
     - id: 02
       note: docs/M4_EXPERIMENT_02.md
       result: H2 executor-asserted version refuted; server-side audit binding proposed, unverified
+    - id: 03
+      note: docs/M4_EXPERIMENT_03.md
+      result: H3a-H3e not refuted on one live kind run; refutes 02's first-event audit rule
   adopted_into_core: none
+  adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```
 
 ---

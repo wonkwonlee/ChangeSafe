@@ -1,0 +1,14 @@
+# M4 experiment 03 (docs/M4_EXPERIMENT_03.md): record what the API server
+# did with each Deployment write in the two demo namespaces, at the level
+# that includes the stored object. Everything else is not recorded, so the
+# evidence stays small and contains only fictional demo objects.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: ["RequestReceived"]
+rules:
+  - level: RequestResponse
+    resources:
+      - group: apps
+        resources: ["deployments"]
+    namespaces: ["changesafe-protected-demo", "changesafe-default-demo"]
+  - level: None

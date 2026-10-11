@@ -36,23 +36,36 @@ export interface GrantUseRegistry {
    * consumed it (first use) and `false` if it had already been consumed.
    * `expiresAtMs` bounds how long the record must be kept; `nowMs` lets
    * the registry discard records for grants that can no longer verify.
+   * `admissionUid` is the consuming request's `request.uid`, recorded so
+   * the enforcer's own record names the exact admission that burned the
+   * grant — the join key to the API server's audit event, which a dry-run
+   * or a later refused reuse of the same grant id would otherwise blur
+   * (docs/M4_EXPERIMENT_02.md, P2).
    */
-  consume(grantId: string, expiresAtMs: number, nowMs: number): boolean;
+  consume(grantId: string, expiresAtMs: number, nowMs: number, admissionUid: string): boolean;
+  /**
+   * The admission that consumed `grantId`: its uid, `null` for a record
+   * written before admission uids were kept, `undefined` when unconsumed.
+   */
+  consumedBy(grantId: string): string | null | undefined;
 }
 
 export function createInMemoryGrantUseRegistry(): GrantUseRegistry {
-  const consumed = new Map<string, number>();
+  const consumed = new Map<string, { expiresAtMs: number; admissionUid: string }>();
   return {
-    consume(grantId, expiresAtMs, nowMs) {
+    consume(grantId, expiresAtMs, nowMs, admissionUid) {
       // Prune first so a long-lived process does not accumulate records for
       // grants that expired long ago. Linear in the number of live grants,
       // which is small by construction (one per exercised human decision).
-      for (const [id, expiry] of consumed) {
-        if (expiry <= nowMs) consumed.delete(id);
+      for (const [id, record] of consumed) {
+        if (record.expiresAtMs <= nowMs) consumed.delete(id);
       }
       if (consumed.has(grantId)) return false;
-      consumed.set(grantId, expiresAtMs);
+      consumed.set(grantId, { expiresAtMs, admissionUid });
       return true;
+    },
+    consumedBy(grantId) {
+      return consumed.get(grantId)?.admissionUid;
     },
   };
 }
