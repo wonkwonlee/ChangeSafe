@@ -1,0 +1,6 @@
+{
+  "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167665704",
+  "commit": "e9b8db3",
+  "note": "Raw artifact of the second live kind run of M4-05, byte for byte, produced by the harness with stream close markers. Fictional kind demo Deployment; disposable-cluster identifiers.",
+  "files": { "m4-watch-evidence.json": "3432e806765c20b78a6486aa5ccf16231199f2275edbad15030cd6685122fcef" }
+}
