@@ -309,7 +309,7 @@ M4:
       result: H3a-H3e not refuted on one live kind run; refutes 02's first-event audit rule
     - id: 04
       note: docs/M4_EXPERIMENT_04.md
-      result: audit-pipeline adversary can flip, fabricate and hide; a read contradicts false "stored" only with a recorded prior version; P3, P4 proposed
+      result: audit-pipeline adversary can flip, fabricate and hide; a version-based read contradicts a false "stored" in two cases (nothing stored since the admission, which needs the recorded prior version P3; or the claimed version is newer than the read, which needs neither) and does not contradict a hidden write; P3, P4 proposed
     - id: 05
       note: docs/M4_EXPERIMENT_05.md
       result: H5a-H5e not refuted on one live kind run (protected tier); an independent watch contradicts flipped, fabricated and hidden-write claims on the recorded evidence; the read before a write is not the admission's prior version
