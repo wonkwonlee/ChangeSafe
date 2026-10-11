@@ -469,6 +469,11 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 echo "active=${GUARD_ACTIVE}" > "${WORK_DIR}/guard-applied.txt"
+if [ "${GUARD_ACTIVE}" != "yes" ]; then
+  log "FAIL: the candidate guard never refused a dry-run naming its policy; the experiment's setup is invalid"
+  cat "${WORK_DIR}/guard-wait.txt" | tee -a "${TRANSCRIPT}"
+  exit 1
+fi
 m4_guard_probe() {
   local name="$1"; shift
   set +e
@@ -478,7 +483,7 @@ m4_guard_probe() {
   kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/guard-${name}.after.json" 2>/dev/null || true
   log "\$ guard probe ${name}: exit $(cat "${WORK_DIR}/guard-${name}.status"); $(head -c 240 "${WORK_DIR}/guard-${name}.out" | tr '\n' ' ')"
 }
-m4_guard_probe status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
+m4_guard_probe status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge -v=6 \
   -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-forged-status-2"}}}'
 m4_guard_probe status-harmless kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=json \
   -p '[{"op":"add","path":"/status/conditions/-","value":{"type":"M4Probe","status":"True","reason":"Probe","message":"experiment 10 harmless status write"}}]'
@@ -488,15 +493,34 @@ m4_guard_probe status-harmless kubectl -n "${M4_NS}" patch deployment web --subr
 # One read gives both the "before" object and the replay's start version.
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-before.json"
 M4_CTRL_RV=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).metadata.resourceVersion' "${WORK_DIR}/controller-before.json")
-kubectl -n "${M4_NS}" delete "$(kubectl -n "${M4_NS}" get pod -l app=web -o name | head -1)" --wait=false >/dev/null 2>&1 || true
-# Wait for the reconcile to finish rather than a fixed sleep: ready replicas
-# back at the desired count (bounded).
+M4_POD=$(kubectl -n "${M4_NS}" get pod -l app=web -o name | head -1)
+if [ -z "${M4_POD}" ]; then
+  log "FAIL: no pod matched app=web in ${M4_NS}; no controller status write can be provoked, so the setup is invalid"
+  exit 1
+fi
+echo "${M4_POD}" > "${WORK_DIR}/controller-pod.txt"
+kubectl -n "${M4_NS}" delete "${M4_POD}" --wait=false >"${WORK_DIR}/controller-delete.txt" 2>&1 || {
+  log "FAIL: deleting ${M4_POD} did not succeed: $(cat "${WORK_DIR}/controller-delete.txt")"; exit 1; }
+# Wait for the controller to REACT first (the Deployment's version moves),
+# then for the reconcile to finish (ready replicas back at the desired
+# count). Waiting only for the second can pass before the first happens.
+M4_REACTED="no"
+for _ in $(seq 1 40); do
+  NOW_RV=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || true)
+  if [ -n "${NOW_RV}" ] && [ "${NOW_RV}" != "${M4_CTRL_RV}" ]; then M4_REACTED="yes"; break; fi
+  sleep 1
+done
 for _ in $(seq 1 40); do
   READY=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
   DESIRED=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
   if [ -n "${READY}" ] && [ "${READY}" = "${DESIRED}" ]; then break; fi
   sleep 3
 done
+echo "reacted=${M4_REACTED}" > "${WORK_DIR}/controller-reacted.txt"
+if [ "${M4_REACTED}" != "yes" ]; then
+  log "FAIL: the Deployment's version never moved after ${M4_POD} was deleted; the controller's status write was not observed"
+  exit 1
+fi
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-after.json"
 kubectl get --raw "/apis/apps/v1/namespaces/${M4_NS}/deployments?fieldSelector=metadata.name%3Dweb&watch=1&timeoutSeconds=4&resourceVersion=${M4_CTRL_RV}" \
   > "${WORK_DIR}/controller-replay.jsonl" 2>/dev/null || true
@@ -515,6 +539,10 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 log "candidate guard removed: ${GUARD_REMOVED}"
+if [ "${GUARD_REMOVED}" != "yes" ]; then
+  log "FAIL: the candidate guard still refuses after its removal; step 3 would run under it"
+  exit 1
+fi
 
 # Step 3 keeps the replica count from BEFORE the probes as its baseline. If a
 # status write had changed spec.replicas (experiment 09's H9c failing), that is

@@ -29,9 +29,14 @@ const State = z.object({
   availableReplicas: z.number().nullable(),
   conditions: z.array(z.string()),
 });
-const Probe = z.object({ name: z.string(), exitStatus: z.number().nullable(), output: z.string(), after: State.nullable() });
+const Probe = z.object({
+  name: z.string(), exitStatus: z.number().nullable(), output: z.string(), after: State.nullable(),
+  // Present in artifacts produced after review; the committed one predates it.
+  httpStatus: z.number().nullable().optional(),
+});
 const Evidence = z.object({
   guardApplied: z.string(),
+  controllerReacted: z.string().optional(),
   beforeGuard: State,
   statusAnnotation: Probe,
   statusHarmless: Probe,
@@ -74,16 +79,24 @@ describe("M4-10 live evidence: what the candidate guard did", () => {
     expect(Number(controllerAfter.resourceVersion)).toBeGreaterThan(Number(controllerBefore.resourceVersion));
     expect(controllerEvents.length).toBeGreaterThan(0);
     // The status moved: ready replicas dipped after the pod was deleted and recovered.
-    const ready = controllerEvents.map(event => event.readyReplicas);
-    expect(Math.min(...ready.filter((value): value is number => value !== null))).toBeLessThan(controllerBefore.readyReplicas ?? 0);
-    expect(controllerAfter.readyReplicas).toBe(controllerBefore.readyReplicas);
+    const before = controllerBefore.readyReplicas;
+    expect(before).not.toBeNull();
+    const ready = controllerEvents.map(event => event.readyReplicas).filter((value): value is number => value !== null);
+    expect(ready.length).toBeGreaterThan(0);
+    expect(Math.min(...ready)).toBeLessThan(before as number);
+    expect(controllerAfter.readyReplicas).toBe(before);
     // None of those events changed the carrier. The committed artifact
     // records only that one annotation, so this does not show the other
     // annotations were untouched; an artifact produced by the current
     // summary script carries them all, and is held to that when present.
     expect(controllerEvents.every(event => event.carrier === controllerBefore.carrier)).toBe(true);
     const withAll = controllerEvents.filter(event => event.annotations !== undefined);
-    for (const event of withAll) expect(event.annotations).toEqual(withAll[0]?.annotations);
+    // The committed artifact predates the full-annotation field, so this holds
+    // vacuously for it and the note says so; a newer artifact is held to it.
+    if (withAll.length > 0) {
+      for (const event of withAll) expect(event.annotations).toEqual(withAll[0]?.annotations);
+    }
+    expect(withAll.length === 0 || withAll.length === controllerEvents.length).toBe(true);
   });
 });
 
@@ -110,10 +123,32 @@ describe("M4-10 the candidate is a candidate", () => {
     expect(expression).toContain("has(oldObject.metadata.annotations)");
   });
 
-  it("has not been adopted: the shipped routing guards list no status subresource and carry no such policy", () => {
-    const shippedResources = [...shipped.matchAll(/^\s*resources:\s*\[([^\]]*)\]/gm)].map(match => match[1] ?? "").join(",");
-    expect(shippedResources).not.toContain("/status");
-    expect(shipped).not.toContain("kind: ValidatingAdmissionPolicy\nmetadata:\n  name: changesafe-protected-status-annotations");
+  it("has not been adopted: the shipped routing guards name no status subresource and no such policy anywhere in their live lines", () => {
+    // Comments are stripped so a mention in prose is not an adoption and a
+    // block-style or differently formatted list cannot hide one.
+    const live = shipped.split("\n").filter(line => !/^\s*#/.test(line)).join("\n");
+    expect(live).not.toContain("/status");
+    expect(live).not.toContain("changesafe-protected-status-annotations");
+  });
+
+  it("the webhook, the candidate guard and the audit policy list the same kinds' status subresources", () => {
+    // The three lists name subresources separately, and a kind added to one
+    // and not the others reopens the path unseen. Every kind the shipped
+    // protected webhook registers must have <kind>/status in the guard and
+    // in the audit policy.
+    const resourcesIn = (text: string) =>
+      [...text.matchAll(/^\s*resources:\s*\[([^\]]*)\]/gm)]
+        .flatMap(match => (match[1] ?? "").split(",").map(item => item.trim().replace(/"/g, "")))
+        .filter(item => item.length > 0);
+    const webhook = resourcesIn(readFileSync(path.resolve("examples/m2-kubernetes-enforcer/webhook-protected.yaml"), "utf8"));
+    const guard = resourcesIn(candidate);
+    const audit = resourcesIn(readFileSync(path.resolve("examples/m2-kubernetes-enforcer/m4-audit-policy.yaml"), "utf8"));
+    const kinds = webhook.filter(item => !item.includes("/"));
+    expect(kinds.sort()).toEqual(["daemonsets", "deployments", "services", "statefulsets"]);
+    for (const kind of kinds) {
+      expect([kind, guard.includes(`${kind}/status`)]).toEqual([kind, true]);
+      expect([kind, audit.includes(`${kind}/status`)]).toEqual([kind, true]);
+    }
   });
 
   it("the harness waits for the policy by name before probing, and verifies its removal before step 3", () => {

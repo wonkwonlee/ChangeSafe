@@ -34,10 +34,17 @@ const exitStatusOf = (name) => {
   // An absent file is not success: null, so a missing verdict never reads as "admitted".
   return text === "" || Number.isNaN(Number(text)) ? null : Number(text);
 };
+// kubectl -v=6 prints the request line with the response status, e.g.
+// "PATCH https://... 422 Unprocessable Entity in 12 milliseconds".
+const httpStatusOf = (text) => {
+  const match = /\b(\d{3}) [A-Za-z][A-Za-z ]+ in \d+ milliseconds/.exec(text);
+  return match === null ? null : Number(match[1]);
+};
 const probe = (name) => ({
   name,
   exitStatus: exitStatusOf(name),
-  output: (read(`guard-${name}.out`) ?? "").trim().slice(0, 400),
+  httpStatus: httpStatusOf(read(`guard-${name}.out`) ?? ""),
+  output: (read(`guard-${name}.out`) ?? "").split("\n").filter((line) => !/^I\d{4} /.test(line)).join("\n").trim().slice(0, 400),
   after: object(`guard-${name}.after.json`),
 });
 
@@ -59,6 +66,8 @@ for (const line of (read("controller-replay.jsonl") ?? "").split("\n").filter(Bo
 
 const evidence = {
   guardApplied: (read("guard-applied.txt") ?? "").trim(),
+  controllerReacted: (read("controller-reacted.txt") ?? "").trim(),
+  controllerPod: (read("controller-pod.txt") ?? "").trim(),
   beforeGuard: object("guard-before.json"),
   statusAnnotation: probe("status-annotation"),
   statusHarmless: probe("status-harmless"),
@@ -71,7 +80,7 @@ writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
 console.log(`guard: ${evidence.guardApplied || "(not recorded)"}`);
 console.log(`before guard: rv ${evidence.beforeGuard?.resourceVersion} carrier ${JSON.stringify(String(evidence.beforeGuard?.carrier).slice(0, 20))}`);
 for (const item of [evidence.statusAnnotation, evidence.statusHarmless]) {
-  console.log(`${item.name}: exit ${item.exitStatus}; after rv ${item.after?.resourceVersion} carrier ${JSON.stringify(String(item.after?.carrier).slice(0, 20))}`);
+  console.log(`${item.name}: exit ${item.exitStatus}; http ${item.httpStatus ?? "?"}; after rv ${item.after?.resourceVersion} carrier ${JSON.stringify(String(item.after?.carrier).slice(0, 20))}`);
   console.log(`  output: ${item.output.split("\n")[0].slice(0, 240)}`);
 }
 console.log(`controller: rv ${evidence.controllerBefore?.resourceVersion} -> ${evidence.controllerAfter?.resourceVersion}; ` +

@@ -95,13 +95,23 @@ forging patch was denied before the probes (`active=yes`).
 | H10c | holds (medium-high) | **holds.** A status write that leaves annotations alone is admitted, including one authored by a user |
 | H10d | holds (high) | **not exercised by this experiment's own evidence.** The hashed artifact of this experiment contains no audit data, and the tests do not reference it. The prediction concerns experiment 09's evidence pipeline; it was settled by [experiment 09's second run](M4_EXPERIMENT_09.md#results), where the audit log has both status patches (code 200, no enforcer annotation) next to the denied main-resource request. It is listed here because it was registered here, and credited there |
 
-The surprise criteria were not met: the candidate did not break the
-controllers, and no exemption surfaced.
+The surprise criteria were met only in part: the candidate did not break
+the controllers, and no exemption surfaced. But the guard's one
+discriminating predicate is "annotations differ", and the Deployment
+controller's status writes in this run did not touch annotations, so
+"controllers not blocked" is scoped to controllers that do not write
+annotations through a status subresource. A controller that does (a
+Service status writer, say) was never tested, and the second surprise
+criterion ("the controller can still set the annotation but the user
+cannot") could not have been observed.
 
 ## Findings the predictions did not cover
 
-1. **The denial is an HTTP 422, not a 403.** The API server answers
-   "The deployments "web" is invalid" for a policy denial on this path.
+1. **The denial reads "is invalid", not "forbidden".** The API server
+   answers `The deployments "web" is invalid: : ValidatingAdmissionPolicy
+   ... denied request`. That is the Invalid reason, which carries HTTP 422,
+   but the run did not capture the status code (the harness was changed
+   afterward to record it with `-v=6`; a later run's artifact carries it).
    A client that treats only Forbidden as an authorization refusal would
    misread it as a bad request.
 2. **The guard does not heal.** The forged carrier from experiment 09's
@@ -110,11 +120,15 @@ controllers, and no exemption surfaced.
    who installs it needs to know the objects it protects may already hold
    an arbitrary carrier, and a contract that reads the history (v2c) is
    not affected by what the current object says.
-3. **The candidate and the enforcer now share one blind spot less, and
-   the audit policy and the guard need to track each other.** The audit
-   policy, the webhook rules and the guard each list subresources by
-   name. A kind added to one and not the others reopens the path in a
-   place no test here covers.
+3. **Three lists must track each other, and now a test checks that they
+   do.** The webhook rules, the guard and the audit policy each list
+   subresources by name. The committed audit policy named only
+   `deployments/status` while the webhook and the guard named four kinds,
+   so a StatefulSet, DaemonSet or Service status write would have been
+   guarded and never audited. The audit policy now lists all four, and
+   `tests/integration/m4-status-guard.test.ts` fails if a kind in the
+   protected webhook lacks `<kind>/status` in the guard or the audit
+   policy.
 
 ## What this changes in the claims
 
@@ -136,6 +150,21 @@ controllers, and no exemption surfaced.
   candidate, extending it to the other kinds and to the audit policy, is
   the owner's decision (R12), and a re-run of experiments 09 and 10
   against the adopted file is the test of the adoption.
+
+## Corrections after internal review
+
+Two rounds, sixteen findings. The ones that change a claim are above (H10d
+credited to the run that settled it; the claim of a "tested control"
+narrowed to "a tested candidate refused the observed path in one run"; the
+controller claim scoped to controllers that do not write annotations; the
+422 stated as inferred). The harness changes: it now **fails** the run if
+the guard never refused a dry-run naming its policy, if it is still in
+force after removal, if no pod matched, if the delete failed, or if the
+Deployment's version never moved after the delete (an invalid setup is not
+an observation); it waits for the controller to react before waiting for
+the reconcile; it records the HTTP status and, for every controller event,
+every annotation. The committed artifact (run F) predates those fields,
+and the tests say so rather than assert them vacuously.
 
 ## What remains unsupported
 
