@@ -169,11 +169,17 @@ describe("M4-08 H8d: where an AuthorizationGrant can be issued", () => {
   it("the only source files that mention signing a grant are the core definition and the server's one issuing method, which derives first", () => {
     // A new signing site fails this test on purpose: it needs the same
     // reviewed-binding derivation, or an explicit decision that it does not.
-    const roots = ["packages/core/src", "packages/server/src", "packages/cli/src", "packages/ledger/src",
-      "packages/kubernetes-enforcer/src", "packages/kubernetes-collector/src", "packages/ai/src"];
+    // Every package's source and every top-level application directory, found
+    // rather than listed: a signing path added in a domain package, the app
+    // or a library directory is as much a new issuance path as one in the
+    // server. Test directories and build output are not source.
+    const packageRoots = readdirSync(path.resolve("packages"), { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join("packages", entry.name, "src"));
+    const roots = [...packageRoots, "app", "lib", "features", "components", "scripts"];
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
-        entry.isDirectory() ? walk(path.join(dir, entry.name)) : entry.name.endsWith(".ts") ? [path.join(dir, entry.name)] : []);
+        entry.isDirectory() ? walk(path.join(dir, entry.name)) : /\.(?:ts|tsx|mts|mjs)$/.test(entry.name) ? [path.join(dir, entry.name)] : []);
     const mentions = roots
       .filter(root => existsSync(path.resolve(root)))
       .flatMap(root => walk(path.resolve(root)))
