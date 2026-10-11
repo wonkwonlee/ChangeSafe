@@ -26,6 +26,8 @@ function verified(name: string): unknown {
 const Row = z.object({
   type: z.string(),
   resourceVersion: z.string().optional(),
+  /** The object's uid. Absent in an artifact that predates the field; see joinUid below. */
+  uid: z.string().nullable().optional(),
   objectHash: z.string().optional(),
   carrierGrantId: z.string().optional(),
   matchesGrant: z.array(z.string()).optional(),
@@ -42,7 +44,7 @@ const WatchEvidence = z.object({
   grants: z.array(z.object({ grantId: z.string(), objectSha256: z.string(), resourceUid: z.string() })),
   useState: z.array(z.object({ grant_id: z.string(), admission_uid: z.string() })),
   watchEvents: z.array(z.object({
-    type: z.string(), resourceVersion: z.string().optional(), objectHash: z.string().optional(),
+    type: z.string(), resourceVersion: z.string().optional(), objectHash: z.string().optional(), uid: z.string().optional(),
     carrierGrantId: z.string().optional(), matchesGrant: z.array(z.string()).optional(),
   })),
 });
@@ -54,9 +56,24 @@ const must = <T>(value: T | undefined, what: string): T => {
   if (value === undefined) throw new Error(`fixture is missing ${what}`);
   return value;
 };
+/**
+ * The committed artifact's replay rows predate the uid field. The same run's
+ * live watch recorded the uid of every Deployment event, and a replay row
+ * and a live event with the same resourceVersion are the same stored
+ * version of the same object, so the uid is joined from it. Artifacts
+ * produced by the current summary script carry the uid on the row itself.
+ */
+const uidByVersion = new Map(
+  watchEvidence.watchEvents.filter(event => event.uid !== undefined && event.resourceVersion !== undefined)
+    .map(event => [event.resourceVersion as string, event.uid as string]),
+);
 const request = (name: string) => {
   const found = must(replayEvidence.results.find(item => item.name === name), `the ${name} request`);
-  return { rows: found.rows ?? [], other: found.other ?? [] };
+  const rows = (found.rows ?? []).map(row => ({
+    ...row,
+    uid: row.uid ?? (row.resourceVersion !== undefined ? uidByVersion.get(row.resourceVersion) ?? null : null),
+  }));
+  return { rows, other: found.other ?? [] };
 };
 const grant1 = must(watchEvidence.grants[0], "grant 1");
 const grant2 = must(watchEvidence.grants[1], "grant 2");
@@ -112,7 +129,7 @@ interface ReplayInput {
  * is not an event (an ERROR status, kubectl's error text) means the
  * history is unavailable, never an empty history.
  */
-function fromReplay(grant: { grantId: string }, input: ReplayInput): ReplayVerdict {
+function fromReplay(grant: { grantId: string; resourceUid: string }, input: ReplayInput): ReplayVerdict {
   const priorVersion = input.admissionVersion;
   if (input.other.length > 0 || input.rows.some(row => row.status !== undefined && row.status !== null)) {
     return "unknown_history_unavailable";
@@ -124,6 +141,9 @@ function fromReplay(grant: { grantId: string }, input: ReplayInput): ReplayVerdi
   const events = input.rows.filter(row => row.resourceVersion !== undefined && row.objectHash !== undefined);
   const holding = events.find(row =>
     row.type !== "DELETED" &&
+    // The hash excludes identity: a recreated object in the same state matches
+    // by hash, so the incarnation the grant was issued for must be checked.
+    row.uid === grant.resourceUid &&
     (row.matchesGrant ?? []).includes(grant.grantId) &&
     compareResourceVersions(row.resourceVersion ?? "", priorVersion) === 1);
   if (holding !== undefined) {
@@ -240,6 +260,22 @@ describe("M4-06 what an observer concludes from the replay", () => {
     const deleted = rows.map(row => ({ ...row, type: "DELETED" }));
     expect(fromReplay(grant1, { admissionVersion: priorOf(grant1.grantId), requestedVersion: priorVersion, rows: deleted, other: [], closingVersion: closingObjectVersion }))
       .toBe("replay_holds_no_target_state");
+  });
+
+  it("a replacement object in the same state, with the carrier, is not the incarnation the grant was issued for", () => {
+    // Review finding: the object hash excludes server-assigned identity, so a
+    // Deployment deleted and recreated under the same name matches by hash.
+    const rows = request("replay-prior").rows;
+    const replacement = rows.map(row => ({ ...row, uid: "00000000-0000-0000-0000-00000000dead" }));
+    const verdict = fromReplay(grant1, { admissionVersion: priorOf(grant1.grantId), requestedVersion: priorVersion, rows: replacement, other: [], closingVersion: closingObjectVersion });
+    expect(verdict).not.toBe("replay_holds_target_with_carrier");
+    expect(verdict).toBe("replay_holds_no_target_state");
+  });
+
+  it("every replay row of the committed run carries the grant's incarnation, joined from the live watch", () => {
+    const rows = request("replay-prior").rows;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every(row => row.uid === must(watchEvidence.grants[0], "grant 1").resourceUid)).toBe(true);
   });
 
   it("a row without a version is skipped, not a crash", () => {

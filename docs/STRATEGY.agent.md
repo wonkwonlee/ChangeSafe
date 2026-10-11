@@ -315,7 +315,7 @@ M4:
       result: H5a-H5e not refuted on one live kind run (protected tier); an independent watch contradicts flipped, fabricated and hidden-write claims on the recorded evidence; the read before a write is not the admission's prior version
     - id: 06
       note: docs/M4_EXPERIMENT_06.md
-      result: replay from the admission's version reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
+      result: a replay from the dry-run's response version (a stand-in for the admission's recorded oldObject version, which was not recorded) reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```

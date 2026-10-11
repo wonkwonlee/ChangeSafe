@@ -13,7 +13,7 @@ const [dir, grant1Path, grant2Path, hashModule, priorRv, outPath, dryRunVersion]
 const { kubernetesObjectSha256 } = await import(pathToFileURL(hashModule).href);
 const json = (file) => JSON.parse(readFileSync(file, "utf8"));
 const grants = [json(grant1Path).grant, json(grant2Path).grant].map((grant) => ({
-  grantId: grant.grantId, objectSha256: grant.objectSha256,
+  grantId: grant.grantId, objectSha256: grant.objectSha256, resourceUid: grant.resourceUid ?? null,
 }));
 const carrierOf = (object) => {
   const raw = object?.metadata?.annotations?.["changesafe.dev/grant"];
@@ -57,7 +57,12 @@ async function describe(name) {
     if (object.kind === "Deployment") {
       const hash = await kubernetesObjectSha256(object);
       rows.push({
-        type: event.type, resourceVersion: object.metadata.resourceVersion, replicas: object.spec?.replicas,
+        type: event.type, resourceVersion: object.metadata.resourceVersion,
+        // The enforcer's object hash excludes server-assigned identity, so a
+        // recreated object that holds the same state hashes the same. The uid
+        // is what ties a row to the incarnation the grant was issued for.
+        uid: object.metadata.uid ?? null,
+        replicas: object.spec?.replicas,
         carrierGrantId: carrierOf(object), objectHash: hash,
         matchesGrant: grants.filter((grant) => grant.objectSha256 === hash).map((grant) => grant.grantId),
       });
