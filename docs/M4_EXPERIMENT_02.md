@@ -120,6 +120,16 @@ from Kubernetes 1.35). Case 1 assumed reads could not compare versions.
   the paths are indistinguishable by read once anything was stored after
   admission, which is the case the audit record has to settle.
 
+**Second review round.** `bindAudit` takes the first audit event naming
+the grant, and this is wrong whenever an earlier graded answer carries the
+same grant id. P1 annotates refusals too, so a pre-consumption DENY (a
+wrong actor, say) followed by a valid stored write makes the rule report
+`audit_write_rejected`. The harness now records that counterexample.
+[Experiment 03](M4_EXPERIMENT_03.md) found the same flaw live with a
+dry-run, and the fix is its join: select the event whose admission uid the
+enforcer recorded as the grant's consumer. This harness keeps the rule as
+originally proposed so the record stays checkable.
+
 ## What remains unsupported
 
 - No E2 or E3 attestation exists in ChangeSafe today. Nothing here changes that.

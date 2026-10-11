@@ -129,6 +129,12 @@ What changes in the result:
   writer changed and restored a field" can end on equal reads, because a
   version number is global per resource type. Ordering shows only that
   *something* was written, not whether it was the admitted write.
+- **Second review round, same day.** Two ordering bugs in the corrected
+  contract were found and fixed. First, a read older than the admission
+  is now `unknown_stale_read` before any incarnation conclusion; a stale
+  read from an earlier incarnation used to yield `not_this_incarnation`.
+  Second, equal version strings decide "nothing stored since" even when
+  they are opaque and cannot be ordered.
 - **H1 is still refuted.** No case in the original table depended on
   version opacity except the one corrected above. The harness now models
   these histories with versions Kubernetes can produce, and compares them

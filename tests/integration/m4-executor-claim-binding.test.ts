@@ -219,6 +219,20 @@ describe("M4-02: a server-owned record separates what reads could not", () => {
     expect(bindAudit(GRANT_ID, events, honest)).toBe("audit_write_recorded");
   });
 
+  it("review counterexample: a refused attempt before the valid one makes the first-match rule wrong", () => {
+    // Found in PR #78's review, after experiment 03 found the dry-run case
+    // live. P1 annotates every graded answer, so a pre-consumption DENY (a
+    // wrong actor, say) carries the same grant id and leaves the grant
+    // usable. The first match is the refusal; the later valid write was
+    // stored. This harness records the flaw; the admission-uid join that
+    // fixes it is experiment 03's (docs/M4_EXPERIMENT_03.md).
+    const events = [
+      event({ auditID: "audit-0001", username: RECONCILER, code: 403, annotations: marked }),
+      event({ auditID: "audit-0002", username: EXECUTOR, code: 200, annotations: marked, stored: deployment(UID, "101", 4) }),
+    ];
+    expect(bindAudit(GRANT_ID, events)).toBe("audit_write_rejected");
+  });
+
   it("a reconciler's write of the same state is not an event for the grant", () => {
     const events = [event({ auditID: "audit-0002", username: RECONCILER, code: 200, stored: deployment(UID, "150", 4) })];
     expect(bindAudit(GRANT_ID, events)).toBe("audit_no_event_for_grant");
