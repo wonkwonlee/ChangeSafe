@@ -94,3 +94,4 @@ packages/*/dist/
 examples/m2-kubernetes-enforcer/m4-audit-evidence.jsonl
 examples/m2-kubernetes-enforcer/m4-watch-evidence.json
 examples/m2-kubernetes-enforcer/m4-replay-evidence.json
+examples/m2-kubernetes-enforcer/m4-carrier-probe-evidence.json
