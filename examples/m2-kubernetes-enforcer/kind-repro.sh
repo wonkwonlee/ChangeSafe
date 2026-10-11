@@ -17,6 +17,7 @@ WORK_DIR="$(mktemp -d)"
 TRANSCRIPT="${EXAMPLE_DIR}/demo-transcript.txt"
 
 cleanup() {
+  if [ -n "${WATCH_PID:-}" ]; then kill "${WATCH_PID}" >/dev/null 2>&1 || true; fi
   if [ "${KEEP_CLUSTER:-0}" != "1" ]; then
     kind delete cluster --name "${CLUSTER_NAME}" >/dev/null 2>&1 || true
   fi
@@ -220,6 +221,15 @@ log "protected scale subresource: DENY"
 log ""
 log "=== Demo step 1: ALLOW (grant matches the exact object it authorizes) ==="
 kubectl -n changesafe-protected-demo get deploy web -o json > "${WORK_DIR}/web-current.json"
+# M4 experiment 05 (docs/M4_EXPERIMENT_05.md): one watch, opened before the
+# first write and kept through every M4 step, as an observer independent of
+# the audit pipeline. Raw API so the stream is newline-delimited events.
+# timeoutSeconds bounds it even if this script is killed before cleanup.
+WATCH_RV=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.metadata.resourceVersion}')
+kubectl get --raw "/apis/apps/v1/namespaces/changesafe-protected-demo/deployments?watch=1&fieldSelector=metadata.name%3Dweb&allowWatchBookmarks=true&timeoutSeconds=900&resourceVersion=${WATCH_RV}" \
+  > "${WORK_DIR}/watch.jsonl" 2>"${WORK_DIR}/watch.err" &
+WATCH_PID=$!
+log "M4 watch opened at resourceVersion ${WATCH_RV}"
 CHANGESAFE_KIND_WORK_DIR="${WORK_DIR}" CHANGESAFE_KIND_ACTOR="${WHOAMI_USER}" \
   npm exec -- vitest run tests/integration/m2-kind-authorize.test.ts | tee -a "${TRANSCRIPT}"
 
@@ -338,6 +348,19 @@ log ""
 log "--- M4 experiment 03 evidence ---"
 node "${EXAMPLE_DIR}/m4-audit-summary.mjs" "${WORK_DIR}/audit.log" "${WORK_DIR}/use-state.json" \
   "${EXAMPLE_DIR}/m4-audit-evidence.jsonl" | tee -a "${TRANSCRIPT}"
+
+# --- M4 experiment 05 — what did the independent watch see? ---------------
+# The watch is closed first so its output file is complete and the summary
+# reads a fixed stream. Observation only, like the 03 summary above.
+kill "${WATCH_PID}" >/dev/null 2>&1 || true
+wait "${WATCH_PID}" 2>/dev/null || true
+WATCH_PID=""
+log ""
+log "--- M4 experiment 05 evidence (watch from resourceVersion ${WATCH_RV}) ---"
+node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR}/audit.log" \
+  "${WORK_DIR}/use-state.json" "${WORK_DIR}/step1-grant.json" "${WORK_DIR}/m4-grant.json" \
+  "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" \
+  "${EXAMPLE_DIR}/m4-watch-evidence.json" | tee -a "${TRANSCRIPT}"
 
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""

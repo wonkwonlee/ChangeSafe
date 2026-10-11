@@ -251,4 +251,5 @@ jobs:
           path: |
             examples/m2-kubernetes-enforcer/demo-transcript.txt
             examples/m2-kubernetes-enforcer/m4-audit-evidence.jsonl
+            examples/m2-kubernetes-enforcer/m4-watch-evidence.json
           retention-days: 14
