@@ -147,8 +147,8 @@ re-attributes it to this grant (opt-in, so 07's counts are unchanged):
 | Contract | Protected tier, complete watch, exact prior (2,496 evaluations) | Whole protected grid (37,440 evaluations) |
 | --- | --- | --- |
 | v2a (the registered repair) | **96 unsound**, definite on 1,536 | 768 unsound, definite on 16,308 |
-| v2b (carrier-keyed) | **192 unsound**, definite on 2,496 | 1,536 unsound, definite on 21,924 |
-| v2c (carrier and transition in one event) | **0 unsound**, definite on 1,824 | **0 unsound**, definite on 16,356 |
+| v2b (carrier-keyed) | **192 unsound**, definite on 2,496 | 1,536 unsound, definite on 21,912 |
+| v2c (carrier and transition in one event) | **0 unsound**, definite on 1,824 | **0 unsound**, definite on 16,344 |
 
 Each unsound row is a truthful `rejected` read as `stored`: the carrier was
 re-attributed on a state another grant stored. **v2c** is the observation
@@ -177,8 +177,18 @@ erases the carrier of a state this grant stored (all three still say
 longer carries a state across it, which a review found it did). A third,
 an annotation overwrite with no state under another carrier to overwrite,
 never fired and was removed; the counts are of evaluations, and the
-enumeration's 1,024 history tuples are 396 distinct worlds (416 protected
-tuples, 264 worlds).
+enumeration's 1,024 history tuples are 528 distinct worlds (416 protected
+tuples, 352 worlds). The world key includes the grant's no-op flag and its
+truth, as experiment 07's does, so these are counts under that key; an
+earlier draft quoted 396 and 264 under a key without them.
+
+Two figures moved when this note's model was rebased on experiment 07's
+corrected window (which counts only the grant's own incarnation, uid): v2b
+is definite on 21,912 of the protected grid (was 21,924) and v2c on 16,344
+(was 16,356). A hand-built observation whose carrier appears only on a
+recreated object's events now reads `rejected` under v2b as well as v2c;
+the test that said v2b read `stored` there documented the window the
+correction removed. No unsound count changed.
 
 **v2c's precondition is load-bearing, and the model shows where it
 fails.** Where a write outside the enforcer can change the spec and set the

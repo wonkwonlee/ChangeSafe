@@ -174,8 +174,10 @@ async function auditPlusRead(
   }
   if (verdict !== "audit_reports_stored") return verdict;
 
-  // Same incarnation still at the version the enforcer saw: nothing was stored since.
-  if (held.priorResourceVersion !== undefined && compareResourceVersions(current, held.priorResourceVersion) === 0) {
+  // Same incarnation still at the version the enforcer saw: nothing was stored
+  // since. Exact equality holds for any version string, an aggregated API
+  // server's opaque ones included, so it is checked before any ordering.
+  if (held.priorResourceVersion !== undefined && current === held.priorResourceVersion) {
     return "contradicted_by_read";
   }
   // A "stored" version newer than what is stored now cannot be a past write.
@@ -342,6 +344,18 @@ describe("M4-04 attacks that change the verdict", () => {
     const flipped = { ...consumingEventOf(grant2), code: 200 };
     const withoutPrior: Held = { grant: grant2.grant, consumerAdmissionUid: grant2.consumerAdmissionUid };
     expect(await auditPlusRead(withoutPrior, replace(realEvents, consumingEventOf(grant2), flipped), readAfterRun)).toBe("audit_reports_stored");
+  });
+
+  it("an opaque, non-decimal version still decides 'nothing stored since' by equality", async () => {
+    // Review finding on PR #80: ordering is unavailable for such versions,
+    // equality is not, and the contract must not lose the one for the other.
+    const opaque: Held = { ...grant2, priorResourceVersion: "opaque-v7" };
+    const flipped = { ...consumingEventOf(grant2), code: 200 };
+    const events = replace(realEvents, consumingEventOf(grant2), flipped);
+    const unchanged: Read = { kind: "present", object: withVersion(stored03.stored, "opaque-v7", 4) };
+    const moved: Read = { kind: "present", object: withVersion(stored03.stored, "opaque-v9", 4) };
+    expect(await auditPlusRead(opaque, events, unchanged)).toBe("contradicted_by_read");
+    expect(await auditPlusRead(opaque, events, moved)).toBe("audit_reports_stored");
   });
 
   it("a controller's status-only update moves the version, so the equality check abstains and the flip stands", async () => {
