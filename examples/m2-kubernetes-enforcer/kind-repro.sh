@@ -352,15 +352,34 @@ node "${EXAMPLE_DIR}/m4-audit-summary.mjs" "${WORK_DIR}/audit.log" "${WORK_DIR}/
 # --- M4 experiment 05 — what did the independent watch see? ---------------
 # The watch is closed first so its output file is complete and the summary
 # reads a fixed stream. Observation only, like the 03 summary above.
+# Record how the stream ended before touching it: a watch that died early
+# (timeout, 410, a dropped connection) must not look like a quiet object.
+# The object's current version marks where a complete stream must end: its
+# last event carries the version of the object's last modification.
+WATCH_END_RV=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.metadata.resourceVersion}')
+# Wait for a *Deployment* event at the object's version; text elsewhere in
+# the stream (a bookmark, an error) must not satisfy this.
+for _ in $(seq 1 20); do
+  if [ "$(node "${EXAMPLE_DIR}/m4-last-deployment-version.mjs" "${WORK_DIR}/watch.jsonl")" = "${WATCH_END_RV}" ]; then break; fi
+  sleep 0.5
+done
+# Liveness is sampled after the settle loop, so a watch that died while we
+# waited (a 410, a dropped connection, its own timeout) is not recorded alive.
+WATCH_ALIVE=1
+kill -0 "${WATCH_PID}" 2>/dev/null || WATCH_ALIVE=0
 kill "${WATCH_PID}" >/dev/null 2>&1 || true
 wait "${WATCH_PID}" 2>/dev/null || true
 WATCH_PID=""
+if [ "${WATCH_ALIVE}" = "0" ] || [ -s "${WORK_DIR}/watch.err" ]; then
+  log "WATCH INCOMPLETE: alive at close=${WATCH_ALIVE}; stderr: $(head -c 300 "${WORK_DIR}/watch.err" 2>/dev/null | tr '\n' ' ')"
+fi
 log ""
 log "--- M4 experiment 05 evidence (watch from resourceVersion ${WATCH_RV}) ---"
 node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR}/audit.log" \
   "${WORK_DIR}/use-state.json" "${WORK_DIR}/step1-grant.json" "${WORK_DIR}/m4-grant.json" \
   "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" \
-  "${EXAMPLE_DIR}/m4-watch-evidence.json" | tee -a "${TRANSCRIPT}"
+  "${EXAMPLE_DIR}/m4-watch-evidence.json" "${WATCH_RV}" "${WATCH_END_RV}" "${WATCH_ALIVE}" "${WORK_DIR}/watch.err" \
+  | tee -a "${TRANSCRIPT}"
 
 # --- M4 experiment 06 — what can an observer recover after the fact? ------
 # Four short, bounded requests against the same API server, from the

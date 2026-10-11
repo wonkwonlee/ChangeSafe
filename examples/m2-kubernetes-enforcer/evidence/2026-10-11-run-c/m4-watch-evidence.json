@@ -1,0 +1,184 @@
+{
+  "watchStartResourceVersion": "598",
+  "closedAtResourceVersion": "688",
+  "watchAliveAtClose": true,
+  "watchStderr": "",
+  "lastEventMatchesClose": true,
+  "grants": [
+    {
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "resourceUid": "83d2189e-be30-4389-b5ac-21f8da319bd7"
+    },
+    {
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "objectSha256": "3217daa0955f69aa772cf1def04c6d021ed44354a0dc56bd247b9c3015b7f63e",
+      "resourceUid": "83d2189e-be30-4389-b5ac-21f8da319bd7"
+    }
+  ],
+  "useState": [
+    {
+      "grant_id": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admission_uid": "d015597a-4025-4091-9ab4-3bb51979c71d"
+    },
+    {
+      "grant_id": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admission_uid": "54361bed-b855-4969-85f4-bf712ea1ac39"
+    }
+  ],
+  "audit": [
+    {
+      "auditID": "9a4cea19-7615-4d4e-a655-99486485ad93",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "865b6cd9-ce33-4e99-95d7-bc8166f796da",
+      "outcome": "allow-dry-run",
+      "code": 200,
+      "isDryRun": true,
+      "storedResourceVersion": "653"
+    },
+    {
+      "auditID": "646ca1ed-5ed1-47d1-9f8f-55b398039183",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "d015597a-4025-4091-9ab4-3bb51979c71d",
+      "outcome": "allow-consumed",
+      "code": 200,
+      "isDryRun": false,
+      "storedResourceVersion": "654"
+    },
+    {
+      "auditID": "0e0217ee-c8e2-49bf-9c34-ff9c5f0f5a4d",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "28af2cbb-8d9b-43c3-9e41-e9228c49ee3e",
+      "outcome": "deny",
+      "code": 400,
+      "isDryRun": false
+    },
+    {
+      "auditID": "f2ae5e87-be7d-456c-97b6-69eddb79abec",
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admissionUid": "54361bed-b855-4969-85f4-bf712ea1ac39",
+      "outcome": "allow-consumed",
+      "code": 500,
+      "isDryRun": false
+    },
+    {
+      "auditID": "8dd9f147-0d0a-44fc-abe4-cef215f68400",
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admissionUid": "4133a931-217f-48e8-9b20-09eaac57dba8",
+      "outcome": "deny",
+      "code": 400,
+      "isDryRun": false
+    }
+  ],
+  "watchEvents": [
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "653",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 1,
+      "replicas": 3,
+      "observedGeneration": 1,
+      "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+      "hashChangedFromPrevious": null,
+      "matchesGrant": []
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "654",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 1,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": true,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "659",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "661",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "667",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "674",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "681",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "688",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    }
+  ]
+}
