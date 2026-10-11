@@ -40,6 +40,13 @@ Truth is `stored` when G's write persisted at any time, `rejected` when it
 was admitted and then rejected, and `not_consumed` when G was never
 exercised.
 
+*Added at implementation, not in the registered table:* a later grant
+storing the target after this admission (`via_other_grant`) and a restore
+by another grant (`restores_prior` carries that grant's carrier). The
+first of these is the whole mechanism of H7b as it was found; the
+registered table listed only a write by another grant *before* the
+admission.
+
 **Evidence the contract may use**, each generated from the history:
 
 - the audit event for the consuming admission (the enforcer's use-state
@@ -130,8 +137,8 @@ evaluations).**
 | v2b | 1,728 | **0** | 0 |
 
 **Outside scope A, protected tier, exact prior, all five coverages (8,640
-evaluations):** v1 is unsound on 984 (the 112's rule 376 times, the audit
-fallbacks 608), and **v1c on 608**, all from the audit-fallback rules: the
+evaluations):** v1 is unsound on 968 (the 112's rule 376 times, the audit
+fallbacks 592), and **v1c on 592**, all from the audit-fallback rules: the
 audit event is the answer once the watch cannot give one, which is
 experiment 04's result at scale. v2a and v2b are unsound on none.
 
@@ -140,8 +147,8 @@ experiment 04's result at scale. v2a and v2b are unsound on none.
 | H7a | holds (medium): v1 sound on every history except those where T equals P | **refuted as stated.** 80 of the 112 unsound rows are no-op targets, but the other 32 are outside the registered exception: they need another grant to have stored the target after this admission. A prediction of one cause found two. (An earlier draft of this note scored it "holds" and credited those 32 to H7b; that was a generous reading of a prediction that said "except those where T equals P") |
 | H7b | holds (medium-high): a truthful `rejected` is contradicted when another grant produced the same target | **holds, with the timing corrected.** The 32 rows need the other grant's write to come *after* this admission. With an exact prior, an earlier grant's write is outside the window and harmless; it appears only under a lower-bound prior (H7c) |
 | H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 152 against 112, 40 added, from events that precede the admission: another grant's earlier write, or for a no-op target the status-only events before it |
-| H7d | holds (medium): after the repair, no unsound definite verdict | **holds.** v2a and v2b are sound over the whole protected grid (25,920 evaluations each) for every prior, coverage and audit edit. v2b is definite on 13,824 of them and v2a on 10,944 |
-| H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier, assuming the carrier unforgeable gives 192 unsound rows for v2b (96 for v2a, which says nothing about a no-op), each a copied carrier on a truthful `rejected`. Not assuming it, neither has an unsound row, and they are definite on 1,200 (v2b) and 1,152 (v2a) of 2,880 |
+| H7d | holds (medium): after the repair, no unsound definite verdict | **holds for v2a, the repair as registered**, over the whole protected grid (25,920 evaluations) for every prior, coverage and audit edit; definite on 11,220. **v2b is not the registered repair.** It was written after the enumeration showed v2a gives up a fifth of the cases, and it passes the same grid (definite on 14,628). A contract that passes the enumeration it was designed against is the weakest evidence this note admits to, so v2b's result is reported but not credited to the prediction |
+| H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier (480 parameter tuples, 2,880 evaluations in scope), assuming the carrier unforgeable gives 192 unsound evaluations for v2b (96 for v2a, which says nothing about a no-op), each a copied carrier on a truthful `rejected`. Not assuming it, neither has an unsound row, and they are definite on 1,200 (v2b) and 1,152 (v2a) of 2,880 |
 
 **v1's 112 unsound verdicts in scope A all come from one rule**, the one
 that reads a target state without this grant's carrier as contradicting a
@@ -153,8 +160,9 @@ event decides, as 04 already showed.
 
 ## Findings the predictions did not cover
 
-1. **The carrier-keyed contract is the stronger repair.** v2b returns a
-   definite and correct verdict on every scope A history. Its rule is one
+1. **The carrier-keyed contract is the stronger repair, and it is
+   post hoc.** v2b returns a definite and correct verdict on every scope A
+   history. Its rule is one
    sentence: in a complete window that covers the admission, `stored` iff
    an event carries this grant's id. v2a, which gives up on a no-op target
    and on any carrier-less target state, is sound but unknown on 672 of
@@ -168,7 +176,10 @@ event decides, as 04 already showed.
 3. **Each missing piece of coverage moves `rejected` to `unknown`, never
    to a wrong verdict.** A stream that began after the admission, was cut
    before or after the write, or ended abnormally, or a prior that is
-   unknown, are each tested.
+   unknown, are each tested. "Reaches the close" is derived from the
+   stream's own last event and a clean-end flag, not from a coverage
+   label; an earlier draft of the model decided it by the label, which
+   made this finding true by construction for four of the five.
 4. **A no-op grant is the case an approver would not expect.** The grant
    carries both hashes, so T equal to P is known to the observer. v2b
    handles it without a special case because the carrier annotation
@@ -177,8 +188,17 @@ event decides, as 04 already showed.
 5. **An interior drop is detected only when the dropped event was last.**
    A stream with the grant's events removed fails the close marker when
    one of them was the final event, and passes it when a later writer's
-   event follows. That is the model's stated limit for an adversary on the
+   event follows. This depends on status-only updates keeping the grant's
+   annotation, which experiment 05 observed (every later event still named
+   grant 1); a status write that did not would change which drops are
+   detected. That is the model's stated limit for an adversary on the
    observer's own path, and it is asserted, not hidden.
+6. **The use-state is trusted, and shown to be.** The contract has no
+   second source for "was this grant consumed". Hiding a consumption makes
+   a stored write read `not_consumed`; forging one makes an unattempted
+   grant read `rejected`. SQLite immutability triggers and the ledger hash
+   chain are what stand behind it (invariants 11 and 12), and neither is
+   modeled.
 
 ## What the result says about the architecture
 
@@ -226,4 +246,4 @@ event decides, as 04 already showed.
 
 Terraform is the nearest test: a state file has a lineage and a serial,
 and ChangeSafe's input there is `terraform show -json`, which is a
-different artifact. That is [experiment 08](M4_EXPERIMENT_08.md).
+different artifact. That is experiment 08, the next PR in this stack.

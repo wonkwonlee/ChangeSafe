@@ -1,7 +1,7 @@
 /**
  * The evidence model and the contracts of M4 experiment 07
  * (docs/M4_EXPERIMENT_07.md), shared by the enumeration test and by
- * experiment 08. A bounded exhaustive check of
+ * a later experiment in this stack (the Terraform check). A bounded exhaustive check of
  * an observation contract. A model of the evidence, not of Kubernetes: its
  * histories are hand-written from what experiments 03 to 06 observed, every
  * combination of the dimensions below is enumerated, and each contract is
@@ -108,6 +108,8 @@ export interface Observation {
   streamStart: number;
   /** The object's version at close; a complete stream ends on it. */
   closedAt: number;
+  /** Alive when closed, nothing on stderr, no in-band ERROR event: observed, not derivable from the events. */
+  endedCleanly: boolean;
   priorRv: number | undefined;
   /** The grant carries both hashes, so the observer knows the target equals the prior state. */
   grantIsNoOp: boolean;
@@ -127,6 +129,13 @@ export function auditClaimFor(history: History, edit: AuditEdit): AuditClaim {
 }
 
 export interface ObserveOptions {
+  /**
+   * The enforcer's use-state is evidence too. It is outside the attack model
+   * (SQLite immutability triggers and the ledger's hash chain protect it,
+   * invariant 12), and trusted here. Setting this shows what happens when it
+   * is not: the contract has no other source for "was this grant consumed".
+   */
+  useStateEdit?: "hide_consumption" | "forge_consumption";
   /**
    * An adversary on the observer's own path removes every event that carries
    * the grant from an otherwise complete stream. Outside the attack
@@ -157,12 +166,15 @@ export function observe(history: History, edit: AuditEdit, coverage: Coverage, p
   }
   if (options.dropWriteEvent === true) events = events.filter(event => !(event.carrier === "G" && event.rv > world.priorRv));
   return {
-    consumed: history.attempt !== "not_attempted",
+    consumed: options.useStateEdit === "hide_consumption" ? false
+      : options.useStateEdit === "forge_consumption" ? true
+      : history.attempt !== "not_attempted",
     auditClaim: auditClaimFor(history, edit),
     coverage,
     events,
     streamStart,
     closedAt: world.finalRv,
+    endedCleanly: coverage !== "ended_abnormally",
     priorRv: prior === "exact" ? world.priorRv : prior === "lower_bound" ? WATCH_START : undefined,
     grantIsNoOp: history.noOp,
     assumeCarrierUnforgeable: assume,
@@ -184,10 +196,14 @@ export interface WindowFacts {
 export function windowOf(obs: Observation): WindowFacts {
   // Target-hash events are those in state T; in a no-op grant every state hashes to the target.
   const hashesToTarget = (event: Ev) => event.state === "T" || obs.grantIsNoOp;
-  const inWindow = obs.priorRv === undefined ? [] : obs.events.filter(event => event.rv > (obs.priorRv ?? 0) && event.type !== "DELETED");
-  const covers = obs.priorRv !== undefined && obs.streamStart <= obs.priorRv;
+  const priorRv = obs.priorRv;
+  const inWindow = priorRv === undefined ? [] : obs.events.filter(event => event.rv > priorRv && event.type !== "DELETED");
+  const covers = priorRv !== undefined && obs.streamStart <= priorRv;
   const last = obs.events[obs.events.length - 1];
-  const reachesClose = obs.coverage === "complete" && (last === undefined ? obs.streamStart === obs.closedAt : last.rv === obs.closedAt);
+  // Derived from the stream, not from its label: the last event carries the
+  // object's version at close (or, with no events, the stream began there),
+  // and the stream ended cleanly.
+  const reachesClose = obs.endedCleanly && (last === undefined ? obs.streamStart === obs.closedAt : last.rv === obs.closedAt);
   return {
     covers,
     reachesClose,
@@ -206,11 +222,15 @@ export type V1Rule = "carrier-event" | "target-without-carrier-contradicts-rejec
  * contradicts a "rejected" claim. Returns the rule that decided, so a wrong
  * verdict can be attributed to the rule that produced it.
  */
-export function v1Traced(obs: Observation): { verdict: Verdict; rule: V1Rule } {
+export function v1Traced(
+  obs: Observation,
+  carrierlessTarget: "contradicts-rejected" | "unattributed" = "contradicts-rejected",
+): { verdict: Verdict; rule: V1Rule } {
   if (!obs.consumed) return { verdict: "not_consumed", rule: "not-consumed" };
   const w = windowOf(obs);
   if (w.targetWithCarrier) return { verdict: "stored", rule: "carrier-event" };
   if (w.targetWithoutCarrier) {
+    if (carrierlessTarget === "unattributed") return { verdict: "unknown", rule: "no-answer" };
     if (obs.auditClaim === "rejected") return { verdict: "stored", rule: "target-without-carrier-contradicts-rejected" };
     if (obs.auditClaim === "stored") return { verdict: "unknown", rule: "no-answer" };
   }
@@ -230,19 +250,7 @@ export const v1 = (obs: Observation): Verdict => v1Traced(obs).verdict;
  * its review (a target state without the carrier is unattributed, neither
  * claim contradicted). This, not v1, is what the project would have run.
  */
-export function v1c(obs: Observation): Verdict {
-  if (!obs.consumed) return "not_consumed";
-  const w = windowOf(obs);
-  if (w.targetWithCarrier) return "stored";
-  if (w.targetWithoutCarrier) return "unknown";
-  if (w.covers && w.reachesClose && !w.anyTargetState) return "rejected";
-  if (obs.auditClaim === "stored") {
-    if (obs.priorRv !== undefined && obs.closedAt === obs.priorRv) return "rejected";
-    return "stored";
-  }
-  if (obs.auditClaim === "rejected") return "rejected";
-  return "unknown";
-}
+export const v1c = (obs: Observation): Verdict => v1Traced(obs, "unattributed").verdict;
 
 /**
  * Version 2a, the repair pre-registered in the note: store only on an event
