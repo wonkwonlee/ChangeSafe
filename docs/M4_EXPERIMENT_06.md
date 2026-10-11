@@ -85,11 +85,13 @@ this project has been removing from verdict vocabularies.
 ## Results
 
 Run: [CI 38167496300](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167496300),
-commit `b06f33e`, all seven jobs passed. Evidence:
-`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-replay.json`
-(replay artifact SHA-256 `de4a6f5a…58ad7`, same run's watch artifact
-`963424c7…`), replayed offline by
-`tests/integration/m4-replay-observer.test.ts` (13 tests).
+commit `b06f33e`, all seven jobs passed. Evidence: the run's raw
+artifacts, byte for byte, in
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-b/` with their
+SHA-256 values in `manifest.json` (replay `de4a6f5a…58ad7`, watch
+`963424c7…af97`); the tests check each file against its hash before
+using it. Replayed offline by
+`tests/integration/m4-replay-observer.test.ts` (16 tests).
 
 In this run the read before step 1 (618) **equalled** the dry-run's
 version (618). In experiment 05's run they differed (616 against 684). So
@@ -130,18 +132,72 @@ that happens to coincide in some runs and not others.
    that accepts any stream with the right event type would read the end
    state as the whole history.
 
+## Corrections after internal review (round 1)
+
+Seven findings in the first round, all verified; the five listed change a
+claim (the other two were a count mismatch in this section and a wording
+fix). Round 2 follows this list.
+
+- **Presence needs the carrier and a write.** The first observer matched
+  on the object hash alone, so a DELETED event, or a state with another
+  writer's carrier, read as "holds target with carrier". It now requires
+  a non-DELETED event whose carrier names the grant, and otherwise
+  returns `replay_holds_target_without_carrier`.
+- **kubectl's refusal was indistinguishable from an empty history.** A
+  410 arrives as stderr text. The summary now keeps the text and adds an
+  explicit ERROR status row, and the observer treats any non-event
+  output as `unknown_history_unavailable`.
+- **The dry-run lookup was not keyed on the object.** It now requires the
+  demo Deployment's own namespace, name and verb.
+- **A run-specific coincidence was asserted as a contract.** That the two
+  replays matched only held because the two versions were equal in this
+  run; the test now asserts the relation.
+- **The fixture's hashes were not checkable.** The derived fixture is
+  replaced by the raw artifacts and a manifest.
+
+## Corrections after internal review (round 2)
+
+Eight findings.
+
+- **The observer was not per-grant (fix).** It read grant 1's version for
+  every grant. It now takes the admission version as input; grant 2's is a
+  lower bound (grant 1's stored version), with what a lower bound does
+  and does not make safe stated in the test.
+- **"Cursor is enough" overclaimed (fix).** See architecture point 1.
+- **A conditional assertion passed vacuously (fix).** The relation
+  between the two replays is now asserted unconditionally, derived from
+  the full retained history.
+- **The dry-run lookup was not tied to the grant (fix).** The script takes
+  the grant id.
+- **The completeness marker was not taken with the replay (fix).** The
+  harness records the object's version just before and after each
+  request.
+- **A refused request printed "0 event(s)" (fix).** It prints UNAVAILABLE.
+- **A finding count that did not reconcile (fix).** Round 1's section now
+  says which five of its seven findings changed a claim.
+- **A status-only event past the prior version as "a write" (pushed
+  back).** Carrier G cannot exist on the object before G's consumption, so
+  no event can carry it before the admission, and the observer requires
+  the carrier, not the hash alone.
+
 ## What the result says about the architecture
 
-1. **P3 gives the observer a cursor, and the cursor is enough.** A
-   replay from the admission's recorded version reproduced the live
-   watch exactly, with no observer present at the time. An observer that
-   was absent can settle stored versus rejected by asking the API server
-   for what happened since.
-2. **The stand-in for P3 is unsafe, not just imprecise.** The read before
-   step 1 sometimes equals the admission's version and sometimes is
-   older. Older is safe for coverage (it starts earlier) and wrong as a
-   description of what the enforcer saw. Recording `oldObject` in
-   use-state removes the guess.
+1. **A replay from a version at or before the write returns the write.**
+   A replay from the dry-run's version reproduced the live watch exactly,
+   with no observer present at the time, so an absent observer can ask
+   the API server what happened since. That is a statement about the
+   API server's own history and is close to true by construction: a
+   replay and a live watch are the same server's account. What was *not*
+   tested is a recorded `oldObject` version; the dry-run's response stood
+   in for it, and in this run it also coincided with the read before
+   step 1. Whether P3's value would do as well is the open part.
+2. **The stand-in for P3 is unreliable.** Across three live runs the read
+   before step 1 equalled the admission's version once (this run) and was
+   older twice (experiment 05's runs). An older start is safe for
+   coverage and wrong as a description of what the enforcer saw. That an
+   older start adds the intervening events is the unexercised half of
+   H6f in this run, and rests on experiment 05's run. Recording
+   `oldObject` in use-state removes the guess.
 3. **The retention horizon is the open boundary.** Everything above
    rests on the server still holding the events. Compaction and the
    watch cache's capacity decide that, on a clock and a write volume this

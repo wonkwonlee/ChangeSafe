@@ -160,8 +160,10 @@ this note's claims:
    500 stands once any status update lands. This is a missed catch, never
    a wrong one; the harness records it as a test. A live run recorded it
    too (CI run 38166778773, artifact `m4-watch-evidence.json`, written up
-   in experiment 05): three status-only events arrived between the
-   version read before the write and the write itself.
+   in experiment 05): between the version read before the write and the
+   write itself, the watch delivered three events; the second and third
+   left the object hash unchanged, and the first's predecessor was not
+   seen, so at least two were status-only.
 3. **The prior version's provenance.** `priorResourceVersion: 695` came
    from the dry-run's response, not from the consuming admission's
    `oldObject`. They would differ if a write landed between the two

@@ -1,0 +1,332 @@
+{
+  "readBeforeStep1": "618",
+  "dryRunVersion": "618",
+  "grants": [
+    {
+      "grantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "objectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088"
+    },
+    {
+      "grantId": "g853e04c9673f0b538b0897620653585c70ca1de069a37be88f3a339230a4837",
+      "objectSha256": "3217daa0955f69aa772cf1def04c6d021ed44354a0dc56bd247b9c3015b7f63e"
+    }
+  ],
+  "results": [
+    {
+      "name": "replay",
+      "rows": [
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "replay-prior",
+      "rows": [
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "ancient",
+      "rows": [
+        {
+          "type": "ADDED",
+          "resourceVersion": "601",
+          "replicas": 3,
+          "objectHash": "8431c6e48d21ae3eb86bb82cf3333cebb9ae91ffa446c1f25edceda61ce41f9a",
+          "matchesGrant": []
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "604",
+          "replicas": 3,
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "matchesGrant": []
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "610",
+          "replicas": 3,
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "matchesGrant": []
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "618",
+          "replicas": 3,
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "matchesGrant": []
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "any",
+      "rows": [
+        {
+          "type": "ADDED",
+          "resourceVersion": "714",
+          "replicas": 4,
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ]
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "list",
+      "rows": [
+        {
+          "type": "LIST-ITEM",
+          "resourceVersion": "714"
+        },
+        {
+          "type": "LIST-META",
+          "resourceVersion": "754"
+        }
+      ],
+      "other": []
+    }
+  ]
+}
