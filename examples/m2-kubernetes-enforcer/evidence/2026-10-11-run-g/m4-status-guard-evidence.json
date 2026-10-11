@@ -1,0 +1,150 @@
+{
+  "guardApplied": "active=yes",
+  "controllerReacted": "reacted=yes",
+  "controllerPod": "pod/web-8448b6f544-47dk9",
+  "beforeGuard": {
+    "resourceVersion": "767",
+    "carrier": "m4-forged-status",
+    "annotations": {
+      "changesafe.dev/grant": "m4-forged-status",
+      "deployment.kubernetes.io/revision": "1",
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+    },
+    "replicas": 4,
+    "readyReplicas": 4,
+    "availableReplicas": 4,
+    "conditions": [
+      "Available:True",
+      "Progressing:True"
+    ]
+  },
+  "statusAnnotation": {
+    "name": "status-annotation",
+    "exitStatus": 1,
+    "httpStatus": null,
+    "output": "The deployments \"web\" is invalid: : ValidatingAdmissionPolicy 'changesafe-protected-status-annotations' with binding 'changesafe-protected-status-annotations' denied request: ChangeSafe protected namespaces do not allow annotation changes through a status subresource; the grant carrier is set only by an admitted write of the resource",
+    "after": {
+      "resourceVersion": "767",
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      },
+      "replicas": 4,
+      "readyReplicas": 4,
+      "availableReplicas": 4,
+      "conditions": [
+        "Available:True",
+        "Progressing:True"
+      ]
+    }
+  },
+  "statusHarmless": {
+    "name": "status-harmless",
+    "exitStatus": 0,
+    "httpStatus": null,
+    "output": "deployment.apps/web patched",
+    "after": {
+      "resourceVersion": "776",
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      },
+      "replicas": 4,
+      "readyReplicas": 4,
+      "availableReplicas": 4,
+      "conditions": [
+        "Available:True",
+        "Progressing:True",
+        "M4Probe:True"
+      ]
+    }
+  },
+  "controllerBefore": {
+    "resourceVersion": "776",
+    "carrier": "m4-forged-status",
+    "annotations": {
+      "changesafe.dev/grant": "m4-forged-status",
+      "deployment.kubernetes.io/revision": "1",
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+    },
+    "replicas": 4,
+    "readyReplicas": 4,
+    "availableReplicas": 4,
+    "conditions": [
+      "Available:True",
+      "Progressing:True",
+      "M4Probe:True"
+    ]
+  },
+  "controllerAfter": {
+    "resourceVersion": "798",
+    "carrier": "m4-forged-status",
+    "annotations": {
+      "changesafe.dev/grant": "m4-forged-status",
+      "deployment.kubernetes.io/revision": "1",
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+    },
+    "replicas": 4,
+    "readyReplicas": 4,
+    "availableReplicas": 4,
+    "conditions": [
+      "Available:True",
+      "Progressing:True",
+      "M4Probe:True"
+    ]
+  },
+  "controllerEvents": [
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "787",
+      "readyReplicas": 3,
+      "availableReplicas": 3,
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      }
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "788",
+      "readyReplicas": 3,
+      "availableReplicas": 3,
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      }
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "791",
+      "readyReplicas": 3,
+      "availableReplicas": 3,
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      }
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "798",
+      "readyReplicas": 4,
+      "availableReplicas": 4,
+      "carrier": "m4-forged-status",
+      "annotations": {
+        "changesafe.dev/grant": "m4-forged-status",
+        "deployment.kubernetes.io/revision": "1",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      }
+    }
+  ]
+}

@@ -13,7 +13,7 @@ import { z } from "zod";
  * own and has not been adopted into the shipped routing guards.
  */
 
-const dir = path.resolve("examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-f");
+const dir = path.resolve("examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-g");
 const manifest = z.object({ ciRun: z.string().url(), files: z.record(z.string(), z.string()) })
   .parse(JSON.parse(readFileSync(path.join(dir, "manifest.json"), "utf8")));
 const raw = readFileSync(path.join(dir, "m4-status-guard-evidence.json"));
@@ -24,6 +24,7 @@ if (createHash("sha256").update(raw).digest("hex") !== manifest.files["m4-status
 const State = z.object({
   resourceVersion: z.string().nullable(),
   carrier: z.string().nullable(),
+  annotations: z.record(z.string(), z.string()).optional(),
   replicas: z.number().nullable(),
   readyReplicas: z.number().nullable(),
   availableReplicas: z.number().nullable(),
@@ -52,8 +53,9 @@ const Evidence = z.object({
 const evidence = Evidence.parse(JSON.parse(raw.toString("utf8")));
 
 describe("M4-10 live evidence: what the candidate guard did", () => {
-  it("was in force before the probes ran (a denied dry-run was waited for)", () => {
+  it("was in force before the probes ran (a dry-run refused by the policy by name was waited for), and the controller was seen to react", () => {
     expect(evidence.guardApplied).toBe("active=yes");
+    expect(evidence.controllerReacted).toBe("reacted=yes");
   });
 
   it("H10a: the status patch that sets the carrier is denied, naming the policy, and nothing moved", () => {
@@ -62,6 +64,9 @@ describe("M4-10 live evidence: what the candidate guard did", () => {
     expect(probe.exitStatus).not.toBeNull();
     expect(probe.output).toContain("ValidatingAdmissionPolicy 'changesafe-protected-status-annotations'");
     expect(probe.output).toContain("denied request");
+    // The status code was not captured in this artifact (the verbose-log
+    // parser did not match kubectl's structured format; it does now).
+    expect(probe.httpStatus ?? null).toBeNull();
     expect(probe.after?.resourceVersion).toBe(evidence.beforeGuard.resourceVersion);
     expect(probe.after?.carrier).toBe(evidence.beforeGuard.carrier);
   });
@@ -85,18 +90,15 @@ describe("M4-10 live evidence: what the candidate guard did", () => {
     expect(ready.length).toBeGreaterThan(0);
     expect(Math.min(...ready)).toBeLessThan(before as number);
     expect(controllerAfter.readyReplicas).toBe(before);
-    // None of those events changed the carrier. The committed artifact
-    // records only that one annotation, so this does not show the other
-    // annotations were untouched; an artifact produced by the current
-    // summary script carries them all, and is held to that when present.
+    // None of those events changed the carrier, and none changed any other
+    // annotation: this artifact records every annotation of every event, so
+    // the guard's one predicate ("annotations differ") held on each of them.
     expect(controllerEvents.every(event => event.carrier === controllerBefore.carrier)).toBe(true);
-    const withAll = controllerEvents.filter(event => event.annotations !== undefined);
-    // The committed artifact predates the full-annotation field, so this holds
-    // vacuously for it and the note says so; a newer artifact is held to it.
-    if (withAll.length > 0) {
-      for (const event of withAll) expect(event.annotations).toEqual(withAll[0]?.annotations);
-    }
-    expect(withAll.length === 0 || withAll.length === controllerEvents.length).toBe(true);
+    expect(controllerEvents.every(event => event.annotations !== undefined)).toBe(true);
+    const first = controllerEvents[0]?.annotations;
+    expect(first).toBeDefined();
+    for (const event of controllerEvents) expect(event.annotations).toEqual(first);
+    expect(controllerBefore.annotations).toEqual(first);
   });
 });
 
@@ -211,6 +213,31 @@ describe("M4-10 the summary script", () => {
       controllerEvents: z.array(z.object({ annotations: z.record(z.string(), z.string()) })),
     }).parse(evidence);
     expect(parsed.controllerEvents.map(event => event.annotations["other"])).toEqual(["a", "b"]);
+  });
+});
+
+describe("M4-10 the HTTP status parser", () => {
+  const script = path.resolve("examples/m2-kubernetes-enforcer/m4-status-guard-summary.mjs");
+  function statusOf(out: string): number | null {
+    const dir = mkdtempSync(path.join(tmpdir(), "changesafe-m4-10-http-"));
+    try {
+      writeFileSync(path.join(dir, "guard-status-annotation.out"), out);
+      writeFileSync(path.join(dir, "guard-status-annotation.status"), "1\n");
+      execFileSync(process.execPath, [script, dir, path.join(dir, "out.json")], { encoding: "utf8" });
+      const parsed = z.object({ statusAnnotation: z.object({ httpStatus: z.number().nullable() }) })
+        .parse(JSON.parse(readFileSync(path.join(dir, "out.json"), "utf8")));
+      return parsed.statusAnnotation.httpStatus;
+    } finally { rmSync(dir, { recursive: true }); }
+  }
+
+  it("reads kubectl's structured response line", () => {
+    expect(statusOf('I1011 20:13:24.6 round_trippers.go:632] "Response" verb="PATCH" url="https://x/apis" status="422 Unprocessable Entity" milliseconds=12\n')).toBe(422);
+  });
+  it("reads the older plain response line", () => {
+    expect(statusOf("I1011 20:13:24.6 round_trippers.go:553] PATCH https://x/apis 403 Forbidden in 12 milliseconds\n")).toBe(403);
+  });
+  it("is null when there is no response line", () => {
+    expect(statusOf("Error from server: nothing logged\n")).toBeNull();
   });
 });
 

@@ -34,11 +34,15 @@ const exitStatusOf = (name) => {
   // An absent file is not success: null, so a missing verdict never reads as "admitted".
   return text === "" || Number.isNaN(Number(text)) ? null : Number(text);
 };
-// kubectl -v=6 prints the request line with the response status, e.g.
-// "PATCH https://... 422 Unprocessable Entity in 12 milliseconds".
+// kubectl -v=6 logs the response status. Newer versions use structured
+// logging ("Response" verb="PATCH" url="..." status="422 Unprocessable
+// Entity" milliseconds=5); older ones print "PATCH https://... 422
+// Unprocessable Entity in 5 milliseconds". Both are read; no match is null.
 const httpStatusOf = (text) => {
-  const match = /\b(\d{3}) [A-Za-z][A-Za-z ]+ in \d+ milliseconds/.exec(text);
-  return match === null ? null : Number(match[1]);
+  const structured = /status="(\d{3}) [^"]+"/.exec(text);
+  if (structured !== null) return Number(structured[1]);
+  const plain = /\b(\d{3}) [A-Za-z][A-Za-z ]+ in \d+ milliseconds/.exec(text);
+  return plain === null ? null : Number(plain[1]);
 };
 const probe = (name) => ({
   name,

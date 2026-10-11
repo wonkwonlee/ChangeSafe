@@ -74,19 +74,33 @@ and the mitigation is incomplete.
 
 ## Results
 
-Run: [CI 38170110682](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38170110682),
-commit `4643466`, all seven jobs passed. Evidence: the run's raw
-`m4-status-guard-evidence.json`, byte for byte, in
-`examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-f/` with its
-SHA-256 in `manifest.json`; replayed by
-`tests/integration/m4-status-guard.test.ts` (artifact checked by hash before use; 10 tests). The harness waited until a server dry-run of the
-forging patch was denied before the probes (`active=yes`).
+Two live runs, the same results.
+
+- **Run F**, [CI 38170110682](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38170110682),
+  commit `4643466`: the first run, with a wait loop that accepted any
+  dry-run failure as "the guard is active" and a fixed sleep for the
+  reconcile. It is described in the first draft of this note and is not
+  kept in the repository.
+- **Run G**, [CI 38171095164](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38171095164),
+  commit `211a5c5`: the final harness and summary script, which wait for
+  the policy by name, fail the run on an invalid setup, wait for the
+  controller to react, and record every annotation of every event. Its raw
+  `m4-status-guard-evidence.json` is committed byte for byte in
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-g/` with its
+  SHA-256 in `manifest.json`, replayed by
+  `tests/integration/m4-status-guard.test.ts` (artifact checked by hash
+  before use; 14 tests). Its `httpStatus` fields are null: the `-v=6`
+  output did not match the parser, which now reads kubectl's structured
+  form too.
+
+The numbers below are from run G (versions 767, 776, 787 to 798); run F
+had the same shape at different versions (763, 772, 782 to 796).
 
 | Step | Result |
 | --- | --- |
-| status-subresource patch setting the carrier (a new value) | **denied**, exit 1: "ValidatingAdmissionPolicy 'changesafe-protected-status-annotations' with binding 'changesafe-protected-status-annotations' denied request: ChangeSafe protected namespaces do not allow annotation changes through a status subresource...". Version 763 and carrier unchanged |
-| JSON patch appending a condition to `status.conditions` | **admitted**, exit 0; version 763 to 772; the condition persisted |
-| one pod deleted; Deployment controller reconciles | **not blocked.** Version 772 to 796 over four MODIFIED events: ready replicas 3, 3, 3, then 4. The annotation was untouched in each |
+| status-subresource patch setting the carrier (a new value) | **denied**, exit 1: "ValidatingAdmissionPolicy 'changesafe-protected-status-annotations' with binding 'changesafe-protected-status-annotations' denied request: ChangeSafe protected namespaces do not allow annotation changes through a status subresource...". Version 767 and carrier unchanged |
+| JSON patch appending a condition to `status.conditions` | **admitted**, exit 0; version 767 to 776; the condition persisted |
+| one pod deleted; Deployment controller reconciles | **not blocked.** Version 776 to 798 over four MODIFIED events: ready replicas 3, 3, 3, then 4. Every annotation of every event was identical to the object's before the deletion |
 
 | # | Prediction | Observed |
 | --- | --- | --- |
@@ -110,8 +124,10 @@ cannot") could not have been observed.
 1. **The denial reads "is invalid", not "forbidden".** The API server
    answers `The deployments "web" is invalid: : ValidatingAdmissionPolicy
    ... denied request`. That is the Invalid reason, which carries HTTP 422,
-   but the run did not capture the status code (the harness was changed
-   afterward to record it with `-v=6`; a later run's artifact carries it).
+   but the run did not capture the status code (the harness records it
+   with `-v=6` since review, and the parser did not match kubectl's
+   structured log format in run G; it does now, so a later run's artifact
+   would carry it).
    A client that treats only Forbidden as an authorization refusal would
    misread it as a bad request.
 2. **The guard does not heal.** The forged carrier from experiment 09's
@@ -163,8 +179,9 @@ force after removal, if no pod matched, if the delete failed, or if the
 Deployment's version never moved after the delete (an invalid setup is not
 an observation); it waits for the controller to react before waiting for
 the reconcile; it records the HTTP status and, for every controller event,
-every annotation. The committed artifact (run F) predates those fields,
-and the tests say so rather than assert them vacuously.
+every annotation. Run G was produced by that harness and carries the annotation fields,
+so the controller-annotation claim is checked on it, not asserted
+vacuously.
 
 ## What remains unsupported
 
