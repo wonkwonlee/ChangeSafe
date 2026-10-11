@@ -74,4 +74,96 @@ and the mitigation is incomplete.
 
 ## Results
 
-Pending the CI run.
+Run: [CI 38170110682](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38170110682),
+commit `4643466`, all seven jobs passed. Evidence: the run's raw
+`m4-status-guard-evidence.json`, byte for byte, in
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-f/` with its
+SHA-256 in `manifest.json`; replayed by
+`tests/integration/m4-status-guard.test.ts` (7 tests, the artifact checked
+by hash before use). The harness waited until a server dry-run of the
+forging patch was denied before the probes (`active=yes`).
+
+| Step | Result |
+| --- | --- |
+| status-subresource patch setting the carrier (a new value) | **denied**, exit 1: "ValidatingAdmissionPolicy 'changesafe-protected-status-annotations' with binding 'changesafe-protected-status-annotations' denied request: ChangeSafe protected namespaces do not allow annotation changes through a status subresource...". Version 763 and carrier unchanged |
+| JSON patch appending a condition to `status.conditions` | **admitted**, exit 0; version 763 to 772; the condition persisted |
+| one pod deleted; Deployment controller reconciles | **not blocked.** Version 772 to 796 over four MODIFIED events: ready replicas 3, 3, 3, then 4. The annotation was untouched in each |
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H10a | holds (high) | **holds.** The message names the policy and the binding; the object did not move |
+| H10b | holds (high) | **holds.** The controller's status writes, which go through the same subresource and the same policy, continued; ready replicas dipped to 3 and recovered to 4 with the guard applied |
+| H10c | holds (medium-high) | **holds.** A status write that leaves annotations alone is admitted, including one authored by a user |
+| H10d | holds (high) | **holds.** In this run's experiment 09 section, with the audit policy listing the subresource, the audit log has both status patches (code 200, no enforcer annotation) next to the denied main-resource request |
+
+The surprise criteria were not met: the candidate did not break the
+controllers, and no exemption surfaced.
+
+## Findings the predictions did not cover
+
+1. **The denial is an HTTP 422, not a 403.** The API server answers
+   "The deployments "web" is invalid" for a policy denial on this path.
+   A client that treats only Forbidden as an authorization refusal would
+   misread it as a bad request.
+2. **The guard does not heal.** The forged carrier from experiment 09's
+   probe was already on the object and stayed there: the policy stops new
+   changes and says nothing about a value already written. An operator
+   who installs it needs to know the objects it protects may already hold
+   an arbitrary carrier, and a contract that reads the history (v2c) is
+   not affected by what the current object says.
+3. **The candidate and the enforcer now share one blind spot less, and
+   the audit policy and the guard need to track each other.** The audit
+   policy, the webhook rules and the guard each list subresources by
+   name. A kind added to one and not the others reopens the path in a
+   place no test here covers.
+
+## What this changes in the claims
+
+- With the candidate applied, a writer who can update `deployments/status`
+  can no longer set the carrier. Experiment 07's precondition for the
+  protected tier is **restorable by a named, tested control for
+  Deployments in this cluster**, which is stronger than "assumed" and
+  weaker than "established": the other kinds are not exercised, RBAC for
+  the subresource is not examined, and the policy is itself an object an
+  administrator can edit (the existing guards say the same).
+- It does not, by itself, make the carrier unforgeable by everyone: a
+  principal who can edit or delete admission policy, or who can change
+  the namespace's tier label (denied by the existing guard), is outside
+  it.
+- The routing guards are **not changed** by this experiment. Adopting the
+  candidate, extending it to the other kinds and to the audit policy, is
+  the owner's decision (R12), and a re-run of experiments 09 and 10
+  against the adopted file is the test of the adoption.
+
+## What remains unsupported
+
+- One kind probed live (Deployment). StatefulSet, DaemonSet and Service
+  subresources are named in the policy and not exercised.
+- Cluster administrators who control admission policy and RBAC remain
+  trusted. The probe uses cluster-admin credentials.
+- One Kubernetes version (kind's default node image), a minutes-old
+  cluster, one pod deletion.
+- The candidate does not address who may update `deployments/status`.
+
+## Where the loop is
+
+Ten experiments are recorded. The central question of M4 (what evidence
+can connect an admitted request to stored state) has an answer shaped as
+follows, each part with the experiment that tested it and its stated
+precondition: a watch or replay from the admission's recorded version,
+complete to the object's version at close (05, 06); attributed by a
+carrier that only the enforcer's admission can set together with the
+state transition (07, 09, 10); sound only where that is true, which in
+the tier as deployed needed a control the project did not have (09, 10);
+and not available at all where the artifact has no boundary (08). None of
+it is adopted into core.
+
+## Next question
+
+> **Can the observation contract be stated once, for core, as a type
+> whose every field is either evidence or an explicit precondition, and
+> does anything in the repository's existing claim vocabulary already
+> overclaim relative to it?**
+
+That is a design memo and a schema, not an experiment, and it is the
+owner's call whether the loop writes it.
