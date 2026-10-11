@@ -37,6 +37,14 @@ const Evidence = z.object({
   watchAliveAtClose: z.boolean().nullable().optional(),
   watchStderr: z.string().optional(),
   lastEventMatchesClose: z.boolean().optional(),
+  /**
+   * In-band ERROR events (a 410 Gone, a too-old version), recorded apart from
+   * the Deployment events by the current summary script. Absent in an
+   * artifact that predates the field; there the ERROR events, if any, are in
+   * watchEvents with type ERROR.
+   */
+  errorEvents: z.array(z.unknown()).optional(),
+  unparsedLines: z.number().optional(),
   grants: z.array(z.object({ grantId: z.string(), objectSha256: z.string(), resourceUid: z.string() })),
   useState: z.array(z.object({ grant_id: z.string(), admission_uid: z.string() })),
   audit: z.array(z.object({
@@ -110,10 +118,13 @@ interface Stream {
   endedCleanly: boolean;
   events: WatchEvent[];
 }
+/** Alive when closed, nothing on stderr, no in-band ERROR event under either recording, no unparsed line. */
 const endedCleanly =
   fixture.watchAliveAtClose === true &&
   fixture.watchStderr === "" &&
-  !fixture.watchEvents.some(event => event.type === "ERROR");
+  !fixture.watchEvents.some(event => event.type === "ERROR") &&
+  (fixture.errorEvents?.length ?? 0) === 0 &&
+  (fixture.unparsedLines ?? 0) === 0;
 const fullStream: Stream = {
   fromResourceVersion: fixture.watchStartResourceVersion,
   closedAtResourceVersion: fixture.closedAtResourceVersion ?? undefined,
@@ -218,6 +229,18 @@ const hashChanged = (index: number): boolean =>
   index === 0 ? true : must(deploymentEvents[index], "an event").objectHash !== must(deploymentEvents[index - 1], "the previous event").objectHash;
 
 describe("M4-05 live evidence: what the independent watch holds", () => {
+  it("an in-band ERROR event, recorded apart from the stream's events, makes it not clean", () => {
+    // Review finding: the summary stores ERROR events in errorEvents, not in
+    // watchEvents, so a predicate that looked only at watchEvents could never
+    // see one and would call a failed stream clean.
+    const clean = (errorEvents: unknown[] | undefined) =>
+      fixture.watchAliveAtClose === true && fixture.watchStderr === "" &&
+      !fixture.watchEvents.some(event => event.type === "ERROR") && (errorEvents?.length ?? 0) === 0;
+    expect(clean(undefined)).toBe(true);
+    expect(clean([])).toBe(true);
+    expect(clean([{ code: 410, reason: "Expired" }])).toBe(false);
+  });
+
   it("the stream was alive and complete when it was closed", () => {
     expect(fixture.watchAliveAtClose).toBe(true);
     expect(fixture.watchStderr).toBe("");
