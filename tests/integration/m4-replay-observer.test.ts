@@ -61,7 +61,20 @@ const request = (name: string) => {
 const grant1 = must(watchEvidence.grants[0], "grant 1");
 const grant2 = must(watchEvidence.grants[1], "grant 2");
 const versionsOf = (rows: ReplayRow[]) => rows.map(row => row.resourceVersion);
+/**
+ * The version each grant's admission saw. Grant 1's is its own dry-run's
+ * response (the enforcer does not record oldObject today, P3). Grant 2 has
+ * no dry-run in the artifact; it was admitted after grant 1's write was
+ * stored, so the version of that write is a LOWER BOUND of its prior. A
+ * lower bound is safe for the coverage check and for absence; it is not
+ * safe for presence in general (an earlier window can hold another
+ * writer's event), which the carrier requirement below is what guards.
+ */
 const priorVersion = must(replayEvidence.dryRunVersion ?? undefined, "the dry-run's version");
+const grant2PriorBound = must(
+  liveWatch.find(event => (event.matchesGrant ?? []).includes(grant1.grantId))?.resourceVersion,
+  "grant 1's stored version");
+const priorOf = (grantId: string) => (grantId === grant1.grantId ? priorVersion : grant2PriorBound);
 
 /** The object's version in a read taken after the replay: the list item carries it. */
 const closingObjectVersion = must(
@@ -78,6 +91,8 @@ const REPLAY_VERDICTS = [
 type ReplayVerdict = (typeof REPLAY_VERDICTS)[number];
 
 interface ReplayInput {
+  /** The version the enforcer saw at this grant's admission (or a lower bound of it). */
+  admissionVersion: string;
   requestedVersion: string;
   rows: ReplayRow[];
   /** Lines the request produced that were not events: kubectl's own error text lands here. */
@@ -98,6 +113,7 @@ interface ReplayInput {
  * history is unavailable, never an empty history.
  */
 function fromReplay(grant: { grantId: string }, input: ReplayInput): ReplayVerdict {
+  const priorVersion = input.admissionVersion;
   if (input.other.length > 0 || input.rows.some(row => row.status !== undefined && row.status !== null)) {
     return "unknown_history_unavailable";
   }
@@ -118,8 +134,8 @@ function fromReplay(grant: { grantId: string }, input: ReplayInput): ReplayVerdi
   return reachesNow ? "replay_holds_no_target_state" : "unknown_replay_incomplete";
 }
 
-const replayInput = (name: string, requestedVersion: string): ReplayInput => ({
-  requestedVersion, rows: request(name).rows, other: request(name).other, closingVersion: closingObjectVersion,
+const replayInput = (grantId: string, name: string, requestedVersion: string): ReplayInput => ({
+  admissionVersion: priorOf(grantId), requestedVersion, rows: request(name).rows, other: request(name).other, closingVersion: closingObjectVersion,
 });
 
 describe("M4-06 live evidence: what the API server answered", () => {
@@ -172,73 +188,76 @@ describe("M4-06 live evidence: what the API server answered", () => {
     expect(versionsOf(request("ancient").rows)).toContain(replayEvidence.dryRunVersion);
   });
 
-  it("the two replays agree exactly when their requested versions are equal", () => {
-    // In the experiment 05 run the read before step 1 and the dry-run's
-    // version differed; whether they do is a property of the run, not a
-    // contract, so this asserts the relation and not the coincidence.
-    const sameVersion = replayEvidence.readBeforeStep1 === replayEvidence.dryRunVersion;
-    const sameRows = JSON.stringify(versionsOf(request("replay").rows)) === JSON.stringify(versionsOf(request("replay-prior").rows));
-    if (sameVersion) expect(sameRows).toBe(true);
+  it("each replay is exactly the retained history strictly newer than the version it asked for", () => {
+    // Derived from the ancient request (version 1), which returned
+    // everything retained, so this holds whether or not the two requested
+    // versions coincided in a run.
+    const history = request("ancient").rows;
+    const newerThan = (version: string) => history
+      .filter(row => compareResourceVersions(must(row.resourceVersion, "a version"), version) === 1)
+      .map(row => row.resourceVersion);
+    expect(versionsOf(request("replay").rows)).toEqual(newerThan(replayEvidence.readBeforeStep1));
+    expect(versionsOf(request("replay-prior").rows)).toEqual(newerThan(must(replayEvidence.dryRunVersion ?? undefined, "the dry-run version")));
   });
 });
 
 describe("M4-06 what an observer concludes from the replay", () => {
   it("a replay from the admission's version, reaching the object's current version, settles both grants", () => {
-    expect(fromReplay(grant1, replayInput("replay-prior", priorVersion))).toBe("replay_holds_target_with_carrier");
-    expect(fromReplay(grant2, replayInput("replay-prior", priorVersion))).toBe("replay_holds_no_target_state");
+    expect(fromReplay(grant1, replayInput(grant1.grantId, "replay-prior", priorVersion))).toBe("replay_holds_target_with_carrier");
+    expect(fromReplay(grant2, replayInput(grant2.grantId, "replay-prior", priorVersion))).toBe("replay_holds_no_target_state");
   });
 
   it("version 0 is never a replay, even when it happens to show the current state", () => {
-    expect(fromReplay(grant2, replayInput("any", "0"))).toBe("unknown_replay_not_from_admission");
+    expect(fromReplay(grant2, replayInput(grant2.grantId, "any", "0"))).toBe("unknown_replay_not_from_admission");
   });
 
   it("a replay that stops short of the object's current version is unknown for absence", () => {
     const rows = request("replay-prior").rows;
-    expect(fromReplay(grant2, { requestedVersion: priorVersion, rows: rows.slice(0, 2), other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows: rows.slice(0, 2), other: [], closingVersion: closingObjectVersion }))
       .toBe("unknown_replay_incomplete");
-    expect(fromReplay(grant2, { requestedVersion: priorVersion, rows, other: [], closingVersion: undefined }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows, other: [], closingVersion: undefined }))
       .toBe("unknown_replay_incomplete");
   });
 
   it("an error status, or kubectl's error text, means the history is unavailable, never empty", () => {
     const failed = { type: "ERROR", status: { code: 410, reason: "Expired" } };
-    expect(fromReplay(grant2, { requestedVersion: priorVersion, rows: [failed], other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows: [failed], other: [], closingVersion: closingObjectVersion }))
       .toBe("unknown_history_unavailable");
-    expect(fromReplay(grant2, { requestedVersion: priorVersion, rows: [], other: ["Error from server (Expired): too old resource version: 1"], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows: [], other: ["Error from server (Expired): too old resource version: 1"], closingVersion: closingObjectVersion }))
       .toBe("unknown_history_unavailable");
   });
 
   it("a replay requested after the admission does not cover it", () => {
-    expect(fromReplay(grant2, { requestedVersion: "999999", rows: [], other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: "999999", rows: [], other: [], closingVersion: closingObjectVersion }))
       .toBe("unknown_replay_not_from_admission");
   });
 
   it("target state without this grant's carrier is not attributed to it, and a DELETED event is not a write", () => {
     const rows = request("replay-prior").rows;
     const stripped = rows.map(row => ({ ...row, carrierGrantId: undefined }));
-    expect(fromReplay(grant1, { requestedVersion: priorVersion, rows: stripped, other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant1, { admissionVersion: priorOf(grant1.grantId), requestedVersion: priorVersion, rows: stripped, other: [], closingVersion: closingObjectVersion }))
       .toBe("replay_holds_target_without_carrier");
     const deleted = rows.map(row => ({ ...row, type: "DELETED" }));
-    expect(fromReplay(grant1, { requestedVersion: priorVersion, rows: deleted, other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant1, { admissionVersion: priorOf(grant1.grantId), requestedVersion: priorVersion, rows: deleted, other: [], closingVersion: closingObjectVersion }))
       .toBe("replay_holds_no_target_state");
   });
 
   it("a row without a version is skipped, not a crash", () => {
     const bookmark = { type: "BOOKMARK" };
     const rows = [...request("replay-prior").rows, bookmark];
-    expect(fromReplay(grant2, { requestedVersion: priorVersion, rows, other: [], closingVersion: closingObjectVersion }))
+    expect(fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows, other: [], closingVersion: closingObjectVersion }))
       .toBe("replay_holds_no_target_state");
   });
 
   it("every verdict is reachable from a fixed table, and none reads as an attestation", () => {
     const rows = request("replay-prior").rows;
     const table: Array<[ReplayVerdict, ReplayVerdict]> = [
-      ["replay_holds_target_with_carrier", fromReplay(grant1, replayInput("replay-prior", priorVersion))],
-      ["replay_holds_target_without_carrier", fromReplay(grant1, { requestedVersion: priorVersion, rows: rows.map(row => ({ ...row, carrierGrantId: undefined })), other: [], closingVersion: closingObjectVersion })],
-      ["replay_holds_no_target_state", fromReplay(grant2, replayInput("replay-prior", priorVersion))],
-      ["unknown_replay_not_from_admission", fromReplay(grant2, replayInput("any", "0"))],
-      ["unknown_replay_incomplete", fromReplay(grant2, { requestedVersion: priorVersion, rows: rows.slice(0, 1), other: [], closingVersion: closingObjectVersion })],
-      ["unknown_history_unavailable", fromReplay(grant2, { requestedVersion: priorVersion, rows: [], other: ["Error from server"], closingVersion: closingObjectVersion })],
+      ["replay_holds_target_with_carrier", fromReplay(grant1, replayInput(grant1.grantId, "replay-prior", priorVersion))],
+      ["replay_holds_target_without_carrier", fromReplay(grant1, { admissionVersion: priorOf(grant1.grantId), requestedVersion: priorVersion, rows: rows.map(row => ({ ...row, carrierGrantId: undefined })), other: [], closingVersion: closingObjectVersion })],
+      ["replay_holds_no_target_state", fromReplay(grant2, replayInput(grant2.grantId, "replay-prior", priorVersion))],
+      ["unknown_replay_not_from_admission", fromReplay(grant2, replayInput(grant2.grantId, "any", "0"))],
+      ["unknown_replay_incomplete", fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows: rows.slice(0, 1), other: [], closingVersion: closingObjectVersion })],
+      ["unknown_history_unavailable", fromReplay(grant2, { admissionVersion: priorOf(grant2.grantId), requestedVersion: priorVersion, rows: [], other: ["Error from server"], closingVersion: closingObjectVersion })],
     ];
     expect(table.map(([expected]) => expected).sort()).toEqual([...REPLAY_VERDICTS].sort());
     for (const [expected, actual] of table) {

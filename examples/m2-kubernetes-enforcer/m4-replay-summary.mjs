@@ -67,7 +67,13 @@ async function describe(name) {
       rows.push({ type: event.type, resourceVersion: object.metadata?.resourceVersion });
     }
   }
-  return { name, rows, other };
+  // The object's version just before and just after the request, when the
+  // harness recorded them: equal values mean nothing moved meanwhile.
+  const readMarker = (suffix) => {
+    const markerPath = path.join(dir, `replay-${name}.${suffix}`);
+    return existsSync(markerPath) ? readFileSync(markerPath, "utf8").trim() || null : null;
+  };
+  return { name, rows, other, objectVersionBefore: readMarker("before"), objectVersionAfter: readMarker("after") };
 }
 
 const results = [];
@@ -79,7 +85,13 @@ console.log(`version read before step 1: ${priorRv}`);
 console.log(`version the dry-run's response carried (stand-in for a recorded oldObject version): ${dryRunVersion || "(none found)"}`);
 for (const result of results) {
   if (result.missing) { console.log(`${result.name}: no output`); continue; }
-  console.log(`${result.name}: ${result.rows.length} event(s)${result.other.length ? `, ${result.other.length} non-JSON line(s)` : ""}`);
+  // A request that produced no events and only non-event text did not
+  // return an empty history; say so, so a skim of the transcript cannot
+  // read refusal as emptiness.
+  const unavailable = result.other.length > 0 && !result.rows.some((row) => row.resourceVersion !== undefined && row.type !== "ERROR");
+  console.log(`${result.name}: ${unavailable ? "UNAVAILABLE (no events; the request was refused or failed)" : `${result.rows.length} event(s)`}` +
+    `${result.other.length ? `, ${result.other.length} non-JSON line(s)` : ""}` +
+    `${result.objectVersionBefore !== null ? `, object version ${result.objectVersionBefore} -> ${result.objectVersionAfter}` : ""}`);
   for (const row of result.rows) {
     console.log("  " + [
       row.type, row.resourceVersion ?? "-", row.replicas ?? "-",

@@ -388,16 +388,23 @@ node "${EXAMPLE_DIR}/m4-watch-summary.mjs" "${WORK_DIR}/watch.jsonl" "${WORK_DIR
 # captures stdout and stderr: whether "too old" arrives as a 410 response
 # or as an ERROR event is part of what is being observed.
 M4_REPLAY_BASE="/apis/apps/v1/namespaces/changesafe-protected-demo/deployments?fieldSelector=metadata.name%3Dweb"
+m4_object_rv() { kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || true; }
 m4_replay() {
+  # The object's version just before and just after each request is its
+  # completeness marker: when the two are equal nothing moved while the
+  # request ran, and a replay's last event should carry that version.
+  m4_object_rv > "${WORK_DIR}/replay-$1.before"
   kubectl get --raw "${M4_REPLAY_BASE}&watch=1&timeoutSeconds=4&resourceVersion=$2" \
     >"${WORK_DIR}/replay-$1.jsonl" 2>&1 || true
+  m4_object_rv > "${WORK_DIR}/replay-$1.after"
 }
 m4_replay replay "${WATCH_RV}"
 # Experiment 05 showed the read before step 1 is not what the real admission
 # saw (status-only updates landed in between). The dry-run's response
 # carries the version it read, which stands in here for a recorded
 # oldObject version (proposal P3); replay from it as well.
-M4_PRIOR_RV=$(node "${EXAMPLE_DIR}/m4-prior-version.mjs" "${WORK_DIR}/audit.log" || true)
+M4_STEP1_GRANT_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).grant.grantId' "${WORK_DIR}/step1-grant.json")
+M4_PRIOR_RV=$(node "${EXAMPLE_DIR}/m4-prior-version.mjs" "${WORK_DIR}/audit.log" "${M4_STEP1_GRANT_ID}" || true)
 if [ -n "${M4_PRIOR_RV}" ]; then m4_replay replay-prior "${M4_PRIOR_RV}"; fi
 m4_replay ancient 1
 m4_replay any 0
