@@ -1,0 +1,54 @@
+{
+  "before": {
+    "resourceVersion": "722",
+    "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZzdmMDVlNDhjZmZmZDYxMGNiMTMwN2NkN2E2ODMxYTM4Yjk5YjIyMDNlNjdlOGVmMjlhMTk0ZDBhNTE3YjE4ZSIsInJlY2VpcHRJZCI6InJjcHQtZTljY2MwZjYtODE1NS00ZWRjLWFjODgtNGU4NmRiY2ZlODAxIiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiNDZhYmQ3ZTMtMDQ2Yi00M2I5LThkNmItYjFkNTkyMmM3ODExIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjUwOjU3LjA5OFoiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjUwOjU3LjA4N1oifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6ImQ2ZGIyODRkYTE0NDA4Y2Y3NmI1YWY1OWNhMTk3MTJhIiwic2lnbmF0dXJlIjoibG5jWG5nRERlMHNCQjZ3NzA0cy92UHcxRDlLNnJlWldnamx6VDVINjBjREEvcUhoM2E1ZzZ5TTdza1UxNytEc2hJMkxmWHArWkhKekpJanFJZnR2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1MDo1Ny4wOThaIn19",
+    "replicas": 4,
+    "probeLabel": null
+  },
+  "probes": [
+    {
+      "name": "annotate-main",
+      "exitStatus": 1,
+      "output": "Error from server: admission webhook \"protected.enforcer.changesafe.dev\" denied the request: no AuthorizationGrant was attached to this request",
+      "after": {
+        "resourceVersion": "722",
+        "carrier": "eyJncmFudCI6eyJncmFudElkIjoiZzdmMDVlNDhjZmZmZDYxMGNiMTMwN2NkN2E2ODMxYTM4Yjk5YjIyMDNlNjdlOGVmMjlhMTk0ZDBhNTE3YjE4ZSIsInJlY2VpcHRJZCI6InJjcHQtZTljY2MwZjYtODE1NS00ZWRjLWFjODgtNGU4NmRiY2ZlODAxIiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiNDZhYmQ3ZTMtMDQ2Yi00M2I5LThkNmItYjFkNTkyMmM3ODExIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE5OjUwOjU3LjA5OFoiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDIwOjUwOjU3LjA4N1oifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6ImQ2ZGIyODRkYTE0NDA4Y2Y3NmI1YWY1OWNhMTk3MTJhIiwic2lnbmF0dXJlIjoibG5jWG5nRERlMHNCQjZ3NzA0cy92UHcxRDlLNnJlWldnamx6VDVINjBjREEvcUhoM2E1ZzZ5TTdza1UxNytEc2hJMkxmWHArWkhKekpJanFJZnR2Q3c9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxOTo1MDo1Ny4wOThaIn19",
+        "replicas": 4,
+        "probeLabel": null
+      }
+    },
+    {
+      "name": "patch-status-annotation",
+      "exitStatus": 0,
+      "output": "deployment.apps/web patched",
+      "after": {
+        "resourceVersion": "772",
+        "carrier": "m4-forged-status",
+        "replicas": 4,
+        "probeLabel": null
+      }
+    },
+    {
+      "name": "patch-status-spec",
+      "exitStatus": 0,
+      "output": "deployment.apps/web patched (no change)",
+      "after": {
+        "resourceVersion": "772",
+        "carrier": "m4-forged-status",
+        "replicas": 4,
+        "probeLabel": null
+      }
+    }
+  ],
+  "audit": [
+    {
+      "auditID": "c4bab919-6e31-4047-9c91-474085e0ef4e",
+      "verb": "patch",
+      "subresource": null,
+      "code": 400,
+      "message": "admission webhook \"protected.enforcer.changesafe.dev\" denied the request: no AuthorizationGrant was attached to this request",
+      "enforcerAnnotated": false,
+      "touchesForgedCarrier": true
+    }
+  ]
+}
