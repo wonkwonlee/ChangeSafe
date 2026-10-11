@@ -10,7 +10,11 @@ precedence: >
   On conflict, docs/ARCHITECTURE.md design commitments win over this file.
   This file wins over docs/OSS_ROADMAP.md sequencing.
   This file does not override AGENTS.md or CLAUDE.md operational rules.
-current_milestone: M2
+current_milestone: M4
+implementation_track: M4_scoped_observation_not_implemented
+closed_milestones: [M2, M3]
+closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
+inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
 ```
 
 Read this before proposing, planning, or implementing any change in this
@@ -95,7 +99,7 @@ E1: admitted_request           # object seen at the final validation boundary,
 E2: persisted_state            # what the API server actually stored
 E3: realized_effect            # actual state after controllers reconcile
 
-provable_today: [E0]
+provable_today: [E0, E0_to_E1_binding_within_documented_scope]
 provable_from_M2: [E0_to_E1_binding]
 never_claim_without_new_work: [E2, E3]
 ```
@@ -103,7 +107,7 @@ never_claim_without_new_work: [E2, E3]
 `ALLOW` at an enforcement boundary is **not** a persistence attestation. A later
 admission stage or the API server may still reject the request.
 
-### Authority roles — currently collapsed, separated at M2
+### Authority roles — separated in M2 source
 
 ```yaml
 approver:         who decided the change was acceptable

@@ -2056,3 +2056,15 @@ restarts and connections sharing one reliable SQLite file; cross-node replicas
 with separate files are still unsupported. See [design, tests and remaining
 uncertainty](M2_BOUNDARY_COMPLETION.md). Existing finding entries retain their
 original observations and regression history; this does not close M2.
+
+
+## M2/M3 closure amendment — 2026-10-08
+
+The preceding boundary-completion note describes the pre-close-out state.
+M2 and M3 now have explicit scoped completion records in [M2 close-out](M2_CLOSEOUT.md)
+and [M3 guarantees](M3_GUARANTEES.md), supported by PR #77 CI run 37878264318
+and an owner-delegated [retrospective inherited-question review](M0_RETROSPECTIVE_REVIEW.md).
+The original private M0 intake remains unavailable; no recovery or exhaustive
+historical reviewer-feedback coverage is claimed. Open provenance, deployment
+and effect questions retain their dispositions. This amendment changes milestone
+status, not the observed behavior or residual uncertainty in historical findings.

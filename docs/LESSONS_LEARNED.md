@@ -1,5 +1,28 @@
 # Lessons Learned
 
+## M3: a counterexample can describe a boundary, not a defect
+
+The authorization model separates actual verifier ALLOWs from default-tier
+admissions that bypass an unavailable webhook. Both normal configurations
+check the grant-path safety invariants. Requiring every default-tier
+admission to have a grant immediately yields a counterexample — the actual
+`failurePolicy: Ignore` availability choice, not an implementation defect.
+That distinction prevents a successful model check from being advertised as
+an unconditional cluster-wide guarantee.
+
+The deliberately broken consumption/recovery transitions produce separate
+counterexamples: replay after restart, a second capability id on retry,
+object substitution, storage-error ALLOW and dry-run burning authority.
+They make the assumptions behind the current design inspectable. Model
+results and code evidence remain separate: an atomic insertion in TLA+
+assumes what concrete SQLite tests still have to exercise. See
+[M3 guarantees and limits](M3_GUARANTEES.md).
+
+The unresolved next question is equally concrete: durable consumption before
+ALLOW prevents replay, but a later API-server rejection still spends that
+grant. No receipt or grant can resolve whether the write persisted. That
+gap, rather than a new technology list, selects the M4 observation experiment.
+
 ## M1 Tier 1: Reproduction needs a narrow evidence boundary
 
 M1 Tier 1 is useful only if a reviewer can reproduce the claimed gate behavior
@@ -84,3 +107,16 @@ ChangeSafe's own code — they were assumptions about the platform that only
 a live cluster could falsify. The lesson repeats M1's: a reproduction that
 never leaves unit tests and hand-written fixtures cannot find the platform
 facts that only running against the real thing reveals.
+
+## Milestone closure needs a recoverable review record
+
+A private intake creates a process dependency that later agents cannot verify
+when its source is unavailable. The M2 close-out therefore uses an explicitly
+owner-delegated [retrospective review](M0_RETROSPECTIVE_REVIEW.md) of published
+hypotheses and current boundaries. Its IDs and provenance are separate from the
+historical ten M0 hypotheses, and completeness uncertainty remains open.
+Unresolved questions are dispositions, not silent omissions. Future review
+rounds should retain a durable owner-held intake and a public sanitized index
+where disclosure is permitted; later recovered counterevidence can reopen a
+scoped milestone. Formal model completion likewise needs a stated bound and
+assumptions, not a blanket claim of implementation correctness.

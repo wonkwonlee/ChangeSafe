@@ -1,0 +1,87 @@
+{
+  "checker": "tla2tools v1.8.0",
+  "checkerSha256": "7beec0f04818732a62fa193731711a99aa4f11279499b2360a7d156c519ea78d",
+  "modelSha256": "8d1eaaa34d75f60a3a0c9435130c6650717311107c6dd254d078303f33863eae",
+  "results": [
+    {
+      "case": "protected",
+      "expectedInvariantViolation": null,
+      "exitCode": 0,
+      "configSha256": "58b412bda80fb4ff60da10b385596f595f298a3f9b697602ca1e3c0ead70086e",
+      "states": [
+        "3689",
+        "816"
+      ]
+    },
+    {
+      "case": "default",
+      "expectedInvariantViolation": null,
+      "exitCode": 0,
+      "configSha256": "807f999e414355c986d6201cec000007ee3f38447f90038f3a424afd195f45d3",
+      "states": [
+        "7785",
+        "1632"
+      ]
+    },
+    {
+      "case": "broken-restart",
+      "expectedInvariantViolation": "AtMostOnce",
+      "exitCode": 12,
+      "configSha256": "d113b03cb8c906725b93008d7427f49f2c65f6ddd966cf83d9bd3ed4b500fe96",
+      "states": [
+        "2227",
+        "583"
+      ]
+    },
+    {
+      "case": "broken-retry",
+      "expectedInvariantViolation": "OneIdentityPerReview",
+      "exitCode": 12,
+      "configSha256": "61749373536d7da914f20addc35eac77193bfb74de24d94769cc001f2939e9e2",
+      "states": [
+        "463",
+        "154"
+      ]
+    },
+    {
+      "case": "broken-object",
+      "expectedInvariantViolation": "ExactAuthorization",
+      "exitCode": 12,
+      "configSha256": "4036347f1b3c947d0844eed32ec893b00ad41719f580970e1371469f0ff6a8a0",
+      "states": [
+        "834",
+        "244"
+      ]
+    },
+    {
+      "case": "broken-storage",
+      "expectedInvariantViolation": "ConsumptionBeforeAllow",
+      "exitCode": 12,
+      "configSha256": "9183b0827b030f6e727543b431194e1bf4aa29be2b20db6a0df0141e51661db1",
+      "states": [
+        "1281",
+        "357"
+      ]
+    },
+    {
+      "case": "broken-dry-run",
+      "expectedInvariantViolation": "NoDryRunConsumption",
+      "exitCode": 12,
+      "configSha256": "2860efa89bcf19b14fcb166e6a4d3b1a5a7c1c831acd5c40e01f208cc85109b5",
+      "states": [
+        "833",
+        "243"
+      ]
+    },
+    {
+      "case": "default-overclaim",
+      "expectedInvariantViolation": "NoAdmissionWithoutGrant",
+      "exitCode": 12,
+      "configSha256": "d9684a9f2d176af2df7274be1dcf9c481f86c6725c297dd9452f93eeec5d4c74",
+      "states": [
+        "30",
+        "25"
+      ]
+    }
+  ]
+}

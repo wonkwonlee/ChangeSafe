@@ -101,7 +101,8 @@ describe.runIf(built)("the published packages", () => {
       script,
       `
       import { readFileSync } from "node:fs";
-      import { evaluatePolicies, hasBlockingFinding } from "@changesafe/core";
+      import { evaluatePolicies, hasBlockingFinding, AuthorizationGrantSchema,
+        generateSigningKeyPair, importSigningKeyPair, signGrant, verifyGrantSignature } from "@changesafe/core";
       import { networkDomain, IncidentBundleSchema } from "@changesafe/domain-network";
       import { createTerraformDomain } from "@changesafe/domain-terraform";
       import { KubernetesSnapshotSchema } from "@changesafe/domain-kubernetes";
@@ -114,7 +115,23 @@ describe.runIf(built)("the published packages", () => {
       );
 
       const { findings, riskLevel } = evaluatePolicies(networkDomain, bundle, proposal);
+      // New authority primitives must resolve and work from the actual tarball,
+      // not just through the workspace's TypeScript aliases.
+      const pem = await generateSigningKeyPair();
+      const keys = await importSigningKeyPair(pem.privateKeyPem);
+      const grant = AuthorizationGrantSchema.parse({
+        grantId: "grant-package-smoke", receiptId: "receipt-package-smoke",
+        authorizedActor: "system:serviceaccount:default:deployer", operation: "CREATE",
+        resource: "Deployment/default/web", objectSha256: "a".repeat(64),
+        policyVersion: "package-smoke", issuedAtUtc: "2026-10-08T00:00:00.000Z",
+        expiresAtUtc: "2026-10-08T01:00:00.000Z",
+      });
+      const signed = await signGrant(grant, keys);
+      const validGrant = await verifyGrantSignature(signed, keys.publicKey);
+      const tamperedGrant = await verifyGrantSignature({ ...signed,
+        grant: { ...signed.grant, authorizedActor: "another-actor" } }, keys.publicKey);
       process.stdout.write(JSON.stringify({
+        validGrant, tamperedGrant,
         blocked: hasBlockingFinding(findings),
         riskLevel,
         policies: findings.map((finding) => finding.policyId),
@@ -143,6 +160,8 @@ describe.runIf(built)("the published packages", () => {
       policies: string[];
       terraformDomainId: string;
       kubernetesSnapshotVersion: string;
+      validGrant: string;
+      tamperedGrant: string;
     };
 
     // The red-team scenario must still be refused when the gate is reached
@@ -156,6 +175,8 @@ describe.runIf(built)("the published packages", () => {
     // The new v0.3 domain must be imported from the packed artifact too. This
     // catches raw tsc output with extensionless ESM imports before publication.
     expect(result.kubernetesSnapshotVersion).toBe("changesafe-kubernetes-snapshot/v1");
+    expect(result.validGrant).toBe("valid");
+    expect(result.tamperedGrant).toBe("invalid");
   });
 
   it("ships types a consumer can compile against", () => {
@@ -164,9 +185,11 @@ describe.runIf(built)("the published packages", () => {
     writeFileSync(
       path.join(project, "use.ts"),
       `
-      import { deriveRiskLevel, type PolicyFinding } from "@changesafe/core";
+      import { deriveRiskLevel, signGrant, type AuthorizationGrant, type PolicyFinding } from "@changesafe/core";
       const findings: Pick<PolicyFinding, "status">[] = [{ status: "WARN" }];
       export const risk = deriveRiskLevel(findings);
+      export function issuer(grant: AuthorizationGrant,
+        keys: Parameters<typeof signGrant>[1]) { return signGrant(grant, keys); }
       `,
     );
     writeFileSync(

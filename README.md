@@ -202,7 +202,7 @@ Storage is `node:sqlite` and identity is verified with Web Crypto. See
 Deeper reading: [architecture](docs/ARCHITECTURE.md) ·
 [threat model](docs/THREAT_MODEL.md) · [roadmap](docs/OSS_ROADMAP.md)
 
-## Admission enforcement in unreleased source
+## Admission enforcement in the unreleased v0.6.0 candidate
 
 M2 on `main` adds Kubernetes signed grants and an admission enforcer; these
 are **not included in published v0.5.0**. The durable Kubernetes review path
@@ -212,6 +212,13 @@ single-use storage and native admission routing guards. Protected Scale/HPA
 writes are denied; approved replica changes use parent-resource UPDATEs.
 See [the current scope and migration](docs/M2_BOUNDARY_COMPLETION.md) for
 installation boundaries, supported operations and remaining limits.
+
+The candidate adds checked authorization protocol models, including
+deliberately broken recovery/consumption transitions and the default-tier
+outage counterexample. See [guarantees and model limits](docs/M3_GUARANTEES.md),
+[M2 closure evidence](docs/M2_CLOSEOUT.md), and
+[candidate release notes](docs/RELEASE_NOTES_v0.6.0.md). These are source and
+bounded-model claims; neither a model check nor admission ALLOW attests E2/E3.
 
 ## Live model analysis (CLI only)
 

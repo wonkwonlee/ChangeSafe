@@ -1,0 +1,123 @@
+TLC2 Version 2026.10.06.014338 (rev: 94d0c50)
+Running breadth-first search Model-Checking with fp 107 and seed 1 with 1 worker on 8 cores with 455MB heap and 64MB offheap memory [pid: 105] (Linux 6.18.44 amd64, Ubuntu 17.0.20 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/scratch/f48305d87eb4/ChangeSafe/verification/authorization/Authorization.tla
+Parsing file /tmp/tlc-8685839059021782038/Naturals.tla (jar:file:/tmp/changesafe-tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-8685839059021782038/FiniteSets.tla (jar:file:/tmp/changesafe-tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-8685839059021782038/TLC.tla (jar:file:/tmp/changesafe-tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-8685839059021782038/Sequences.tla (jar:file:/tmp/changesafe-tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Authorization
+Linting of module Authorization
+Starting... (2026-10-08 23:03:04)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-10-08 23:03:04.
+Error: Invariant OneIdentityPerReview is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = FALSE
+/\ intent = 0
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pending"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+State 2: <Gate line 24, col 9 to line 28, col 53 of module Authorization>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = FALSE
+/\ intent = 0
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pass"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+State 3: <FreezeIntent(1) line 30, col 20 to line 34, col 86 of module Authorization>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = FALSE
+/\ intent = 1
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pass"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+State 4: <CommitReceipt line 36, col 18 to line 40, col 62 of module Authorization>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = TRUE
+/\ intent = 1
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pass"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+State 5: <StoreGrant line 42, col 15 to line 46, col 59 of module Authorization>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {1}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = TRUE
+/\ intent = 1
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pass"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+State 6: <BrokenRetry line 53, col 16 to line 57, col 60 of module Authorization>
+/\ verifierUp = TRUE
+/\ admissions = 0
+/\ delivered = {}
+/\ grants = {1, 2}
+/\ now = 0
+/\ storageUp = TRUE
+/\ receipt = TRUE
+/\ intent = 1
+/\ unbound = FALSE
+/\ used = {}
+/\ issuerUp = TRUE
+/\ gate = "pass"
+/\ bypasses = 0
+/\ activePolicy = 1
+/\ dryRuns = 0
+
+463 states generated, 154 distinct states found, 73 states left on queue.
+The depth of the complete state graph search is 6.
+Finished in 00s at (2026-10-08 23:03:04)
