@@ -434,6 +434,7 @@ m4_probe() {
   log "\$ probe ${name}: exit $(cat "${WORK_DIR}/probe-${name}.status"); $(head -c 200 "${WORK_DIR}/probe-${name}.out" | tr '\n' ' ')"
 }
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/probe-before.json"
+M4_PRE_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
 date -u +%Y-%m-%dT%H:%M:%S.%6NZ > "${WORK_DIR}/probe-window.txt"
 m4_probe annotate-main kubectl -n "${M4_NS}" annotate deployment web changesafe.dev/grant=m4-forged-main --overwrite
 m4_probe patch-status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
@@ -446,13 +447,17 @@ docker exec "${CLUSTER_NAME}-control-plane" cat /var/log/kubernetes/kube-apiserv
 log "--- M4 experiment 09 evidence ---"
 node "${EXAMPLE_DIR}/m4-carrier-probe-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/audit-after-probe.log" \
   "${EXAMPLE_DIR}/m4-carrier-probe-evidence.json" | tee -a "${TRANSCRIPT}"
-# Step 3 measures the fail-closed split against the replica count the
-# observations left. That makes a probe's change to replicas invisible to
-# step 3 on purpose (an observation must not fail the run); it is recorded
-# in the probe evidence above, which is where it is read as a result. The
-# probe also leaves a forged carrier on the Deployment; step 3 does not read
-# the carrier.
-STEP3_BASELINE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+# Step 3 keeps the replica count from BEFORE the probes as its baseline. If a
+# status write had changed spec.replicas (experiment 09's H9c failing), that is
+# not an observation to absorb: it would mean the status subresource can change
+# spec, and step 3's fail-closed check then fails the run, loudly, on purpose.
+# The probe also leaves a forged carrier on the Deployment; step 3 does not
+# read the carrier.
+M4_POST_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+if [ "${M4_POST_PROBE_REPLICAS}" != "${M4_PRE_PROBE_REPLICAS}" ]; then
+  log "M4-09 FINDING: the probes changed spec.replicas from ${M4_PRE_PROBE_REPLICAS} to ${M4_POST_PROBE_REPLICAS}; the status subresource can change spec"
+fi
+STEP3_BASELINE_REPLICAS="${M4_PRE_PROBE_REPLICAS}"
 
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
