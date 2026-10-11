@@ -19,12 +19,16 @@ import {
  */
 
 const SCENARIOS = path.resolve("scenarios/terraform");
-/** Where `signGrant` is mentioned today; a change here is a review item, not a refactor. */
-const SIGNING_FILES: string[] = [
-  "packages/core/src/grant-signature.ts",
-  "packages/core/src/index.ts",
-  "packages/server/src/decisions.ts",
-];
+/**
+ * Where `signGrant` is mentioned today, and how many times: a second call in
+ * an already-listed file is a new issuance path as much as a new file is. A
+ * change here is a review item, not a refactor.
+ */
+const SIGNING_MENTIONS: Record<string, number> = {
+  "packages/core/src/grant-signature.ts": 1, // the definition
+  "packages/core/src/index.ts": 1, // the re-export
+  "packages/server/src/decisions.ts": 2, // the import and the one call
+};
 
 /** Every key name at any depth of a JSON value. */
 function keyNames(value: unknown, into = new Set<string>()): Set<string> {
@@ -166,7 +170,7 @@ describe("M4-08 H8d: where an AuthorizationGrant can be issued", () => {
     expect(await refused("bogus")).toBe(refusal);
   });
 
-  it("the only source files that mention signing a grant are the core definition and the server's one issuing method, which derives first", () => {
+  it("every mention of signing a grant is the core definition, its export, or the server's one issuing call, which derives first", () => {
     // A new signing site fails this test on purpose: it needs the same
     // reviewed-binding derivation, or an explicit decision that it does not.
     // Every package's source and every top-level application directory, found
@@ -180,19 +184,21 @@ describe("M4-08 H8d: where an AuthorizationGrant can be issued", () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
         entry.isDirectory() ? walk(path.join(dir, entry.name)) : /\.(?:ts|tsx|mts|mjs)$/.test(entry.name) ? [path.join(dir, entry.name)] : []);
-    const mentions = roots
-      .filter(root => existsSync(path.resolve(root)))
-      .flatMap(root => walk(path.resolve(root)))
-      .filter(file => /\bsignGrant\b/.test(readFileSync(file, "utf8")))
-      .map(file => path.relative(path.resolve("."), file))
-      .sort();
-    expect(mentions).toEqual(SIGNING_FILES);
+    const mentions: Record<string, number> = {};
+    for (const file of roots.filter(root => existsSync(path.resolve(root))).flatMap(root => walk(path.resolve(root))).sort()) {
+      const count = readFileSync(file, "utf8").match(/\bsignGrant\b/g)?.length ?? 0;
+      if (count > 0) mentions[path.relative(path.resolve("."), file)] = count;
+    }
+    expect(mentions).toEqual(SIGNING_MENTIONS);
+    // Every call in the server's issuing file, not only the first, is
+    // preceded by the derivation with no other method declaration between.
     const decisions = readFileSync(path.resolve("packages/server/src/decisions.ts"), "utf8");
-    const call = decisions.indexOf("signGrant(grant");
-    const derive = decisions.lastIndexOf("deriveReviewedGrantBinding(request)", call);
-    expect(call).toBeGreaterThan(0);
-    expect(derive).toBeGreaterThan(0);
-    // The derivation precedes the call with no other method declaration between them.
-    expect(/\n  (?:async )?[#\w]+\([^)]*\)[^{]*\{/.test(decisions.slice(derive, call))).toBe(false);
+    const calls = [...decisions.matchAll(/\bsignGrant\(/g)].map(match => match.index ?? -1);
+    expect(calls).toHaveLength(1);
+    for (const call of calls) {
+      const derive = decisions.lastIndexOf("deriveReviewedGrantBinding(request)", call);
+      expect(derive).toBeGreaterThan(0);
+      expect(/\n  (?:async )?[#\w]+\([^)]*\)[^{]*\{/.test(decisions.slice(derive, call))).toBe(false);
+    }
   });
 });
