@@ -1,6 +1,6 @@
 {
-  "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38169577003",
-  "commit": "5f708f1",
-  "note": "Raw artifact of the live kind run of M4-09, byte for byte. The audit policy of that run did not cover deployments/status, so the status writes are absent from its audit evidence (a gap in the experiment's own evidence pipeline, recorded in the note). Fictional kind demo Deployment; disposable-cluster identifiers.",
-  "files": { "m4-carrier-probe-evidence.json": "b3dc9ed454e222b1dd94afd9084937137d7543046a3879f6dcc0873a7537245b" }
+  "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38170013608",
+  "commit": "3a9cf29",
+  "note": "Raw artifact of the live kind run of M4-09 with the audit policy extended to deployments/status, byte for byte. It is the second run: the first (38169577003, commit 5f708f1) had the same probe results and no status writes in its audit evidence. This artifact was produced by the summary script before its audit filter was narrowed (namespace, time window, no system users), so it also lists the Deployment controller's own status updates; the tests select the probe's events by verb. Fictional kind demo Deployment; disposable-cluster identifiers.",
+  "files": { "m4-carrier-probe-evidence.json": "31c7dfe81f7ce992807108e6fa83aa8a6a6d78a82cbff45bb405da700c0c556a" }
 }

@@ -86,40 +86,52 @@ experiment proposes and does not make (R12).
 
 ## Results
 
-Run: [CI 38169577003](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38169577003),
-commit `5f708f1`, all seven jobs passed. Evidence: the run's raw
-`m4-carrier-probe-evidence.json`, byte for byte, in
-`examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-d/` with its
-SHA-256 in `manifest.json`; replayed by
-`tests/integration/m4-carrier-status-path.test.ts` (9 tests, the artifact
-checked by hash before use).
+Two live runs, one probe, the same results.
 
-| Probe | Result |
+- **Run D1**, [CI 38169577003](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38169577003),
+  commit `5f708f1`. Its audit policy listed `deployments` and not
+  `deployments/status`, so the status writes are absent from its audit
+  evidence (a gap in the experiment's own evidence pipeline).
+- **Run D2**, [CI 38170013608](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38170013608),
+  commit `3a9cf29`, the audit policy extended to the subresource. Its raw
+  `m4-carrier-probe-evidence.json` is committed byte for byte in
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-d/` with its
+  SHA-256 in `manifest.json`; the tests check it by hash before use
+  (`tests/integration/m4-carrier-status-path.test.ts`). It was produced
+  before the summary script's audit filter was narrowed, so it also lists
+  the Deployment controller's own status updates (20 `update` events); the
+  tests select the probe's requests by verb.
+
+| Probe | Result (both runs) |
 | --- | --- |
 | `kubectl annotate` on the main resource, carrier set to `m4-forged-main` | **denied** by `protected.enforcer.changesafe.dev`: "no AuthorizationGrant was attached to this request". Version and carrier unchanged |
-| merge patch to `deployments/web/status` setting the carrier to `m4-forged-status` | **admitted.** Exit 0; resourceVersion 722 to 772; the object's carrier is now `m4-forged-status`, replacing the real grant it held |
+| merge patch to `deployments/web/status` setting the carrier to `m4-forged-status` | **admitted.** Exit 0; the resourceVersion moved (722 to 772 in D1, 681 to 730 in D2); the object's carrier is now `m4-forged-status`, replacing the real grant it held |
 | merge patch to the status subresource also setting `spec.replicas: 9` and a label | exit 0, "patched (no change)": replicas stayed 4, the label was not set, the version did not move |
 
 | # | Prediction | Observed |
 | --- | --- | --- |
-| H9a | holds (medium, about 60 percent) | **holds.** The carrier is writable outside the enforcer, in the protected tier as deployed, by a write to `deployments/status` |
+| H9a | holds (medium, about 60 percent) | **holds**, in both runs. The carrier is writable outside the enforcer, in the protected tier as deployed, by a write to `deployments/status` |
 | H9b | holds (high) | **holds** |
 | H9c | holds (high) | **holds.** The status strategy reset the spec and the label; only the annotation got through |
-| H9d | holds if H9a holds (medium-high) | **not decided by this run.** The run's audit policy listed `deployments` and not `deployments/status`, so the status writes are absent from its audit evidence. That the webhook was not called is inferred, not observed: the same request with no grant attached is denied on the main resource, and the status requests succeeded. The harness's audit policy now lists the subresource, and a second run settles it (below) |
+| H9d | holds if H9a holds (medium-high) | **holds as stated, with its inference named.** In D2 the audit log has both status patches: code 200, no enforcer annotation, one of them carrying the forged value. What is *observed* is the absence of the enforcer's annotations; that the webhook was **not called** is the inference from success with no grant attached (the same request on the main resource is denied for exactly that). A request with no readable grant gets no annotations whether or not the webhook was called, so the audit field cannot show a call either way |
 
 ## Findings the predictions did not cover
 
 1. **The probe replaced the real carrier.** The object held grant 1's
    encoded carrier (a signed grant); the status write overwrote it with an
    arbitrary string. The API server validates nothing about the value, so
-   forging includes erasing the carrier a legitimate write left.
+   forging includes erasing the carrier a legitimate write left. The
+   history keeps the earlier event that carried the grant; a reader of the
+   current object alone does not.
 2. **The experiment's own evidence pipeline had the same blind spot as the
    enforcer.** Both matched `deployments` and not `deployments/status`.
    The audit policy is a second place where a subresource is a different
-   resource name, and it hid the very requests under test.
+   resource name, and in D1 it hid the very requests under test.
 3. **The enforcer annotates nothing when it cannot read a grant.** The
    denied main-resource request carries no `grant-id` annotation, as P1
-   was written, so that denial is unattributed in the audit log.
+   was written, so that denial is unattributed in the audit log, and the
+   field `enforcerAnnotated` (renamed `enforcerGrantAnnotated`) does not
+   mean "the webhook was called".
 4. **A status write cannot create the target state, only re-attribute it.**
    This bounds the harm and shows what a repair needs.
 
@@ -131,11 +143,11 @@ deployed. The model gains one history, in which another grant legitimately
 stores the target after this admission and a status write then
 re-attributes it to this grant (opt-in, so 07's counts are unchanged):
 
-| Contract | Protected tier, complete watch, exact prior (2,880) | Whole protected grid (43,200) |
+| Contract | Protected tier, complete watch, exact prior (3,456) | Whole protected grid (51,840) |
 | --- | --- | --- |
-| v2a (the registered repair) | **96 unsound** | 768 unsound |
-| v2b (carrier-keyed) | **192 unsound** | 1,536 unsound |
-| v2c (carrier and transition in one event) | **0 unsound**, definite on 2,208 | **0 unsound**, definite on 19,974 |
+| v2a (the registered repair) | **96 unsound**, definite on 2,208 | 768 unsound |
+| v2b (carrier-keyed) | **192 unsound**, definite on 3,456 | 1,536 unsound |
+| v2c (carrier and transition in one event) | **0 unsound**, definite on 2,688 | **0 unsound**, definite on 24,168 |
 
 Each unsound row is a truthful `rejected` read as `stored`: the carrier was
 re-attributed on a state another grant stored. **v2c** is the observation
@@ -148,6 +160,20 @@ for) and is a proposal, not a result. It costs definite verdicts (a no-op
 target has no transition to see, so presence there is `unknown`), and a
 forged carrier on a no-op target is indistinguishable from a genuine one
 under all three.
+
+**What each contract assumes.** v2a and v2b assume the carrier
+unforgeable, which D1 and D2 falsify for the tier as deployed. v2c assumes
+less: that no writer outside the enforcer can change the spec and set the
+annotation in **one** write. A status write cannot (H9c); the main resource
+is the enforcer's. Not assuming the carrier at all (the right reading of
+the tier as deployed for v2a and v2b) leaves all three sound and `stored`
+unreachable, as for Terraform. v2c is the only one that keeps `stored`
+reachable under the evidence.
+
+Two histories were added after review of this note: a status write that
+erases the carrier of a state this grant stored (all three still say
+`stored`, from the earlier event), and a deletion between events (v2c no
+longer carries a state across it, which a review found it did).
 
 ## What this changes in the claims
 
@@ -173,8 +199,12 @@ under all three.
   hold it by default, so the set of principals is not empty.
 - One Kubernetes version, one kind. StatefulSet, DaemonSet and Service
   strategies differ and are not probed.
-- v2c's soundness is over the model, with the model's one forgery
-  history; other re-attribution histories are not enumerated.
+- v2c's soundness is over the model, with two status-path histories (a
+  re-attribution on a state another grant stored, and an erasure); other
+  re-attribution histories are not enumerated, and the grid is not
+  complete. The tests that evaluate v2a and v2b under the assumption the
+  probe falsifies do so to show what the assumption costs; the not-assume
+  runs are the reading of the tier as deployed.
 
 ## Candidate adversarial finding (for the owner to enter)
 

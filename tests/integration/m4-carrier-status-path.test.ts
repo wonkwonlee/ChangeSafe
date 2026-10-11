@@ -30,9 +30,11 @@ const State = z.object({
 });
 const Evidence = z.object({
   before: State,
-  probes: z.array(z.object({ name: z.string(), exitStatus: z.number(), output: z.string(), after: State })),
+  probes: z.array(z.object({ name: z.string(), exitStatus: z.number().nullable(), output: z.string(), after: State })),
   audit: z.array(z.object({
-    verb: z.string(), subresource: z.string().nullable(), code: z.number().nullable(), enforcerAnnotated: z.boolean(),
+    verb: z.string(), subresource: z.string().nullable(), code: z.number().nullable(),
+    // The committed artifact predates the rename to enforcerGrantAnnotated.
+    enforcerAnnotated: z.boolean().optional(), enforcerGrantAnnotated: z.boolean().optional(),
     touchesForgedCarrier: z.boolean(),
   })),
 });
@@ -73,13 +75,31 @@ describe("M4-09 live evidence: what the API server did", () => {
     expect(spec.after.resourceVersion).toBe(probe("patch-status-annotation").after.resourceVersion);
   });
 
-  it("H9d (not decided): the run's audit policy did not cover deployments/status, so its status writes are not in the audit evidence", () => {
-    // The only audit event in the artifact for the probes is the denied
-    // main-resource request. That the webhook was not called for the status
-    // writes is inferred from their success with no grant attached (the
-    // webhook denies that, as the main-resource probe shows), not observed.
-    expect(evidence.audit.filter(event => event.subresource === "status")).toEqual([]);
-    expect(evidence.audit.filter(event => event.code === 400)).toHaveLength(1);
+  it("H9d: the status writes are in the audit log, succeeded, and carry no enforcer annotation", () => {
+    // The probe's own requests are the `patch` verbs; the Deployment
+    // controller's status updates in the same artifact are `update`.
+    const patches = evidence.audit.filter(event => event.verb === "patch");
+    expect(patches).toHaveLength(3);
+    const status = patches.filter(event => event.subresource === "status");
+    expect(status).toHaveLength(2);
+    for (const event of status) {
+      expect(event.code).toBe(200);
+      expect(event.enforcerAnnotated ?? event.enforcerGrantAnnotated).toBe(false);
+    }
+    expect(status.filter(event => event.touchesForgedCarrier)).toHaveLength(1);
+    // The denied main-resource request, for contrast.
+    const main = patches.filter(event => event.subresource === null);
+    expect(main).toHaveLength(1);
+    expect(main[0]?.code).toBe(400);
+    // What is observed is "no annotation". That the webhook was not called
+    // is the inference from success with no grant attached: the same
+    // request on the main resource was denied for exactly that.
+  });
+
+  it("the audit evidence also lists the controller's own status updates, which a probe's filter must exclude", () => {
+    const updates = evidence.audit.filter(event => event.verb === "update" && event.subresource === "status");
+    expect(updates.length).toBeGreaterThan(5);
+    expect(updates.every(event => !event.touchesForgedCarrier)).toBe(true);
   });
 });
 
@@ -100,7 +120,7 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
   it("v2a and v2b, sound in experiment 07's protected tier, are unsound once the status path exists", () => {
     const a = summarize(evaluate(v2a, scopeA, assume, options));
     const b = summarize(evaluate(v2b, scopeA, assume, options));
-    expect(b.total).toBe(2880);
+    expect(b.total).toBe(3456);
     expect(b.unsound).toHaveLength(192);
     expect(a.unsound).toHaveLength(96);
     for (const row of [...a.unsound, ...b.unsound]) {
@@ -117,9 +137,53 @@ describe("M4-09 what the finding does to experiment 07's contract", () => {
     // Post hoc: written after the probe, and checked against the enumeration
     // it was designed against. It is a proposal, not a result in its own right.
     const rows = evaluate(v2c, protectedOnly, assume, options);
-    expect(rows).toHaveLength(43200);
+    expect(rows).toHaveLength(51840);
     expect(rows.filter(isUnsound)).toEqual([]);
-    expect(summarize(evaluate(v2c, scopeA, assume, options)).unsound).toEqual([]);
+    const scope = summarize(evaluate(v2c, scopeA, assume, options));
+    expect(scope.unsound).toEqual([]);
+    expect(scope.definite).toBe(2688);
+  });
+
+  it("a status write that erases the carrier of a stored grant loses nothing: the earlier event is still in the history", () => {
+    // The probe's finding 1. A contract that reads the history is not
+    // affected; one that read only the object's current carrier would be.
+    const erased = [...histories(options)].filter(h => h.later === "status_erases_carrier" && h.attempt === "stored" && !h.noOp && !h.recreated && h.tier === "protected");
+    expect(erased.length).toBeGreaterThan(0);
+    for (const history of erased) {
+      const world = simulate(history);
+      expect(world.events[world.events.length - 1]).toMatchObject({ carrier: "X" });
+      expect(v2c(observe(history, "none", "complete", "exact", true))).toBe("stored");
+      expect(v2b(observe(history, "none", "complete", "exact", true))).toBe("stored");
+    }
+  });
+
+  it("not assuming the carrier is the reading of the tier as deployed; the contracts are sound and say less", () => {
+    // v2c's own precondition is weaker than "unforgeable": that no writer
+    // outside the enforcer can change the spec and set the annotation in one
+    // write. The status path cannot; the main resource is the enforcer's.
+    for (const contract of [v2a, v2b, v2c]) {
+      const rows = evaluate(contract, protectedOnly, () => false, options);
+      expect(summarize(rows).unsound).toEqual([]);
+      expect(rows.some(row => row.verdict === "stored")).toBe(false);
+    }
+  });
+
+  it("v2c does not carry a state across a deletion", () => {
+    // A re-created object's first event has no predecessor in its own
+    // lifetime, so a carrier on it is not read as a transition.
+    const base = { uid: "U1" as const, type: "MODIFIED" as const };
+    const obs = {
+      consumed: true, auditClaim: "absent" as const, coverage: "complete" as const, streamStart: 100, closedAt: 104,
+      endedCleanly: true, priorRv: 100, grantIsNoOp: false, assumeCarrierUnforgeable: true,
+      events: [
+        { ...base, rv: 101, state: "P" as const, carrier: null },
+        { ...base, rv: 102, state: "P" as const, carrier: null, type: "DELETED" as const },
+        { ...base, rv: 103, state: "T" as const, carrier: "G" as const, uid: "U2" as const, type: "ADDED" as const },
+        { ...base, rv: 104, state: "T" as const, carrier: "G" as const, uid: "U2" as const },
+      ],
+    };
+    expect(v2c(obs)).toBe("unknown");
+    expect(v2b(obs)).toBe("stored");
   });
 
   it("v2c pays for it: no-op targets and carrier-only events are unknown for presence", () => {

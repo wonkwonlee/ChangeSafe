@@ -5,7 +5,9 @@
 // usage: node m4-carrier-probe-summary.mjs <dir> <audit-after.log> <out.json>
 // <dir> holds probe-<name>.out, probe-<name>.status and probe-<name>.after.json
 // for name in annotate-main, patch-status-annotation, patch-status-spec, plus
-// probe-before.json.
+// probe-before.json and probe-window.txt (two ISO timestamps, one per line:
+// when the probes started and ended). A missing status or state file is
+// reported as null, never as success.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
@@ -29,24 +31,39 @@ const before = state("probe-before.json");
 const names = ["annotate-main", "patch-status-annotation", "patch-status-spec"];
 const probes = names.map((name) => {
   const out = (read(`probe-${name}.out`) ?? "").trim();
+  const status = (read(`probe-${name}.status`) ?? "").trim();
   return {
     name,
-    exitStatus: Number((read(`probe-${name}.status`) ?? "").trim()),
+    // null when the helper did not record one: an absent file is not "0".
+    exitStatus: status === "" || Number.isNaN(Number(status)) ? null : Number(status),
     output: out.slice(0, 400),
     after: state(`probe-${name}.after.json`),
   };
 });
+const [windowStart, windowEnd] = (read("probe-window.txt") ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
 
-// Audit: requests that touched the Deployment's status subresource or set the
-// carrier, with whether the enforcer annotated them (it was then called).
+// Audit: requests on the demo Deployment in the protected namespace, inside
+// the probes' time window and not made by a system component (the Deployment
+// controller also writes status, constantly). "enforcerGrantAnnotated" says
+// the enforcer returned its grant annotations; it does NOT say whether the
+// webhook was called: a request with no readable grant is answered with no
+// annotations, called or not. For a request that SUCCEEDED with no grant
+// attached, the inference that the webhook was not called comes from the
+// enforcer denying every such request on the main resource (the first
+// probe), not from this field.
+const NAMESPACE = "changesafe-protected-demo";
 const audit = [];
 if (auditPath && existsSync(auditPath)) {
   for (const line of readFileSync(auditPath, "utf8").split("\n").filter(Boolean)) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
     const ref = event.objectRef ?? {};
-    if (ref.resource !== "deployments" || ref.name !== "web") continue;
+    if (ref.resource !== "deployments" || ref.name !== "web" || ref.namespace !== NAMESPACE) continue;
     if (!["patch", "update"].includes(event.verb)) continue;
+    const username = event.user?.username ?? "";
+    if (username.startsWith("system:serviceaccount:") || username.startsWith("system:node")) continue;
+    const at = event.requestReceivedTimestamp ?? event.stageTimestamp ?? "";
+    if (windowStart !== undefined && windowEnd !== undefined && (at < windowStart || at > windowEnd)) continue;
     const touchesCarrier = JSON.stringify(event.requestObject ?? {}).includes("m4-forged");
     if (ref.subresource !== "status" && !touchesCarrier) continue;
     audit.push({
@@ -55,7 +72,10 @@ if (auditPath && existsSync(auditPath)) {
       subresource: ref.subresource ?? null,
       code: event.responseStatus?.code ?? null,
       message: String(event.responseStatus?.message ?? "").slice(0, 200),
-      enforcerAnnotated: Object.keys(event.annotations ?? {}).some((key) => key.includes("enforcer.changesafe.dev")),
+      user: username,
+      at,
+      enforcerGrantAnnotated: Object.keys(event.annotations ?? {}).some((key) => key.includes("enforcer.changesafe.dev")),
+      deniedByWebhook: /admission webhook ".*" denied the request/.test(String(event.responseStatus?.message ?? "")),
       touchesForgedCarrier: touchesCarrier,
     });
   }
@@ -72,5 +92,6 @@ for (const probe of probes) {
 }
 console.log(`audit events for the probes: ${audit.length}`);
 for (const event of audit) {
-  console.log(`  ${event.verb} subresource=${event.subresource ?? "-"} code=${event.code} enforcerAnnotated=${event.enforcerAnnotated} forgedCarrier=${event.touchesForgedCarrier} ${event.message}`);
+  console.log(`  ${event.verb} subresource=${event.subresource ?? "-"} code=${event.code} grantAnnotated=${event.enforcerGrantAnnotated} ` +
+    `deniedByWebhook=${event.deniedByWebhook} forgedCarrier=${event.touchesForgedCarrier} user=${event.user} ${event.message}`);
 }

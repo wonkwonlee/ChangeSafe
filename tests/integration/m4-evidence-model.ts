@@ -15,7 +15,7 @@
 // --- The world ---------------------------------------------------------------
 
 export type State = "P" | "T";
-export type Carrier = null | "G" | "G2" | "G3" | "G4" | "G5";
+export type Carrier = null | "G" | "G2" | "G3" | "G4" | "G5" | "X";
 export interface Ev {
   rv: number;
   type: "ADDED" | "MODIFIED" | "DELETED";
@@ -40,7 +40,13 @@ export type Later =
    * after this grant's admission, then a status write re-attributes it to
    * this grant by overwriting the annotation.
    */
-  | "via_other_grant_then_status_overwrite";
+  | "via_other_grant_then_status_overwrite"
+  /**
+   * The probe's finding 1: a status write replaces the carrier of a state
+   * this grant legitimately stored with an arbitrary string, erasing it.
+   * The earlier event that carried the grant stays in the history.
+   */
+  | "status_erases_carrier";
 export type Tier = "protected" | "default";
 
 export interface History {
@@ -99,6 +105,7 @@ export function simulate(history: History): World {
   if ((history.later === "status_overwrites_carrier" || history.later === "via_other_grant_then_status_overwrite") && state === "T" && carrier !== "G") {
     carrier = "G"; emit();
   }
+  if (history.later === "status_erases_carrier" && history.attempt === "stored") { carrier = "X"; emit(); }
 
   if (history.recreated) {
     emit("DELETED");
@@ -321,7 +328,7 @@ export const bool = [false, true] as const;
 export const attempts: Attempt[] = ["stored", "rejected_downstream", "not_attempted"];
 export const laters: Later[] = ["none", "restores_prior", "via_other_grant", "sets_target_no_carrier", "sets_target_copied_carrier"];
 /** Experiment 09's additions, opt-in so experiment 07's enumeration and its asserted counts are unchanged. */
-export const statusPathLaters: Later[] = ["status_overwrites_carrier", "via_other_grant_then_status_overwrite"];
+export const statusPathLaters: Later[] = ["status_overwrites_carrier", "via_other_grant_then_status_overwrite", "status_erases_carrier"];
 
 export interface EnumerationOptions {
   /** Include histories in which a status-subresource write overwrites the carrier (experiment 09). */
@@ -420,8 +427,9 @@ export function v2c(obs: Observation): Verdict {
     // first event cannot be told apart from a re-attribution.
     let previous: State | undefined = priorRv !== undefined && obs.streamStart <= priorRv ? "P" : undefined;
     for (const event of obs.events) {
-      if (priorRv === undefined || event.rv <= priorRv || event.type === "DELETED") {
-        if (priorRv !== undefined && event.rv <= priorRv && event.type !== "DELETED") previous = event.state;
+      if (event.type === "DELETED") { previous = undefined; continue; }
+      if (priorRv === undefined || event.rv <= priorRv) {
+        if (priorRv !== undefined) previous = event.state;
         continue;
       }
       if (event.carrier === "G") return previous !== undefined && previous !== event.state && event.state === "T" ? "stored" : "unknown";
