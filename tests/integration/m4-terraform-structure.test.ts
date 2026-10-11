@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -19,6 +19,12 @@ import {
  */
 
 const SCENARIOS = path.resolve("scenarios/terraform");
+/** Where `signGrant` is mentioned today; a change here is a review item, not a refactor. */
+const SIGNING_FILES: string[] = [
+  "packages/core/src/grant-signature.ts",
+  "packages/core/src/index.ts",
+  "packages/server/src/decisions.ts",
+];
 
 /** Every key name at any depth of a JSON value. */
 function keyNames(value: unknown, into = new Set<string>()): Set<string> {
@@ -48,8 +54,10 @@ const WithChanges = z.object({
 }).passthrough();
 
 describe("M4-08 H8a: what the ingested Terraform artifact carries", () => {
-  it("covers all seven committed Terraform inputs, each a plan envelope the schema accepts", () => {
-    expect(inputs).toHaveLength(7);
+  it("covers every committed Terraform input, each a plan envelope the schema accepts", () => {
+    // Not a fixed count: a new Terraform scenario is a welcome contribution,
+    // and it should be held to the same checks, not break this test.
+    expect(inputs.length).toBeGreaterThanOrEqual(7);
     for (const input of inputs) expect(TerraformPlanSchema.safeParse(input.value).success).toBe(true);
   });
 
@@ -65,14 +73,19 @@ describe("M4-08 H8a: what the ingested Terraform artifact carries", () => {
   it("the keys they carry are exactly the envelope, the change shape and a few attributes: no version or identity key among them", () => {
     const topLevel = new Set(inputs.flatMap(input => Object.keys(input.value)));
     expect([...topLevel].sort()).toEqual(["context", "format_version", "resource_changes", "terraform_version"]);
-    // An allowlist of every key name at any depth, so a new key is noticed.
-    const every = new Set(inputs.flatMap(input => [...keyNames(input.value)]));
-    expect([...every].sort()).toEqual([
+    // Every key name at any depth is on a reviewed list. A key that is not
+    // is reported by name, so the failure says what to look at: whether the
+    // new key is an identity or version field (which would change H8a) or an
+    // ordinary attribute (add it here).
+    const reviewed = new Set([
       "actions", "address", "after", "allocated_storage", "ami", "before", "change", "changesafe_backup",
       "changesafe_protected", "context", "engine", "format_version", "identifier", "instance_class",
       "instance_type", "kind", "mode", "module_address", "name", "provider_name", "resource_changes", "service",
       "tags", "terraform_version", "text", "threshold", "type",
     ]);
+    const every = new Set(inputs.flatMap(input => [...keyNames(input.value)]));
+    const unreviewed = [...every].filter(key => !reviewed.has(key)).sort();
+    expect(unreviewed).toEqual([]);
   });
 
   it("the normalized model the policies read has no incarnation or version field either", () => {
@@ -100,7 +113,7 @@ describe("M4-08 H8b: nothing in the artifact is set by an authorizing boundary",
   });
 });
 
-describe("M4-08 H8c: the contract with no unforgeable carrier", () => {
+describe("M4-08 H8c (a consequence of the missing carrier, not a Terraform-specific check)", () => {
   // This follows from the contract's precondition being false, which the
   // flag expresses; it is a consequence, not evidence about Terraform. The
   // substantive premise is that the artifact offers no carrier (H8b) and that
@@ -109,7 +122,7 @@ describe("M4-08 H8c: the contract with no unforgeable carrier", () => {
   // default-tier grid, every coverage and every prior, not one slice.
   const defaultTier = (h: History) => h.tier === "default";
 
-  it("returns no 'stored' verdict in any coverage, prior or audit edit, from either repair", () => {
+  it("consequence: returns no 'stored' verdict in any coverage, prior or audit edit, from either repair", () => {
     for (const contract of [v2a, v2b]) {
       const rows = evaluate(contract, defaultTier, () => false);
       expect(rows).toHaveLength(480 * edits.length * coverages.length * priors.length);
@@ -118,7 +131,7 @@ describe("M4-08 H8c: the contract with no unforgeable carrier", () => {
     }
   });
 
-  it("every history in which the write was stored comes back unknown", () => {
+  it("consequence: every history in which the write was stored comes back unknown", () => {
     const rows = evaluate(v2b, defaultTier, () => false);
     const storedTruth = rows.filter(row => row.truth === "stored");
     expect(storedTruth.length).toBeGreaterThan(0);
@@ -153,16 +166,27 @@ describe("M4-08 H8d: where an AuthorizationGrant can be issued", () => {
     expect(await refused("bogus")).toBe(refusal);
   });
 
-  it("every grant the server signs is derived through that function: one signing call site, preceded by the binding", () => {
+  it("the only source files that mention signing a grant are the core definition and the server's one issuing method, which derives first", () => {
+    // A new signing site fails this test on purpose: it needs the same
+    // reviewed-binding derivation, or an explicit decision that it does not.
+    const roots = ["packages/core/src", "packages/server/src", "packages/cli/src", "packages/ledger/src",
+      "packages/kubernetes-enforcer/src", "packages/kubernetes-collector/src", "packages/ai/src"];
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
+        entry.isDirectory() ? walk(path.join(dir, entry.name)) : entry.name.endsWith(".ts") ? [path.join(dir, entry.name)] : []);
+    const mentions = roots
+      .filter(root => existsSync(path.resolve(root)))
+      .flatMap(root => walk(path.resolve(root)))
+      .filter(file => /\bsignGrant\b/.test(readFileSync(file, "utf8")))
+      .map(file => path.relative(path.resolve("."), file))
+      .sort();
+    expect(mentions).toEqual(SIGNING_FILES);
     const decisions = readFileSync(path.resolve("packages/server/src/decisions.ts"), "utf8");
-    const sites = [...decisions.matchAll(/signGrant\(/g)];
-    expect(sites).toHaveLength(1);
-    const at = sites[0]?.index ?? -1;
-    expect(decisions.slice(Math.max(0, at - 1200), at)).toContain("deriveReviewedGrantBinding(request)");
-    // No other source file in the server package signs one.
-    for (const name of readdirSync(path.resolve("packages/server/src"))) {
-      if (name === "decisions.ts" || !name.endsWith(".ts")) continue;
-      expect([name, readFileSync(path.resolve("packages/server/src", name), "utf8").includes("signGrant(")]).toEqual([name, false]);
-    }
+    const call = decisions.indexOf("signGrant(grant");
+    const derive = decisions.lastIndexOf("deriveReviewedGrantBinding(request)", call);
+    expect(call).toBeGreaterThan(0);
+    expect(derive).toBeGreaterThan(0);
+    // The derivation precedes the call with no other method declaration between them.
+    expect(/\n  (?:async )?[#\w]+\([^)]*\)[^{]*\{/.test(decisions.slice(derive, call))).toBe(false);
   });
 });

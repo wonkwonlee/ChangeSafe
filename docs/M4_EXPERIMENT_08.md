@@ -23,6 +23,18 @@ structure does not carry over, the project's domain-agnostic
 `AuthorizationGrant` has only one domain it can be issued in, which no
 current document says.
 
+## Terms used here
+
+*Decision filter A to D* is the four questions of `docs/STRATEGY.md` (does
+the work probe the central thesis more deeply; does it teach a new systems
+concept; does it make a story worth fifteen minutes; does it surface a
+problem the existing abstractions cannot explain); three of four must be
+yes. *E0, E1, E2* are the effect stages of that document: the authorized
+proposal, the request as admitted at the final validation boundary, and the
+state the control plane stored. "The Terraform domain's gate ends at E0"
+means ChangeSafe's Terraform path produces a `gate_only` receipt over a
+plan and nothing downstream of it.
+
 ## What is checked
 
 1. **The ingested artifact.** The documented JSON output format of
@@ -87,9 +99,9 @@ property lists.
 
 | # | Prediction | Observed |
 | --- | --- | --- |
-| H8a | holds (high) | **holds.** None of the seven committed inputs has a key named `serial`, `lineage` or `prior_state` at any depth. The test asserts the *whole* set of key names across the inputs (an allowlist of 27), so a new key is noticed; none is an identity or version key. The normalized model keeps only address, type, module, action, before, after, tags and ids |
-| H8b | holds (high) as an argument; the test checks the artifact's shape only | **holds, with what a test can show kept apart from what it cannot.** Tags appear in the same `before` and `after` values as every other attribute, and the normalized model has no field named for a grant, receipt, carrier or authorization. That anyone who can write the resource can write its tags is a property of Terraform and the provider, argued here, not read off an artifact |
-| H8c | holds (medium); **a consequence, not evidence** | **holds, and trivially.** With the model's carrier flag off, neither repair returns a `stored` verdict in any of the 28,800 default-tier evaluations (every coverage, prior and audit edit), both are sound, and the definite verdicts are exactly `rejected` and `not_consumed`. The tests restate the model's own `!assumeCarrierUnforgeable` branch; their content is the premise that the artifact offers no carrier (H8b) and that the default tier stands for a Terraform state history, which is an interpretation, not shown |
+| H8a | holds (high) | **holds, at lower confidence than registered** (post hoc: the documented-format half rests on a summarizing fetch).  None of the seven committed inputs has a key named `serial`, `lineage` or `prior_state` at any depth. The test asserts the *whole* set of key names across the inputs (an allowlist of 27), so a new key is noticed; none is an identity or version key. The normalized model keeps only address, type, module, action, before, after, tags and ids |
+| H8b | holds (high) | **holds, with what a test can show kept apart from what it cannot (post hoc qualification).** Tags appear in the same `before` and `after` values as every other attribute, and the normalized model has no field named for a grant, receipt, carrier or authorization. That anyone who can write the resource can write its tags is a property of Terraform and the provider, argued here, not read off an artifact |
+| H8c | holds (medium) | **holds, and trivially (post hoc: a consequence of the premise, not evidence).** With the model's carrier flag off, neither repair returns a `stored` verdict in any of the 43,200 default-tier evaluations each (480 tuples x 6 audit edits x 5 coverages x 3 priors), both are sound, and the definite verdicts are exactly `rejected` and `not_consumed`. The tests restate the model's own `!assumeCarrierUnforgeable` branch; their content is the premise that the artifact offers no carrier (H8b) and that the default tier stands for a Terraform state history, which is an interpretation, not shown |
 | H8d | holds (high) | **holds, and wider than asked.** `deriveReviewedGrantBinding` throws "Only Kubernetes has a reviewed grant issuance contract" for Terraform, for network and for any other domain string (its first statement, so it is about the domain, not the input). The server has one `signGrant` call site, preceded by that derivation, and no other server source signs a grant. One of the three shipped domains can be issued a grant |
 
 ## What the result says
