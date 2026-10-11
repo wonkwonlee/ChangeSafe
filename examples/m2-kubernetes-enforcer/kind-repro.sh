@@ -444,6 +444,53 @@ docker exec "${CLUSTER_NAME}-control-plane" cat /var/log/kubernetes/kube-apiserv
 log "--- M4 experiment 09 evidence ---"
 node "${EXAMPLE_DIR}/m4-carrier-probe-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/audit-after-probe.log" \
   "${EXAMPLE_DIR}/m4-carrier-probe-evidence.json" | tee -a "${TRANSCRIPT}"
+# --- M4 experiment 10 — does a status-subresource guard close that path? ---
+# Applies the CANDIDATE guard (m4-status-guard-candidate.yaml, not adopted),
+# repeats the carrier probe, makes a harmless status write, and produces a
+# real controller status change by deleting a pod (docs/M4_EXPERIMENT_10.md).
+log ""
+log "=== M4 experiment 10: a candidate guard on the status subresource ==="
+kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/guard-before.json"
+run kubectl apply -f "${EXAMPLE_DIR}/m4-status-guard-candidate.yaml"
+# Admission policies take effect asynchronously: wait until a server dry-run
+# of the forging patch is denied, as the routing guards are waited on above.
+GUARD_ACTIVE="no"
+for _ in $(seq 1 30); do
+  if ! kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
+       -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-wait"}}}' >"${WORK_DIR}/guard-wait.txt" 2>&1; then
+    GUARD_ACTIVE="yes"; break
+  fi
+  sleep 1
+done
+echo "active=${GUARD_ACTIVE}" > "${WORK_DIR}/guard-applied.txt"
+m4_guard_probe() {
+  local name="$1"; shift
+  set +e
+  "$@" > "${WORK_DIR}/guard-${name}.out" 2>&1
+  echo $? > "${WORK_DIR}/guard-${name}.status"
+  set -e
+  kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/guard-${name}.after.json" 2>/dev/null || true
+  log "\$ guard probe ${name}: exit $(cat "${WORK_DIR}/guard-${name}.status"); $(head -c 240 "${WORK_DIR}/guard-${name}.out" | tr '\n' ' ')"
+}
+m4_guard_probe status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
+  -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-forged-status-2"}}}'
+m4_guard_probe status-harmless kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=json \
+  -p '[{"op":"add","path":"/status/conditions/-","value":{"type":"M4Probe","status":"True","reason":"Probe","message":"experiment 10 harmless status write"}}]'
+# A real controller status write: delete one pod and let the ReplicaSet and
+# the Deployment controller reconcile. The replay watch lists what the
+# Deployment's status did.
+kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-before.json"
+M4_CTRL_RV=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.metadata.resourceVersion}')
+kubectl -n "${M4_NS}" delete "$(kubectl -n "${M4_NS}" get pod -l app=web -o name | head -1)" --wait=false >/dev/null 2>&1 || true
+sleep 20
+kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-after.json"
+kubectl get --raw "/apis/apps/v1/namespaces/${M4_NS}/deployments?fieldSelector=metadata.name%3Dweb&watch=1&timeoutSeconds=4&resourceVersion=${M4_CTRL_RV}" \
+  > "${WORK_DIR}/controller-replay.jsonl" 2>/dev/null || true
+log "--- M4 experiment 10 evidence ---"
+node "${EXAMPLE_DIR}/m4-status-guard-summary.mjs" "${WORK_DIR}" "${EXAMPLE_DIR}/m4-status-guard-evidence.json" | tee -a "${TRANSCRIPT}"
+# The candidate is removed so step 3 runs as it always has.
+kubectl delete -f "${EXAMPLE_DIR}/m4-status-guard-candidate.yaml" --ignore-not-found >/dev/null 2>&1 || true
+
 # Step 3 measures the fail-closed split against the replica count the
 # observations left; a probe that changed it must read as a result.
 STEP3_BASELINE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')

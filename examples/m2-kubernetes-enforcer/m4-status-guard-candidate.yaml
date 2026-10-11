@@ -1,0 +1,43 @@
+# M4 experiment 10 (docs/M4_EXPERIMENT_10.md): a CANDIDATE guard, not part of
+# routing-guards.yaml and not adopted. Experiment 09 found that a write to a
+# workload's status subresource can set the grant carrier annotation without
+# an admission (the webhook matches the main resource only). This policy, in
+# the same family as routing-guards.yaml, denies any change to
+# metadata.annotations on the status subresources in protected namespaces.
+# A status write that leaves annotations alone, including the controllers'
+# own, is untouched. Adoption is the owner's decision (R12); the harness
+# applies this file only inside its disposable cluster.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: changesafe-protected-status-annotations
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["deployments/status", "statefulsets/status", "daemonsets/status"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["services/status"]
+  validations:
+    - expression: >-
+        (!has(object.metadata.annotations) && !has(oldObject.metadata.annotations)) ||
+        (has(object.metadata.annotations) && has(oldObject.metadata.annotations) &&
+         object.metadata.annotations == oldObject.metadata.annotations)
+      message: "ChangeSafe protected namespaces do not allow annotation changes through a status subresource; the grant carrier is set only by an admitted write of the resource"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: changesafe-protected-status-annotations
+spec:
+  policyName: changesafe-protected-status-annotations
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        changesafe.dev/tier: protected
