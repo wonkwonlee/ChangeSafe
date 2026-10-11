@@ -1,73 +1,77 @@
 {
   "source": {
-    "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773",
+    "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167665704",
     "artifact": "admission-reproduction/m4-watch-evidence.json",
-    "artifactSha256": "09bdc2bb15b352570c5a60cd185cd50138c65ba73aa74ae5fe802153584c6db2",
-    "commit": "e0a9ffd",
+    "artifactSha256": "3432e806765c20b78a6486aa5ccf16231199f2275edbad15030cd6685122fcef",
+    "commit": "e9b8db3",
     "note": "The whole m4-watch-evidence.json from the live kind run of M4-05: grants, the enforcer use-state, the annotated audit events, and every event the independent watch delivered. Fictional kind demo Deployment; disposable-cluster identifiers."
   },
-  "watchStartResourceVersion": "616",
+  "watchStartResourceVersion": "598",
+  "closedAtResourceVersion": "688",
+  "watchAliveAtClose": true,
+  "watchStderr": "",
+  "lastEventMatchesClose": true,
   "grants": [
     {
-      "grantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
-      "resourceUid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b"
+      "resourceUid": "83d2189e-be30-4389-b5ac-21f8da319bd7"
     },
     {
-      "grantId": "ga78b467694b6ec58c5f2da7fb290bf76bc34dd04a94f915e5db19df65a698db",
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
       "objectSha256": "3217daa0955f69aa772cf1def04c6d021ed44354a0dc56bd247b9c3015b7f63e",
-      "resourceUid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b"
+      "resourceUid": "83d2189e-be30-4389-b5ac-21f8da319bd7"
     }
   ],
   "useState": [
     {
-      "grant_id": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
-      "admission_uid": "f46acde8-5d91-41fc-b9c8-0e32e72446a9"
+      "grant_id": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admission_uid": "d015597a-4025-4091-9ab4-3bb51979c71d"
     },
     {
-      "grant_id": "ga78b467694b6ec58c5f2da7fb290bf76bc34dd04a94f915e5db19df65a698db",
-      "admission_uid": "9cc36abc-28df-4d39-b820-88db37b3d9f3"
+      "grant_id": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admission_uid": "54361bed-b855-4969-85f4-bf712ea1ac39"
     }
   ],
   "audit": [
     {
-      "auditID": "bf19b4f1-87e7-41dc-8e00-6f8e9e20f5c6",
-      "grantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
-      "admissionUid": "88af1ba7-d086-499d-b9aa-62f767caf5cd",
+      "auditID": "9a4cea19-7615-4d4e-a655-99486485ad93",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "865b6cd9-ce33-4e99-95d7-bc8166f796da",
       "outcome": "allow-dry-run",
       "code": 200,
       "isDryRun": true,
-      "storedResourceVersion": "684"
+      "storedResourceVersion": "653"
     },
     {
-      "auditID": "b5ecb67c-3386-42dc-80b5-4be34d8c3752",
-      "grantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
-      "admissionUid": "f46acde8-5d91-41fc-b9c8-0e32e72446a9",
+      "auditID": "646ca1ed-5ed1-47d1-9f8f-55b398039183",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "d015597a-4025-4091-9ab4-3bb51979c71d",
       "outcome": "allow-consumed",
       "code": 200,
       "isDryRun": false,
-      "storedResourceVersion": "703"
+      "storedResourceVersion": "654"
     },
     {
-      "auditID": "8bbdd736-464e-4c60-b336-97e778b6d0b8",
-      "grantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
-      "admissionUid": "04418767-796b-44a7-ae9a-ed18283e1b3d",
+      "auditID": "0e0217ee-c8e2-49bf-9c34-ff9c5f0f5a4d",
+      "grantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "admissionUid": "28af2cbb-8d9b-43c3-9e41-e9228c49ee3e",
       "outcome": "deny",
       "code": 400,
       "isDryRun": false
     },
     {
-      "auditID": "d533b12b-4307-4c7d-bf89-9a71ddd79f3d",
-      "grantId": "ga78b467694b6ec58c5f2da7fb290bf76bc34dd04a94f915e5db19df65a698db",
-      "admissionUid": "9cc36abc-28df-4d39-b820-88db37b3d9f3",
+      "auditID": "f2ae5e87-be7d-456c-97b6-69eddb79abec",
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admissionUid": "54361bed-b855-4969-85f4-bf712ea1ac39",
       "outcome": "allow-consumed",
       "code": 500,
       "isDryRun": false
     },
     {
-      "auditID": "f3ce79f7-aae6-45d5-9203-b3db4b3b3be0",
-      "grantId": "ga78b467694b6ec58c5f2da7fb290bf76bc34dd04a94f915e5db19df65a698db",
-      "admissionUid": "ca368346-c936-4de7-bf29-119d599f3f5c",
+      "auditID": "8dd9f147-0d0a-44fc-abe4-cef215f68400",
+      "grantId": "g78c7c5d8d7d95e9d9086a2919e203aa3a8260254b3dea765c1979a9aed32997",
+      "admissionUid": "4133a931-217f-48e8-9b20-09eaac57dba8",
       "outcome": "deny",
       "code": 400,
       "isDryRun": false
@@ -76,105 +80,111 @@
   "watchEvents": [
     {
       "type": "MODIFIED",
-      "resourceVersion": "673",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "653",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 1,
       "replicas": 3,
       "observedGeneration": 1,
       "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
-      "hashChangedFromPrevious": true,
+      "hashChangedFromPrevious": null,
       "matchesGrant": []
     },
     {
       "type": "MODIFIED",
-      "resourceVersion": "678",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
-      "generation": 1,
-      "replicas": 3,
-      "observedGeneration": 1,
-      "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
-      "hashChangedFromPrevious": false,
-      "matchesGrant": []
-    },
-    {
-      "type": "MODIFIED",
-      "resourceVersion": "684",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
-      "generation": 1,
-      "replicas": 3,
-      "observedGeneration": 1,
-      "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
-      "hashChangedFromPrevious": false,
-      "matchesGrant": []
-    },
-    {
-      "type": "MODIFIED",
-      "resourceVersion": "703",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "654",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 2,
       "replicas": 4,
       "observedGeneration": 1,
-      "carrierGrantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
       "hashChangedFromPrevious": true,
       "matchesGrant": [
-        "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3"
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
       ]
     },
     {
       "type": "MODIFIED",
-      "resourceVersion": "708",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "659",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 2,
       "replicas": 4,
       "observedGeneration": 2,
-      "carrierGrantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
       "hashChangedFromPrevious": false,
       "matchesGrant": [
-        "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3"
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
       ]
     },
     {
       "type": "MODIFIED",
-      "resourceVersion": "713",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "661",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 2,
       "replicas": 4,
       "observedGeneration": 2,
-      "carrierGrantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
       "hashChangedFromPrevious": false,
       "matchesGrant": [
-        "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3"
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
       ]
     },
     {
       "type": "MODIFIED",
-      "resourceVersion": "716",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "667",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 2,
       "replicas": 4,
       "observedGeneration": 2,
-      "carrierGrantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
       "hashChangedFromPrevious": false,
       "matchesGrant": [
-        "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3"
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
       ]
     },
     {
       "type": "MODIFIED",
-      "resourceVersion": "726",
-      "uid": "f8c7b9e7-36fa-4647-aaa9-09e0a039552b",
+      "resourceVersion": "674",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
       "generation": 2,
       "replicas": 4,
       "observedGeneration": 2,
-      "carrierGrantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
       "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
       "hashChangedFromPrevious": false,
       "matchesGrant": [
-        "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3"
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "681",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "688",
+      "uid": "83d2189e-be30-4389-b5ac-21f8da319bd7",
+      "generation": 2,
+      "replicas": 4,
+      "observedGeneration": 2,
+      "carrierGrantId": "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "hashChangedFromPrevious": false,
+      "matchesGrant": [
+        "gbb6056493e48094056a56639537860e6465837df3c286a2524615c79e687484"
       ]
     }
   ]

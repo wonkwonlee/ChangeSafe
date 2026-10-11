@@ -71,15 +71,28 @@ evidence of a spec write in this tier, which would simplify the contract.
 
 ## Results
 
-Run: [CI 38166778773](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773),
-commit `e0a9ffd`, all seven jobs passed (this run also carried #79's
-round-1 setup checks, which passed: the downstream webhook named the
-rejection and the enforcer's use-state held the consumed grant). Evidence:
-`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events.json`
-(raw artifact SHA-256 `09bdc2bb…c6db2`), replayed offline by
-`tests/integration/m4-watch-observer.test.ts` (12 tests). The watch opened
-at resourceVersion 616 and delivered 8 events, all Deployment, no
-bookmarks.
+Two live runs, the same harness, one revision apart.
+
+- **Run A**, [CI 38166778773](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773),
+  commit `e0a9ffd`: the table and the prediction results below. Evidence
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events-run-a.json`
+  (raw artifact SHA-256 `09bdc2bb…c6db2`). The watch opened at
+  resourceVersion 616 and delivered 8 events, all Deployment.
+- **Run C**, [CI 38167665704](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167665704),
+  commit `e9b8db3`: the same harness after internal review added stream
+  close markers (below). Evidence
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events.json`
+  (raw artifact SHA-256 `3432e806…2fcef`). The watch opened at 598 and
+  delivered 8 events; the object's version at close was 688, and the
+  stream's last event carried 688, with the watch alive when closed. The
+  write was the event at rv 654, after one earlier event (653) whose
+  predecessor was not seen; the 7 events after the write left the hash
+  unchanged. Grant 2 again matched nothing. A third live run (experiment
+  06's, 38167496300) agreed on the write and showed no event before it.
+
+Both are replayed offline by `tests/integration/m4-watch-observer.test.ts`
+(18 tests). Run A had 2 events before the write that provably left the hash
+unchanged; runs B and C had none, so that number is not a constant.
 
 | rv | replicas | observedGeneration | carrier names | hash changed | matches a grant |
 | --- | --- | --- | --- | --- | --- |
@@ -121,10 +134,12 @@ Offline scoring against 04's attacks, with the watch as observer:
 1. **The read before the write is not the admission's prior version.**
    The watch opened at 616, from a read just before step 1. The dry-run's
    response, and so the version the real admission's `oldObject` carried,
-   was 684, after three status-only events. Experiment 06 as
-   pre-registered replays from "the version read before step 1" and
-   described it as what P3 would record. This evidence shows that is not
-   so; the amendment is recorded in
+   was 684, after three events (the second and third provably left the
+   hash unchanged; the first had no predecessor in the stream). Run C
+   shows it again (read 598, dry-run 653); experiment 06's run did not
+   (618 for both). Experiment 06 as pre-registered replays from "the
+   version read before step 1" and described it as what P3 would record.
+   This evidence shows that is not reliable; the amendment is recorded in
    [experiment 06](M4_EXPERIMENT_06.md).
 2. **Events naming a grant are not writes.** Five events carry grant 1's
    carrier; one is the write. The status-only events keep the annotation.
@@ -141,6 +156,21 @@ Offline scoring against 04's attacks, with the watch as observer:
    deprotected by an administrator, or the default tier's fail-open
    behavior, would not give it, which is why 04's harness takes the
    property as an explicit option.
+
+4. **Absence needs an upper bound too (review finding).** The first
+   contract checked only that the stream began at or before the admission.
+   A stream killed before the write was delivered would then read a true
+   "stored" claim as contradicted, and a hidden "rejected" as agreed. The
+   harness now records the object's version at close and whether the watch
+   was alive, and the contract returns `unknown_stream_truncated` unless
+   the last event carries that version. Presence stays positive evidence
+   from a cut stream. An event dropped from the *middle* of a complete
+   stream is not detectable from the stream alone (versions are
+   cluster-global and events carry no sequence number); that is a stated
+   limit, tested as such.
+5. **The first event is not a spec change.** The summary had recorded it
+   as "hash changed" because it had no predecessor. It is `null` now, and
+   the notes no longer count it as status-only either.
 
 ## What the result says about the architecture
 
