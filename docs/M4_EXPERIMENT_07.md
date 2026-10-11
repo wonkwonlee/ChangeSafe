@@ -45,7 +45,10 @@ storing the target after this admission (`via_other_grant`) and a restore
 by another grant (`restores_prior` carries that grant's carrier). The
 first of these is the whole mechanism of H7b as it was found; the
 registered table listed only a write by another grant *before* the
-admission.
+admission. *Also added at implementation:* the status-only dimension is two
+independent booleans (before, after), so it has a fourth value, both, that
+the registered three-value dimension (none; before; after) did not list.
+The 768 tuples and every total derived from them include that case.
 
 **Evidence the contract may use**, each generated from the history:
 
@@ -104,7 +107,7 @@ sound observation contract exists for this tier is in doubt.
 ## Results
 
 Harness: `tests/integration/m4-evidence-model.ts` (the model and the
-contracts) and `tests/integration/m4-contract-enumeration.test.ts` (14
+contracts) and `tests/integration/m4-contract-enumeration.test.ts` (15
 tests). The enumeration is 768 parameter tuples, of which **400 are
 distinct worlds** (some parameters do nothing in some combinations: a
 restore is inert when the state did not move, and a status update after a
@@ -136,32 +139,53 @@ evaluations).**
 
 | Contract | Definite | Unsound | Unknown |
 | --- | --- | --- | --- |
-| v1 | 1,504 | **112** | 224 |
-| v1c | 1,392 | **0** | 336 |
+| v1 | 1,536 | **96** | 192 |
+| v1c | 1,440 | **0** | 288 |
 | v2a | 1,056 | **0** | 672 |
 | v2b | 1,728 | **0** | 0 |
 
 **Outside scope A, protected tier, exact prior, all five coverages (8,640
-evaluations):** v1 is unsound on 968 (the 112's rule 376 times, the audit
-fallbacks 592), and **v1c on 592**, all from the audit-fallback rules: the
+evaluations):** v1 is unsound on 960 (the 96's rule 304 times, the audit
+fallbacks 656), and **v1c on 656**, all from the audit-fallback rules: the
 audit event is the answer once the watch cannot give one, which is
 experiment 04's result at scale. v2a and v2b are unsound on none.
 
 | # | Prediction | Observed |
 | --- | --- | --- |
-| H7a | holds (medium): v1 sound on every history except those where T equals P | **refuted as stated.** 80 of the 112 unsound rows are no-op targets, but the other 32 are outside the registered exception: they need another grant to have stored the target after this admission. A prediction of one cause found two. (An earlier draft of this note scored it "holds" and credited those 32 to H7b; that was a generous reading of a prediction that said "except those where T equals P") |
+| H7a | holds (medium): v1 sound on every history except those where T equals P | **refuted as stated.** 64 of the 96 unsound rows are no-op targets, but the other 32 are outside the registered exception: they need another grant to have stored the target after this admission. A prediction of one cause found two. (An earlier draft of this note scored it "holds" and credited those 32 to H7b; that was a generous reading of a prediction that said "except those where T equals P") |
 | H7b | holds (medium-high): a truthful `rejected` is contradicted when another grant produced the same target | **holds, with the timing corrected.** The 32 rows need the other grant's write to come *after* this admission. With an exact prior, an earlier grant's write is outside the window and harmless; it appears only under a lower-bound prior (H7c) |
-| H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 156 against 112, 44 added, from events that precede the admission: another grant's earlier write, or for a no-op target the status-only events before it |
+| H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 152 against 96, 56 added, from events that precede the admission: another grant's earlier write, or for a no-op target the status-only events before it |
 | H7d | holds (medium): after the repair, no unsound definite verdict | **holds for v2a, the repair as registered**, over the whole protected grid (25,920 evaluations) for every prior, coverage and audit edit; definite on 11,220. **v2b is not the registered repair.** It was written after the enumeration showed v2a gives up a fifth of the cases, and it passes the same grid (definite on 14,616). A contract that passes the enumeration it was designed against is the weakest evidence this note admits to, so v2b's result is reported but not credited to the prediction |
-| H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier (480 parameter tuples, 2,880 evaluations in scope), assuming the carrier unforgeable gives 192 unsound evaluations for v2b (96 for v2a, which says nothing about a no-op), each a copied carrier on a truthful `rejected`. Not assuming it, neither has an unsound row, and they are definite on 1,200 (v2b) and 1,152 (v2a) of 2,880 |
+| H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier (480 parameter tuples, 2,880 evaluations in scope), assuming the carrier unforgeable gives 192 unsound evaluations for v2b (96 for v2a, which says nothing about a no-op), each a copied carrier on a truthful `rejected`. Not assuming it, neither has an unsound row, and they are definite on 1,248 (v2b) and 1,152 (v2a) of 2,880 |
 
-**v1's 112 unsound verdicts in scope A all come from one rule**, the one
+**v1's 96 unsound verdicts in scope A all come from one rule**, the one
 that reads a target state without this grant's carrier as contradicting a
 `rejected` claim. That rule was in experiment 05's first contract and was
 removed by 05's review. So the headline is narrower than "01 to 06 composed
 are unsound": it is that the *uncorrected* rule is, and that the corrected
 composition (v1c) is sound in scope A and unsound only where the audit
 event decides, as 04 already showed.
+
+## Correction after Codex review round 2 of PR #83
+
+Two findings, both in the model. (1) The observation window admitted the
+`ADDED` event of an object recreated under a new uid, although the grant is
+bound to the old uid and the real observer
+(`m4-watch-observer.test.ts`) requires `event.uid === grant.resourceUid`.
+For a no-op target, where every state hashes to the target, that event read
+as a target state without the grant's carrier. The window now counts only
+the grant's own incarnation. Changed totals: v1 in scope A is definite on
+1,536 and unsound on 96 (was 1,504 and 112; 64 no-op rows and 32
+`via_other_grant` rows), v1c is definite on 1,440 (was 1,392), a
+lower-bound prior gives 152 against 96 with 56 added (was 156, 112, 44),
+outside scope A v1 is unsound on 960 and v1c on **656** (was 968 and 592),
+and v2b not assuming the carrier is definite on 1,248 of 2,880 in the
+default tier (was 1,200). Every repair is still sound everywhere it was.
+The v1c figure rose because a recreated object's first event, which used
+to make that case unknown, no longer does; the audit fallback then decides.
+(2) The status-only dimension has a fourth value that the registered table
+did not list; it is now stated under the table as an implementation-time
+extension, and the totals are of the 768-tuple product as built.
 
 ## Findings the predictions did not cover
 

@@ -201,7 +201,10 @@ export function windowOf(obs: Observation): WindowFacts {
   // Target-hash events are those in state T; in a no-op grant every state hashes to the target.
   const hashesToTarget = (event: Ev) => event.state === "T" || obs.grantIsNoOp;
   const priorRv = obs.priorRv;
-  const inWindow = priorRv === undefined ? [] : obs.events.filter(event => event.rv > priorRv && event.type !== "DELETED");
+  // Only the grant's own incarnation counts: the real observer requires
+  // event.uid to equal the grant's resourceUid (m4-watch-observer.test.ts),
+  // so an object recreated under a new uid is evidence about nothing.
+  const inWindow = priorRv === undefined ? [] : obs.events.filter(event => event.rv > priorRv && event.type !== "DELETED" && event.uid === "U1");
   const covers = priorRv !== undefined && obs.streamStart <= priorRv;
   const last = obs.events[obs.events.length - 1];
   // Derived from the stream, not from its label: the last event carries the

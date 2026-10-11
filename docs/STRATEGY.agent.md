@@ -318,7 +318,7 @@ M4:
       result: replay from the admission's version reproduces the live watch exactly; version 1 returned the whole retained history, not an error (H6b refuted); retention horizon unreached
     - id: 07
       note: docs/M4_EXPERIMENT_07.md
-      result: bounded exhaustive check; experiment 05's pre-correction rule is unsound in 112 of 1728 protected-tier evaluations, and the corrected composition (v1c) is sound there and unsound only where the audit event decides; a carrier-keyed contract (post hoc) and the registered repair are both sound over the protected grid; assuming the carrier unforgeable in the default tier is unsound (192 for the carrier-keyed contract, 96 for the registered repair)
+      result: bounded exhaustive check; experiment 05's pre-correction rule is unsound in 96 of 1728 protected-tier evaluations, and the corrected composition (v1c) is sound there and unsound only where the audit event decides; a carrier-keyed contract (post hoc) and the registered repair are both sound over the protected grid; assuming the carrier unforgeable in the default tier is unsound (192 for the carrier-keyed contract, 96 for the registered repair)
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```
