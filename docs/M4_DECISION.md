@@ -44,6 +44,8 @@ does not establish that this particular admission caused it.
 Exit deliverables for the future bounded experiment: a reproducible
 counterexample to naive hash-only correlation, an observation contract with
 explicit unknown states, evidence fixtures, and a technical note stating
-which claims remain unsupported. Rollout health and E3 realization remain
+which claims remain unsupported. The first of these,
+[experiment 01](M4_EXPERIMENT_01.md), refutes hash-only correlation offline
+and proposes a test-local contract; it is not adopted into core. Rollout health and E3 realization remain
 outside that first experiment. Its implementation is not added to this
 release; the current approved work was selection of the M4 question.
