@@ -324,7 +324,7 @@ M4:
       result: under an interpreted mapping, the contract's structure (incarnation, version, boundary-set carrier) is not in the Terraform artifact and no stored verdict follows without a carrier; grants are issuable for one of three domains; not a refutation of the Physical OS hypothesis
     - id: 09
       note: docs/M4_EXPERIMENT_09.md
-      result: the grant carrier is writable outside the enforcer in the protected tier as deployed, via the status subresource (H9a holds on one live run); experiment 07's carrier-keyed contract is unsound there; a post hoc repair requiring the state transition in the same event is sound on the grid; the mitigation is a routing-guard change for the owner (R12)
+      result: the grant carrier is writable outside the enforcer in the protected tier as deployed, via the status subresource (H9a holds on two live runs, D1 and D2); experiment 07's carrier-keyed contract is unsound there; a post hoc repair requiring the state transition in the same event is sound on the grid; the mitigation is a routing-guard change for the owner (R12)
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```
