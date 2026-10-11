@@ -14,7 +14,7 @@ current_milestone: M4
 implementation_track: M4_scoped_observation_not_implemented
 method: research_loop            # adopted 2026-10-11, see §9
 loop_ledger: docs/RESEARCH_LOOP.md
-experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md]
+experiments: [docs/M4_EXPERIMENT_01.md, docs/M4_EXPERIMENT_02.md, docs/M4_EXPERIMENT_03.md, docs/M4_EXPERIMENT_04.md, docs/M4_EXPERIMENT_05.md, docs/M4_EXPERIMENT_06.md, docs/M4_EXPERIMENT_07.md, docs/M4_EXPERIMENT_08.md]
 closed_milestones: [M2, M3]
 closure_evidence: [docs/M2_CLOSEOUT.md, docs/M3_GUARANTEES.md]
 inherited_question_review: docs/M0_RETROSPECTIVE_REVIEW.md
@@ -319,6 +319,9 @@ M4:
     - id: 07
       note: docs/M4_EXPERIMENT_07.md
       result: bounded exhaustive check; experiment 05's pre-correction rule is unsound in 96 of 1728 protected-tier evaluations, and the corrected composition (v1c) is sound there and unsound only where the audit event decides; a carrier-keyed contract (post hoc) and the registered repair are both sound over the protected grid; assuming the carrier unforgeable in the default tier is unsound (192 for the carrier-keyed contract, 96 for the registered repair)
+    - id: 08
+      note: docs/M4_EXPERIMENT_08.md
+      result: under an interpreted mapping, the contract's structure (incarnation, version, boundary-set carrier) is not in the Terraform artifact and no stored verdict follows without a carrier; grants are issuable for one of three domains; not a refutation of the Physical OS hypothesis
   adopted_into_core: none
   adopted_elsewhere: [P1 enforcer audit annotations, P2 consumer admission uid]   # 2026-10-11, PR #79
 ```
