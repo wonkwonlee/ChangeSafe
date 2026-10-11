@@ -32,6 +32,9 @@ async function describe(name) {
   for (const line of text.split("\n").filter(Boolean)) {
     let parsed;
     try { parsed = JSON.parse(line); } catch { other.push(line.slice(0, 300)); continue; }
+    // JSON that is not an object (null, a number, a quoted string) is not an
+    // event; treat it as the non-event text it is rather than dereferencing.
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) { other.push(line.slice(0, 300)); continue; }
     if (parsed.type === undefined && parsed.kind === "DeploymentList") {
       for (const item of parsed.items ?? []) events.push({ type: "LIST-ITEM", object: item });
       events.push({ type: "LIST-META", object: { metadata: parsed.metadata } });
@@ -40,6 +43,15 @@ async function describe(name) {
     } else events.push(parsed);
   }
   const rows = [];
+  // kubectl reports a refused request as text on stderr ("Error from server
+  // (Expired): too old resource version"), merged into this file. Without a
+  // status row, "the server refused" and "the server had nothing" would both
+  // read as zero events; keep the text AND add an explicit unavailable row.
+  for (const line of other) {
+    if (/^Error from server|Expired|\b410\b|too old resource version|\bGone\b/i.test(line)) {
+      rows.push({ type: "ERROR", status: { code: null, reason: "kubectl-error-text", message: line.slice(0, 160) } });
+    }
+  }
   for (const event of events) {
     const object = event.object ?? {};
     if (object.kind === "Deployment") {

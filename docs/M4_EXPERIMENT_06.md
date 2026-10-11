@@ -85,11 +85,13 @@ this project has been removing from verdict vocabularies.
 ## Results
 
 Run: [CI 38167496300](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167496300),
-commit `b06f33e`, all seven jobs passed. Evidence:
-`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-replay.json`
-(replay artifact SHA-256 `de4a6f5a…58ad7`, same run's watch artifact
-`963424c7…`), replayed offline by
-`tests/integration/m4-replay-observer.test.ts` (13 tests).
+commit `b06f33e`, all seven jobs passed. Evidence: the run's raw
+artifacts, byte for byte, in
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-b/` with their
+SHA-256 values in `manifest.json` (replay `de4a6f5a…58ad7`, watch
+`963424c7…af97`); the tests check each file against its hash before
+using it. Replayed offline by
+`tests/integration/m4-replay-observer.test.ts` (16 tests).
 
 In this run the read before step 1 (618) **equalled** the dry-run's
 version (618). In experiment 05's run they differed (616 against 684). So
@@ -129,6 +131,27 @@ that happens to coincide in some runs and not others.
    returns an event of the right shape, the current state. A contract
    that accepts any stream with the right event type would read the end
    state as the whole history.
+
+## Corrections after internal review (round 1)
+
+Seven findings, all verified. The ones that change a claim:
+
+- **Presence needs the carrier and a write.** The first observer matched
+  on the object hash alone, so a DELETED event, or a state with another
+  writer's carrier, read as "holds target with carrier". It now requires
+  a non-DELETED event whose carrier names the grant, and otherwise
+  returns `replay_holds_target_without_carrier`.
+- **kubectl's refusal was indistinguishable from an empty history.** A
+  410 arrives as stderr text. The summary now keeps the text and adds an
+  explicit ERROR status row, and the observer treats any non-event
+  output as `unknown_history_unavailable`.
+- **The dry-run lookup was not keyed on the object.** It now requires the
+  demo Deployment's own namespace, name and verb.
+- **A run-specific coincidence was asserted as a contract.** That the two
+  replays matched only held because the two versions were equal in this
+  run; the test now asserts the relation.
+- **The fixture's hashes were not checkable.** The derived fixture is
+  replaced by the raw artifacts and a manifest.
 
 ## What the result says about the architecture
 
