@@ -302,3 +302,17 @@ describe("M4-06 what an observer concludes from the replay", () => {
     }
   });
 });
+
+describe("M4-06 the live harness", () => {
+  it("fails the reproduction when the admission's prior version cannot be recovered", () => {
+    const script = readFileSync(path.resolve("examples/m2-kubernetes-enforcer/kind-repro.sh"), "utf8");
+    const lookup = script.indexOf('M4_PRIOR_RV=$(node "${EXAMPLE_DIR}/m4-prior-version.mjs"');
+    const guard = script.indexOf('if [ -z "${M4_PRIOR_RV}" ]; then', lookup);
+    const replay = script.indexOf('m4_replay replay-prior "${M4_PRIOR_RV}"', lookup);
+    expect(lookup).toBeGreaterThan(0);
+    expect(guard).toBeGreaterThan(lookup);
+    // The guard exits before the replay it protects, and the replay is not conditional.
+    expect(script.slice(guard, replay)).toContain("exit 1");
+    expect(script.slice(guard - 0, replay)).not.toMatch(/\n\s*if \[ -n "\$\{M4_PRIOR_RV\}" \]/);
+  });
+});
