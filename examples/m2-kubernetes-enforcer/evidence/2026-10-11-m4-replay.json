@@ -1,0 +1,483 @@
+{
+  "source": {
+    "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167496300",
+    "commit": "b06f33e",
+    "replayArtifact": "admission-reproduction/m4-replay-evidence.json",
+    "replayArtifactSha256": "de4a6f5a41b5bdfb1e21bc034556384ca1cf1d10b8dc3601ef6885b25dd58ad7",
+    "watchArtifact": "admission-reproduction/m4-watch-evidence.json",
+    "watchArtifactSha256": "963424c77c0d2d1dc4a32c208659ca60101078cb0ba311e930fe1b667284af97",
+    "note": "Replay, ancient, any and NotOlderThan-list requests from the live kind run of M4-06, with the same run's live watch and use-state for comparison. Fictional kind demo Deployment; disposable-cluster identifiers."
+  },
+  "readBeforeStep1": "618",
+  "dryRunVersion": "618",
+  "grants": [
+    {
+      "grantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "objectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "resourceUid": "8c444ee7-6e1e-4e17-ba3b-6a2217c9436c"
+    },
+    {
+      "grantId": "g853e04c9673f0b538b0897620653585c70ca1de069a37be88f3a339230a4837",
+      "objectSha256": "3217daa0955f69aa772cf1def04c6d021ed44354a0dc56bd247b9c3015b7f63e",
+      "resourceUid": "8c444ee7-6e1e-4e17-ba3b-6a2217c9436c"
+    }
+  ],
+  "useState": [
+    {
+      "grant_id": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "admission_uid": "c5c702f4-a5e3-404b-a1a3-758b060e5561"
+    },
+    {
+      "grant_id": "g853e04c9673f0b538b0897620653585c70ca1de069a37be88f3a339230a4837",
+      "admission_uid": "47dc2f6f-efec-4ced-9ab7-8ae092c7fcc5"
+    }
+  ],
+  "audit": [
+    {
+      "auditID": "37a17f1c-8e7e-4156-8fd2-ae8be013b00d",
+      "grantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "admissionUid": "f2f8c0b9-ccfc-49d6-bc49-f64d62eac77d",
+      "outcome": "allow-dry-run",
+      "code": 200,
+      "isDryRun": true,
+      "storedResourceVersion": "618"
+    },
+    {
+      "auditID": "36460c63-7094-4b84-9f15-7fdf4b3e07a3",
+      "grantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "admissionUid": "c5c702f4-a5e3-404b-a1a3-758b060e5561",
+      "outcome": "allow-consumed",
+      "code": 200,
+      "isDryRun": false,
+      "storedResourceVersion": "672"
+    },
+    {
+      "auditID": "80df1d66-d197-47fc-8260-96453805678a",
+      "grantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "admissionUid": "8638314d-882b-4a27-95e2-ef62d7b97eb0",
+      "outcome": "deny",
+      "code": 400,
+      "isDryRun": false
+    },
+    {
+      "auditID": "f937d14b-b7a9-4bc9-973a-dc06a4b8742e",
+      "grantId": "g853e04c9673f0b538b0897620653585c70ca1de069a37be88f3a339230a4837",
+      "admissionUid": "47dc2f6f-efec-4ced-9ab7-8ae092c7fcc5",
+      "outcome": "allow-consumed",
+      "code": 500,
+      "isDryRun": false
+    },
+    {
+      "auditID": "aba7be5e-0119-4230-9432-40528bd67327",
+      "grantId": "g853e04c9673f0b538b0897620653585c70ca1de069a37be88f3a339230a4837",
+      "admissionUid": "d37c7386-0768-4468-8a3f-344b735aebc3",
+      "outcome": "deny",
+      "code": 400,
+      "isDryRun": false
+    }
+  ],
+  "liveWatch": [
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "672",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "676",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "681",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "684",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "696",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "701",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "707",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    },
+    {
+      "type": "MODIFIED",
+      "resourceVersion": "714",
+      "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+      "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+      "matchesGrant": [
+        "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "name": "replay",
+      "rows": [
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "replay-prior",
+      "rows": [
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "ancient",
+      "rows": [
+        {
+          "type": "ADDED",
+          "resourceVersion": "601",
+          "objectHash": "8431c6e48d21ae3eb86bb82cf3333cebb9ae91ffa446c1f25edceda61ce41f9a",
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "604",
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "610",
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "618",
+          "objectHash": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "672",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "676",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "681",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "684",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "696",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "701",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "707",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        },
+        {
+          "type": "MODIFIED",
+          "resourceVersion": "714",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "any",
+      "rows": [
+        {
+          "type": "ADDED",
+          "resourceVersion": "714",
+          "objectHash": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
+          "carrierGrantId": "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145",
+          "matchesGrant": [
+            "g50a46f78e015be59db155d7d4f3b987c07646a10b882905148fe828d934f145"
+          ],
+          "status": null
+        }
+      ],
+      "other": []
+    },
+    {
+      "name": "list",
+      "rows": [
+        {
+          "type": "LIST-ITEM",
+          "resourceVersion": "714",
+          "objectHash": null,
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        },
+        {
+          "type": "LIST-META",
+          "resourceVersion": "754",
+          "objectHash": null,
+          "carrierGrantId": null,
+          "matchesGrant": [],
+          "status": null
+        }
+      ],
+      "other": []
+    }
+  ]
+}

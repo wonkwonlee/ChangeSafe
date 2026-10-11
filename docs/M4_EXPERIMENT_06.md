@@ -84,4 +84,88 @@ this project has been removing from verdict vocabularies.
 
 ## Results
 
-Pending the CI run.
+Run: [CI 38167496300](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167496300),
+commit `b06f33e`, all seven jobs passed. Evidence:
+`examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-replay.json`
+(replay artifact SHA-256 `de4a6f5a…58ad7`, same run's watch artifact
+`963424c7…`), replayed offline by
+`tests/integration/m4-replay-observer.test.ts` (13 tests).
+
+In this run the read before step 1 (618) **equalled** the dry-run's
+version (618). In experiment 05's run they differed (616 against 684). So
+the two replays are identical here, and the earlier read is a stand-in
+that happens to coincide in some runs and not others.
+
+| Request | Version asked | Answered with |
+| --- | --- | --- |
+| `replay`, `replay-prior` | 618 | 8 MODIFIED events, rv 672 to 714, identical to the run's live watch |
+| `ancient` | 1 | 12 events: ADDED 601 (the object's creation), then 604, 610, 618, then the same 8. **No error** |
+| `any` | 0 | one synthetic ADDED at the current version, 714 |
+| `list`, NotOlderThan 618 | 618 | the object at 714, in a list whose own version is 754 |
+
+| # | Prediction | Observed |
+| --- | --- | --- |
+| H6a | holds (medium-high) | **holds.** Same versions, same enforcer hashes, same carrier ids as the live watch |
+| H6b | holds (high) | **refuted.** Version 1 was not answered with 410 or an ERROR event. The server delivered the whole history it retained, from the object's creation. The cluster was minutes old, so nothing had been compacted; the boundary where 410 starts was not reached |
+| H6c | holds (high) | **holds.** Version 0 delivers the current state and no history |
+| H6d | holds (high) | **holds.** No replayed event names or matches grant 2 |
+| H6e | holds (high) | **holds.** The list returns the current object; its collection version (754) is not the object's (714) |
+| H6f | holds (high) | **half exercised.** A replay delivers only events strictly newer than the version asked for: 618 is absent from the replays and present in `ancient`. The other half, that the earlier read adds status-only events, was not exercised because the two versions coincided |
+
+## Findings the predictions did not cover
+
+1. **Asking for an old version is not a probe for retention.** The
+   prediction that version 1 would return an explicit 410 was wrong for a
+   young cluster: the server answered with everything it held. An
+   observer cannot treat "no error" as "the history reaches back to the
+   admission". Coverage has to come from the replay's own start (the
+   version asked for is at or before the admission's) and its end (below).
+2. **The list is the completeness marker.** The replay's last event (714)
+   equals the object's version in a read taken after it. When they are
+   equal nothing newer was missed, and that is what lets absence
+   (grant 2) count. The list's own version (754) must not be used: it is
+   the collection's, and it moves when any other object does.
+3. **A request for version 0 looks like a replay and is not one.** It
+   returns an event of the right shape, the current state. A contract
+   that accepts any stream with the right event type would read the end
+   state as the whole history.
+
+## What the result says about the architecture
+
+1. **P3 gives the observer a cursor, and the cursor is enough.** A
+   replay from the admission's recorded version reproduced the live
+   watch exactly, with no observer present at the time. An observer that
+   was absent can settle stored versus rejected by asking the API server
+   for what happened since.
+2. **The stand-in for P3 is unsafe, not just imprecise.** The read before
+   step 1 sometimes equals the admission's version and sometimes is
+   older. Older is safe for coverage (it starts earlier) and wrong as a
+   description of what the enforcer saw. Recording `oldObject` in
+   use-state removes the guess.
+3. **The retention horizon is the open boundary.** Everything above
+   rests on the server still holding the events. Compaction and the
+   watch cache's capacity decide that, on a clock and a write volume this
+   run did not reach.
+
+## What remains unsupported
+
+- The point at which an old version stops being answered with history and
+  starts being answered with 410 (or an ERROR event) was not reached.
+- One run, one Kubernetes version, the protected tier, a minutes-old
+  cluster with a handful of writes.
+- Replay is the API server's own account of itself, as a read is, and
+  does not show who wrote a version.
+- The version asked for came from a read and a dry-run response, not
+  from a recorded `oldObject`.
+
+## Next question
+
+> **How far back does the API server answer a replay, and what does it
+> say at the edge: can an observer distinguish "history reaches the
+> admission" from "history was compacted" from "no events"?**
+
+That needs a clock and a write volume this harness does not have, so it
+is not scheduled as the next experiment. A cheaper neighbouring question
+is whether the evidence the project has collected can be stated as one
+contract in which no verdict overclaims, which is where the loop goes
+next.
