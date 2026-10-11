@@ -9,6 +9,7 @@ import {
 } from "@changesafe/core";
 import { POLICY_VERSION } from "@changesafe/domain-kubernetes";
 import { createEnforcerServer, resolveExpectedPolicyVersion } from "../src/server";
+import { createInMemoryGrantUseRegistry } from "../src/use-state";
 import { kubernetesObjectSha256 } from "../src/verify";
 
 const RESOURCE = {
@@ -380,7 +381,7 @@ it("storage failure denies explicitly and dry-run does not burn a grant", async 
   let calls = 0;
   server = createEnforcerServer({ trustedPublicKey: await importVerifyingKey(pem.publicKeyPem),
     now: () => new Date("2026-08-19T12:30:00.000Z"), readGrant: () => signed,
-    grantUses: { consume() { calls++; throw new Error("storage failure"); } },
+    grantUses: { consume() { calls++; throw new Error("storage failure"); }, consumedBy() { return undefined; } },
   });
   const base = await listen(server);
   const request = { apiVersion: "admission.k8s.io/v1", kind: "AdmissionReview", request: {
@@ -396,3 +397,44 @@ it("storage failure denies explicitly and dry-run does not burn a grant", async 
     status: { message: "grant consumption could not be recorded" } });
   expect(calls).toBe(1);
 });
+
+it("names the grant and the enforcer's own outcome in the audit annotations of every graded answer", async () => {
+  // docs/M4_EXPERIMENT_02.md P1: the API server writes these into the audit
+  // event that also carries the write's real outcome. The enforcer reports
+  // only its own answer; a later stage can still reject an allowed request.
+  const pem = await generateSigningKeyPair();
+  const signed = await signGrant(AuthorizationGrantSchema.parse({
+    grantId: "grant-audit-test", receiptId: "receipt-audit-test", authorizedActor: "actor-audit-test",
+    operation: "UPDATE", resource: RESOURCE_ID, objectSha256: await objectHashOf(RESOURCE),
+    oldObjectSha256: await objectHashOf(RESOURCE_PRIOR), resourceUid: RESOURCE_UID,
+    policyVersion: POLICY_VERSION, issuedAtUtc: "2026-08-19T12:00:00.000Z", expiresAtUtc: "2026-08-19T13:00:00.000Z",
+  }), await importSigningKeyPair(pem.privateKeyPem));
+  const uses = createInMemoryGrantUseRegistry();
+  let attach = true;
+  server = createEnforcerServer({ trustedPublicKey: await importVerifyingKey(pem.publicKeyPem),
+    now: () => new Date("2026-08-19T12:30:00.000Z"), readGrant: () => (attach ? signed : null), grantUses: uses,
+  });
+  const base = await listen(server);
+  const send = async (uid: string, extra: Record<string, unknown> = {}) => {
+    const body = { apiVersion: "admission.k8s.io/v1", kind: "AdmissionReview", request: {
+      uid, operation: "UPDATE", userInfo: { username: "actor-audit-test" },
+      object: RESOURCE, oldObject: RESOURCE_PRIOR, ...extra } };
+    return (await (await fetch(`${base}/validate`, { method: "POST", body: JSON.stringify(body) })).json()).response;
+  };
+  const annotations = (uid: string, outcome: string) => ({ "grant-id": "grant-audit-test", "admission-uid": uid, outcome });
+
+  expect(await send("audit-dry-run", { dryRun: true })).toMatchObject({ allowed: true, auditAnnotations: annotations("audit-dry-run", "allow-dry-run") });
+  expect(await send("audit-actual")).toMatchObject({ allowed: true, auditAnnotations: annotations("audit-actual", "allow-consumed") });
+  expect(uses.consumedBy("grant-audit-test")).toBe("audit-actual");
+  expect(await send("audit-replay")).toMatchObject({ allowed: false, auditAnnotations: annotations("audit-replay", "deny") });
+  expect(await send("audit-substituted", { object: { ...RESOURCE, spec: { replicas: 99 } } })).toMatchObject({ allowed: false, auditAnnotations: annotations("audit-substituted", "deny") });
+  expect(uses.consumedBy("grant-audit-test")).toBe("audit-actual");
+
+  // Without a readable grant there is no grant id to name, so nothing is
+  // annotated rather than something guessed.
+  attach = false;
+  const missing = await send("audit-missing");
+  expect(missing.allowed).toBe(false);
+  expect(missing).not.toHaveProperty("auditAnnotations");
+});
+

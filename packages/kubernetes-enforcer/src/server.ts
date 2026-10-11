@@ -8,6 +8,7 @@ import {
   AdmissionReviewRequestSchema,
   buildAdmissionReviewResponse,
   type AdmissionReviewRequest,
+  type GrantAuditAnnotations,
 } from "./admission-review";
 import { createInMemoryGrantUseRegistry, type GrantUseRegistry } from "./use-state";
 import { verifyGrantAgainstAdmission } from "./verify";
@@ -204,22 +205,33 @@ async function handle(
   // Only a valid, non-dry-run admission consumes authority. SQLite's unique
   // insert is atomic across connections; storage failure is an explicit DENY.
   let result: { allowed: true } | { allowed: false; message: string };
+  let auditOutcome: GrantAuditAnnotations["outcome"] = "deny";
   if (!outcome.allowed) {
     result = { allowed: false, message: outcome.reason };
   } else if (review.request.dryRun) {
     result = { allowed: true };
+    auditOutcome = "allow-dry-run";
   } else {
     try {
       const consumed = (options.grantUses ?? createInMemoryGrantUseRegistry()).consume(
-        signedGrant.grant.grantId, Date.parse(signedGrant.grant.expiresAtUtc), options.now().getTime());
+        signedGrant.grant.grantId, Date.parse(signedGrant.grant.expiresAtUtc), options.now().getTime(),
+        review.request.uid);
       result = consumed ? { allowed: true } : { allowed: false, message: "grant has already been exercised; a grant authorizes exactly one admission" };
+      if (consumed) auditOutcome = "allow-consumed";
     } catch {
       // A reachable verifier with broken storage must answer DENY even on Ignore.
       result = { allowed: false, message: "grant consumption could not be recorded" };
     }
   }
 
-  send(response, 200, buildAdmissionReviewResponse(review.request.uid, result));
+  // The grant id is signed but this grant may be forged or substituted; the
+  // annotation names what the request carried, and `outcome` says whether
+  // the enforcer honoured it, so a refused grant is still recorded as one.
+  send(response, 200, buildAdmissionReviewResponse(review.request.uid, result, {
+    "grant-id": signedGrant.grant.grantId,
+    "admission-uid": review.request.uid,
+    outcome: auditOutcome,
+  }));
 }
 
 /** Best-effort `request.uid` from a body that failed schema validation. */

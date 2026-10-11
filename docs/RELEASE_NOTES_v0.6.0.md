@@ -19,6 +19,13 @@ refinement proof. M4 observation is selected but unimplemented.
 - The runnable enforcer requires persistent SQLite single-use state. Protected
   namespace downgrade/deletion and Scale/HPA bypasses are denied by native
   admission routing policies. Dry-run does not consume authority.
+- The enforcer records which admission consumed each grant (`request.uid`
+  beside `grant_id`; existing use-state files migrate in place, with old
+  rows reading as not recorded), and returns audit annotations naming the
+  grant, the admission, and its own outcome. With API server audit logging
+  on, the audit event for a request then names the grant it carried. This
+  records evidence; it attests neither persistence (E2) nor effect (E3).
+  See [M4 experiments](M4_EXPERIMENT_03.md).
 - The M3 protocol model checks bounded safety and requires five injected
   defect counterexamples plus the default-tier outage overclaim counterexample.
 
