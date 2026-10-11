@@ -35,9 +35,17 @@ const uses = json(usesPath);
 
 let previousHash;
 const watchEvents = [];
+const errorEvents = [];
+let unparsedLines = 0;
 for (const line of lines(watchPath)) {
   const event = tryParse(line);
-  if (event === undefined || event.type === undefined) continue; // a partial line at the kill
+  if (event === undefined || event.type === undefined) { unparsedLines += 1; continue; } // a partial line at the kill
+  if (event.type === "ERROR") {
+    // An in-band error (410 Gone, a too-old version) ends the stream: it is
+    // recorded, and a stream with one is never reported as complete.
+    errorEvents.push({ code: event.object?.code, reason: event.object?.reason, message: String(event.object?.message ?? "").slice(0, 160) });
+    continue;
+  }
   const object = event.object ?? {};
   if (event.type === "BOOKMARK" || object.kind !== "Deployment") {
     watchEvents.push({ type: event.type, resourceVersion: object.metadata?.resourceVersion });
@@ -84,7 +92,9 @@ const evidence = {
   closedAtResourceVersion: closedAtRv ?? null,
   watchAliveAtClose: aliveAtClose === undefined ? null : aliveAtClose === "1",
   watchStderr: watchErr,
-  lastEventMatchesClose: lastEvent !== undefined && closedAtRv !== undefined && lastEvent.resourceVersion === closedAtRv,
+  errorEvents,
+  unparsedLines,
+  lastEventMatchesClose: errorEvents.length === 0 && lastEvent !== undefined && closedAtRv !== undefined && lastEvent.resourceVersion === closedAtRv,
   grants, useState: uses, audit, watchEvents,
 };
 writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
@@ -92,7 +102,8 @@ writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
 const real = watchEvents.filter((event) => event.uid !== undefined);
 console.log(`stream: started at ${watchStartRv ?? "?"}, object version at close ${closedAtRv ?? "?"}, ` +
   `last event ${lastEvent?.resourceVersion ?? "-"}, alive at close ${aliveAtClose ?? "?"}, ` +
-  `last event matches close: ${evidence.lastEventMatchesClose}${watchErr ? `, stderr: ${watchErr.slice(0, 120)}` : ""}`);
+  `last event matches close: ${evidence.lastEventMatchesClose}, in-band errors: ${errorEvents.length}, unparsed lines: ${unparsedLines}` +
+  `${watchErr ? `, stderr: ${watchErr.slice(0, 120)}` : ""}`);
 console.log(`watch events: ${watchEvents.length} received (${real.length} Deployment, ${watchEvents.length - real.length} bookmark/other)`);
 console.log("type | rv | replicas | observedGen | carrier grant | hash changed | matches grant");
 for (const event of real) {

@@ -1,12 +1,4 @@
 {
-  "source": {
-    "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773",
-    "artifact": "admission-reproduction/m4-watch-evidence.json",
-    "artifactSha256": "09bdc2bb15b352570c5a60cd185cd50138c65ba73aa74ae5fe802153584c6db2",
-    "commit": "e0a9ffd",
-    "note": "The whole m4-watch-evidence.json from the live kind run of M4-05: grants, the enforcer use-state, the annotated audit events, and every event the independent watch delivered. Fictional kind demo Deployment; disposable-cluster identifiers."
-  },
-  "watchStartResourceVersion": "616",
   "grants": [
     {
       "grantId": "g9bddbc4e29719aa98672cc10b642b25b184afd51da330fee3f89225a9989bc3",

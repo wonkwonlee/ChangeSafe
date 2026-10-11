@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -29,13 +30,13 @@ const DeploymentEvent = z.object({
 }).passthrough();
 const OtherEvent = z.object({ type: z.string(), resourceVersion: z.string().optional() }).passthrough();
 
-const Fixture = z.object({
-  source: z.object({ ciRun: z.string().url(), artifactSha256: z.string().regex(/^[0-9a-f]{64}$/) }).passthrough(),
-  watchStartResourceVersion: z.string(),
+const Evidence = z.object({
+  watchStartResourceVersion: z.string().optional(),
   /** The object's version when the watch was closed; a complete stream's last event carries it. */
-  closedAtResourceVersion: z.string(),
-  watchAliveAtClose: z.boolean(),
-  lastEventMatchesClose: z.boolean(),
+  closedAtResourceVersion: z.string().nullable().optional(),
+  watchAliveAtClose: z.boolean().nullable().optional(),
+  watchStderr: z.string().optional(),
+  lastEventMatchesClose: z.boolean().optional(),
   grants: z.array(z.object({ grantId: z.string(), objectSha256: z.string(), resourceUid: z.string() })),
   useState: z.array(z.object({ grant_id: z.string(), admission_uid: z.string() })),
   audit: z.array(z.object({
@@ -44,8 +45,27 @@ const Fixture = z.object({
   })),
   watchEvents: z.array(z.union([DeploymentEvent, OtherEvent])),
 });
-const fixture = Fixture.parse(JSON.parse(readFileSync(
-  path.resolve("examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events.json"), "utf8")));
+const Manifest = z.object({
+  ciRun: z.string().url(),
+  watchStartResourceVersion: z.string().optional(),
+  files: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)),
+});
+
+/** A live run's raw artifact, committed byte for byte and checked against its manifest hash before use. */
+function loadRun(directory: string) {
+  const dir = path.resolve("examples/m2-kubernetes-enforcer/evidence", directory);
+  const manifest = Manifest.parse(JSON.parse(readFileSync(path.join(dir, "manifest.json"), "utf8")));
+  const bytes = readFileSync(path.join(dir, "m4-watch-evidence.json"));
+  if (createHash("sha256").update(bytes).digest("hex") !== manifest.files["m4-watch-evidence.json"]) {
+    throw new Error(`${directory}/m4-watch-evidence.json does not match its manifest hash`);
+  }
+  const evidence = Evidence.parse(JSON.parse(bytes.toString("utf8")));
+  const startVersion = evidence.watchStartResourceVersion ?? manifest.watchStartResourceVersion;
+  if (startVersion === undefined) throw new Error(`${directory} records no watch start version`);
+  return { manifest, evidence, startVersion };
+}
+const runC = loadRun("2026-10-11-run-c");
+const fixture = { ...runC.evidence, watchStartResourceVersion: runC.startVersion };
 
 type WatchEvent = z.infer<typeof DeploymentEvent>;
 const isDeployment = (event: z.infer<typeof DeploymentEvent> | z.infer<typeof OtherEvent>): event is WatchEvent =>
@@ -59,26 +79,45 @@ const must = <T>(value: T | undefined, what: string): T => {
 const grant1 = must(fixture.grants[0], "grant 1");
 const grant2 = must(fixture.grants[1], "grant 2");
 /**
- * The version the dry-run's response carried: what grant 1's admission saw.
- * For grant 2, whose own oldObject version no artifact records, it is a
- * *lower bound*: grant 2 was admitted later against the same object, and
- * versions only rise. Using a lower bound is safe in both directions this
- * contract uses it: the stream must start at or before it (a stricter
- * coverage test than the true prior), and the event window opens at it (a
- * wider window can only find more target events, so absence is stronger).
+ * The version each grant's admission saw, as far as the evidence says.
+ *
+ * Grant 1: its own dry-run's response (the enforcer does not record
+ * oldObject today, proposal P3). Grant 2 has no dry-run in the artifact.
+ * It was admitted after grant 1's write was stored (the harness issues it
+ * from a snapshot taken then), and versions only rise, so grant 1's stored
+ * version is a LOWER BOUND of grant 2's. A lower bound is safe for the
+ * coverage check (the stream must start at or before the true prior, and
+ * starting before a lower bound is stricter) and for absence. It is NOT
+ * safe for presence: an earlier window can contain another writer's event
+ * that hashes to the grant's target. The carrier check below is what stops
+ * that being attributed, and the exact version (P3) removes the window.
  */
-const PRIOR_RV = must(fixture.audit.find(event => event.isDryRun)?.storedResourceVersion, "the dry-run's version");
+function priorOf(grantId: string): string {
+  const own = fixture.audit.find(event => event.isDryRun && event.grantId === grantId);
+  if (own?.storedResourceVersion !== undefined) return own.storedResourceVersion;
+  const firstConsumer = must(fixture.useState[0], "grant 1's use-state row").admission_uid;
+  return must(fixture.audit.find(event => event.admissionUid === firstConsumer)?.storedResourceVersion, "grant 1's stored version");
+}
+const PRIOR_RV = priorOf(grant1.grantId);
+const PRIOR_RV_2 = priorOf(grant2.grantId);
 
 interface Stream {
   /** Where the stream began. It covers the admission only if it began at or before the prior version. */
   fromResourceVersion: string;
   /** The object's version when the stream was closed, if recorded. A complete stream's last event carries it. */
   closedAtResourceVersion?: string;
+  /** Alive when closed, nothing on stderr, no in-band ERROR event. False or absent means "not known complete". */
+  endedCleanly: boolean;
   events: WatchEvent[];
 }
+const endedCleanly =
+  fixture.watchAliveAtClose === true &&
+  fixture.watchStderr === "" &&
+  !fixture.watchEvents.some(event => event.type === "ERROR");
 const fullStream: Stream = {
   fromResourceVersion: fixture.watchStartResourceVersion,
-  closedAtResourceVersion: fixture.closedAtResourceVersion,
+  closedAtResourceVersion: fixture.closedAtResourceVersion ?? undefined,
+  endedCleanly,
   events: deploymentEvents,
 };
 
@@ -88,6 +127,7 @@ const WATCH_VERDICTS = [
   "watch_holds_no_target_state",
   "unknown_stream_does_not_cover_admission",
   "unknown_stream_truncated",
+  "unknown_stream_ended_abnormally",
   "unknown_stream_out_of_order",
 ] as const;
 type WatchVerdict = (typeof WATCH_VERDICTS)[number];
@@ -96,7 +136,7 @@ const RECONCILED = [
   "agrees_rejected",
   "claim_contradicted_by_watch",
   "claim_unchecked_watch_unknown",
-  "claim_stored_state_unattributed",
+  "target_state_unattributed",
 ] as const;
 type Reconciled = (typeof RECONCILED)[number];
 
@@ -132,6 +172,7 @@ function fromWatch(
 
   const start = compareResourceVersions(stream.fromResourceVersion, priorResourceVersion);
   if (start === undefined || start === 1) return "unknown_stream_does_not_cover_admission";
+  if (!stream.endedCleanly) return "unknown_stream_ended_abnormally";
   const last = stream.events[stream.events.length - 1];
   const reachesClose =
     stream.closedAtResourceVersion !== undefined &&
@@ -147,9 +188,10 @@ type Claim = "stored" | "rejected";
 /** An audit claim next to the watch's account of the same grant. */
 function reconcile(claim: Claim, watch: WatchVerdict): Reconciled {
   if (watch.startsWith("unknown_")) return "claim_unchecked_watch_unknown";
-  if (watch === "watch_holds_target_without_carrier") {
-    return claim === "stored" ? "claim_stored_state_unattributed" : "claim_contradicted_by_watch";
-  }
+  // The state exists but nothing ties it to this grant, so neither claim is
+  // contradicted: a truthful "rejected" must not be called a lie because
+  // another writer converged the object to the same target.
+  if (watch === "watch_holds_target_without_carrier") return "target_state_unattributed";
   const holdsTarget = watch === "watch_holds_target_with_carrier";
   if (claim === "stored") return holdsTarget ? "agrees_stored" : "claim_contradicted_by_watch";
   return holdsTarget ? "claim_contradicted_by_watch" : "agrees_rejected";
@@ -162,14 +204,34 @@ const auditClaimOf = (grantId: string): Claim => {
   return consumed.code >= 200 && consumed.code < 300 ? "stored" : "rejected";
 };
 
+/** The stream's start for the "began too late" cases: after the write, so after both admissions. */
+const WRITE_INDEX = deploymentEvents.findIndex(event => event.matchesGrant.includes(grant1.grantId));
+const LATE_START = must(deploymentEvents[WRITE_INDEX + 1], "an event after the write").resourceVersion;
+const lateStream = (): Stream => ({
+  fromResourceVersion: LATE_START,
+  closedAtResourceVersion: fixture.closedAtResourceVersion ?? undefined,
+  endedCleanly: true,
+  events: deploymentEvents.filter(event => compareResourceVersions(event.resourceVersion, LATE_START) === 1),
+});
+
 const hashChanged = (index: number): boolean =>
   index === 0 ? true : must(deploymentEvents[index], "an event").objectHash !== must(deploymentEvents[index - 1], "the previous event").objectHash;
 
 describe("M4-05 live evidence: what the independent watch holds", () => {
   it("the stream was alive and complete when it was closed", () => {
     expect(fixture.watchAliveAtClose).toBe(true);
+    expect(fixture.watchStderr).toBe("");
+    expect(fixture.watchEvents.filter(event => event.type === "ERROR")).toEqual([]);
     expect(fixture.lastEventMatchesClose).toBe(true);
     expect(must(deploymentEvents[deploymentEvents.length - 1], "the last event").resourceVersion).toBe(fixture.closedAtResourceVersion);
+  });
+
+  it("the summary's derived hash-change flag agrees with the hashes, and the first event is unclassified", () => {
+    const first = must(deploymentEvents[0], "the first event");
+    expect(first.hashChangedFromPrevious).toBeNull();
+    deploymentEvents.forEach((event, index) => {
+      if (index > 0) expect(event.hashChangedFromPrevious).toBe(hashChanged(index));
+    });
   });
 
   it("H5a: grant 1's stored write is one event, with its hash, uid, carrier and the audit's version", () => {
@@ -186,7 +248,7 @@ describe("M4-05 live evidence: what the independent watch holds", () => {
   it("H5b: nothing in the stream names or matches grant 2, which the audit says was rejected", () => {
     expect(deploymentEvents.filter(event => event.carrierGrantId === grant2.grantId)).toEqual([]);
     expect(deploymentEvents.filter(event => event.matchesGrant.includes(grant2.grantId))).toEqual([]);
-    expect(fromWatch(grant2, PRIOR_RV, fullStream)).toBe("watch_holds_no_target_state");
+    expect(fromWatch(grant2, PRIOR_RV_2, fullStream)).toBe("watch_holds_no_target_state");
   });
 
   it("H5c: version advances with an unchanged spec hash follow the write, and every one still names the grant", () => {
@@ -206,22 +268,15 @@ describe("M4-05 live evidence: what the independent watch holds", () => {
   });
 
   it("run A (a different CI run) had status-only events between that read and the write", () => {
-    // Kept as its own fixture because the first live run is what the note's
-    // first results describe. Across the three live runs the number of
-    // events between the pre-write read and the write was 2, 0 and 0 (plus
-    // an unclassifiable first event), so it is not a constant.
-    const RunA = z.object({
-      source: z.object({ ciRun: z.string().url() }).passthrough(),
-      watchStartResourceVersion: z.string(),
-      audit: z.array(z.object({ isDryRun: z.boolean(), storedResourceVersion: z.string().optional() })),
-      watchEvents: z.array(z.object({ resourceVersion: z.string(), objectHash: z.string(), matchesGrant: z.array(z.string()) })),
-    });
-    const runA = RunA.parse(JSON.parse(readFileSync(
-      path.resolve("examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events-run-a.json"), "utf8")));
-    const prior = must(runA.audit.find(event => event.isDryRun)?.storedResourceVersion, "run A's dry-run version");
-    expect(compareResourceVersions(runA.watchStartResourceVersion, prior)).toBe(-1);
-    const before = runA.watchEvents.filter(event =>
-      compareResourceVersions(event.resourceVersion, runA.watchStartResourceVersion) === 1 &&
+    // Kept as its own committed artifact because the note's first results
+    // describe this run. Across the three live runs the number of events
+    // between the pre-write read and the write was 2, 0 and 0 (plus an
+    // unclassifiable first event), so it is not a constant.
+    const runA = loadRun("2026-10-11-run-a");
+    const prior = must(runA.evidence.audit.find(event => event.isDryRun)?.storedResourceVersion, "run A's dry-run version");
+    expect(compareResourceVersions(runA.startVersion, prior)).toBe(-1);
+    const before = runA.evidence.watchEvents.filter(isDeployment).filter(event =>
+      compareResourceVersions(event.resourceVersion, runA.startVersion) === 1 &&
       compareResourceVersions(event.resourceVersion, prior) !== 1);
     expect(before.length).toBe(3);
     const hashes = before.map(event => event.objectHash);
@@ -237,7 +292,7 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
     expect(auditClaimOf(grant1.grantId)).toBe("stored");
     expect(auditClaimOf(grant2.grantId)).toBe("rejected");
     expect(reconcile(auditClaimOf(grant1.grantId), fromWatch(grant1, PRIOR_RV, fullStream))).toBe("agrees_stored");
-    expect(reconcile(auditClaimOf(grant2.grantId), fromWatch(grant2, PRIOR_RV, fullStream))).toBe("agrees_rejected");
+    expect(reconcile(auditClaimOf(grant2.grantId), fromWatch(grant2, PRIOR_RV_2, fullStream))).toBe("agrees_rejected");
   });
 
   it("H5d: hiding grant 1's stored write behind a 500 is contradicted", () => {
@@ -247,19 +302,19 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
   it("H5e: a flipped or fabricated 'stored' claim for grant 2 is contradicted", () => {
     // 04's H4c (flip a 500 to 200) and H4d (fabricate a 200 carrying the
     // target) are the same claim as far as the watch is concerned.
-    expect(reconcile("stored", fromWatch(grant2, PRIOR_RV, fullStream))).toBe("claim_contradicted_by_watch");
+    expect(reconcile("stored", fromWatch(grant2, PRIOR_RV_2, fullStream))).toBe("claim_contradicted_by_watch");
   });
 
-  it("a stream that began after the admission leaves every claim unchecked, not contradicted", () => {
-    const late: Stream = {
-      fromResourceVersion: "710",
-      closedAtResourceVersion: fixture.closedAtResourceVersion,
-      events: deploymentEvents.filter(event => compareResourceVersions(event.resourceVersion, "710") === 1),
-    };
-    // grant 1's write is before the late start, so its absence proves nothing.
-    expect(fromWatch(grant1, PRIOR_RV, late)).toBe("unknown_stream_does_not_cover_admission");
-    expect(reconcile("rejected", fromWatch(grant1, PRIOR_RV, late))).toBe("claim_unchecked_watch_unknown");
-    expect(reconcile("stored", fromWatch(grant2, PRIOR_RV, late))).toBe("claim_unchecked_watch_unknown");
+  it("a stream that began after the admission cannot show absence, but still shows a target that persists", () => {
+    const late = lateStream();
+    // Absence proves nothing from a stream that started after the admission.
+    expect(fromWatch(grant2, PRIOR_RV_2, late)).toBe("unknown_stream_does_not_cover_admission");
+    expect(reconcile("stored", fromWatch(grant2, PRIOR_RV_2, late))).toBe("claim_unchecked_watch_unknown");
+    // Presence survives: later events still hash to the target and carry the
+    // grant, which an unforgeable carrier ties to the consuming admission. So
+    // even a late watch contradicts a hidden-write "rejected" claim.
+    expect(fromWatch(grant1, PRIOR_RV, late)).toBe("watch_holds_target_with_carrier");
+    expect(reconcile("rejected", fromWatch(grant1, PRIOR_RV, late))).toBe("claim_contradicted_by_watch");
   });
 
   it("a stream cut short is unknown for absence, never a contradiction of a true claim", () => {
@@ -275,9 +330,17 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
 
   it("a stream with no recorded close is unknown for absence, as is one that was never closed cleanly", () => {
     const unmarked: Stream = { ...fullStream, closedAtResourceVersion: undefined };
-    expect(fromWatch(grant2, PRIOR_RV, unmarked)).toBe("unknown_stream_truncated");
+    expect(fromWatch(grant2, PRIOR_RV_2, unmarked)).toBe("unknown_stream_truncated");
     const lagging: Stream = { ...fullStream, closedAtResourceVersion: "999999" };
-    expect(fromWatch(grant2, PRIOR_RV, lagging)).toBe("unknown_stream_truncated");
+    expect(fromWatch(grant2, PRIOR_RV_2, lagging)).toBe("unknown_stream_truncated");
+  });
+
+  it("a stream that ended abnormally is unknown for absence even when its last event matches", () => {
+    // Review finding: the last event's version alone does not show the
+    // stream was alive or error-free at the end.
+    const died: Stream = { ...fullStream, endedCleanly: false };
+    expect(fromWatch(grant2, PRIOR_RV_2, died)).toBe("unknown_stream_ended_abnormally");
+    expect(fromWatch(grant1, PRIOR_RV, died)).toBe("watch_holds_target_with_carrier");
   });
 
   it("a cut stream that already holds the target still shows it", () => {
@@ -288,7 +351,7 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
 
   it("events out of order are unknown", () => {
     const reordered: Stream = { ...fullStream, events: [...deploymentEvents].reverse() };
-    expect(fromWatch(grant2, PRIOR_RV, reordered)).toBe("unknown_stream_out_of_order");
+    expect(fromWatch(grant2, PRIOR_RV_2, reordered)).toBe("unknown_stream_out_of_order");
   });
 
   it("LIMIT: an event dropped from the middle of an otherwise complete stream is not detectable", () => {
@@ -313,7 +376,10 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
     // must not read as the grant's write.
     const stripped: Stream = { ...fullStream, events: deploymentEvents.map(event => ({ ...event, carrierGrantId: undefined })) };
     expect(fromWatch(grant1, PRIOR_RV, stripped)).toBe("watch_holds_target_without_carrier");
-    expect(reconcile("stored", fromWatch(grant1, PRIOR_RV, stripped))).toBe("claim_stored_state_unattributed");
+    expect(reconcile("stored", fromWatch(grant1, PRIOR_RV, stripped))).toBe("target_state_unattributed");
+    // Symmetric for a truthful rejection: another writer reaching the same
+    // target is not a lie by the audit, so it is not contradicted either.
+    expect(reconcile("rejected", fromWatch(grant1, PRIOR_RV, stripped))).toBe("target_state_unattributed");
   });
 
   it("a carrier naming the grant on the wrong state does not count as the write", () => {
@@ -325,27 +391,24 @@ describe("M4-05 attacks 04 could not settle, with the watch as observer", () => 
 describe("M4-05 vocabulary", () => {
   it("every verdict is reachable, and none reads as an attestation of effect or authorship", () => {
     // A fixed table of inputs, one per verdict, independent of test order.
-    const writeIndex = deploymentEvents.findIndex(event => event.matchesGrant.includes(grant1.grantId));
-    const late: Stream = {
-      fromResourceVersion: "710",
-      closedAtResourceVersion: fixture.closedAtResourceVersion,
-      events: deploymentEvents.filter(event => compareResourceVersions(event.resourceVersion, "710") === 1),
-    };
+    const writeIndex = WRITE_INDEX;
+    const late = lateStream();
     const stripped: Stream = { ...fullStream, events: deploymentEvents.map(event => ({ ...event, carrierGrantId: undefined })) };
     const watchTable: Array<[WatchVerdict, WatchVerdict]> = [
       ["watch_holds_target_with_carrier", fromWatch(grant1, PRIOR_RV, fullStream)],
       ["watch_holds_target_without_carrier", fromWatch(grant1, PRIOR_RV, stripped)],
-      ["watch_holds_no_target_state", fromWatch(grant2, PRIOR_RV, fullStream)],
-      ["unknown_stream_does_not_cover_admission", fromWatch(grant1, PRIOR_RV, late)],
+      ["watch_holds_no_target_state", fromWatch(grant2, PRIOR_RV_2, fullStream)],
+      ["unknown_stream_does_not_cover_admission", fromWatch(grant2, PRIOR_RV_2, late)],
       ["unknown_stream_truncated", fromWatch(grant1, PRIOR_RV, { ...fullStream, events: deploymentEvents.slice(0, writeIndex) })],
-      ["unknown_stream_out_of_order", fromWatch(grant2, PRIOR_RV, { ...fullStream, events: [...deploymentEvents].reverse() })],
+      ["unknown_stream_ended_abnormally", fromWatch(grant2, PRIOR_RV_2, { ...fullStream, endedCleanly: false })],
+      ["unknown_stream_out_of_order", fromWatch(grant2, PRIOR_RV_2, { ...fullStream, events: [...deploymentEvents].reverse() })],
     ];
     const reconciledTable: Array<[Reconciled, Reconciled]> = [
       ["agrees_stored", reconcile("stored", "watch_holds_target_with_carrier")],
       ["agrees_rejected", reconcile("rejected", "watch_holds_no_target_state")],
       ["claim_contradicted_by_watch", reconcile("rejected", "watch_holds_target_with_carrier")],
       ["claim_unchecked_watch_unknown", reconcile("stored", "unknown_stream_truncated")],
-      ["claim_stored_state_unattributed", reconcile("stored", "watch_holds_target_without_carrier")],
+      ["target_state_unattributed", reconcile("rejected", "watch_holds_target_without_carrier")],
     ];
     expect(watchTable.map(([expected]) => expected).sort()).toEqual([...WATCH_VERDICTS].sort());
     expect(reconciledTable.map(([expected]) => expected).sort()).toEqual([...RECONCILED].sort());

@@ -75,13 +75,13 @@ Two live runs, the same harness, one revision apart.
 
 - **Run A**, [CI 38166778773](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773),
   commit `e0a9ffd`: the table and the prediction results below. Evidence
-  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events-run-a.json`
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-a/`
   (raw artifact SHA-256 `09bdc2bb…c6db2`). The watch opened at
   resourceVersion 616 and delivered 8 events, all Deployment.
 - **Run C**, [CI 38167665704](https://github.com/wonkwonlee/ChangeSafe/actions/runs/38167665704),
   commit `e9b8db3`: the same harness after internal review added stream
   close markers (below). Evidence
-  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-m4-watch-events.json`
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-c/`
   (raw artifact SHA-256 `3432e806…2fcef`). The watch opened at 598 and
   delivered 8 events; the object's version at close was 688, and the
   stream's last event carried 688, with the watch alive when closed. The
@@ -91,7 +91,7 @@ Two live runs, the same harness, one revision apart.
   06's, 38167496300) agreed on the write and showed no event before it.
 
 Both are replayed offline by `tests/integration/m4-watch-observer.test.ts`
-(18 tests). Run A had 2 events before the write that provably left the hash
+(20 tests, each raw artifact checked against its manifest hash before use). Run A had 2 events before the write that provably left the hash
 unchanged; runs B and C had none, so that number is not a constant.
 
 | rv | replicas | observedGeneration | carrier names | hash changed | matches a grant |
@@ -168,7 +168,19 @@ Offline scoring against 04's attacks, with the watch as observer:
    stream is not detectable from the stream alone (versions are
    cluster-global and events carry no sequence number); that is a stated
    limit, tested as such.
-5. **The first event is not a spec change.** The summary had recorded it
+5. **A late watch still contradicts a hidden write.** Later events keep
+   hashing to the target and carrying the grant's id, so a stream that
+   began after the write still shows the target with its carrier; only
+   absence needs the stream to cover the admission. Under an unforgeable
+   carrier, that is positive evidence the grant's write persisted. This
+   corrects the first reading, which treated a late stream as unable to
+   say anything.
+6. **Presence is attributed by the carrier, not the hash alone.** A
+   target state that carries another writer's carrier, or none, is
+   `watch_holds_target_without_carrier` and neither contradicts nor
+   confirms either claim (`target_state_unattributed`). The first draft
+   contradicted a truthful "rejected" in that case.
+7. **The first event is not a spec change.** The summary had recorded it
    as "hash changed" because it had no predecessor. It is `null` now, and
    the notes no longer count it as status-only either.
 

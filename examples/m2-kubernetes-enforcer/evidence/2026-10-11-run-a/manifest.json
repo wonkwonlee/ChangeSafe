@@ -1,0 +1,7 @@
+{
+  "ciRun": "https://github.com/wonkwonlee/ChangeSafe/actions/runs/38166778773",
+  "commit": "e0a9ffd",
+  "note": "Raw artifact of the first live kind run of M4-05, byte for byte. The watch's start version is from that run's transcript line 'M4 watch opened at resourceVersion 616'; the artifact predates the close markers. Fictional kind demo Deployment; disposable-cluster identifiers.",
+  "watchStartResourceVersion": "616",
+  "files": { "m4-watch-evidence.json": "09bdc2bb15b352570c5a60cd185cd50138c65ba73aa74ae5fe802153584c6db2" }
+}
