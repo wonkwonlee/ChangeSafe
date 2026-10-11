@@ -36,6 +36,23 @@ than taken from the enforcer, which does not record it today; for a
 single UPDATE with no write in between, the two are the same object
 version, and the harness records the read.
 
+## Setup amendment (before any experiment 06 result)
+
+[Experiment 05's live evidence](M4_EXPERIMENT_05.md#findings-the-predictions-did-not-cover)
+showed the read taken before step 1 (616) is **not** the version the real
+admission saw: three status-only events landed first, and the dry-run's
+response carried 684. The setup above called the 616 read "what P3 would
+record", which the evidence contradicts. The harness now issues two
+replays: from the read before step 1 as registered (`replay`), and from
+the version the annotated dry-run's response carried
+(`replay-prior`), which stands in for a recorded `oldObject` version.
+That equivalence is a stand-in, not an observation of the enforcer's own
+input. One hypothesis is added, before any 06 result:
+
+| # | Hypothesis | Prediction | Confidence |
+| --- | --- | --- | --- |
+| H6f | Replay from the dry-run's version delivers the stored write's event and the later status-only events, and none of the events at or before that version; replay from the earlier read also delivers the three status-only events between them | holds | high: a watch delivers events strictly newer than the requested version |
+
 ## Hypotheses and predictions
 
 | # | Hypothesis | Prediction | Confidence |

@@ -3,13 +3,13 @@
 // Observes only; hypotheses are decided in the experiment note.
 //
 // usage: node m4-replay-summary.mjs <dir> <step1-grant.json> <m4-grant.json> \
-//          <enforcer-dist-index.js> <priorResourceVersion> <out.json>
+//          <enforcer-dist-index.js> <readBeforeStep1> <out.json> [dryRunVersion]
 // <dir> holds replay-<name>.jsonl (stdout+stderr of each bounded request).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [dir, grant1Path, grant2Path, hashModule, priorRv, outPath] = process.argv.slice(2);
+const [dir, grant1Path, grant2Path, hashModule, priorRv, outPath, dryRunVersion] = process.argv.slice(2);
 const { kubernetesObjectSha256 } = await import(pathToFileURL(hashModule).href);
 const json = (file) => JSON.parse(readFileSync(file, "utf8"));
 const grants = [json(grant1Path).grant, json(grant2Path).grant].map((grant) => ({
@@ -59,11 +59,12 @@ async function describe(name) {
 }
 
 const results = [];
-for (const name of ["replay", "ancient", "any", "list"]) results.push(await describe(name));
-const evidence = { priorResourceVersion: priorRv, grants, results };
+for (const name of ["replay", "replay-prior", "ancient", "any", "list"]) results.push(await describe(name));
+const evidence = { readBeforeStep1: priorRv, dryRunVersion: dryRunVersion || null, grants, results };
 writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
 
-console.log(`prior resourceVersion (the admission's, as read before step 1): ${priorRv}`);
+console.log(`version read before step 1: ${priorRv}`);
+console.log(`version the dry-run's response carried (stand-in for a recorded oldObject version): ${dryRunVersion || "(none found)"}`);
 for (const result of results) {
   if (result.missing) { console.log(`${result.name}: no output`); continue; }
   console.log(`${result.name}: ${result.rows.length} event(s)${result.other.length ? `, ${result.other.length} non-JSON line(s)` : ""}`);
