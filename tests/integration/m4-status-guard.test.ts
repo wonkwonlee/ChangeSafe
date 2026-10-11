@@ -157,8 +157,21 @@ describe("M4-10 the candidate is a candidate", () => {
     const script = readFileSync(path.resolve("examples/m2-kubernetes-enforcer/kind-repro.sh"), "utf8");
     // The wait loop must match the policy name, not any failure.
     expect(script).toContain('grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-wait.txt"');
-    expect(script).toContain('grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-gone.txt"');
+    // Removal is shown by the dry-run patch itself succeeding, never by an
+    // error text that merely omits the policy name.
+    const gone = script.slice(script.indexOf('GUARD_REMOVED="no"'), script.indexOf("candidate guard removed:"));
+    expect(gone).toMatch(/if kubectl -n "\$\{M4_NS\}" patch deployment web --subresource=status[\s\S]*>"\$\{WORK_DIR\}\/guard-gone\.txt" 2>&1; then/);
+    expect(gone).not.toContain("|| true");
+    expect(gone).not.toContain("grep");
     expect(script).toContain("candidate guard removed:");
+  });
+
+  it("the live harness fails on a refused harmless write and on a recovery it never saw", () => {
+    const script = readFileSync(path.resolve("examples/m2-kubernetes-enforcer/kind-repro.sh"), "utf8");
+    expect(script).toContain('"$(cat "${WORK_DIR}/guard-status-harmless.status")" != "0"');
+    expect(script).toContain('grep -q \'"M4Probe"\' "${WORK_DIR}/guard-status-harmless.after.json"');
+    expect(script).toContain('M4_RECOVERED="yes"; break');
+    expect(script).toContain('if [ "${M4_RECOVERED}" != "yes" ]; then');
   });
 
   it("the harness applies it for the experiment and removes it before step 3", () => {

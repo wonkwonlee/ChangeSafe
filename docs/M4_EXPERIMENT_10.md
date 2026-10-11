@@ -85,11 +85,15 @@ Two live runs, the same results.
   commit `211a5c5`: the final harness and summary script, which wait for
   the policy by name, fail the run on an invalid setup, wait for the
   controller to react, and record every annotation of every event. Its raw
-  `m4-status-guard-evidence.json` is committed byte for byte in
-  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-g/` with its
-  SHA-256 in `manifest.json`, replayed by
+  `m4-status-guard-evidence.json` is committed in
+  `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-g/` with one
+  string neutralized (a third-party image reference inside the
+  last-applied annotations of controller events became
+  `registry.example/web:1.0`; invariant 9). The manifest records the
+  SHA-256 of the committed file and, as `originalSha256`, of the artifact
+  as the run produced it, which is no longer committed. It is replayed by
   `tests/integration/m4-status-guard.test.ts` (artifact checked by hash
-  before use; 14 tests). Its `httpStatus` fields are null: the `-v=6`
+  before use; 15 tests). Its `httpStatus` fields are null: the `-v=6`
   output did not match the parser, which now reads kubectl's structured
   form too.
 

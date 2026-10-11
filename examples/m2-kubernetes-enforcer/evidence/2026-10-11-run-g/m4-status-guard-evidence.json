@@ -8,7 +8,7 @@
     "annotations": {
       "changesafe.dev/grant": "m4-forged-status",
       "deployment.kubernetes.io/revision": "1",
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
     },
     "replicas": 4,
     "readyReplicas": 4,
@@ -29,7 +29,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       },
       "replicas": 4,
       "readyReplicas": 4,
@@ -51,7 +51,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       },
       "replicas": 4,
       "readyReplicas": 4,
@@ -69,7 +69,7 @@
     "annotations": {
       "changesafe.dev/grant": "m4-forged-status",
       "deployment.kubernetes.io/revision": "1",
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
     },
     "replicas": 4,
     "readyReplicas": 4,
@@ -86,7 +86,7 @@
     "annotations": {
       "changesafe.dev/grant": "m4-forged-status",
       "deployment.kubernetes.io/revision": "1",
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
     },
     "replicas": 4,
     "readyReplicas": 4,
@@ -107,7 +107,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       }
     },
     {
@@ -119,7 +119,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       }
     },
     {
@@ -131,7 +131,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       }
     },
     {
@@ -143,7 +143,7 @@
       "annotations": {
         "changesafe.dev/grant": "m4-forged-status",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       }
     }
   ]

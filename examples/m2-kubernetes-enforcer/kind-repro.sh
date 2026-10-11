@@ -487,6 +487,15 @@ m4_guard_probe status-annotation kubectl -n "${M4_NS}" patch deployment web --su
   -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-forged-status-2"}}}'
 m4_guard_probe status-harmless kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=json \
   -p '[{"op":"add","path":"/status/conditions/-","value":{"type":"M4Probe","status":"True","reason":"Probe","message":"experiment 10 harmless status write"}}]'
+# H10c is a live gate: a harmless status write the candidate guard refuses (a
+# policy edit or a Kubernetes-version difference) must fail this run, not only
+# the replay test over the committed artifact. The write must have succeeded
+# and its condition must be on the object.
+if [ "$(cat "${WORK_DIR}/guard-status-harmless.status")" != "0" ] ||
+   ! grep -q '"M4Probe"' "${WORK_DIR}/guard-status-harmless.after.json"; then
+  log "FAIL: the harmless status write was refused or did not land; H10c would pass vacuously: $(head -c 300 "${WORK_DIR}/guard-status-harmless.out" | tr '\n' ' ')"
+  exit 1
+fi
 # A real controller status write: delete one pod and let the ReplicaSet and
 # the Deployment controller reconcile. The replay watch lists what the
 # Deployment's status did.
@@ -510,15 +519,21 @@ for _ in $(seq 1 40); do
   if [ -n "${NOW_RV}" ] && [ "${NOW_RV}" != "${M4_CTRL_RV}" ]; then M4_REACTED="yes"; break; fi
   sleep 1
 done
+M4_RECOVERED="no"
 for _ in $(seq 1 40); do
   READY=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
   DESIRED=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
-  if [ -n "${READY}" ] && [ "${READY}" = "${DESIRED}" ]; then break; fi
+  if [ -n "${READY}" ] && [ "${READY}" = "${DESIRED}" ]; then M4_RECOVERED="yes"; break; fi
   sleep 3
 done
 echo "reacted=${M4_REACTED}" > "${WORK_DIR}/controller-reacted.txt"
+echo "recovered=${M4_RECOVERED}" >> "${WORK_DIR}/controller-reacted.txt"
 if [ "${M4_REACTED}" != "yes" ]; then
   log "FAIL: the Deployment's version never moved after ${M4_POD} was deleted; the controller's status write was not observed"
+  exit 1
+fi
+if [ "${M4_RECOVERED}" != "yes" ]; then
+  log "FAIL: ready replicas never returned to the desired count after ${M4_POD} was deleted; the controller's recovery was not observed (a status write may be blocked)"
   exit 1
 fi
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-after.json"
@@ -528,14 +543,16 @@ log "--- M4 experiment 10 evidence ---"
 node "${EXAMPLE_DIR}/m4-status-guard-summary.mjs" "${WORK_DIR}" "${EXAMPLE_DIR}/m4-status-guard-evidence.json" | tee -a "${TRANSCRIPT}"
 # The candidate is removed so step 3 runs as it always has, and the removal
 # is waited for: policy changes are asynchronous in both directions. A
-# dry-run of the forging patch that is no longer refused by the policy
-# shows it is gone.
+# dry-run of the forging patch that now succeeds shows it is gone.
 kubectl delete -f "${EXAMPLE_DIR}/m4-status-guard-candidate.yaml" --ignore-not-found >/dev/null 2>&1 || true
 GUARD_REMOVED="no"
 for _ in $(seq 1 30); do
-  kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
-    -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-gone"}}}' >"${WORK_DIR}/guard-gone.txt" 2>&1 || true
-  if ! grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-gone.txt"; then GUARD_REMOVED="yes"; break; fi
+  # Removal is shown only by the dry-run patch itself succeeding: an error
+  # that merely omits the policy name (a timeout, an auth failure) is not it.
+  if kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
+    -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-gone"}}}' >"${WORK_DIR}/guard-gone.txt" 2>&1; then
+    GUARD_REMOVED="yes"; break
+  fi
   sleep 1
 done
 log "candidate guard removed: ${GUARD_REMOVED}"
