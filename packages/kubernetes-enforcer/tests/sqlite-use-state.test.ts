@@ -86,3 +86,40 @@ it.skipIf(!existsSync(path.resolve("packages/kubernetes-enforcer/dist/sqlite-use
     expect(outputs.filter(result => result.stdout === "false")).toHaveLength(7);
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+it.skipIf(!existsSync(path.resolve("packages/kubernetes-enforcer/dist/sqlite-use-state.js")))("waits for a write lock held by another process and opens a legacy file it migrated", async () => {
+  // Review finding on PR #79: inspect-then-ALTER outside a lock lets two
+  // enforcers both see the column missing, and the second fails to start
+  // with "duplicate column name". The fix runs the check and the ALTER
+  // under BEGIN IMMEDIATE. NOTE: this test does not reproduce that race.
+  // It passes against the unlocked code too (checked), because opening
+  // already waits on the lock at its first statement, and the check-to-ALTER
+  // window is not reachable from outside open(). What it does pin is the
+  // behavior the fix must keep: a process that opens a legacy file while
+  // another holds the write lock waits, then opens it correctly.
+  const dir = mkdtempSync(path.join(tmpdir(), "changesafe-migrate-race-"));
+  const file = path.join(dir, "uses.db");
+  const legacy = new DatabaseSync(file);
+  legacy.exec(`CREATE TABLE consumed_grants (grant_id TEXT PRIMARY KEY, expires_at_ms INTEGER NOT NULL);
+    INSERT INTO consumed_grants VALUES ('grant-legacy', 10000);`);
+  legacy.close();
+  const moduleUrl = pathToFileURL(path.resolve("packages/kubernetes-enforcer/dist/sqlite-use-state.js")).href;
+  const script = `import { SqliteGrantUseRegistry } from ${JSON.stringify(moduleUrl)};
+    try {
+      const registry = SqliteGrantUseRegistry.open(process.argv[1]);
+      process.stdout.write(String(registry.consumedBy("grant-legacy")));
+      registry.close();
+    } catch (error) { process.stdout.write("open-failed:" + (error instanceof Error ? error.message : String(error))); }`;
+  const holder = new DatabaseSync(file);
+  try {
+    holder.exec("PRAGMA busy_timeout = 5000");
+    holder.exec("BEGIN IMMEDIATE");
+    const child = promisify(execFile)(process.execPath, ["--input-type=module", "-e", script, file]);
+    // Long enough for the child to start and reach the migration; a slower
+    // child can only make this pass vacuously, never fail the fixed code.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    holder.exec("ALTER TABLE consumed_grants ADD COLUMN admission_uid TEXT");
+    holder.exec("COMMIT");
+    expect((await child).stdout).toBe("null");
+  } finally { holder.close(); rmSync(dir, { recursive: true }); }
+});
