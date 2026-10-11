@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   completeExact, coverages, edits, evaluate, histories, isDefinite, isUnsound, observe, priors, protectedOnly,
-  summarize, v1, v1c, v1Traced, v2a, v2b, distinctWorlds,
+  simulate, summarize, v1, v1c, v1Traced, v2a, v2b, distinctWorlds,
   type AuditEdit, type Coverage, type History, type PriorKnowledge, type Verdict,
 } from "./m4-evidence-model";
 
@@ -149,11 +149,18 @@ describe("M4-07 the repaired contracts", () => {
     const rows = evaluate(v2b, (h, _e, c, p) => protectedOnly(h) && (c !== "complete" || p !== "exact"), assumeUnforgeable);
     // No prior at all: absence cannot be placed, so a rejection is never claimed.
     expect(rows.filter(row => row.prior === "none" && row.truth === "rejected").every(row => row.verdict === "unknown")).toBe(true);
-    // A stream that began after the admission, or ended abnormally.
-    for (const coverage of ["late", "ended_abnormally"] as const) {
-      const affected = rows.filter(row => row.coverage === coverage && row.truth === "rejected");
-      expect(affected.length).toBeGreaterThan(0);
-      expect(affected.every(row => row.verdict === "unknown")).toBe(true);
+    // A stream that ended abnormally is always unknown for absence.
+    const abnormal = rows.filter(row => row.coverage === "ended_abnormally" && row.truth === "rejected");
+    expect(abnormal.length).toBeGreaterThan(0);
+    expect(abnormal.every(row => row.verdict === "unknown")).toBe(true);
+    // A stream that began after the admission is unknown unless nothing came
+    // after the admission at all, where it is a complete stream in effect.
+    const late = rows.filter(row => row.coverage === "late" && row.truth === "rejected" && row.prior === "exact");
+    expect(late.length).toBeGreaterThan(0);
+    for (const row of late) {
+      const world = simulate(row.history);
+      const nothingAfter = world.events.every(event => event.rv <= world.priorRv);
+      expect(row.verdict === "unknown" || nothingAfter).toBe(true);
     }
     // A stream cut before or after the write: "reaches the close" is derived
     // from the stream's last event, so a cut that happens to end on the
