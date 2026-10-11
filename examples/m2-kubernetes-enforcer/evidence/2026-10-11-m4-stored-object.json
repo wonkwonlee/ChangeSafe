@@ -11,8 +11,9 @@
     "operation": "UPDATE",
     "resource": "res-69828e4c8b7f18f6",
     "resourceUid": "7c9a90cc-666f-40d8-87d0-3e06aa2f0f21",
-    "objectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088",
-    "oldObjectSha256": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3"
+    "objectSha256": "0bea03fee3b03a215fcdf0f622630adf4f3c51544d8a81ddba5b6a22271c1de4",
+    "oldObjectSha256": "f51389cf23800d586858cfb2fb858736f476363698609a74e7f8fefbe9690bd3",
+    "signedObjectSha256": "dfbf242309e8843c9d6cf640aaff5c0ecd9d89017375f0b6c7e678cb302ff088"
   },
   "priorResourceVersion": "695",
   "priorResourceVersionSource": "the dry-run of the same transition answered with the version it read (event 4456cc6d); the enforcer does not record oldObject resourceVersion today",
@@ -29,7 +30,7 @@
       "annotations": {
         "changesafe.dev/grant": "eyJncmFudCI6eyJncmFudElkIjoiZzE2M2UyNjU2Y2QwMjQ5MmI5Yzg2MTBlN2M0ZmI0OTNkNWY4ZmRmNDU0OWY1OWExOWE2MDMwY2MyYTRkZTBhYSIsInJlY2VpcHRJZCI6InJjcHQtOTJjZmYwNTgtZjIxOS00MWVlLWE2MTUtMmI4NzI2NGM5NjVkIiwiYXV0aG9yaXplZEFjdG9yIjoia3ViZXJuZXRlcy1hZG1pbiIsIm9wZXJhdGlvbiI6IlVQREFURSIsInJlc291cmNlIjoicmVzLTY5ODI4ZTRjOGI3ZjE4ZjYiLCJvYmplY3RTaGEyNTYiOiJkZmJmMjQyMzA5ZTg4NDNjOWQ2Y2Y2NDBhYWZmNWMwZWNkOWQ4OTAxNzM3NWYwYjZjN2U2NzhjYjMwMmZmMDg4Iiwib2xkT2JqZWN0U2hhMjU2IjoiZjUxMzg5Y2YyMzgwMGQ1ODY4NThjZmIyZmI4NTg3MzZmNDc2MzYzNjk4NjA5YTc0ZTdmOGZlZmJlOTY5MGJkMyIsInJlc291cmNlVWlkIjoiN2M5YTkwY2MtNjY2Zi00MGQ4LTg3ZDAtM2UwNmFhMmYwZjIxIiwicG9saWN5VmVyc2lvbiI6ImNvcmUtdjAuMi4wK2t1YmVybmV0ZXMtdjAuMS4wIiwiaXNzdWVkQXRVdGMiOiIyMDI2LTEwLTExVDE3OjU3OjQyLjMxNFoiLCJleHBpcmVzQXRVdGMiOiIyMDI2LTEwLTExVDE4OjU3OjQyLjMwM1oifSwic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6IjRkYjE0ODg1MWU1ZTJlZTU4NDI3N2M3NzFhMzcyNmExIiwic2lnbmF0dXJlIjoiemtrYk1CdnNIOUZQZEhSSDVZb3ZOdkFrQU8ySmlCd05sdUMrcjJXMzdOWG81Y3dWejBkZkpmTG1iWnVjaTFqazROZmY3Rmd2L3N0TGQxMFJERFdIREE9PSIsInNpZ25lZEF0VXRjIjoiMjAyNi0xMC0xMVQxNzo1Nzo0Mi4zMTRaIn19",
         "deployment.kubernetes.io/revision": "1",
-        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27\",\"name\":\"web\"}]}}}}\n"
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"changesafe-protected-demo\"},\"spec\":{\"replicas\":3,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.example/web:1.0\",\"name\":\"web\"}]}}}}\n"
       }
     },
     "spec": {
@@ -49,7 +50,7 @@
           "containers": [
             {
               "name": "web",
-              "image": "nginx:1.27",
+              "image": "registry.example/web:1.0",
               "resources": {},
               "terminationMessagePath": "/dev/termination-log",
               "terminationMessagePolicy": "File",
@@ -73,5 +74,14 @@
       "revisionHistoryLimit": 10,
       "progressDeadlineSeconds": 600
     }
+  },
+  "provenance": {
+    "kind": "captured, with the image reference neutralized",
+    "neutralized": [
+      "spec.template.spec.containers[0].image",
+      "metadata.annotations[kubectl.kubernetes.io/last-applied-configuration]"
+    ],
+    "replacement": "registry.example/web:1.0",
+    "note": "The captured object named a third-party container image; bundled data carries no third-party branding (invariant 9). The image reference is replaced and objectSha256 is the enforcer object hash of the neutralized object. grant.signedObjectSha256 is the hash in the signed grant of the live run, kept so the original binding is on record; the test checks the neutralized object against objectSha256 and the original against nothing, because the original bytes are not committed."
   }
 }
