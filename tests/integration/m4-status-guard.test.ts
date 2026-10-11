@@ -1,5 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -38,6 +40,8 @@ const Evidence = z.object({
   controllerEvents: z.array(z.object({
     type: z.string(), resourceVersion: z.string(), readyReplicas: z.number().nullable(),
     availableReplicas: z.number().nullable(), carrier: z.string().nullable(),
+    // Present in artifacts produced after review; the committed one predates it.
+    annotations: z.record(z.string(), z.string()).optional(),
   })),
 });
 const evidence = Evidence.parse(JSON.parse(raw.toString("utf8")));
@@ -73,8 +77,13 @@ describe("M4-10 live evidence: what the candidate guard did", () => {
     const ready = controllerEvents.map(event => event.readyReplicas);
     expect(Math.min(...ready.filter((value): value is number => value !== null))).toBeLessThan(controllerBefore.readyReplicas ?? 0);
     expect(controllerAfter.readyReplicas).toBe(controllerBefore.readyReplicas);
-    // And none of those writes touched the annotation, which the guard would have denied.
+    // None of those events changed the carrier. The committed artifact
+    // records only that one annotation, so this does not show the other
+    // annotations were untouched; an artifact produced by the current
+    // summary script carries them all, and is held to that when present.
     expect(controllerEvents.every(event => event.carrier === controllerBefore.carrier)).toBe(true);
+    const withAll = controllerEvents.filter(event => event.annotations !== undefined);
+    for (const event of withAll) expect(event.annotations).toEqual(withAll[0]?.annotations);
   });
 });
 
@@ -83,16 +92,36 @@ describe("M4-10 the candidate is a candidate", () => {
   const shipped = readFileSync(path.resolve("examples/m2-kubernetes-enforcer/routing-guards.yaml"), "utf8");
 
   it("is its own file, scoped to protected namespaces and to the status subresources", () => {
-    expect(candidate).toContain("changesafe.dev/tier");
+    // Anchored to the lines that carry the meaning, not to any occurrence of a
+    // word: a resource in a "resources:" list, the tier selector under the
+    // binding's namespaceSelector, and the comparison in the expression.
+    const resourceLists = [...candidate.matchAll(/^\s*resources:\s*\[([^\]]*)\]/gm)].map(match => match[1] ?? "");
+    const named = resourceLists.join(",");
     for (const resource of ["deployments/status", "statefulsets/status", "daemonsets/status", "services/status"]) {
-      expect(candidate).toContain(resource);
+      expect(named).toContain(`"${resource}"`);
     }
+    expect(/namespaceSelector:\s*\n\s*matchLabels:\s*\n\s*changesafe\.dev\/tier:\s*protected/.test(candidate)).toBe(true);
     expect(candidate).toContain("failurePolicy: Fail");
+    expect(candidate).toContain("operations: [\"UPDATE\"]");
+    // The comparison is between the new and the old annotations, guarded by has().
+    const expression = candidate.slice(candidate.indexOf("expression:"), candidate.indexOf("message:"));
+    expect(expression).toContain("object.metadata.annotations == oldObject.metadata.annotations");
+    expect(expression).toContain("has(object.metadata.annotations)");
+    expect(expression).toContain("has(oldObject.metadata.annotations)");
   });
 
-  it("has not been adopted: the shipped routing guards name no status subresource and no such policy", () => {
-    expect(shipped).not.toContain("/status");
-    expect(shipped).not.toContain("changesafe-protected-status-annotations");
+  it("has not been adopted: the shipped routing guards list no status subresource and carry no such policy", () => {
+    const shippedResources = [...shipped.matchAll(/^\s*resources:\s*\[([^\]]*)\]/gm)].map(match => match[1] ?? "").join(",");
+    expect(shippedResources).not.toContain("/status");
+    expect(shipped).not.toContain("kind: ValidatingAdmissionPolicy\nmetadata:\n  name: changesafe-protected-status-annotations");
+  });
+
+  it("the harness waits for the policy by name before probing, and verifies its removal before step 3", () => {
+    const script = readFileSync(path.resolve("examples/m2-kubernetes-enforcer/kind-repro.sh"), "utf8");
+    // The wait loop must match the policy name, not any failure.
+    expect(script).toContain('grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-wait.txt"');
+    expect(script).toContain('grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-gone.txt"');
+    expect(script).toContain("candidate guard removed:");
   });
 
   it("the harness applies it for the experiment and removes it before step 3", () => {
@@ -105,3 +134,48 @@ describe("M4-10 the candidate is a candidate", () => {
     expect(stepThree).toBeGreaterThan(remove);
   });
 });
+
+describe("M4-10 the summary script", () => {
+  const script = path.resolve("examples/m2-kubernetes-enforcer/m4-status-guard-summary.mjs");
+  const deployment = (annotations: Record<string, string>, rv: string, ready = 4) => JSON.stringify({
+    metadata: { resourceVersion: rv, annotations }, spec: { replicas: 4 }, status: { readyReplicas: ready, availableReplicas: ready, conditions: [] },
+  });
+
+  function run(files: Record<string, string>): unknown {
+    const dir = mkdtempSync(path.join(tmpdir(), "changesafe-m4-10-"));
+    try {
+      for (const [name, text] of Object.entries(files)) writeFileSync(path.join(dir, name), text);
+      execFileSync(process.execPath, [script, dir, path.join(dir, "out.json")], { encoding: "utf8" });
+      return JSON.parse(readFileSync(path.join(dir, "out.json"), "utf8"));
+    } finally { rmSync(dir, { recursive: true }); }
+  }
+
+  it("a missing exit-status file is null, never success", () => {
+    const evidence = run({
+      "guard-status-annotation.out": "denied", "guard-status-annotation.status": "1\n",
+      "guard-status-annotation.after.json": deployment({ "changesafe.dev/grant": "X" }, "10"),
+      // the harmless probe's status file is absent on purpose
+      "guard-status-harmless.out": "patched",
+      "guard-status-harmless.after.json": deployment({ "changesafe.dev/grant": "X" }, "11"),
+    });
+    const parsed = z.object({
+      statusAnnotation: z.object({ exitStatus: z.number().nullable() }),
+      statusHarmless: z.object({ exitStatus: z.number().nullable() }),
+    }).parse(evidence);
+    expect(parsed.statusAnnotation.exitStatus).toBe(1);
+    expect(parsed.statusHarmless.exitStatus).toBeNull();
+  });
+
+  it("records every annotation of each controller event, so a change to any of them is visible", () => {
+    const events = [
+      { type: "MODIFIED", object: { kind: "Deployment", metadata: { resourceVersion: "20", annotations: { "changesafe.dev/grant": "X", "other": "a" } }, status: { readyReplicas: 3, availableReplicas: 3 } } },
+      { type: "MODIFIED", object: { kind: "Deployment", metadata: { resourceVersion: "21", annotations: { "changesafe.dev/grant": "X", "other": "b" } }, status: { readyReplicas: 4, availableReplicas: 4 } } },
+    ].map(event => JSON.stringify(event)).join("\n");
+    const evidence = run({ "controller-replay.jsonl": events });
+    const parsed = z.object({
+      controllerEvents: z.array(z.object({ annotations: z.record(z.string(), z.string()) })),
+    }).parse(evidence);
+    expect(parsed.controllerEvents.map(event => event.annotations["other"])).toEqual(["a", "b"]);
+  });
+});
+

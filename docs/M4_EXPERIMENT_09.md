@@ -99,7 +99,8 @@ Two live runs, one probe, the same results.
   SHA-256 in `manifest.json`; the tests check it by hash before use
   (`tests/integration/m4-carrier-status-path.test.ts`). It was produced
   before the summary script's audit filter was narrowed, so it also lists
-  the Deployment controller's own status updates (20 `update` events); the
+  the Deployment controller's own status updates (18 `update` events, 15 that
+  succeeded and 3 that lost an optimistic-concurrency race with a 409); the
   tests select the probe's requests by verb.
 
 | Probe | Result (both runs) |
@@ -143,11 +144,11 @@ deployed. The model gains one history, in which another grant legitimately
 stores the target after this admission and a status write then
 re-attributes it to this grant (opt-in, so 07's counts are unchanged):
 
-| Contract | Protected tier, complete watch, exact prior (3,456) | Whole protected grid (51,840) |
+| Contract | Protected tier, complete watch, exact prior (2,496 evaluations) | Whole protected grid (37,440 evaluations) |
 | --- | --- | --- |
-| v2a (the registered repair) | **96 unsound**, definite on 2,208 | 768 unsound |
-| v2b (carrier-keyed) | **192 unsound**, definite on 3,456 | 1,536 unsound |
-| v2c (carrier and transition in one event) | **0 unsound**, definite on 2,688 | **0 unsound**, definite on 24,168 |
+| v2a (the registered repair) | **96 unsound**, definite on 1,536 | 768 unsound, definite on 16,308 |
+| v2b (carrier-keyed) | **192 unsound**, definite on 2,496 | 1,536 unsound, definite on 21,924 |
+| v2c (carrier and transition in one event) | **0 unsound**, definite on 1,824 | **0 unsound**, definite on 16,356 |
 
 Each unsound row is a truthful `rejected` read as `stored`: the carrier was
 re-attributed on a state another grant stored. **v2c** is the observation
@@ -173,7 +174,22 @@ reachable under the evidence.
 Two histories were added after review of this note: a status write that
 erases the carrier of a state this grant stored (all three still say
 `stored`, from the earlier event), and a deletion between events (v2c no
-longer carries a state across it, which a review found it did).
+longer carries a state across it, which a review found it did). A third,
+an annotation overwrite with no state under another carrier to overwrite,
+never fired and was removed; the counts are of evaluations, and the
+enumeration's 1,024 history tuples are 396 distinct worlds (416 protected
+tuples, 264 worlds).
+
+**v2c's precondition is load-bearing, and the model shows where it
+fails.** Where a write outside the enforcer can change the spec and set the
+annotation together (the default tier's copied-carrier history), v2c is
+unsound too: 96 of 3,648 evaluations in that scope. It is sound here only
+because the status path cannot do both (H9c). `deployments/scale` can
+change `spec.replicas`; it is denied natively in protected namespaces by
+the shipped `changesafe-protected-scale` policy, which the harness's setup
+steps exercise ("protected scale subresource: DENY"). No other
+spec-changing subresource of the four kinds is known to the author, and
+none was probed.
 
 ## What this changes in the claims
 
@@ -198,7 +214,9 @@ longer carries a state across it, which a review found it did).
   subresource is not examined. Controllers and cluster administrators do
   hold it by default, so the set of principals is not empty.
 - One Kubernetes version, one kind. StatefulSet, DaemonSet and Service
-  strategies differ and are not probed.
+  strategies differ and are not probed. Other subresources of the same
+  object (scale is covered by the shipped guard and exercised at setup;
+  others are not probed).
 - v2c's soundness is over the model, with two status-path histories (a
   re-attribution on a state another grant stored, and an erasure); other
   re-attribution histories are not enumerated, and the grid is not

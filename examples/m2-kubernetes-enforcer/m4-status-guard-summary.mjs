@@ -19,6 +19,9 @@ const object = (name) => {
     return {
       resourceVersion: value.metadata?.resourceVersion ?? null,
       carrier: value.metadata?.annotations?.["changesafe.dev/grant"] ?? null,
+      // Every annotation, not only the carrier: a write that changed another
+      // annotation would show here and not in "carrier".
+      annotations: Object.fromEntries(Object.entries(value.metadata?.annotations ?? {}).sort(([a], [b]) => a.localeCompare(b))),
       replicas: value.spec?.replicas ?? null,
       readyReplicas: value.status?.readyReplicas ?? null,
       availableReplicas: value.status?.availableReplicas ?? null,
@@ -26,9 +29,14 @@ const object = (name) => {
     };
   } catch { return null; }
 };
+const exitStatusOf = (name) => {
+  const text = (read(`guard-${name}.status`) ?? "").trim();
+  // An absent file is not success: null, so a missing verdict never reads as "admitted".
+  return text === "" || Number.isNaN(Number(text)) ? null : Number(text);
+};
 const probe = (name) => ({
   name,
-  exitStatus: Number((read(`guard-${name}.status`) ?? "").trim()),
+  exitStatus: exitStatusOf(name),
   output: (read(`guard-${name}.out`) ?? "").trim().slice(0, 400),
   after: object(`guard-${name}.after.json`),
 });
@@ -44,6 +52,7 @@ for (const line of (read("controller-replay.jsonl") ?? "").split("\n").filter(Bo
       readyReplicas: event.object.status?.readyReplicas ?? null,
       availableReplicas: event.object.status?.availableReplicas ?? null,
       carrier: event.object.metadata.annotations?.["changesafe.dev/grant"] ?? null,
+      annotations: Object.fromEntries(Object.entries(event.object.metadata.annotations ?? {}).sort(([a], [b]) => a.localeCompare(b))),
     });
   } catch { /* a partial line */ }
 }

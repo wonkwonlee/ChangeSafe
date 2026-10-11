@@ -34,7 +34,6 @@ export type Later =
    * Valid in the protected tier as deployed, and a no-op when the object is
    * not in the target state.
    */
-  | "status_overwrites_carrier"
   /**
    * The case that matters: another grant legitimately stores the target
    * after this grant's admission, then a status write re-attributes it to
@@ -102,7 +101,7 @@ export function simulate(history: History): World {
   if (history.later === "sets_target_copied_carrier") { state = "T"; carrier = "G"; emit(); }
   // A status write sets only the annotation. It exists only where the object
   // already holds the target under another carrier; it cannot create it.
-  if ((history.later === "status_overwrites_carrier" || history.later === "via_other_grant_then_status_overwrite") && state === "T" && carrier !== "G") {
+  if (history.later === "via_other_grant_then_status_overwrite" && state === "T" && carrier !== "G") {
     carrier = "G"; emit();
   }
   if (history.later === "status_erases_carrier" && history.attempt === "stored") { carrier = "X"; emit(); }
@@ -328,7 +327,7 @@ export const bool = [false, true] as const;
 export const attempts: Attempt[] = ["stored", "rejected_downstream", "not_attempted"];
 export const laters: Later[] = ["none", "restores_prior", "via_other_grant", "sets_target_no_carrier", "sets_target_copied_carrier"];
 /** Experiment 09's additions, opt-in so experiment 07's enumeration and its asserted counts are unchanged. */
-export const statusPathLaters: Later[] = ["status_overwrites_carrier", "via_other_grant_then_status_overwrite", "status_erases_carrier"];
+export const statusPathLaters: Later[] = ["via_other_grant_then_status_overwrite", "status_erases_carrier"];
 
 export interface EnumerationOptions {
   /** Include histories in which a status-subresource write overwrites the carrier (experiment 09). */
@@ -342,6 +341,9 @@ export const priors: PriorKnowledge[] = ["exact", "lower_bound", "none"];
 /** A history the API server can produce: an unauthorized-looking write needs the default tier. */
 export function isValid(history: History): boolean {
   if (history.tier === "protected" && (history.later === "sets_target_no_carrier" || history.later === "sets_target_copied_carrier")) return false;
+  // An erasure acts on the carrier of a write this grant stored; for any other
+  // attempt it would be the same world as "none".
+  if (history.later === "status_erases_carrier" && history.attempt !== "stored") return false;
   return true;
 }
 

@@ -79,8 +79,7 @@ commit `4643466`, all seven jobs passed. Evidence: the run's raw
 `m4-status-guard-evidence.json`, byte for byte, in
 `examples/m2-kubernetes-enforcer/evidence/2026-10-11-run-f/` with its
 SHA-256 in `manifest.json`; replayed by
-`tests/integration/m4-status-guard.test.ts` (7 tests, the artifact checked
-by hash before use). The harness waited until a server dry-run of the
+`tests/integration/m4-status-guard.test.ts` (artifact checked by hash before use; 10 tests). The harness waited until a server dry-run of the
 forging patch was denied before the probes (`active=yes`).
 
 | Step | Result |
@@ -94,7 +93,7 @@ forging patch was denied before the probes (`active=yes`).
 | H10a | holds (high) | **holds.** The message names the policy and the binding; the object did not move |
 | H10b | holds (high) | **holds.** The controller's status writes, which go through the same subresource and the same policy, continued; ready replicas dipped to 3 and recovered to 4 with the guard applied |
 | H10c | holds (medium-high) | **holds.** A status write that leaves annotations alone is admitted, including one authored by a user |
-| H10d | holds (high) | **holds.** In this run's experiment 09 section, with the audit policy listing the subresource, the audit log has both status patches (code 200, no enforcer annotation) next to the denied main-resource request |
+| H10d | holds (high) | **not exercised by this experiment's own evidence.** The hashed artifact of this experiment contains no audit data, and the tests do not reference it. The prediction concerns experiment 09's evidence pipeline; it was settled by [experiment 09's second run](M4_EXPERIMENT_09.md#results), where the audit log has both status patches (code 200, no enforcer annotation) next to the denied main-resource request. It is listed here because it was registered here, and credited there |
 
 The surprise criteria were not met: the candidate did not break the
 controllers, and no exemption surfaced.
@@ -119,13 +118,16 @@ controllers, and no exemption surfaced.
 
 ## What this changes in the claims
 
-- With the candidate applied, a writer who can update `deployments/status`
-  can no longer set the carrier. Experiment 07's precondition for the
-  protected tier is **restorable by a named, tested control for
-  Deployments in this cluster**, which is stronger than "assumed" and
-  weaker than "established": the other kinds are not exercised, RBAC for
-  the subresource is not examined, and the policy is itself an object an
-  administrator can edit (the existing guards say the same).
+- With the candidate applied, the *observed bypass* (a patch to
+  `deployments/status` that sets the carrier) is refused, on a Deployment
+  that already carried a forged carrier, in one run. That is evidence a
+  named control closes the path that was found. It is **not** a
+  demonstration that a fresh object cannot acquire a carrier by another
+  path: the probe changed an existing forged value to a second one, only
+  the update path was exercised, only one kind, and no other subresource.
+  So experiment 07's protected-tier precondition has a candidate control
+  and one run behind it; "assumed" has become "has a tested candidate",
+  not "established".
 - It does not, by itself, make the carrier unforgeable by everyone: a
   principal who can edit or delete admission policy, or who can change
   the namespace's tier label (denied by the existing guard), is outside

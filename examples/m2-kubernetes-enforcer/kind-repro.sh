@@ -434,6 +434,7 @@ m4_probe() {
   log "\$ probe ${name}: exit $(cat "${WORK_DIR}/probe-${name}.status"); $(head -c 200 "${WORK_DIR}/probe-${name}.out" | tr '\n' ' ')"
 }
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/probe-before.json"
+M4_PRE_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
 date -u +%Y-%m-%dT%H:%M:%S.%6NZ > "${WORK_DIR}/probe-window.txt"
 m4_probe annotate-main kubectl -n "${M4_NS}" annotate deployment web changesafe.dev/grant=m4-forged-main --overwrite
 m4_probe patch-status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
@@ -458,8 +459,11 @@ run kubectl apply -f "${EXAMPLE_DIR}/m4-status-guard-candidate.yaml"
 # of the forging patch is denied, as the routing guards are waited on above.
 GUARD_ACTIVE="no"
 for _ in $(seq 1 30); do
-  if ! kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
-       -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-wait"}}}' >"${WORK_DIR}/guard-wait.txt" 2>&1; then
+  kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
+    -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-wait"}}}' >"${WORK_DIR}/guard-wait.txt" 2>&1 || true
+  # Any failure is not enough (a conflict or a timeout also fails): the
+  # refusal must name this policy.
+  if grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-wait.txt"; then
     GUARD_ACTIVE="yes"; break
   fi
   sleep 1
@@ -481,25 +485,48 @@ m4_guard_probe status-harmless kubectl -n "${M4_NS}" patch deployment web --subr
 # A real controller status write: delete one pod and let the ReplicaSet and
 # the Deployment controller reconcile. The replay watch lists what the
 # Deployment's status did.
+# One read gives both the "before" object and the replay's start version.
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-before.json"
-M4_CTRL_RV=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.metadata.resourceVersion}')
+M4_CTRL_RV=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).metadata.resourceVersion' "${WORK_DIR}/controller-before.json")
 kubectl -n "${M4_NS}" delete "$(kubectl -n "${M4_NS}" get pod -l app=web -o name | head -1)" --wait=false >/dev/null 2>&1 || true
-sleep 20
+# Wait for the reconcile to finish rather than a fixed sleep: ready replicas
+# back at the desired count (bounded).
+for _ in $(seq 1 40); do
+  READY=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+  DESIRED=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
+  if [ -n "${READY}" ] && [ "${READY}" = "${DESIRED}" ]; then break; fi
+  sleep 3
+done
 kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/controller-after.json"
 kubectl get --raw "/apis/apps/v1/namespaces/${M4_NS}/deployments?fieldSelector=metadata.name%3Dweb&watch=1&timeoutSeconds=4&resourceVersion=${M4_CTRL_RV}" \
   > "${WORK_DIR}/controller-replay.jsonl" 2>/dev/null || true
 log "--- M4 experiment 10 evidence ---"
 node "${EXAMPLE_DIR}/m4-status-guard-summary.mjs" "${WORK_DIR}" "${EXAMPLE_DIR}/m4-status-guard-evidence.json" | tee -a "${TRANSCRIPT}"
-# The candidate is removed so step 3 runs as it always has.
+# The candidate is removed so step 3 runs as it always has, and the removal
+# is waited for: policy changes are asynchronous in both directions. A
+# dry-run of the forging patch that is no longer refused by the policy
+# shows it is gone.
 kubectl delete -f "${EXAMPLE_DIR}/m4-status-guard-candidate.yaml" --ignore-not-found >/dev/null 2>&1 || true
+GUARD_REMOVED="no"
+for _ in $(seq 1 30); do
+  kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge --dry-run=server \
+    -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-guard-gone"}}}' >"${WORK_DIR}/guard-gone.txt" 2>&1 || true
+  if ! grep -q "changesafe-protected-status-annotations" "${WORK_DIR}/guard-gone.txt"; then GUARD_REMOVED="yes"; break; fi
+  sleep 1
+done
+log "candidate guard removed: ${GUARD_REMOVED}"
 
-# Step 3 measures the fail-closed split against the replica count the
-# observations left. That makes a probe's change to replicas invisible to
-# step 3 on purpose (an observation must not fail the run); it is recorded
-# in the probe evidence above, which is where it is read as a result. The
-# probe also leaves a forged carrier on the Deployment; step 3 does not read
-# the carrier.
-STEP3_BASELINE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+# Step 3 keeps the replica count from BEFORE the probes as its baseline. If a
+# status write had changed spec.replicas (experiment 09's H9c failing), that is
+# not an observation to absorb: it would mean the status subresource can change
+# spec, and step 3's fail-closed check then fails the run, loudly, on purpose.
+# The probe also leaves a forged carrier on the Deployment; step 3 does not
+# read the carrier.
+M4_POST_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+if [ "${M4_POST_PROBE_REPLICAS}" != "${M4_PRE_PROBE_REPLICAS}" ]; then
+  log "M4-09 FINDING: the probes changed spec.replicas from ${M4_PRE_PROBE_REPLICAS} to ${M4_POST_PROBE_REPLICAS}; the status subresource can change spec"
+fi
+STEP3_BASELINE_REPLICAS="${M4_PRE_PROBE_REPLICAS}"
 
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
