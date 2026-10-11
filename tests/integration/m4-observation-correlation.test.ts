@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { kubernetesObjectSha256, GRANT_ANNOTATION } from "@changesafe/kubernetes-enforcer";
+import { compareResourceVersions } from "./resource-version";
 
 /**
  * M4 experiment 01 — can a read of stored state be attributed to the
@@ -22,6 +23,12 @@ interface AdmissionEvidence {
   incarnationUid?: string;
   /** Hash of the admitted object — the grant's `objectSha256`. */
   targetObjectSha256: string;
+  /**
+   * `oldObject.metadata.resourceVersion` at admission, UPDATE only. Same
+   * resource type as any later read, so the two are comparable (see
+   * `compareResourceVersions`).
+   */
+  priorResourceVersion?: string;
 }
 
 /** A later read-only observation of the same resource. */
@@ -50,6 +57,8 @@ interface KubernetesObject {
  */
 type Attribution =
   | "unknown_unobserved"
+  | "unknown_stale_read"
+  | "no_write_since_admission"
   | "unknown_absent"
   | "unknown_incarnation"
   | "not_this_incarnation"
@@ -69,7 +78,18 @@ async function attribute(evidence: AdmissionEvidence, observation: Observation):
   const { raw } = observation;
   if (evidence.incarnationUid === undefined) return "unknown_incarnation";
   if (raw.metadata.uid !== evidence.incarnationUid) return "not_this_incarnation";
-  if ((await kubernetesObjectSha256(raw)) !== evidence.targetObjectSha256) return "unknown_divergent";
+  const sinceAdmission =
+    evidence.priorResourceVersion === undefined || raw.metadata.resourceVersion === undefined
+      ? undefined
+      : compareResourceVersions(raw.metadata.resourceVersion, evidence.priorResourceVersion);
+  // A read older than what the enforcer saw says nothing about what came after.
+  if (sinceAdmission === -1) return "unknown_stale_read";
+  const isTarget = (await kubernetesObjectSha256(raw)) === evidence.targetObjectSha256;
+  // Same incarnation, same version as at admission, and not the target
+  // state: nothing has been stored since, so the admitted (state-changing)
+  // write was not. Equality alone decides this; it needs no ordering.
+  if (sinceAdmission === 0 && !isTarget) return "no_write_since_admission";
+  if (!isTarget) return "unknown_divergent";
   // The grant annotation is excluded from the hash, so its presence is
   // evidence the hash cannot carry — but it is a client-writable string,
   // so it marks, it does not attribute (see the copied-annotation case).
@@ -120,6 +140,7 @@ async function updateEvidence(): Promise<AdmissionEvidence> {
     operation: "UPDATE",
     incarnationUid: INCARNATION_A,
     targetObjectSha256: await kubernetesObjectSha256(ADMITTED),
+    priorResourceVersion: "100",
   };
 }
 
@@ -169,21 +190,52 @@ describe("M4-01: counterexamples to hash-only correlation (H1)", () => {
     expect(await attribute(evidence, reapplied)).toBe("state_consistent_unattributed");
   });
 
-  it("rejected persistence and persisted-then-overwritten are byte-identical reads", async () => {
+  it("a rejected write with nothing stored since is decided by the version alone", async () => {
     const evidence = await updateEvidence();
-    // Path C: ALLOW was answered (grant consumed), then the API server
-    // rejected the write on a resourceVersion conflict. Path D: the write
-    // persisted and a later writer restored replicas 3. Both reads show
-    // the prior spec; neither read carries the difference.
-    const rejectedDownstream: Observation = { kind: "present", raw: PRIOR };
-    const overwrittenAfter: Observation = {
+    // ALLOW was answered (grant consumed), then a later stage rejected the
+    // write. Nothing else wrote. The read still shows the version the
+    // enforcer saw in oldObject — a stored write would have advanced it.
+    const rejectedNothingSince: Observation = { kind: "present", raw: PRIOR };
+    expect(await naiveHashOnly(evidence, rejectedNothingSince)).toBe(false);
+    expect(await attribute(evidence, rejectedNothingSince)).toBe("no_write_since_admission");
+  });
+
+  it("once anything is stored after admission, persisted-then-overwritten and rejected-then-rewritten can read identically", async () => {
+    const evidence = await updateEvidence();
+    // History D: the admitted write is stored (rv 101), then another writer
+    // restores replicas 3 (rv 180). History C': the admitted write is
+    // rejected, then another writer changes a field and restores it, also
+    // ending at rv 180. Resource versions are global per resource type, so
+    // two histories can end on the same number. The final reads are equal,
+    // and both versions are newer than admission: ordering cannot separate
+    // them, and neither can the production hash.
+    const persistedThenOverwritten: Observation = {
       kind: "present",
-      raw: deployment({ uid: INCARNATION_A, resourceVersion: "100", replicas: 3 }),
+      raw: deployment({ uid: INCARNATION_A, resourceVersion: "180", replicas: 3 }),
     };
-    expect(overwrittenAfter).toEqual(rejectedDownstream);
-    expect(await naiveHashOnly(evidence, rejectedDownstream)).toBe(false);
-    expect(await attribute(evidence, rejectedDownstream)).toBe("unknown_divergent");
-    expect(await attribute(evidence, overwrittenAfter)).toBe("unknown_divergent");
+    const rejectedThenRewritten: Observation = {
+      kind: "present",
+      raw: deployment({ uid: INCARNATION_A, resourceVersion: "180", replicas: 3 }),
+    };
+    expect(persistedThenOverwritten).toEqual(rejectedThenRewritten);
+    expect(compareResourceVersions("180", "100")).toBe(1);
+    expect(await attribute(evidence, persistedThenOverwritten)).toBe("unknown_divergent");
+    expect(await attribute(evidence, rejectedThenRewritten)).toBe("unknown_divergent");
+  });
+
+  it("a read older than admission is stale, never evidence about the write", async () => {
+    const evidence = await updateEvidence();
+    const stale: Observation = { kind: "present", raw: deployment({ uid: INCARNATION_A, resourceVersion: "99", replicas: 3 }) };
+    expect(await attribute(evidence, stale)).toBe("unknown_stale_read");
+  });
+
+  it("compares resource versions as Kubernetes documents, and refuses non-decimal ones", () => {
+    expect(compareResourceVersions("23", "123")).toBe(-1);
+    expect(compareResourceVersions("234", "123")).toBe(1);
+    expect(compareResourceVersions("123", "123")).toBe(0);
+    expect(compareResourceVersions("2345678901234567890123456789", "345678901234567890123456789")).toBe(1);
+    expect(compareResourceVersions("abc", "123")).toBeUndefined();
+    expect(compareResourceVersions("0123", "123")).toBeUndefined();
   });
 
   it("an unavailable or absent read is unknown, never a failure verdict", async () => {
@@ -240,6 +292,8 @@ describe("M4-01: the strongest offline verdict is still not attribution", () => 
   it("no verdict in the contract reads as a persistence attestation", () => {
     const verdicts: Attribution[] = [
       "unknown_unobserved",
+      "unknown_stale_read",
+      "no_write_since_admission",
       "unknown_absent",
       "unknown_incarnation",
       "not_this_incarnation",

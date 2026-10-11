@@ -44,7 +44,7 @@ the enforcer uses.
 | Recreated incarnation | equal spec, new `metadata.uid` | persisted | `not_this_incarnation` | uid is server-owned and excluded from the hash by design; the object that was admitted no longer exists |
 | Convergent re-apply | equal spec, same uid, grant annotation gone | persisted | `state_consistent_unattributed` | another writer (e.g. a reconciler) produced the equal state; nothing ties it to this admission |
 | Admitted, persistence rejected | prior spec | not persisted | `unknown_divergent` | correct answer, false certainty — see next row |
-| Persisted, then overwritten | prior spec | not persisted | `unknown_divergent` | the read is **byte-identical** to the row above (`toEqual` asserts it); H1 cannot tell them apart |
+| Persisted, then overwritten | prior spec | not persisted | `unknown_divergent` | ~~the read is **byte-identical** to the row above~~ — corrected below: that fixture reused the prior `resourceVersion`, which a stored write cannot leave behind |
 | Unavailable or absent read | — | not persisted | `unknown_unobserved` / `unknown_absent` | absence of evidence is coerced into a failure verdict |
 | CREATE | equal spec, some uid | persisted | `unknown_incarnation` | a CREATE grant cannot carry an incarnation uid at issuance, so even same-uid reasoning is unavailable |
 | Grant annotation present, same uid, equal spec | — | persisted | `state_consistent_grant_marked` | the strongest offline verdict — and a copied annotation from a different writer yields the identical verdict |
@@ -95,11 +95,44 @@ check before any contract is adopted:
   admission). If true, the enforcer could record the CREATE incarnation
   uid at ALLOW time and lift the CREATE path from `unknown_incarnation`
   to incarnation-bound.
-- `resourceVersion` is contractually opaque: equality is meaningful,
-  ordering is not. The harness never compares versions numerically, and
-  no future contract may either.
+- ~~`resourceVersion` is contractually opaque: equality is meaningful,
+  ordering is not.~~ Wrong; see the correction below.
 - `managedFields` records the manager name a client chose; any principal
   with write access can present any manager name.
+
+## Correction after review (2026-10-11)
+
+PR #78's automated review found two errors in this note. Both are real,
+checked against the Kubernetes API concepts documentation ("Resource
+versions"). They are corrected here rather than rewritten above, and in
+ledger row "M4-01/02 correction".
+
+1. **The rejected-vs-overwritten fixture was impossible.** It gave the
+   persisted-then-overwritten read the same `resourceVersion` (100) as the
+   state before admission. A stored write advances the version, so that
+   read cannot occur.
+2. **Resource versions are not opaque for kube-apiserver.** Within one
+   resource type they are ordered as increasing decimal integers, a
+   conformance requirement from Kubernetes 1.35. Only versions from an
+   aggregated API server that do not parse as decimals are equality-only.
+
+What changes in the result:
+
+- **A rejected write with nothing stored since is decidable.** If the
+  enforcer records `oldObject.metadata.resourceVersion` and a later read
+  of the same incarnation still shows it, nothing was stored since, so a
+  state-changing admitted write was not. Equality alone decides this. The
+  contract gains `no_write_since_admission`, and a read older than
+  admission gains `unknown_stale_read`.
+- **Once anything is stored after admission, the original conclusion
+  stands.** "Persisted, then overwritten" and "rejected, then another
+  writer changed and restored a field" can end on equal reads, because a
+  version number is global per resource type. Ordering shows only that
+  *something* was written, not whether it was the admitted write.
+- **H1 is still refuted.** No case in the original table depended on
+  version opacity except the one corrected above. The harness now models
+  these histories with versions Kubernetes can produce, and compares them
+  with the documented rule (`tests/integration/resource-version.ts`).
 
 ## What remains unsupported
 
