@@ -65,45 +65,53 @@ Terraform grant path exists that no document or test covers.
 
 ## Results
 
-Checks: `tests/integration/m4-terraform-structure.test.ts` (9 tests). No
+Checks: `tests/integration/m4-terraform-structure.test.ts` (10 tests). No
 Terraform was executed and no cloud contacted.
 
 **The documented formats** (HashiCorp's JSON output format page, read
-2026-10-11). The *state representation's* only top-level properties are
-`values` and `terraform_version`, and the page says state "does not have any
-significant metadata not included in the common" values representation. The
-*plan representation's* are `format_version`, `prior_state`, `applyable`,
-`complete`, `errored`, `configuration`, `planned_values`,
+2026-10-11 through a summarizing fetch, so the lists below are what that
+read reported, not verbatim code blocks; the page should be consulted to
+audit them). For the *state representation* the page's example shows
+`values` and `terraform_version`, and says state "does not have any
+significant metadata not included in the common" values representation;
+every output carries a `format_version`. The *plan representation's*
+listed top-level properties were `format_version`, `prior_state`,
+`applyable`, `complete`, `errored`, `configuration`, `planned_values`,
 `proposed_unknown`, `variables`, `resource_changes`, `resource_drift`,
-`relevant_attributes`, `output_changes` and `checks`. Neither mentions
-`serial` or `lineage`. The page also tells consumers to ignore properties
-they do not recognize, so absence from the documented set is the stable
-contract, not an omission in a version.
+`relevant_attributes`, `output_changes` and `checks`. Two direct
+questions about `serial` and `lineage` were both answered "not
+mentioned". The page also tells consumers to ignore properties they do not
+recognize. The weight of H8a therefore rests on the absence of those two
+names from the format, which the two reads agree on, and not on the exact
+property lists.
 
 | # | Prediction | Observed |
 | --- | --- | --- |
-| H8a | holds (high) | **holds.** None of the seven committed inputs has a key named `serial`, `lineage` or `prior_state`, at any depth; their top-level keys are `format_version`, `terraform_version`, `resource_changes` and ChangeSafe's own `context`; none has a per-object version-like key. The normalized model the policies read keeps only address, type, module, action, before, after, tags and ids |
-| H8b | holds (high) | **holds.** Tags appear in the same `before` and `after` values as every other attribute, and the normalized model has no field named for a grant, receipt, carrier or authorization. Nothing in the artifact is set by an authorizing boundary |
-| H8c | holds (medium) | **holds.** With the model's carrier flag off, neither repair returns a single `stored` verdict, both are sound over all 2,880 default-tier scope evaluations, and their definite verdicts are exactly `rejected` and `not_consumed`. Every history in which the write was stored comes back `unknown` |
-| H8d | holds (high) | **holds, and wider than asked.** `deriveReviewedGrantBinding` throws "Only Kubernetes has a reviewed grant issuance contract" for Terraform, and the same for the network domain. One of the three shipped domains can be issued a grant |
+| H8a | holds (high) | **holds.** None of the seven committed inputs has a key named `serial`, `lineage` or `prior_state` at any depth. The test asserts the *whole* set of key names across the inputs (an allowlist of 27), so a new key is noticed; none is an identity or version key. The normalized model keeps only address, type, module, action, before, after, tags and ids |
+| H8b | holds (high) as an argument; the test checks the artifact's shape only | **holds, with what a test can show kept apart from what it cannot.** Tags appear in the same `before` and `after` values as every other attribute, and the normalized model has no field named for a grant, receipt, carrier or authorization. That anyone who can write the resource can write its tags is a property of Terraform and the provider, argued here, not read off an artifact |
+| H8c | holds (medium); **a consequence, not evidence** | **holds, and trivially.** With the model's carrier flag off, neither repair returns a `stored` verdict in any of the 28,800 default-tier evaluations (every coverage, prior and audit edit), both are sound, and the definite verdicts are exactly `rejected` and `not_consumed`. The tests restate the model's own `!assumeCarrierUnforgeable` branch; their content is the premise that the artifact offers no carrier (H8b) and that the default tier stands for a Terraform state history, which is an interpretation, not shown |
+| H8d | holds (high) | **holds, and wider than asked.** `deriveReviewedGrantBinding` throws "Only Kubernetes has a reviewed grant issuance contract" for Terraform, for network and for any other domain string (its first statement, so it is about the domain, not the input). The server has one `signGrant` call site, preceded by that derivation, and no other server source signs a grant. One of the three shipped domains can be issued a grant |
 
 ## What the result says
 
-1. **The contract's structure did not reappear on its own.** The three
-   things it rests on are properties of a Kubernetes API server: an
-   incarnation identity and a monotonic version on every object, and a
-   boundary that sees the request before it persists and can set a field
-   the executor cannot. Terraform has the first two in its raw state
-   (`lineage`, `serial`) and its documented JSON output drops them; it has
-   no counterpart of the third. This is a negative result for the
-   strategy's "Physical OS" hypothesis in the form its own rule allows
-   (does the abstraction reappear unprompted?): it needed an enforcement
-   boundary, and Terraform's gate ends before one.
-2. **For Terraform the sound observation is one-sided.** With no carrier,
-   the model says what can be known: that a grant was consumed and that no
+1. **The contract's structure did not reappear on its own, under this
+   interpretation.** The three things it rests on are properties of a
+   Kubernetes API server: an incarnation identity and a monotonic version
+   on every object, and a boundary that sees the request before it
+   persists and can set a field the executor cannot. Terraform has the
+   first two in its raw state (`lineage`, `serial`) and its documented JSON
+   output does not list them; it has no counterpart of the third. For the
+   strategy's "Physical OS" question (does the abstraction reappear
+   unprompted?) this is a negative answer *for these two domains and for
+   this model of the mapping*. It needed an enforcement boundary, and
+   Terraform's gate ends before one. It is not a refutation of the
+   hypothesis: the mapping from a watch to a state backend's history is
+   an interpretation (below), and a third domain was not tried.
+2. **For Terraform the sound observation is one-sided, by construction.**
+   With no carrier the model can say that a grant was consumed and that no
    state version after it holds the target (`rejected`), never that the
-   apply is the grant's. That asymmetry is a consequence of the missing
-   boundary, not of the contract's wording.
+   apply is the grant's. That asymmetry follows from the missing boundary
+   and is not a finding about the contract's wording.
 3. **Where a Terraform carrier would have to come from is outside what
    ChangeSafe ingests.** The nearest real mechanism is the cloud's own
    identity and audit trail: an apply role assumable only with a session
@@ -114,15 +122,15 @@ contract, not an omission in a version.
    carrier's guarantee is untested.
 4. **The grant primitive is domain-agnostic in its schema and
    Kubernetes-only in its use.** `AuthorizationGrant`'s fields are opaque
-   strings, but its issuance, its enforcer and now its observation
-   contract exist for one domain. The README and strategy notes say the
-   primitive is general; the code supports one domain.
+   strings, but its issuance exists for one domain, as does its enforcer
+   and its observation contract. The strategy and README describe the
+   primitive generally; the code supports one domain.
 
 ## What remains unsupported
 
 - The committed inputs are authored and minimal; a real plan carries
-  more. The documented format is the stronger source, and it is read, not
-  run against a real Terraform.
+  more. The documented format is the stronger source, and it was read
+  through a summarizing fetch, not run against a real Terraform.
 - H8c rests on the model's default tier standing for Terraform, which is
   an interpretation: the model has a stream of object versions and
   Terraform's analog is a versioned backend's state history, with each
