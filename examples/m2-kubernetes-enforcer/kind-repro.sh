@@ -423,6 +423,49 @@ node "${EXAMPLE_DIR}/m4-replay-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/step1-gra
   "${REPO_ROOT}/packages/kubernetes-enforcer/dist/index.js" "${WATCH_RV}" \
   "${EXAMPLE_DIR}/m4-replay-evidence.json" "${M4_PRIOR_RV}" | tee -a "${TRANSCRIPT}"
 
+# --- M4 experiment 09 — can a write outside the enforcer set the carrier? ---
+# Attempts, against the demo Deployment in the protected namespace, to set the
+# grant carrier by paths that are not an admitted UPDATE of the main
+# resource, then reads the object and the audit log back. Observation only:
+# whatever the API server does is the result (docs/M4_EXPERIMENT_09.md).
+log ""
+log "=== M4 experiment 09: setting the grant carrier outside the enforcer ==="
+M4_NS="changesafe-protected-demo"
+m4_probe() {
+  local name="$1"; shift
+  set +e
+  "$@" > "${WORK_DIR}/probe-${name}.out" 2>&1
+  echo $? > "${WORK_DIR}/probe-${name}.status"
+  set -e
+  kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/probe-${name}.after.json" 2>/dev/null || true
+  log "\$ probe ${name}: exit $(cat "${WORK_DIR}/probe-${name}.status"); $(head -c 200 "${WORK_DIR}/probe-${name}.out" | tr '\n' ' ')"
+}
+kubectl -n "${M4_NS}" get deploy web -o json > "${WORK_DIR}/probe-before.json"
+M4_PRE_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+date -u +%Y-%m-%dT%H:%M:%S.%6NZ > "${WORK_DIR}/probe-window.txt"
+m4_probe annotate-main kubectl -n "${M4_NS}" annotate deployment web changesafe.dev/grant=m4-forged-main --overwrite
+m4_probe patch-status-annotation kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
+  -p '{"metadata":{"annotations":{"changesafe.dev/grant":"m4-forged-status"}}}'
+m4_probe patch-status-spec kubectl -n "${M4_NS}" patch deployment web --subresource=status --type=merge \
+  -p '{"spec":{"replicas":9},"metadata":{"labels":{"m4.changesafe.dev/probe":"status"}}}'
+date -u +%Y-%m-%dT%H:%M:%S.%6NZ >> "${WORK_DIR}/probe-window.txt"
+sleep 2
+docker exec "${CLUSTER_NAME}-control-plane" cat /var/log/kubernetes/kube-apiserver-audit.log > "${WORK_DIR}/audit-after-probe.log"
+log "--- M4 experiment 09 evidence ---"
+node "${EXAMPLE_DIR}/m4-carrier-probe-summary.mjs" "${WORK_DIR}" "${WORK_DIR}/audit-after-probe.log" \
+  "${EXAMPLE_DIR}/m4-carrier-probe-evidence.json" | tee -a "${TRANSCRIPT}"
+# Step 3 keeps the replica count from BEFORE the probes as its baseline. If a
+# status write had changed spec.replicas (experiment 09's H9c failing), that is
+# not an observation to absorb: it would mean the status subresource can change
+# spec, and step 3's fail-closed check then fails the run, loudly, on purpose.
+# The probe also leaves a forged carrier on the Deployment; step 3 does not
+# read the carrier.
+M4_POST_PROBE_REPLICAS=$(kubectl -n "${M4_NS}" get deploy web -o jsonpath='{.spec.replicas}')
+if [ "${M4_POST_PROBE_REPLICAS}" != "${M4_PRE_PROBE_REPLICAS}" ]; then
+  log "M4-09 FINDING: the probes changed spec.replicas from ${M4_PRE_PROBE_REPLICAS} to ${M4_POST_PROBE_REPLICAS}; the status subresource can change spec"
+fi
+STEP3_BASELINE_REPLICAS="${M4_PRE_PROBE_REPLICAS}"
+
 # --- 12. Demo step 3 — fail-closed vs fail-open when the enforcer is down --
 log ""
 log "=== Demo step 3: fail-closed (protected) vs fail-open (default) when the enforcer is unreachable ==="

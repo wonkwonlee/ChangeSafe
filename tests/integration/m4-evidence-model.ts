@@ -15,7 +15,7 @@
 // --- The world ---------------------------------------------------------------
 
 export type State = "P" | "T";
-export type Carrier = null | "G" | "G2" | "G3" | "G4" | "G5";
+export type Carrier = null | "G" | "G2" | "G3" | "G4" | "G5" | "X";
 export interface Ev {
   rv: number;
   type: "ADDED" | "MODIFIED" | "DELETED";
@@ -25,7 +25,27 @@ export interface Ev {
 }
 
 export type Attempt = "stored" | "rejected_downstream" | "not_attempted";
-export type Later = "none" | "restores_prior" | "via_other_grant" | "sets_target_no_carrier" | "sets_target_copied_carrier";
+export type Later =
+  | "none" | "restores_prior" | "via_other_grant" | "sets_target_no_carrier" | "sets_target_copied_carrier"
+  /**
+   * Experiment 09: a write to the status subresource sets the carrier
+   * annotation on the object as it stands, without an admission. It cannot
+   * change the spec, so it only re-attributes a state that is already there.
+   * Valid in the protected tier as deployed, and a no-op when the object is
+   * not in the target state.
+   */
+  /**
+   * The case that matters: another grant legitimately stores the target
+   * after this grant's admission, then a status write re-attributes it to
+   * this grant by overwriting the annotation.
+   */
+  | "via_other_grant_then_status_overwrite"
+  /**
+   * The probe's finding 1: a status write replaces the carrier of a state
+   * this grant legitimately stored with an arbitrary string, erasing it.
+   * The earlier event that carried the grant stays in the history.
+   */
+  | "status_erases_carrier";
 export type Tier = "protected" | "default";
 
 export interface History {
@@ -80,9 +100,15 @@ export function simulate(history: History): World {
   if (history.statusAfter) emit();
 
   if (history.later === "restores_prior" && state !== "P") { state = "P"; carrier = "G5"; emit(); }
-  if (history.later === "via_other_grant") { state = "T"; carrier = "G3"; emit(); }
+  if (history.later === "via_other_grant" || history.later === "via_other_grant_then_status_overwrite") { state = "T"; carrier = "G3"; emit(); }
   if (history.later === "sets_target_no_carrier") { state = "T"; carrier = null; emit(); }
   if (history.later === "sets_target_copied_carrier") { state = "T"; carrier = "G"; emit(); }
+  // A status write sets only the annotation. It exists only where the object
+  // already holds the target under another carrier; it cannot create it.
+  if (history.later === "via_other_grant_then_status_overwrite" && state === "T" && carrier !== "G") {
+    carrier = "G"; emit();
+  }
+  if (history.later === "status_erases_carrier" && history.attempt === "stored") { carrier = "X"; emit(); }
 
   if (history.recreated) {
     emit("DELETED");
@@ -307,6 +333,13 @@ export function v2b(obs: Observation): Verdict {
 export const bool = [false, true] as const;
 export const attempts: Attempt[] = ["stored", "rejected_downstream", "not_attempted"];
 export const laters: Later[] = ["none", "restores_prior", "via_other_grant", "sets_target_no_carrier", "sets_target_copied_carrier"];
+/** Experiment 09's additions, opt-in so experiment 07's enumeration and its asserted counts are unchanged. */
+export const statusPathLaters: Later[] = ["via_other_grant_then_status_overwrite", "status_erases_carrier"];
+
+export interface EnumerationOptions {
+  /** Include histories in which a status-subresource write overwrites the carrier (experiment 09). */
+  withStatusPath?: boolean;
+}
 export const tiers: Tier[] = ["protected", "default"];
 export const edits: AuditEdit[] = ["none", "drop", "flip", "fabricate_stored", "hide_stored", "inject_conflict"];
 export const coverages: Coverage[] = ["complete", "late", "cut", "cut_after_write", "ended_abnormally"];
@@ -315,12 +348,16 @@ export const priors: PriorKnowledge[] = ["exact", "lower_bound", "none"];
 /** A history the API server can produce: an unauthorized-looking write needs the default tier. */
 export function isValid(history: History): boolean {
   if (history.tier === "protected" && (history.later === "sets_target_no_carrier" || history.later === "sets_target_copied_carrier")) return false;
+  // An erasure acts on the carrier of a write this grant stored; for any other
+  // attempt it would be the same world as "none".
+  if (history.later === "status_erases_carrier" && history.attempt !== "stored") return false;
   return true;
 }
 
-export function* histories(): Generator<History> {
+export function* histories(options: EnumerationOptions = {}): Generator<History> {
+  const all = options.withStatusPath === true ? [...laters, ...statusPathLaters] : laters;
   for (const attempt of attempts) for (const noOp of bool) for (const statusBefore of bool) for (const statusAfter of bool)
-    for (const otherGrantBefore of bool) for (const later of laters) for (const recreated of bool) for (const tier of tiers) {
+    for (const otherGrantBefore of bool) for (const later of all) for (const recreated of bool) for (const tier of tiers) {
       const history: History = { attempt, noOp, statusBefore, statusAfter, otherGrantBefore, later, recreated, tier };
       if (isValid(history)) yield history;
     }
@@ -337,9 +374,14 @@ export interface Row {
 export const isDefinite = (verdict: Verdict) => verdict !== "unknown";
 export const isUnsound = (row: Row) => isDefinite(row.verdict) && row.verdict !== row.truth;
 
-export function evaluate(contract: (obs: Observation) => Verdict, filter: (history: History, edit: AuditEdit, coverage: Coverage, prior: PriorKnowledge) => boolean, assumeFor: (tier: Tier) => boolean): Row[] {
+export function evaluate(
+  contract: (obs: Observation) => Verdict,
+  filter: (history: History, edit: AuditEdit, coverage: Coverage, prior: PriorKnowledge) => boolean,
+  assumeFor: (tier: Tier) => boolean,
+  options: EnumerationOptions = {},
+): Row[] {
   const rows: Row[] = [];
-  for (const history of histories()) for (const edit of edits) for (const coverage of coverages) for (const prior of priors) {
+  for (const history of histories(options)) for (const edit of edits) for (const coverage of coverages) for (const prior of priors) {
     if (!filter(history, edit, coverage, prior)) continue;
     const obs = observe(history, edit, coverage, prior, assumeFor(history.tier));
     rows.push({ history, edit, coverage, prior, verdict: contract(obs), truth: truthOf(history) });
@@ -364,4 +406,46 @@ export function distinctWorlds(items: Iterable<History>): number {
     seen.add(JSON.stringify([world.events, world.priorRv, history.noOp, truthOf(history)]));
   }
   return seen.size;
+}
+
+/**
+ * Version 2c, from experiment 09: like v2b, but `stored` needs the carrier
+ * and the state transition in one event. A genuine admitted write changes
+ * the spec and sets the annotation together; a status write can only set the
+ * annotation on a state that is already there. So the first event carrying
+ * this grant must also be the event where the state moves from the prior
+ * state to the target. For a no-op target (T equals P) there is no
+ * transition to see, so presence is unknown.
+ *
+ * Post hoc: written after the probe showed the bypass, and checked against
+ * the enumeration it was designed for.
+ */
+export function v2c(obs: Observation): Verdict {
+  if (!obs.consumed) return "not_consumed";
+  const w = windowOf(obs);
+  if (!obs.assumeCarrierUnforgeable) {
+    if (w.covers && w.reachesClose && !w.anyTargetState) return "rejected";
+    return "unknown";
+  }
+  if (w.targetWithCarrier) {
+    if (obs.grantIsNoOp) return "unknown";
+    const priorRv = obs.priorRv;
+    // The state before the first window event is the prior state (P) only if
+    // the stream began at or before the admission; a stream that started
+    // later did not see what preceded its first event, so a carrier on that
+    // first event cannot be told apart from a re-attribution.
+    let previous: State | undefined = priorRv !== undefined && obs.streamStart <= priorRv ? "P" : undefined;
+    for (const event of obs.events) {
+      if (event.type === "DELETED") { previous = undefined; continue; }
+      if (priorRv === undefined || event.rv <= priorRv) {
+        if (priorRv !== undefined) previous = event.state;
+        continue;
+      }
+      if (event.carrier === "G") return previous !== undefined && previous !== event.state && event.state === "T" ? "stored" : "unknown";
+      previous = event.state;
+    }
+    return "unknown";
+  }
+  if (w.covers && w.reachesClose) return "rejected";
+  return "unknown";
 }
