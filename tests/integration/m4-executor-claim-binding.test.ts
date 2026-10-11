@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAdmissionReviewResponse, kubernetesObjectSha256 } from "@changesafe/kubernetes-enforcer";
+import { compareResourceVersions } from "./resource-version";
 
 /**
  * M4 experiment 02 — can the executor's write response be bound to the
@@ -42,6 +43,7 @@ type Observation = { kind: "unavailable" } | { kind: "present"; raw: KubernetesO
 
 type ClaimCheck =
   | "unknown_unobserved"
+  | "claim_refuted_future_version"
   | "unknown_superseded"
   | "claimed_version_present_executor_asserted";
 
@@ -57,6 +59,15 @@ function naiveExecutorClaim(claim: ExecutorClaim, observation: Observation): boo
 function checkClaim(claim: ExecutorClaim, observation: Observation): ClaimCheck {
   if (observation.kind === "unavailable") return "unknown_unobserved";
   const { metadata } = observation.raw;
+  // Versions of one resource type are ordered (Kubernetes 1.35+ conformance),
+  // so a claim newer than what is stored now cannot be a past write.
+  if (
+    metadata.uid === claim.resultUid &&
+    metadata.resourceVersion !== undefined &&
+    compareResourceVersions(claim.resultResourceVersion, metadata.resourceVersion) === 1
+  ) {
+    return "claim_refuted_future_version";
+  }
   if (metadata.uid !== claim.resultUid || metadata.resourceVersion !== claim.resultResourceVersion) {
     return "unknown_superseded";
   }
@@ -149,16 +160,20 @@ describe("M4-02: what the enforcer leaves behind today", () => {
 describe("M4-02: counterexamples to executor-asserted binding (H2)", () => {
   const honest: ExecutorClaim = { grantId: GRANT_ID, resultUid: UID, resultResourceVersion: "101" };
 
-  it("the claim is unfalsifiable by read once any later write lands", () => {
+  it("ordering refutes a claimed version from the future, and nothing more", () => {
     // The honest executor's write produced rv 101; a reconciler then wrote
-    // rv 150. A lying executor who never wrote anything claims rv 999.
-    // Reads cannot reach historical versions, so both claims check alike.
-    const lying: ExecutorClaim = { grantId: GRANT_ID, resultUid: UID, resultResourceVersion: "999" };
+    // rv 150. One liar claims rv 999, a version not yet reached: ordering
+    // refutes it. Another liar, whose write was rejected, claims rv 120 —
+    // a past version that reads can no longer reach. Nothing separates it
+    // from the honest claim.
+    const future: ExecutorClaim = { grantId: GRANT_ID, resultUid: UID, resultResourceVersion: "999" };
+    const pastLie: ExecutorClaim = { grantId: GRANT_ID, resultUid: UID, resultResourceVersion: "120" };
     const now: Observation = { kind: "present", raw: deployment(UID, "150", 4) };
     expect(naiveExecutorClaim(honest, now)).toBe(false);
-    expect(naiveExecutorClaim(lying, now)).toBe(false);
+    expect(naiveExecutorClaim(pastLie, now)).toBe(false);
+    expect(checkClaim(future, now)).toBe("claim_refuted_future_version");
     expect(checkClaim(honest, now)).toBe("unknown_superseded");
-    expect(checkClaim(lying, now)).toBe("unknown_superseded");
+    expect(checkClaim(pastLie, now)).toBe("unknown_superseded");
   });
 
   it("a lying executor that names another writer's version passes H2", async () => {
@@ -216,6 +231,7 @@ describe("M4-02: a server-owned record separates what reads could not", () => {
   it("no verdict reads as a realized-effect attestation", () => {
     const verdicts: Array<ClaimCheck | AuditBinding> = [
       "unknown_unobserved",
+      "claim_refuted_future_version",
       "unknown_superseded",
       "claimed_version_present_executor_asserted",
       "audit_unavailable",

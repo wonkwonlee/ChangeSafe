@@ -101,6 +101,25 @@ In order: a kind cluster with an audit policy at `RequestResponse` for
 - From experiment 01, still open: a validating webhook sees
   `metadata.uid` populated on CREATE.
 
+## Correction after review (2026-10-11)
+
+PR #78's automated review pointed out that resource versions of one
+resource type are ordered for kube-apiserver (a conformance requirement
+from Kubernetes 1.35). Case 1 assumed reads could not compare versions.
+
+- **A claimed version newer than the current read is refuted.** The
+  harness's liar claiming rv 999 against a current rv 150 now gets
+  `claim_refuted_future_version`.
+- **A claimed past version is still unfalsifiable.** A liar claiming rv 120
+  gets the same verdict as the honest executor's rv 101: reads cannot reach
+  versions that have since been overwritten.
+- **H2 is still refuted.** Case 2, a liar naming another writer's
+  *current* version, does not depend on ordering at all.
+- Row 4's reference to experiment 01's "byte-identical reads" is narrowed
+  by [01's correction](M4_EXPERIMENT_01.md#correction-after-review-2026-10-11):
+  the paths are indistinguishable by read once anything was stored after
+  admission, which is the case the audit record has to settle.
+
 ## What remains unsupported
 
 - No E2 or E3 attestation exists in ChangeSafe today. Nothing here changes that.

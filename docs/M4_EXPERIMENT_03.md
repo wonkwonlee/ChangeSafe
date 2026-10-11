@@ -118,9 +118,10 @@ other bad request. The `outcome` annotation can.
 1. **The API server can record E1 → E2 evidence that no party to the
    change writes.** For a consumed grant, the audit event joined by
    admission uid says whether the API server answered with a stored object
-   (200, rv 710) or failed the request (500). That separates two paths
-   [experiment 01](M4_EXPERIMENT_01.md) showed were byte-identical to a
-   read. It holds under this run's setup, not in general.
+   (200, rv 710) or failed the request (500). That separates the paths
+   [experiment 01](M4_EXPERIMENT_01.md#correction-after-review-2026-10-11)
+   showed a read cannot separate once anything else is stored after
+   admission. It holds under this run's setup, not in general.
 2. **The join key has to be per admission, not per grant.** Single-use
    authority does not make the grant id unique in the audit log: dry-runs
    and refused reuses carry it too.
