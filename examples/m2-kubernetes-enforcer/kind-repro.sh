@@ -290,6 +290,26 @@ if [ "${M4_REJECTED_STATUS}" -eq 0 ]; then
   log "FAIL: the downstream-rejecting webhook did not reject the write; the experiment's setup is invalid"
   exit 1
 fi
+# A nonzero status is not enough: an enforcer DENY or a use-state failure
+# would also exit nonzero and never exercise ALLOW-then-downstream-reject.
+# The rejection must name the downstream webhook, and the enforcer's own
+# use-state must hold this grant as consumed (it answered ALLOW).
+if ! grep -q 'downstream-reject.m4.changesafe.dev' <<<"${M4_REJECTED_OUTPUT}"; then
+  log "FAIL: the write was refused, but not by the downstream webhook; the experiment's setup is invalid"
+  exit 1
+fi
+M4_GRANT_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).grant.grantId' "${WORK_DIR}/m4-grant.json")
+M4_CONSUMER=$(kubectl -n changesafe-system exec deploy/changesafe-enforcer -- node -e '
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(process.env.GRANT_USES_DB, { readOnly: true });
+  const row = db.prepare("SELECT admission_uid FROM consumed_grants WHERE grant_id = ?").get(process.argv[1]);
+  process.stdout.write(row === undefined ? "" : String(row.admission_uid ?? "null"));
+' "${M4_GRANT_ID}" 2>/dev/null || true)
+if [ -z "${M4_CONSUMER}" ]; then
+  log "FAIL: the enforcer's use-state holds no consumption for this grant; it did not answer ALLOW, so the setup is invalid"
+  exit 1
+fi
+log "enforcer consumed the grant for admission ${M4_CONSUMER}; the downstream webhook then rejected the write"
 log "web replicas after downstream rejection: $(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}') (4 means not persisted)"
 
 run kubectl delete validatingwebhookconfiguration changesafe-m4-downstream-reject
@@ -299,7 +319,13 @@ M4_RETRY_STATUS=$?
 set -e
 log "\$ kubectl -n changesafe-protected-demo patch deployment web --type=merge --patch-file=m4-patch.json   # downstream webhook removed, same grant"
 log "${M4_RETRY_OUTPUT}"
-log "M4 retry exit status: ${M4_RETRY_STATUS}; web replicas: $(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')"
+M4_RETRY_REPLICAS=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')
+log "M4 retry exit status: ${M4_RETRY_STATUS}; web replicas: ${M4_RETRY_REPLICAS}"
+# The retry is an observation, so its outcome may legitimately change the
+# Deployment (5 replicas if H3d did not hold). Step 3 measures the
+# fail-closed split relative to what the observation left, not to a
+# constant, so a negative M4 result never reads as a failed reproduction.
+STEP3_BASELINE_REPLICAS="${M4_RETRY_REPLICAS}"
 
 sleep 2
 docker exec "${CLUSTER_NAME}-control-plane" cat /var/log/kubernetes/kube-apiserver-audit.log > "${WORK_DIR}/audit.log"
@@ -341,8 +367,8 @@ run kubectl -n changesafe-default-demo patch deployment web --type=merge -p '{"s
 DEFAULT_REPLICAS=$(kubectl -n changesafe-default-demo get deploy web -o jsonpath='{.spec.replicas}')
 PROTECTED_REPLICAS=$(kubectl -n changesafe-protected-demo get deploy web -o jsonpath='{.spec.replicas}')
 log "changesafe-default-demo/web replicas: ${DEFAULT_REPLICAS} (expected 6 — allowed, failurePolicy: Ignore)"
-log "changesafe-protected-demo/web replicas: ${PROTECTED_REPLICAS} (expected still 4 — blocked, failurePolicy: Fail)"
-if [ "${DEFAULT_REPLICAS}" != "6" ] || [ "${PROTECTED_REPLICAS}" != "4" ]; then
+log "changesafe-protected-demo/web replicas: ${PROTECTED_REPLICAS} (expected still ${STEP3_BASELINE_REPLICAS} — blocked, failurePolicy: Fail)"
+if [ "${DEFAULT_REPLICAS}" != "6" ] || [ "${PROTECTED_REPLICAS}" != "${STEP3_BASELINE_REPLICAS}" ]; then
   log "FAIL: step 3's fail-open/fail-closed split did not hold"
   exit 1
 fi
