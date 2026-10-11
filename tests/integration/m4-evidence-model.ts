@@ -61,7 +61,11 @@ export function simulate(history: History): World {
     events.push({ rv, type, uid, state, carrier });
   };
 
-  if (history.otherGrantBefore && !history.noOp) {
+  if (history.otherGrantBefore) {
+    // Another grant stores the target, then another restores the prior. For a
+    // no-op target T equals P, so neither write changes the spec; each still
+    // sets its carrier annotation, which is a change to the object and so an
+    // event (the same reason G's own no-op write below is one).
     state = "T"; carrier = "G2"; emit();
     state = "P"; carrier = "G4"; emit();
   }

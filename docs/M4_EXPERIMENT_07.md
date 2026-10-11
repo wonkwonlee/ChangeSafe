@@ -105,10 +105,15 @@ sound observation contract exists for this tier is in doubt.
 
 Harness: `tests/integration/m4-evidence-model.ts` (the model and the
 contracts) and `tests/integration/m4-contract-enumeration.test.ts` (14
-tests). The enumeration is 768 parameter tuples, of which **300 are
-distinct worlds** (some parameters do nothing in some combinations: another
-grant's earlier write is inert for a no-op target, a restore is inert when
-the state did not move). The protected tier is 288 tuples and 168 worlds.
+tests). The enumeration is 768 parameter tuples, of which **400 are
+distinct worlds** (some parameters do nothing in some combinations: a
+restore is inert when the state did not move, and a status update after a
+rejected write repeats the object as it was). An earlier draft of the model
+treated another grant's earlier write as inert for a no-op target, which a
+Codex review showed is wrong: each such write sets its carrier annotation
+and is an event. The model now emits those, and the counts below are the
+corrected ones (the draft said 300 worlds and 40 added by a lower-bound
+prior). The protected tier is 288 tuples and 224 worlds.
 Each is run under 6 audit edits, 5 stream coverages and 3 prior
 knowledges. Counts below are of evaluations (a world under one edit,
 coverage and prior) and are asserted exactly in the test.
@@ -146,8 +151,8 @@ experiment 04's result at scale. v2a and v2b are unsound on none.
 | --- | --- | --- |
 | H7a | holds (medium): v1 sound on every history except those where T equals P | **refuted as stated.** 80 of the 112 unsound rows are no-op targets, but the other 32 are outside the registered exception: they need another grant to have stored the target after this admission. A prediction of one cause found two. (An earlier draft of this note scored it "holds" and credited those 32 to H7b; that was a generous reading of a prediction that said "except those where T equals P") |
 | H7b | holds (medium-high): a truthful `rejected` is contradicted when another grant produced the same target | **holds, with the timing corrected.** The 32 rows need the other grant's write to come *after* this admission. With an exact prior, an earlier grant's write is outside the window and harmless; it appears only under a lower-bound prior (H7c) |
-| H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 152 against 112, 40 added, from events that precede the admission: another grant's earlier write, or for a no-op target the status-only events before it |
-| H7d | holds (medium): after the repair, no unsound definite verdict | **holds for v2a, the repair as registered**, over the whole protected grid (25,920 evaluations) for every prior, coverage and audit edit; definite on 11,220. **v2b is not the registered repair.** It was written after the enumeration showed v2a gives up a fifth of the cases, and it passes the same grid (definite on 14,628). A contract that passes the enumeration it was designed against is the weakest evidence this note admits to, so v2b's result is reported but not credited to the prediction |
+| H7c | holds (medium): a lower-bound prior adds unsound histories | **holds.** 156 against 112, 44 added, from events that precede the admission: another grant's earlier write, or for a no-op target the status-only events before it |
+| H7d | holds (medium): after the repair, no unsound definite verdict | **holds for v2a, the repair as registered**, over the whole protected grid (25,920 evaluations) for every prior, coverage and audit edit; definite on 11,220. **v2b is not the registered repair.** It was written after the enumeration showed v2a gives up a fifth of the cases, and it passes the same grid (definite on 14,616). A contract that passes the enumeration it was designed against is the weakest evidence this note admits to, so v2b's result is reported but not credited to the prediction |
 | H7e | holds (high): with a writer-controlled carrier, "stored" cannot be made sound | **holds.** In the default tier (480 parameter tuples, 2,880 evaluations in scope), assuming the carrier unforgeable gives 192 unsound evaluations for v2b (96 for v2a, which says nothing about a no-op), each a copied carrier on a truthful `rejected`. Not assuming it, neither has an unsound row, and they are definite on 1,200 (v2b) and 1,152 (v2a) of 2,880 |
 
 **v1's 112 unsound verdicts in scope A all come from one rule**, the one
